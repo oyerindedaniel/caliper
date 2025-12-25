@@ -57,6 +57,7 @@ export const OVERLAY_STYLES = `
   position: fixed;
   pointer-events: none;
   box-sizing: border-box;
+  contain: layout paint size;
 }
 
 .${CALIPER_PREFIX}boundary-box-selected {

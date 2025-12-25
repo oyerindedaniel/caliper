@@ -8,6 +8,7 @@ export interface SelectionSystem {
   getSelected: () => Element | null;
   getSelectedRect: () => DOMRect | null;
   clear: () => void;
+  onRectUpdate: (callback: (rect: DOMRect | null) => void) => () => void;
 }
 
 /**
@@ -17,21 +18,30 @@ export interface SelectionSystem {
 export function createSelectionSystem(): SelectionSystem {
   let selectedElement: Element | null = null;
   let selectedRect: DOMRect | null = null;
+  const rectUpdateListeners = new Set<(rect: DOMRect | null) => void>();
+
+  function notifyListeners() {
+    rectUpdateListeners.forEach((listener) => listener(selectedRect));
+  }
 
   function select(element: Element | null) {
     selectedElement = element;
 
     if (element) {
+      // Initially set to null, will be updated in next frame
+      selectedRect = null;
+      notifyListeners();
+
       // Schedule read using post-RAF pattern (before layout, after write RAF)
       requestAnimationFrame(() => {
         Promise.resolve().then(() => {
           selectedRect = element.getBoundingClientRect();
+          notifyListeners();
         });
       });
-      // Initially set to null, will be updated in next frame
-      selectedRect = null;
     } else {
       selectedRect = null;
+      notifyListeners();
     }
   }
 
@@ -40,15 +50,20 @@ export function createSelectionSystem(): SelectionSystem {
   }
 
   function getSelectedRect(): DOMRect | null {
-    // Return cached rect
-    // Note: Rect should be refreshed by caller when selection changes
-    // This avoids DOM reads during write phase
     return selectedRect;
   }
 
   function clear() {
     selectedElement = null;
     selectedRect = null;
+    notifyListeners();
+  }
+
+  function onRectUpdate(callback: (rect: DOMRect | null) => void) {
+    rectUpdateListeners.add(callback);
+    return () => {
+      rectUpdateListeners.delete(callback);
+    };
   }
 
   return {
@@ -56,5 +71,6 @@ export function createSelectionSystem(): SelectionSystem {
     getSelected,
     getSelectedRect,
     clear,
+    onRectUpdate,
   };
 }

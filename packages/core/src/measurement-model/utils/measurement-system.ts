@@ -26,8 +26,6 @@ export interface MeasurementSystem {
   getState: () => MeasurementState;
   getCurrentResult: () => MeasurementResult | null;
   getCalculator: () => CalculatorIntegration;
-  openCalculator: (baseValue: number) => void;
-  openCalculatorFromLine: (lineIndex: number) => void;
   onStateChange: (listener: MeasurementSystemListener) => () => void;
 }
 
@@ -161,19 +159,6 @@ export function createMeasurementSystem(
     return calculator;
   }
 
-  function openCalculator(baseValue: number) {
-    calculator.open(baseValue);
-    notifyListeners();
-  }
-
-  function openCalculatorFromLine(lineIndex: number) {
-    if (currentResult && currentResult.lines[lineIndex]) {
-      const line = currentResult.lines[lineIndex];
-      calculator.open(line.value);
-      notifyListeners();
-    }
-  }
-
   function onStateChange(listener: MeasurementSystemListener) {
     listeners.add(listener);
     return () => {
@@ -190,8 +175,6 @@ export function createMeasurementSystem(
     getState,
     getCurrentResult,
     getCalculator,
-    openCalculator,
-    openCalculatorFromLine,
     onStateChange,
   };
 }

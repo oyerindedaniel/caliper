@@ -4,8 +4,6 @@ import {
   createSelectionSystem,
   type MeasurementSystem,
   type SelectionSystem,
-  handleCalculatorCommand,
-  isCalculatorCommand,
   type MeasurementResult,
   type CalculatorState,
   type MeasurementLine,
@@ -40,20 +38,16 @@ export function Root(commands: Required<CommandsConfig>) {
     const unsubscribe = system.onStateChange(() => {
       if (!system) return;
       const currentResult = system.getCurrentResult();
-      const calc = system.getCalculator();
-      const calcState = calc.getState();
-
       setResult(currentResult);
-      setCalculatorState(calcState.isActive ? calcState : null);
     });
 
     // Initial sync
     const currentResult = system.getCurrentResult();
-    const calc = system.getCalculator();
-    const calcState = calc.getState();
-
     setResult(currentResult);
-    setCalculatorState(calcState.isActive ? calcState : null);
+
+    const unsubscribeRect = selectionSystem.onRectUpdate((rect) => {
+      setSelectedRect(rect);
+    });
 
     const handleClick = (e: MouseEvent) => {
       const isSelectKey =
@@ -73,8 +67,7 @@ export function Root(commands: Required<CommandsConfig>) {
           }
 
           selectionSystem.select(element);
-          const rect = selectionSystem.getSelectedRect();
-          setSelectedRect(rect);
+          // Rect will be updated via onRectUpdate callback when ready
         }
       }
     };
@@ -97,15 +90,11 @@ export function Root(commands: Required<CommandsConfig>) {
       } else if (
         e.key === commands.freeze &&
         e.target === document.body &&
-        system
+        system &&
+        system.getState() === "MEASURING"
       ) {
         e.preventDefault();
         system.freeze();
-      } else if (isCalculatorCommand(e.key) && system) {
-        handleCalculatorCommand(e.key as "=" | "C" | "Escape", {
-          getCurrentResult: () => system!.getCurrentResult(),
-          getCalculator: () => system!.getCalculator(),
-        });
       }
     };
 
@@ -136,6 +125,7 @@ export function Root(commands: Required<CommandsConfig>) {
       window.removeEventListener("keyup", handleKeyUp);
 
       unsubscribe();
+      unsubscribeRect();
 
       if (system) {
         system.cleanup();
@@ -153,13 +143,10 @@ export function Root(commands: Required<CommandsConfig>) {
 
   const handleLineClick = (line: MeasurementLine, event: MouseEvent) => {
     if (system) {
-      const currentResult = system.getCurrentResult();
-      if (currentResult) {
-        const lineIndex = currentResult.lines.findIndex((l) => l === line);
-        if (lineIndex >= 0) {
-          system.openCalculatorFromLine(lineIndex);
-        }
-      }
+      const calc = system.getCalculator();
+      calc.open(line.value);
+      const calcState = calc.getState();
+      setCalculatorState(calcState.isActive ? calcState : null);
     }
   };
 
@@ -167,8 +154,6 @@ export function Root(commands: Required<CommandsConfig>) {
     if (system) {
       const calc = system.getCalculator();
       calc.handleInput(key);
-      // Calculator state updates are handled directly here since calculator
-      // operations don't go through measurement system notification
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
     }
