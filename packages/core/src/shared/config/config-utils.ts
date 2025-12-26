@@ -48,3 +48,25 @@ export function getConfig(): OverlayConfig {
   }
   return {};
 }
+
+/**
+ * Sets the global Caliper configuration.
+ * This is a typed wrapper around window.__CALIPER_CONFIG__.
+ *
+ * @param config - The configuration object to set
+ *
+ * @example
+ * ```ts
+ * import { setConfig } from "@caliper/core";
+ *
+ * setConfig({
+ *   theme: { primary: "#ff0000" },
+ *   commands: { activate: "Alt" }
+ * });
+ * ```
+ */
+export function setConfig(config: OverlayConfig): void {
+  if (typeof window !== "undefined") {
+    window.__CALIPER_CONFIG__ = config;
+  }
+}

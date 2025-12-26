@@ -1,8 +1,4 @@
-import { createOverlay } from "@caliper/overlay";
+import "@caliper/overlay";
 
-if (typeof window !== "undefined") {
-  const instance = createOverlay();
-  instance.mount();
-
-  (window as any).__CALIPER__ = instance;
-}
+export { setConfig } from "@caliper/core";
+export type { OverlayConfig } from "@caliper/core";

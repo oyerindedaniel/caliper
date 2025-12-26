@@ -1,10 +1,8 @@
 "use client";
 
 import { useRef } from "react";
-import { useCaliper } from "@caliper/react";
 
 export function MeasurementDemo() {
-  const system = useCaliper(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
   return (

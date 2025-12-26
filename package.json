@@ -10,7 +10,8 @@
     "check-types": "turbo run check-types",
     "clean": "turbo run clean && rm -rf node_modules",
     "test": "echo \"Tests coming soon\"",
-    "link:build": "turbo run build --filter=@caliper/link"
+    "link:build": "turbo run build --filter=@caliper/link",
+    "version:write": "node scripts/write-version.mjs"
   },
   "devDependencies": {
     "prettier": "^3.7.4",

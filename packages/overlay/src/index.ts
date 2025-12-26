@@ -2,7 +2,15 @@ import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
 import type { OverlayOptions } from "./types.js";
 import type { OverlayConfig } from "@caliper/core";
-import { applyTheme, mergeCommands, getConfig } from "@caliper/core";
+import {
+  applyTheme,
+  mergeCommands,
+  getConfig,
+  showVersionInfo,
+} from "@caliper/core";
+
+// Version is injected at build time via rollup replace plugin or read from package.json
+const VERSION = "0.0.0";
 
 declare global {
   interface Window {
@@ -100,3 +108,15 @@ export {
 } from "./style-injector/utils/inject-styles.js";
 export { PREFIX } from "./css/styles.js";
 export type { OverlayProps, OverlayOptions } from "./types.js";
+
+if (typeof window !== "undefined") {
+  showVersionInfo(VERSION).catch(() => {
+    // Silently fail
+  });
+
+  const windowConfig = getConfig();
+  const instance = createOverlay(windowConfig);
+  instance.mount();
+
+  (window as any).__CALIPER__ = instance;
+}

@@ -1,72 +1,17 @@
-import React, { useEffect, useRef, createContext, useContext } from "react";
-import { createOverlay, type OverlayInstance } from "@caliper/overlay";
-import type { OverlayConfig } from "@caliper/core";
+/**
+ * @caliper/react
+ *
+ * Thin wrapper that imports @caliper/overlay, which auto-mounts on import.
+ * This allows npm install usage in React/Next.js/Vite/Webpack apps.
+ *
+ * Usage options:
+ * 1. Import at root: import "@caliper/react"
+ * 2. Dynamic import: import("@caliper/react")
+ * 3. Next.js Script: <Script src="..." />
+ * 4. Script tag: <script type="module">import "@caliper/react"</script>
+ */
 
-export interface UseCaliperOptions {
-  enabled?: boolean;
-  config?: OverlayConfig;
-}
+import "@caliper/overlay";
 
-interface CaliperContextValue {
-  instance: OverlayInstance | null;
-  config: OverlayConfig | undefined;
-}
-
-const CaliperContext = createContext<CaliperContextValue | null>(null);
-
-export function CaliperProvider({
-  children,
-  config,
-  enabled = true,
-}: {
-  children: React.ReactNode;
-  config?: OverlayConfig;
-  enabled?: boolean;
-}) {
-  const instanceRef = useRef<OverlayInstance | null>(null);
-
-  useEffect(() => {
-    if (!enabled) return;
-
-    const instance = createOverlay(config);
-    instanceRef.current = instance;
-    instance.mount();
-
-    return () => {
-      instance.dispose();
-      instanceRef.current = null;
-    };
-  }, [enabled, config]);
-
-  const value: CaliperContextValue = {
-    instance: instanceRef.current,
-    config,
-  };
-
-  return React.createElement(CaliperContext.Provider, { value }, children);
-}
-
-export function useCaliper(options: UseCaliperOptions = {}) {
-  const context = useContext(CaliperContext);
-  const instanceRef = useRef<OverlayInstance | null>(null);
-
-  useEffect(() => {
-    if (options.enabled === false) return;
-
-    if (context?.instance) {
-      instanceRef.current = context.instance;
-      return;
-    }
-
-    const instance = createOverlay(options.config);
-    instanceRef.current = instance;
-    instance.mount();
-
-    return () => {
-      instance.dispose();
-      instanceRef.current = null;
-    };
-  }, [options.enabled, options.config, context?.instance]);
-
-  return instanceRef.current;
-}
+export type { OverlayConfig } from "@caliper/core";
+export { setConfig } from "@caliper/core";
