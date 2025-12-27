@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { CaliperLoader } from "./components/caliper-loader";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,11 +15,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        {process.env.NODE_ENV === "development" ? (
-          <CaliperLoader />
-        ) : (
-          <Script src="" strategy="beforeInteractive" crossOrigin="anonymous" />
-        )}
+        <Script
+          src={`/caliper.js?v=${process.env.NODE_ENV === 'development' ? Date.now() : '1'}`}
+          strategy="beforeInteractive"
+          crossOrigin="anonymous"
+        />
         {children}
       </body>
     </html>

@@ -9,15 +9,8 @@ import {
   type MeasurementLine,
   type CommandsConfig,
 } from "@caliper/core";
-import {
-  injectStyles,
-  removeStyles,
-} from "./style-injector/utils/inject-styles.js";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
-/**
- * Root component that sets up the measurement system and wires everything together
- */
 export function Root(commands: Required<CommandsConfig>) {
   const [result, setResult] = createSignal<MeasurementResult | null>(null);
   const [cursor, setCursor] = createSignal({ x: 0, y: 0 });
@@ -29,11 +22,11 @@ export function Root(commands: Required<CommandsConfig>) {
   let selectionSystem: SelectionSystem | null = null;
   let isAltPressed = false;
 
+  console.log("Overlay mounted---");
+
   onMount(() => {
     selectionSystem = createSelectionSystem();
     system = createMeasurementSystem(selectionSystem);
-
-    injectStyles();
 
     const unsubscribe = system.onStateChange(() => {
       if (!system) return;
@@ -136,8 +129,6 @@ export function Root(commands: Required<CommandsConfig>) {
         selectionSystem.clear();
         selectionSystem = null;
       }
-
-      removeStyles();
     });
   });
 

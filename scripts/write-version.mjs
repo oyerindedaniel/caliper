@@ -2,9 +2,6 @@
 
 /**
  * Script to write the current package version to a static file.
- * This can be served as a public API endpoint for version checking.
- *
- * Usage: node scripts/write-version.mjs
  */
 
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
@@ -15,12 +12,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const rootDir = join(__dirname, "..");
 
-// Read version from package.json
 const packageJsonPath = join(rootDir, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 const version = packageJson.version || "0.0.0";
 
-// Read overlay package version (the main package)
 const overlayPackageJsonPath = join(
   rootDir,
   "packages",
@@ -34,16 +29,14 @@ try {
   );
   overlayVersion = overlayPackageJson.version || version;
 } catch (e) {
-  // Fallback to root version
+
 }
 
-// Create version info object
 const versionInfo = {
   version: overlayVersion,
   timestamp: new Date().toISOString(),
 };
 
-// Write to public directory (for serving as static file)
 const publicDir = join(rootDir, "public");
 const versionFilePath = join(publicDir, "version.json");
 

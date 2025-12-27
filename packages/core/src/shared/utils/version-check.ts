@@ -4,18 +4,12 @@ interface VersionInfo {
 }
 
 const CALIPER_ASCII = `
-╔═══════════════════════════════════════╗
-║                                       ║
-║    ██████╗ █████╗ ██╗     ██╗██████╗  ║
-║   ██╔════╝██╔══██╗██║     ██║██╔══██╗ ║
-║   ██║     ███████║██║     ██║██████╔╝ ║
-║   ██║     ██╔══██║██║     ██║██╔══██╗ ║
-║   ╚██████╗██║  ██║███████╗██║██████╔╝ ║
-║    ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝╚═════╝  ║
-║                                       ║
-║         Measurement Tool              ║
-║                                       ║
-╚═══════════════════════════════════════╝
+   ___   _   _    ___ ___ ___ ___ 
+  / __| /_\\ | |  |_ _| _ \\ __| _ \\
+ | (__ / _ \\| |__ | ||  _/ _||   /
+  \\___/_/ \\_\\____|___|_| |___|_|_\\
+
+          Measurement Tool
 `;
 
 async function fetchLatestVersion(): Promise<VersionInfo | null> {
@@ -60,9 +54,6 @@ function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
-/**
- * Shows the Caliper branding and version information in the console
- */
 export async function showVersionInfo(currentVersion: string): Promise<void> {
   if (typeof window === "undefined") return;
 

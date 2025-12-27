@@ -43,5 +43,10 @@ export * from "./shared/types/index.js";
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";
 export * from "./shared/config/overlay-config.js";
-export * from "./shared/config/config-utils.js";
+export {
+  applyTheme,
+  mergeCommands,
+  getConfig,
+  setConfig,
+} from "./shared/config/config-utils.js";
 export { showVersionInfo } from "./shared/utils/version-check.js";

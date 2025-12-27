@@ -3,37 +3,19 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./types": {
-      "types": "./dist/types.d.ts",
-      "import": "./dist/types.js"
-    }
+    ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "rollup -c",
-    "build:watch": "rollup -c --watch",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "check-types": "tsc --noEmit"
   },
   "devDependencies": {
-    "@babel/preset-typescript": "^7.26.0",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@rollup/plugin-babel": "^6.0.4",
-    "@rollup/plugin-node-resolve": "^15.3.0",
-    "@rollup/plugin-typescript": "^12.1.1",
     "@types/node": "^22.15.3",
-    "babel-preset-solid": "^1.8.7",
     "eslint": "^9.39.1",
-    "rollup": "^4.54.0",
-    "typescript": "5.9.2"
+    "typescript": "5.9.3"
   },
   "dependencies": {
     "@caliper/core": "workspace:*",

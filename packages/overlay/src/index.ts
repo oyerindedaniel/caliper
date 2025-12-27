@@ -8,9 +8,12 @@ import {
   getConfig,
   showVersionInfo,
 } from "@caliper/core";
+import {
+  injectStyles,
+  removeStyles,
+} from "./style-injector/utils/inject-styles.js";
 
-// Version is injected at build time via rollup replace plugin or read from package.json
-const VERSION = "0.0.0";
+declare const process: { env: { VERSION: string } };
 
 declare global {
   interface Window {
@@ -34,8 +37,8 @@ export function createOverlay(
   // Currently unused but kept for API consistency
   if (typeof window === "undefined") {
     return {
-      mount: () => {},
-      dispose: () => {},
+      mount: () => { },
+      dispose: () => { },
     };
   }
 
@@ -44,7 +47,7 @@ export function createOverlay(
       "[CALIPER] Overlay is already mounted. Call dispose() on the existing instance before creating a new one."
     );
     return {
-      mount: () => {},
+      mount: () => { },
       dispose: () => {
         window.__CALIPER_OVERLAY__?.dispose();
         delete window.__CALIPER_OVERLAY__;
@@ -73,6 +76,9 @@ export function createOverlay(
 
     const target = container || document.body;
 
+
+    injectStyles();
+
     const overlayContainer = document.createElement("div");
     overlayContainer.id = "caliper-overlay-root";
     target.appendChild(overlayContainer);
@@ -85,6 +91,7 @@ export function createOverlay(
         disposeRender = null;
       }
       overlayContainer.remove();
+      removeStyles();
       delete window.__CALIPER_OVERLAY__;
     };
 
@@ -101,16 +108,10 @@ export function createOverlay(
   return { mount, dispose };
 }
 
-export {
-  injectStyles,
-  removeStyles,
-  forceRemoveStyles,
-} from "./style-injector/utils/inject-styles.js";
-export { PREFIX } from "./css/styles.js";
 export type { OverlayProps, OverlayOptions } from "./types.js";
 
 if (typeof window !== "undefined") {
-  showVersionInfo(VERSION).catch(() => {
+  showVersionInfo(process.env.VERSION).catch(() => {
     // Silently fail
   });
 
