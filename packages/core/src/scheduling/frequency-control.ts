@@ -41,20 +41,41 @@ export function createFrequencyControlledReader(
     }
   }
 
-  function scheduleRead(callback: () => void, urgent = false) {
+  let trailingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  function scheduleRead(callback: () => void, urgent = false): boolean {
     const now = performance.now();
     const timeSinceLastRead = now - lastReadTime;
 
     if (!urgent && timeSinceLastRead < readInterval) {
-      return;
+      if (trailingTimeoutId !== null) {
+        clearTimeout(trailingTimeoutId);
+      }
+      trailingTimeoutId = setTimeout(() => {
+        trailingTimeoutId = null;
+        scheduleRead(callback, false);
+      }, readInterval - timeSinceLastRead);
+      return false;
     }
 
-    baseReader.scheduleRead(callback, urgent);
-    lastReadTime = now;
+    if (trailingTimeoutId !== null) {
+      clearTimeout(trailingTimeoutId);
+      trailingTimeoutId = null;
+    }
+
+    const scheduled = baseReader.scheduleRead(callback, urgent);
+    if (scheduled) {
+      lastReadTime = now;
+    }
+    return scheduled;
   }
 
   function cancel() {
     baseReader.cancel();
+    if (trailingTimeoutId !== null) {
+      clearTimeout(trailingTimeoutId);
+      trailingTimeoutId = null;
+    }
   }
 
   return {

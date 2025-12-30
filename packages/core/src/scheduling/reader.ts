@@ -1,7 +1,11 @@
 type ReadStrategy = "post-raf" | "idle" | "scheduler" | "timeout";
 
 export interface Reader {
-  scheduleRead: (callback: () => void, urgent?: boolean) => void;
+  /**
+   * Schedules a read. Returns true if the read was scheduled immediately,
+   * or false if it was queued/throttled.
+   */
+  scheduleRead: (callback: () => void, urgent?: boolean) => boolean;
   cancel: () => void;
 }
 
@@ -11,6 +15,8 @@ export function createReader(): Reader {
   let schedulerSignal: AbortSignal | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
   let readPending = false;
+  let nextCallback: (() => void) | null = null;
+  let nextUrgent = false;
 
   function detectBestStrategy(): ReadStrategy {
     // Prefer scheduler if available
@@ -23,6 +29,17 @@ export function createReader(): Reader {
     }
     // Last resort: post-RAF
     return "post-raf";
+  }
+
+  function handleCallbackComplete() {
+    readPending = false;
+    if (nextCallback) {
+      const cb = nextCallback;
+      const urgent = nextUrgent;
+      nextCallback = null;
+      nextUrgent = false;
+      scheduleRead(cb, urgent);
+    }
   }
 
   function scheduleWithScheduler(callback: () => void, urgent: boolean) {
@@ -48,7 +65,7 @@ export function createReader(): Reader {
     Scheduler.postTask(
       () => {
         callback();
-        readPending = false;
+        handleCallbackComplete();
       },
       {
         signal: controller.signal,
@@ -67,7 +84,7 @@ export function createReader(): Reader {
       (deadline) => {
         if (deadline.timeRemaining() > 0 || deadline.didTimeout) {
           callback();
-          readPending = false;
+          handleCallbackComplete();
         } else if (!urgent) {
           // Reschedule if not urgent
           scheduleWithIdle(callback, false);
@@ -85,7 +102,7 @@ export function createReader(): Reader {
       // Use microtask to run after app's RAF
       Promise.resolve().then(() => {
         callback();
-        readPending = false;
+        handleCallbackComplete();
       });
     });
   }
@@ -93,12 +110,17 @@ export function createReader(): Reader {
   function scheduleWithTimeout(callback: () => void) {
     timeoutId = setTimeout(() => {
       callback();
-      readPending = false;
+      handleCallbackComplete();
     }, 0);
   }
 
-  function scheduleRead(callback: () => void, urgent = false) {
-    if (readPending) return;
+  function scheduleRead(callback: () => void, urgent = false): boolean {
+    if (readPending) {
+      nextCallback = callback;
+      nextUrgent = urgent;
+      return false;
+    }
+
     readPending = true;
 
     const strategy = detectBestStrategy();
@@ -117,6 +139,8 @@ export function createReader(): Reader {
         scheduleWithTimeout(callback);
         break;
     }
+
+    return true;
   }
 
   function cancel() {
@@ -137,6 +161,8 @@ export function createReader(): Reader {
       timeoutId = null;
     }
     readPending = false;
+    nextCallback = null;
+    nextUrgent = false;
   }
 
   return { scheduleRead, cancel };

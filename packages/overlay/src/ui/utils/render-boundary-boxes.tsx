@@ -3,9 +3,8 @@ import { lerpRect, type AnimationConfig } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface BoundaryBoxesProps {
-  initialPrimaryRect: DOMRect | null;
-  primary: DOMRect | null;
-  secondary: DOMRect | null;
+  selectionRect: DOMRect | null;
+  measuredRect: DOMRect | null;
   isAltPressed: boolean;
   animation: Required<AnimationConfig>;
 }
@@ -21,16 +20,30 @@ interface AnimatedRect {
  * Render boundary boxes for selected and secondary elements
  */
 export function BoundaryBoxes(props: BoundaryBoxesProps) {
-  const [primary, setPrimary] = createSignal<AnimatedRect | null>(null);
-  const [secondary, setSecondary] = createSignal<AnimatedRect | null>(null);
+  const [anchor, setAnchor] = createSignal<AnimatedRect | null>(null);
+  const [target, setTarget] = createSignal<AnimatedRect | null>(null);
 
   let rafId: number | null = null;
+
+  const isRectSame = (
+    a: AnimatedRect | DOMRect | null,
+    b: AnimatedRect | DOMRect | null,
+    threshold = 0.1
+  ) => {
+    if (!a || !b) return false;
+    return (
+      Math.abs(a.left - b.left) < threshold &&
+      Math.abs(a.top - b.top) < threshold &&
+      Math.abs(a.width - b.width) < threshold &&
+      Math.abs(a.height - b.height) < threshold
+    );
+  };
 
   const lerpTo = (
     current: AnimatedRect | null,
     target: DOMRect | null,
     lerpFactor: number,
-    initial: DOMRect | null = null
+    startFrom: DOMRect | null = null
   ): AnimatedRect | null => {
     if (!target) return null;
 
@@ -42,19 +55,14 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
     };
 
     if (!current) {
-      return initial
-        ? { left: initial.left, top: initial.top, width: initial.width, height: initial.height }
+      return startFrom
+        ? { left: startFrom.left, top: startFrom.top, width: startFrom.width, height: startFrom.height }
         : targetRect;
     }
 
     const next = lerpRect(current, targetRect, lerpFactor);
 
-    if (
-      Math.abs(next.left - targetRect.left) < 0.1 &&
-      Math.abs(next.top - targetRect.top) < 0.1 &&
-      Math.abs(next.width - targetRect.width) < 0.1 &&
-      Math.abs(next.height - targetRect.height) < 0.1
-    ) {
+    if (isRectSame(next, targetRect, 0.1)) {
       return targetRect;
     }
 
@@ -64,51 +72,36 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   createEffect(
     on(
       [
-        () => props.primary,
-        () => props.secondary,
+        () => props.selectionRect,
+        () => props.measuredRect,
         () => props.isAltPressed,
-        () => props.initialPrimaryRect,
       ],
       () => {
         const factor = props.animation.lerpFactor;
-        const isAlt = props.isAltPressed;
-        const initial = props.initialPrimaryRect;
 
-        if (!initial) {
-          setPrimary(null);
-          setSecondary(null);
+        const selectionTarget = props.selectionRect;
+        const measurementTarget = props.measuredRect;
+
+        if (!selectionTarget) {
+          setAnchor(null);
+          setTarget(null);
           return;
         }
 
         const animate = () => {
-          // Primary box follows the current hover (or initial selection), which remains stationary during measurement.
-          const primaryTarget = props.primary || initial;
-          const nextPrimary = lerpTo(primary(), primaryTarget, factor, initial);
-          setPrimary(nextPrimary);
+          // Anchor box follows the live selection (which freezes when Alt is held)
+          const nextAnchor = lerpTo(anchor(), selectionTarget, factor);
+          setAnchor(nextAnchor);
 
-          // Secondary: Only follow hover in Alt mode
-          const secondaryTarget = isAlt ? props.secondary : null;
-          const nextSecondary = lerpTo(secondary(), secondaryTarget, factor);
-          setSecondary(nextSecondary);
+          // Target box shows the secondary element during measurement
+          const nextTarget = lerpTo(target(), measurementTarget, factor, selectionTarget);
+          setTarget(nextTarget);
 
           // Continue animating if either box hasn't reached its target
-          const primaryIsMoving =
-            nextPrimary &&
-            primaryTarget &&
-            (Math.abs(nextPrimary.left - primaryTarget.left) > 0.01 ||
-              Math.abs(nextPrimary.top - primaryTarget.top) > 0.01 ||
-              Math.abs(nextPrimary.width - primaryTarget.width) > 0.01 ||
-              Math.abs(nextPrimary.height - primaryTarget.height) > 0.01);
+          const anchorMoving = nextAnchor && selectionTarget && !isRectSame(nextAnchor, selectionTarget, 0.01);
+          const targetMoving = nextTarget && measurementTarget && !isRectSame(nextTarget, measurementTarget, 0.01);
 
-          const secondaryIsMoving =
-            nextSecondary &&
-            secondaryTarget &&
-            (Math.abs(nextSecondary.left - secondaryTarget.left) > 0.01 ||
-              Math.abs(nextSecondary.top - secondaryTarget.top) > 0.01 ||
-              Math.abs(nextSecondary.width - secondaryTarget.width) > 0.01 ||
-              Math.abs(nextSecondary.height - secondaryTarget.height) > 0.01);
-
-          if (primaryIsMoving || secondaryIsMoving || (isAlt && !secondary() && secondaryTarget)) {
+          if (anchorMoving || targetMoving || (measurementTarget && !target())) {
             rafId = requestAnimationFrame(animate);
           } else {
             rafId = null;
@@ -127,27 +120,27 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
 
   return (
     <>
-      {primary() && (
+      {anchor() && (
         <div
           class={`${PREFIX}boundary-box ${PREFIX}boundary-box-selected`}
           style={{
             left: 0,
             top: 0,
-            width: `${primary()!.width}px`,
-            height: `${primary()!.height}px`,
-            transform: `translate3d(${primary()!.left}px, ${primary()!.top}px, 0)`,
+            width: `${anchor()!.width}px`,
+            height: `${anchor()!.height}px`,
+            transform: `translate3d(${anchor()!.left}px, ${anchor()!.top}px, 0)`,
           }}
         />
       )}
-      {secondary() && (
+      {target() && (
         <div
           class={`${PREFIX}boundary-box ${PREFIX}boundary-box-secondary`}
           style={{
             left: 0,
             top: 0,
-            width: `${secondary()!.width}px`,
-            height: `${secondary()!.height}px`,
-            transform: `translate3d(${secondary()!.left}px, ${secondary()!.top}px, 0)`,
+            width: `${target()!.width}px`,
+            height: `${target()!.height}px`,
+            transform: `translate3d(${target()!.left}px, ${target()!.top}px, 0)`,
           }}
         />
       )}

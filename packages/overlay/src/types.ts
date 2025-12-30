@@ -11,9 +11,9 @@ import type { Accessor } from "solid-js";
 export interface OverlayProps {
   result: Accessor<MeasurementResult | null>;
   cursor: Accessor<{ x: number; y: number }>;
-  initialSelectedRect: Accessor<DOMRect | null>;
-  selectedRect: Accessor<DOMRect | null>;
+  selectionRect: Accessor<DOMRect | null>;
   isAltPressed: Accessor<boolean>;
+  isFrozen: Accessor<boolean>;
   animation: Required<AnimationConfig>;
   calculatorState?: Accessor<CalculatorState | null>;
   onLineClick?: (line: MeasurementLine, event: MouseEvent) => void;

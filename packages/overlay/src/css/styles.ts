@@ -51,6 +51,8 @@ export const OVERLAY_STYLES = `
   font-family: system-ui, -apple-system, sans-serif;
   white-space: nowrap;
   z-index: 1000000;
+  will-change: transform;
+  contain: layout paint;
 }
 
 .${CALIPER_PREFIX}boundary-box {
@@ -152,6 +154,13 @@ export const OVERLAY_STYLES = `
   pointer-events: auto;
   cursor: pointer;
   transition: stroke-width 0.2s;
+}
+
+.${CALIPER_PREFIX}line-hit-target {
+  stroke: transparent;
+  stroke-width: 12px;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .${CALIPER_PREFIX}line-clickable:hover {

@@ -63,6 +63,8 @@ export async function showVersionInfo(currentVersion: string): Promise<void> {
     "color: #6b7280; font-family: monospace;"
   );
 
+  if (currentVersion === "[DEV]") return;
+
   fetchLatestVersion()
     .then((latestInfo) => {
       if (!latestInfo) return;

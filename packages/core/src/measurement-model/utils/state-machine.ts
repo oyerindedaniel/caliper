@@ -21,12 +21,12 @@ export function createStateMachine(): StateMachine {
   }
 
   function transitionTo(newState: MeasurementState): boolean {
-    // Validate state transitions
+
     const validTransitions: Record<MeasurementState, MeasurementState[]> = {
-      IDLE: ["ARMED"],
+      IDLE: ["ARMED", "FROZEN"],
       ARMED: ["MEASURING", "IDLE"],
       MEASURING: ["FROZEN", "IDLE"],
-      FROZEN: ["IDLE"],
+      FROZEN: ["MEASURING", "IDLE"],
     };
 
     const allowed = validTransitions[state];

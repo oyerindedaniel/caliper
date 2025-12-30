@@ -22,6 +22,7 @@ export interface MeasurementSystem {
   abort: () => void;
   stop: () => void;
   freeze: () => void;
+  unfreeze: (isAltDown: boolean) => void;
   cleanup: () => void;
   getState: () => MeasurementState;
   getCurrentResult: () => MeasurementResult | null;
@@ -57,23 +58,30 @@ export function createMeasurementSystem(
 
     try {
       await new Promise<void>((resolve) => {
-        reader.scheduleRead(() => {
+        const scheduled = reader.scheduleRead(() => {
           if (signal.aborted) {
             resolve();
             return;
           }
 
-          reader.recordFrameTime(performance.now());
+          // reader.recordFrameTime(performance.now());
 
+          const start = performance.now();
           const result = createMeasurement(
             selectedElement,
             cursor.x,
             cursor.y,
             previousContext || undefined
           );
+          const duration = performance.now() - start;
 
           if (result) {
-            console.log("MeasurementSystem: Atomic Read/Write", result);
+            if (signal.aborted) {
+              resolve();
+              return;
+            }
+
+            console.log(`[Caliper] Measure: ${duration.toFixed(2)}ms`);
             currentResult = result;
             previousContext = result.context;
             stateMachine.transitionTo("MEASURING");
@@ -82,6 +90,12 @@ export function createMeasurementSystem(
 
           resolve();
         });
+
+        // If the read was queued or throttled, resolve the promise immediately.
+        // We don't want to block the caller since a newer request will supersede this one.
+        if (!scheduled) {
+          resolve();
+        }
       });
     } catch (error) {
       if (!signal.aborted) {
@@ -92,8 +106,17 @@ export function createMeasurementSystem(
   }
 
   function freeze() {
-    if (stateMachine.isMeasuring()) {
+    const state = stateMachine.getState();
+    if ((state === "MEASURING" || state === "IDLE") && currentResult) {
       stateMachine.transitionTo("FROZEN");
+      notifyListeners();
+    }
+  }
+
+  function unfreeze(isAltDown: boolean) {
+    if (stateMachine.isFrozen()) {
+      stateMachine.transitionTo(isAltDown ? "MEASURING" : "IDLE");
+      notifyListeners();
     }
   }
 
@@ -109,7 +132,17 @@ export function createMeasurementSystem(
   }
 
   function stop() {
-    abort();
+    // Stop the active reader/computation, but DO NOT clear the result.
+    // This allows the last measurement to stay on screen until aborted.
+    if (abortController) {
+      abortController.abort();
+      abortController = null;
+    }
+    reader.cancel();
+    if (stateMachine.getState() === "MEASURING") {
+      stateMachine.transitionTo("IDLE");
+    }
+    notifyListeners();
   }
 
   function cleanup() {
@@ -146,6 +179,7 @@ export function createMeasurementSystem(
     abort,
     stop,
     freeze,
+    unfreeze,
     cleanup,
     getState,
     getCurrentResult,

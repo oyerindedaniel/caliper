@@ -13,13 +13,12 @@ export function Overlay(props: OverlayProps) {
   return (
     <>
       <BoundaryBoxes
-        initialPrimaryRect={props.initialSelectedRect()}
-        primary={props.selectedRect()}
-        secondary={props.result()?.secondary || null}
+        selectionRect={props.selectionRect()}
+        measuredRect={(props.isAltPressed() || props.isFrozen()) ? (props.result()?.secondary || null) : null}
         isAltPressed={props.isAltPressed()}
         animation={props.animation}
       />
-      <Show when={props.result()}>
+      <Show when={(props.isAltPressed() || props.isFrozen()) ? props.result() : null}>
         {(result) => (
           <div class={`${PREFIX}overlay`}>
             <MeasurementLinesWithCalculator

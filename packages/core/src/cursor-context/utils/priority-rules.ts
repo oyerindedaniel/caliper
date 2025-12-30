@@ -20,8 +20,6 @@ function findElementByContext(
   let node = document.elementFromPoint(cursorX, cursorY);
   if (!node) return null;
 
-  const parent = selectedElement.parentElement;
-
   while (node) {
     if (!isEligible(node)) {
       node = node.parentElement;
@@ -33,11 +31,15 @@ function findElementByContext(
         return node;
       }
     } else if (context === "sibling") {
-      if (parent && node !== selectedElement && node.parentElement === parent) {
+      if (
+        node !== selectedElement &&
+        !node.contains(selectedElement) &&
+        !selectedElement.contains(node)
+      ) {
         return node;
       }
     } else if (context === "parent") {
-      if (node === parent) {
+      if (node !== selectedElement && node.contains(selectedElement)) {
         return node;
       }
     }
@@ -69,16 +71,19 @@ function detectBestContext(
       continue;
     }
 
-    if (node !== selectedElement && selectedElement.contains(node)) {
-      return { context: "child", element: node };
-    }
+    if (node !== selectedElement) {
+      // 1. Child context: Target is inside selection
+      if (selectedElement.contains(node)) {
+        return { context: "child", element: node };
+      }
 
-    if (parent && node !== selectedElement && node.parentElement === parent) {
+      // 2. Parent context: Selection is inside target (ancestor)
+      if (node.contains(selectedElement)) {
+        return { context: "parent", element: node };
+      }
+
+      // 3. Sibling context: Target is an external element
       return { context: "sibling", element: node };
-    }
-
-    if (node === parent) {
-      return { context: "parent", element: node };
     }
 
     node = node.parentElement;
