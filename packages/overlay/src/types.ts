@@ -1,19 +1,20 @@
-/**
- * Type definitions for overlay components
- * Exported separately to avoid JSX type conflicts in React
- */
+
 
 import type {
   MeasurementResult,
   CalculatorState,
   MeasurementLine,
+  AnimationConfig,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
 
 export interface OverlayProps {
   result: Accessor<MeasurementResult | null>;
   cursor: Accessor<{ x: number; y: number }>;
+  initialSelectedRect: Accessor<DOMRect | null>;
   selectedRect: Accessor<DOMRect | null>;
+  isAltPressed: Accessor<boolean>;
+  animation: Required<AnimationConfig>;
   calculatorState?: Accessor<CalculatorState | null>;
   onLineClick?: (line: MeasurementLine, event: MouseEvent) => void;
   onCalculatorInput?: (key: string) => void;

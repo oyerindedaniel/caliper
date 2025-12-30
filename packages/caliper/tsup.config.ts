@@ -38,9 +38,6 @@ const DEFAULT_OPTIONS: Options = {
         VERSION: version,
     },
     external: [],
-    loader: {
-        ".css": "text",
-    },
     noExternal: ["solid-js", "@caliper/core", "@caliper/overlay"],
     outDir: "./dist",
     sourcemap: false,

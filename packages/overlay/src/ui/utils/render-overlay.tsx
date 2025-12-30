@@ -13,8 +13,11 @@ export function Overlay(props: OverlayProps) {
   return (
     <>
       <BoundaryBoxes
+        initialPrimaryRect={props.initialSelectedRect()}
         primary={props.selectedRect()}
         secondary={props.result()?.secondary || null}
+        isAltPressed={props.isAltPressed()}
+        animation={props.animation}
       />
       <Show when={props.result()}>
         {(result) => (
@@ -35,11 +38,11 @@ export function Overlay(props: OverlayProps) {
         {(calcState) => (
           <Calculator
             state={calcState()}
-            onInput={props.onCalculatorInput || (() => {})}
-            onBackspace={props.onCalculatorBackspace || (() => {})}
-            onDelete={props.onCalculatorDelete || (() => {})}
-            onEnter={props.onCalculatorEnter || (() => {})}
-            onClose={props.onCalculatorClose || (() => {})}
+            onInput={props.onCalculatorInput || (() => { })}
+            onBackspace={props.onCalculatorBackspace || (() => { })}
+            onDelete={props.onCalculatorDelete || (() => { })}
+            onEnter={props.onCalculatorEnter || (() => { })}
+            onClose={props.onCalculatorClose || (() => { })}
             position={{ x: props.cursor().x, y: props.cursor().y }}
           />
         )}

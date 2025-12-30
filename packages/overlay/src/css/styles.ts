@@ -64,6 +64,7 @@ export const OVERLAY_STYLES = `
   border: 2px solid var(--caliper-primary);
   background: var(--caliper-primary-05);
   z-index: 999998;
+  will-change: transform, width, height;
 }
 
 .${CALIPER_PREFIX}boundary-box-secondary {

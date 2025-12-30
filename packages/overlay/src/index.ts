@@ -5,6 +5,7 @@ import type { OverlayConfig } from "@caliper/core";
 import {
   applyTheme,
   mergeCommands,
+  mergeAnimation,
   getConfig,
   showVersionInfo,
 } from "@caliper/core";
@@ -12,6 +13,8 @@ import {
   injectStyles,
   removeStyles,
 } from "./style-injector/utils/inject-styles.js";
+
+const IS_BROWSER = typeof window !== "undefined";
 
 declare const process: { env: { VERSION: string } };
 
@@ -33,9 +36,7 @@ export function createOverlay(
   config?: OverlayConfig,
   options?: OverlayOptions
 ): OverlayInstance {
-  // options is reserved for future overlay-specific options
-  // Currently unused but kept for API consistency
-  if (typeof window === "undefined") {
+  if (!IS_BROWSER) {
     return {
       mount: () => { },
       dispose: () => { },
@@ -59,9 +60,11 @@ export function createOverlay(
   const mergedConfig: OverlayConfig = {
     theme: { ...config?.theme, ...windowConfig?.theme },
     commands: { ...config?.commands, ...windowConfig?.commands },
+    animation: { ...config?.animation, ...windowConfig?.animation },
   };
 
   const commands = mergeCommands(mergedConfig.commands);
+  const animation = mergeAnimation(mergedConfig.animation);
 
   let disposeRender: (() => void) | null = null;
 
@@ -83,7 +86,7 @@ export function createOverlay(
     overlayContainer.id = "caliper-overlay-root";
     target.appendChild(overlayContainer);
 
-    disposeRender = render(() => Root(commands), overlayContainer);
+    disposeRender = render(() => Root({ commands, animation }), overlayContainer);
 
     const disposeFn = () => {
       if (disposeRender) {
@@ -110,7 +113,7 @@ export function createOverlay(
 
 export type { OverlayProps, OverlayOptions } from "./types.js";
 
-if (typeof window !== "undefined") {
+if (IS_BROWSER) {
   showVersionInfo(process.env.VERSION).catch(() => {
     // Silently fail
   });

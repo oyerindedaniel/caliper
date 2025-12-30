@@ -1,47 +1,73 @@
 /**
- * Selection system for tracking selected element
- * Stores only primitive data (DOMRect), not DOM references
+ * Selection system for tracking selected and hovered elements
  */
 
 export interface SelectionSystem {
   select: (element: Element | null) => void;
   getSelected: () => Element | null;
   getSelectedRect: () => DOMRect | null;
+  hover: (element: Element | null) => void;
+  getHoveredRect: () => DOMRect | null;
   clear: () => void;
   onRectUpdate: (callback: (rect: DOMRect | null) => void) => () => void;
+  onHoverRectUpdate: (callback: (rect: DOMRect | null) => void) => () => void;
 }
 
-/**
- * Create a selection system
- * GC-friendly: stores only primitive data, not DOM references
- */
 export function createSelectionSystem(): SelectionSystem {
   let selectedElement: Element | null = null;
   let selectedRect: DOMRect | null = null;
-  const rectUpdateListeners = new Set<(rect: DOMRect | null) => void>();
+  let hoveredElement: Element | null = null;
+  let hoveredRect: DOMRect | null = null;
 
-  function notifyListeners() {
+  const rectUpdateListeners = new Set<(rect: DOMRect | null) => void>();
+  const hoverRectUpdateListeners = new Set<(rect: DOMRect | null) => void>();
+
+  function notifyRectListeners() {
     rectUpdateListeners.forEach((listener) => listener(selectedRect));
+  }
+
+  function notifyHoverListeners() {
+    hoverRectUpdateListeners.forEach((listener) => listener(hoveredRect));
   }
 
   function select(element: Element | null) {
     selectedElement = element;
 
     if (element) {
-      // Initially set to null, will be updated in next frame
       selectedRect = null;
-      notifyListeners();
+      notifyRectListeners();
 
-      // Schedule read using post-RAF pattern (before layout, after write RAF)
       requestAnimationFrame(() => {
         Promise.resolve().then(() => {
-          selectedRect = element.getBoundingClientRect();
-          notifyListeners();
+          if (selectedElement === element) {
+            selectedRect = element.getBoundingClientRect();
+            notifyRectListeners();
+          }
         });
       });
     } else {
       selectedRect = null;
-      notifyListeners();
+      notifyRectListeners();
+    }
+  }
+
+  function hover(element: Element | null) {
+    if (hoveredElement === element) return;
+
+    hoveredElement = element;
+
+    if (element) {
+      requestAnimationFrame(() => {
+        Promise.resolve().then(() => {
+          if (hoveredElement === element) {
+            hoveredRect = element.getBoundingClientRect();
+            notifyHoverListeners();
+          }
+        });
+      });
+    } else {
+      hoveredRect = null;
+      notifyHoverListeners();
     }
   }
 
@@ -53,10 +79,17 @@ export function createSelectionSystem(): SelectionSystem {
     return selectedRect;
   }
 
+  function getHoveredRect(): DOMRect | null {
+    return hoveredRect;
+  }
+
   function clear() {
     selectedElement = null;
     selectedRect = null;
-    notifyListeners();
+    hoveredElement = null;
+    hoveredRect = null;
+    notifyRectListeners();
+    notifyHoverListeners();
   }
 
   function onRectUpdate(callback: (rect: DOMRect | null) => void) {
@@ -66,11 +99,21 @@ export function createSelectionSystem(): SelectionSystem {
     };
   }
 
+  function onHoverRectUpdate(callback: (rect: DOMRect | null) => void) {
+    hoverRectUpdateListeners.add(callback);
+    return () => {
+      hoverRectUpdateListeners.delete(callback);
+    };
+  }
+
   return {
     select,
     getSelected,
     getSelectedRect,
+    hover,
+    getHoveredRect,
     clear,
     onRectUpdate,
+    onHoverRectUpdate,
   };
 }

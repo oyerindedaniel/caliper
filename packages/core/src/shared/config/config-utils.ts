@@ -2,8 +2,9 @@ import type {
   OverlayConfig,
   ThemeConfig,
   CommandsConfig,
+  AnimationConfig,
 } from "./overlay-config.js";
-import { DEFAULT_COMMANDS } from "./overlay-config.js";
+import { DEFAULT_COMMANDS, DEFAULT_ANIMATION } from "./overlay-config.js";
 
 export function applyTheme(theme?: ThemeConfig) {
   if (!theme) return;
@@ -33,6 +34,16 @@ export function mergeCommands(
     activate: userCommands?.activate ?? DEFAULT_COMMANDS.activate,
     freeze: userCommands?.freeze ?? DEFAULT_COMMANDS.freeze,
     select: userCommands?.select ?? DEFAULT_COMMANDS.select,
+    clear: userCommands?.clear ?? DEFAULT_COMMANDS.clear,
+  };
+}
+
+export function mergeAnimation(
+  userAnimation?: AnimationConfig
+): Required<AnimationConfig> {
+  return {
+    enabled: userAnimation?.enabled ?? DEFAULT_ANIMATION.enabled,
+    lerpFactor: userAnimation?.lerpFactor ?? DEFAULT_ANIMATION.lerpFactor,
   };
 }
 

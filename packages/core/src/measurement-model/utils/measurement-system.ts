@@ -40,7 +40,6 @@ export function createMeasurementSystem(
   let abortController: AbortController | null = null;
   let currentResult: MeasurementResult | null = null;
   let previousContext: CursorContext | null = null;
-  let snapshot: MeasurementResult | null = null;
 
   function notifyListeners() {
     listeners.forEach((listener) => listener());
@@ -50,20 +49,13 @@ export function createMeasurementSystem(
     selectedElement: Element,
     cursor: { x: number; y: number }
   ): Promise<void> {
-    if (selectionSystem && selectionSystem.getSelected() !== selectedElement) {
-      return;
-    }
-
-    // Abort any pending work
-    abort();
-
+    abortController?.abort();
     abortController = new AbortController();
     const signal = abortController.signal;
 
     stateMachine.transitionTo("ARMED");
 
     try {
-      // Read phase - capture snapshot (all reads batched)
       await new Promise<void>((resolve) => {
         reader.scheduleRead(() => {
           if (signal.aborted) {
@@ -73,43 +65,28 @@ export function createMeasurementSystem(
 
           reader.recordFrameTime(performance.now());
 
-          // Capture snapshot - all geometry reads batched here
           const result = createMeasurement(
             selectedElement,
             cursor.x,
             cursor.y,
-            previousContext
+            previousContext || undefined
           );
 
           if (result) {
-            snapshot = result;
+            console.log("MeasurementSystem: Atomic Read/Write", result);
+            currentResult = result;
             previousContext = result.context;
             stateMachine.transitionTo("MEASURING");
+            notifyListeners();
           }
 
           resolve();
         });
       });
-
-      // Write phase - separate frame, no reads (uses snapshot)
-      if (!signal.aborted && snapshot) {
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => {
-            if (signal.aborted) {
-              resolve();
-              return;
-            }
-
-            // Update result using snapshot (no DOM reads)
-            currentResult = snapshot;
-            notifyListeners();
-            resolve();
-          });
-        });
-      }
     } catch (error) {
       if (!signal.aborted) {
-        console.error("Measurement failed:", error);
+        console.error("MeasurementSystem: Error during measurement", error);
+        stateMachine.transitionTo("IDLE");
       }
     }
   }
@@ -128,7 +105,6 @@ export function createMeasurementSystem(
     reader.cancel();
     stateMachine.transitionTo("IDLE");
     currentResult = null;
-    snapshot = null;
     notifyListeners();
   }
 
@@ -141,7 +117,6 @@ export function createMeasurementSystem(
 
     abortController = null;
     currentResult = null;
-    snapshot = null;
     previousContext = null;
 
     reader.cancel();

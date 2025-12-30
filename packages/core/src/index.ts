@@ -46,7 +46,9 @@ export * from "./shared/config/overlay-config.js";
 export {
   applyTheme,
   mergeCommands,
+  mergeAnimation,
   getConfig,
   setConfig,
 } from "./shared/config/config-utils.js";
 export { showVersionInfo } from "./shared/utils/version-check.js";
+export { lerp, lerpRect } from "./shared/utils/math.js";

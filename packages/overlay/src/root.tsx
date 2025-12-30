@@ -8,21 +8,30 @@ import {
   type CalculatorState,
   type MeasurementLine,
   type CommandsConfig,
+  type AnimationConfig,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
-export function Root(commands: Required<CommandsConfig>) {
+interface RootConfig {
+  commands: Required<CommandsConfig>;
+  animation: Required<AnimationConfig>;
+}
+
+export function Root(config: RootConfig) {
+  const { commands, animation } = config;
   const [result, setResult] = createSignal<MeasurementResult | null>(null);
   const [cursor, setCursor] = createSignal({ x: 0, y: 0 });
+  const [initialSelectedRect, setInitialSelectedRect] =
+    createSignal<DOMRect | null>(null);
   const [selectedRect, setSelectedRect] = createSignal<DOMRect | null>(null);
   const [calculatorState, setCalculatorState] =
     createSignal<CalculatorState | null>(null);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
-  let isAltPressed = false;
+  const [isAltPressed, setIsAltPressed] = createSignal(false);
+  let isFirstRectAfterSelection = false;
 
-  console.log("Overlay mounted---");
 
   onMount(() => {
     selectionSystem = createSelectionSystem();
@@ -31,6 +40,10 @@ export function Root(commands: Required<CommandsConfig>) {
     const unsubscribe = system.onStateChange(() => {
       if (!system) return;
       const currentResult = system.getCurrentResult();
+      console.log("Root: Measurement update received", {
+        linesCount: currentResult?.lines.length ?? 0,
+        hasSecondary: !!currentResult?.secondary
+      });
       setResult(currentResult);
     });
 
@@ -39,7 +52,16 @@ export function Root(commands: Required<CommandsConfig>) {
     setResult(currentResult);
 
     const unsubscribeRect = selectionSystem.onRectUpdate((rect) => {
-      setSelectedRect(rect);
+      if (isFirstRectAfterSelection && rect) {
+        setInitialSelectedRect(rect);
+        isFirstRectAfterSelection = false;
+      }
+    });
+
+    const unsubscribeHoverRect = selectionSystem.onHoverRectUpdate((rect) => {
+      if (initialSelectedRect()) {
+        setSelectedRect(rect);
+      }
     });
 
     const handleClick = (e: MouseEvent) => {
@@ -59,49 +81,120 @@ export function Root(commands: Required<CommandsConfig>) {
             system.abort();
           }
 
+          isFirstRectAfterSelection = true;
+          lastHoveredElement = null;
+          suppressionFrames = 0;
           selectionSystem.select(element);
-          // Rect will be updated via onRectUpdate callback when ready
         }
       }
     };
 
-    const handleMouseMove = (e: MouseEvent) => {
+    let lastMouseEvent: MouseEvent | null = null;
+    let mouseMoveRafId: number | null = null;
+    let lastHoveredElement: Element | null = null;
+    let suppressionFrames = 0;
+
+    const processMouseMove = () => {
+      if (!lastMouseEvent || !selectionSystem) {
+        mouseMoveRafId = null;
+        return;
+      }
+
+      const e = lastMouseEvent;
       setCursor({ x: e.clientX, y: e.clientY });
 
-      // Only measure if ALT is held AND element is selected
-      if (isAltPressed && selectionSystem?.getSelected() && system) {
-        system.measure(selectionSystem.getSelected()!, {
-          x: e.clientX,
-          y: e.clientY,
-        });
+      if (initialSelectedRect()) {
+        if (isAltPressed()) {
+          console.log("Root: Measuring mode");
+          // MEASURING MODE
+          if (system && selectionSystem.getSelected()) {
+            system.measure(selectionSystem.getSelected()!, {
+              x: e.clientX,
+              y: e.clientY,
+            });
+          }
+        } else {
+          console.log("Root: Selection mode");
+          // SELECTION MODE
+          const hoveredElement = document.elementFromPoint(e.clientX, e.clientY);
+          if (hoveredElement) {
+            // GLITCH SUPPRESSION: Ignore transient parent hits between siblings for 1 frame
+            const isAncestor =
+              lastHoveredElement &&
+              hoveredElement.contains(lastHoveredElement) &&
+              hoveredElement !== lastHoveredElement;
+
+            if (isAncestor && suppressionFrames < 1) {
+              suppressionFrames++;
+            } else {
+              suppressionFrames = 0;
+              lastHoveredElement = hoveredElement;
+              selectionSystem.hover(hoveredElement);
+            }
+          }
+        }
+      }
+
+      mouseMoveRafId = null;
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      lastMouseEvent = e;
+      if (!mouseMoveRafId) {
+        mouseMoveRafId = requestAnimationFrame(processMouseMove);
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === commands.activate && !e.repeat) {
-        isAltPressed = true;
-      } else if (
+      // Alt key activates measuring mode - only if we have a selection
+      if (e.key === commands.activate && !e.repeat && initialSelectedRect()) {
+        console.log("Root: activate measuring mode");
+        setIsAltPressed(true);
+      }
+      // Space key freezes current measurement
+      else if (
         e.key === commands.freeze &&
         e.target === document.body &&
         system &&
         system.getState() === "MEASURING"
       ) {
+        console.log("Root: freezing measurement");
         e.preventDefault();
         system.freeze();
+      }
+      // Escape key clears selection
+      else if (e.key === commands.clear) {
+        console.log("Root: clearing selection and measurements");
+        if (selectionSystem) {
+          setInitialSelectedRect(null);
+          setSelectedRect(null);
+          lastHoveredElement = null;
+          suppressionFrames = 0;
+          selectionSystem.clear();
+        }
+        if (system) {
+          system.abort();
+          setResult(null);
+        }
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      console.log("Root: handleKeyUp", e.key);
+      // Alt release only stops measuring, does NOT clear selection
       if (e.key === commands.activate) {
-        isAltPressed = false;
-        if (system) {
-          const state = system.getState();
-          // Only clear selection if not frozen
-          if (state !== "FROZEN" && selectionSystem) {
-            selectionSystem.clear();
-            setSelectedRect(null);
+        if (isAltPressed()) {
+          console.log("Root: Stop measuring");
+          setIsAltPressed(false);
+          if (system) {
+            const state = system.getState();
+            // Stop measuring but keep selection intact
+            if (state !== "FROZEN") {
+              system.stop();
+              // Clear measurement result but keep selection
+              setResult(null);
+            }
           }
-          system.stop();
         }
       }
     };
@@ -117,8 +210,13 @@ export function Root(commands: Required<CommandsConfig>) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
 
+      if (mouseMoveRafId) {
+        cancelAnimationFrame(mouseMoveRafId);
+      }
+
       unsubscribe();
       unsubscribeRect();
+      unsubscribeHoverRect();
 
       if (system) {
         system.cleanup();
@@ -189,7 +287,10 @@ export function Root(commands: Required<CommandsConfig>) {
     <Overlay
       result={result}
       cursor={cursor}
+      initialSelectedRect={initialSelectedRect}
       selectedRect={selectedRect}
+      isAltPressed={isAltPressed}
+      animation={animation}
       calculatorState={calculatorState}
       onLineClick={handleLineClick}
       onCalculatorInput={handleCalculatorInput}

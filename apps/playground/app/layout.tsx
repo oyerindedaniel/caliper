@@ -16,6 +16,10 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <Script
+          src="https://unpkg.com/react-scan/dist/auto.global.js"
+          strategy="beforeInteractive"
+        />
+        <Script
           src={`/caliper.js?v=${process.env.NODE_ENV === 'development' ? Date.now() : '1'}`}
           strategy="beforeInteractive"
           crossOrigin="anonymous"
