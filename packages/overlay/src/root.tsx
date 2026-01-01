@@ -31,7 +31,6 @@ export function Root(config: RootConfig) {
   let selectionSystem: SelectionSystem | null = null;
   const [isAltPressed, setIsAltPressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
-  let isFirstRectAfterSelection = false;
 
   onMount(() => {
     selectionSystem = createSelectionSystem();
@@ -49,16 +48,7 @@ export function Root(config: RootConfig) {
     setResult(currentResult);
 
     const unsubscribeRect = selectionSystem.onRectUpdate((rect) => {
-      if (isFirstRectAfterSelection && rect) {
-        setSelectionRect(rect);
-        isFirstRectAfterSelection = false;
-      }
-    });
-
-    const unsubscribeHoverRect = selectionSystem.onHoverRectUpdate((rect) => {
-      if (selectionSystem?.getSelected()) {
-        setSelectionRect(rect);
-      }
+      setSelectionRect(rect);
     });
 
     const handleClick = (e: MouseEvent) => {
@@ -75,14 +65,13 @@ export function Root(config: RootConfig) {
         const element = getTopElementAtPoint(e.clientX, e.clientY);
 
         if (element && selectionSystem) {
-          setSelectionRect(null);
           setResult(null);
 
           if (system) {
             system.abort();
           }
 
-          isFirstRectAfterSelection = true;
+
           lastHoveredElement = null;
           suppressionFrames = 0;
           selectionSystem.select(element);
@@ -123,7 +112,7 @@ export function Root(config: RootConfig) {
             } else {
               suppressionFrames = 0;
               lastHoveredElement = hoveredElement;
-              selectionSystem.hover(hoveredElement);
+              selectionSystem.select(hoveredElement);
             }
           }
         }
@@ -146,7 +135,6 @@ export function Root(config: RootConfig) {
         setCalculatorState(null);
 
         if (selectionSystem) {
-          setSelectionRect(null);
           lastHoveredElement = null;
           suppressionFrames = 0;
           selectionSystem.clear();
@@ -172,7 +160,7 @@ export function Root(config: RootConfig) {
         const element = getElementAtPoint(x, y);
 
         if (element && selectionSystem) {
-          selectionSystem.hover(element);
+          selectionSystem.select(element);
         }
       }
 
@@ -270,7 +258,6 @@ export function Root(config: RootConfig) {
 
       unsubscribe();
       unsubscribeRect();
-      unsubscribeHoverRect();
 
       if (system) {
         system.cleanup();
