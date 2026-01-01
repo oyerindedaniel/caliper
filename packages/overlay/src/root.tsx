@@ -75,8 +75,6 @@ export function Root(config: RootConfig) {
         const element = getTopElementAtPoint(e.clientX, e.clientY);
 
         if (element && selectionSystem) {
-          const current = selectionSystem.getSelected();
-
           setSelectionRect(null);
           setResult(null);
 

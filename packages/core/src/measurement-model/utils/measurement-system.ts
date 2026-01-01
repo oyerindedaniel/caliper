@@ -8,8 +8,6 @@ import {
   createCalculatorIntegration,
   type CalculatorIntegration,
 } from "./calculator-integration.js";
-import { createMeasurementLines } from "./measurement-result.js";
-
 
 export type { MeasurementState };
 
