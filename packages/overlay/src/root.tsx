@@ -11,8 +11,6 @@ import {
   type AnimationConfig,
   getElementAtPoint,
   getTopElementAtPoint,
-  diagnosticLogger,
-  formatElement,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
@@ -78,7 +76,6 @@ export function Root(config: RootConfig) {
 
         if (element && selectionSystem) {
           const current = selectionSystem.getSelected();
-          diagnosticLogger.log(`[Caliper] SELECT: ${formatElement(element)} (Prev: ${formatElement(current)})`);
 
           setSelectionRect(null);
           setResult(null);

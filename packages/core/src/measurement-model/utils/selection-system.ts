@@ -9,7 +9,6 @@ export interface SelectionSystem {
   hover: (element: Element | null) => void;
   getHoveredRect: () => DOMRect | null;
   clear: () => void;
-  refresh: () => void;
   onRectUpdate: (callback: (rect: DOMRect | null) => void) => () => void;
   onHoverRectUpdate: (callback: (rect: DOMRect | null) => void) => () => void;
 }
@@ -123,23 +122,6 @@ export function createSelectionSystem(): SelectionSystem {
     };
   }
 
-  function refresh() {
-    let changed = false;
-    if (selectedElement) {
-      selectedRect = selectedElement.getBoundingClientRect();
-      changed = true;
-    }
-    if (hoveredElement) {
-      hoveredRect = hoveredElement.getBoundingClientRect();
-      changed = true;
-    }
-
-    if (changed) {
-      notifyRectListeners();
-      notifyHoverListeners();
-    }
-  }
-
   return {
     select,
     getSelected,
@@ -147,7 +129,6 @@ export function createSelectionSystem(): SelectionSystem {
     hover,
     getHoveredRect,
     clear,
-    refresh,
     onRectUpdate,
     onHoverRectUpdate,
   };
