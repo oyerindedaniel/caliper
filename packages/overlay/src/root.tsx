@@ -9,6 +9,10 @@ import {
   type MeasurementLine,
   type CommandsConfig,
   type AnimationConfig,
+  getElementAtPoint,
+  getTopElementAtPoint,
+  diagnosticLogger,
+  formatElement,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
@@ -33,7 +37,7 @@ export function Root(config: RootConfig) {
 
   onMount(() => {
     selectionSystem = createSelectionSystem();
-    system = createMeasurementSystem(selectionSystem);
+    system = createMeasurementSystem();
 
     const unsubscribe = system.onStateChange(() => {
       if (!system) return;
@@ -70,8 +74,12 @@ export function Root(config: RootConfig) {
         e.preventDefault();
         e.stopPropagation();
 
-        const element = document.elementFromPoint(e.clientX, e.clientY);
+        const element = getTopElementAtPoint(e.clientX, e.clientY);
+
         if (element && selectionSystem) {
+          const current = selectionSystem.getSelected();
+          diagnosticLogger.log(`[Caliper] SELECT: ${formatElement(element)} (Prev: ${formatElement(current)})`);
+
           setSelectionRect(null);
           setResult(null);
 
@@ -111,7 +119,8 @@ export function Root(config: RootConfig) {
             system.measure(selectedElement, { x: e.clientX, y: e.clientY });
           }
         } else if (state !== "FROZEN") {
-          const hoveredElement = document.elementFromPoint(e.clientX, e.clientY);
+          const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
+
           if (hoveredElement) {
             const isAncestor = lastHoveredElement && hoveredElement.contains(lastHoveredElement) && hoveredElement !== lastHoveredElement;
             if (isAncestor && suppressionFrames < 1) {
@@ -136,11 +145,45 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === commands.clear) {
+        setIsAltPressed(false);
+        setIsFrozen(false);
+        setCalculatorState(null);
+
+        if (selectionSystem) {
+          setSelectionRect(null);
+          lastHoveredElement = null;
+          suppressionFrames = 0;
+          selectionSystem.clear();
+        }
+        if (system) {
+          system.abort();
+          const calc = system.getCalculator();
+          calc.close();
+          setResult(null);
+        }
+        return;
+      }
+
       if (calculatorState()) return;
+
+      const isSelectKey =
+        (commands.select === "Control" && e.ctrlKey) ||
+        (commands.select === "Meta" && e.metaKey);
+
+      if (isSelectKey && !isFrozen()) {
+        const x = lastMouseEvent?.clientX || 0;
+        const y = lastMouseEvent?.clientY || 0;
+        const element = getElementAtPoint(x, y);
+
+        if (element && selectionSystem) {
+          selectionSystem.hover(element);
+        }
+      }
 
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
 
-      if (isAltKey && !e.repeat && selectionSystem?.getSelected()) {
+      if (isAltKey) {
         e.preventDefault();
         if (!isAltPressed() && system) {
           system.abort();
@@ -155,11 +198,9 @@ export function Root(config: RootConfig) {
       ) {
         const state = system.getState();
         if (state === "FROZEN") {
-          console.log("[Caliper] System: UNFREEZE");
           e.preventDefault();
           system.unfreeze(isAltPressed());
         } else if (state === "MEASURING" || system.getCurrentResult()) {
-          console.log("[Caliper] System: FREEZE (Pinning result)");
           e.preventDefault();
           system.freeze();
         }
@@ -187,20 +228,6 @@ export function Root(config: RootConfig) {
           }
         }
       }
-      else if (e.key === commands.clear) {
-        setIsAltPressed(false);
-        setIsFrozen(false);
-        if (selectionSystem) {
-          setSelectionRect(null);
-          lastHoveredElement = null;
-          suppressionFrames = 0;
-          selectionSystem.clear();
-        }
-        if (system) {
-          system.abort();
-          setResult(null);
-        }
-      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -221,7 +248,6 @@ export function Root(config: RootConfig) {
 
     const handleBlur = () => {
       if (isAltPressed()) {
-        console.log("Root: Window lost focus. Resetting Alt state.");
         setIsAltPressed(false);
         if (system) {
           system.stop();

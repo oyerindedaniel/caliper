@@ -6,7 +6,6 @@ import {
 } from "./measurement-result.js";
 import {
   getScrollAwareRect,
-  clipToViewport,
 } from "../../geometry/utils/scroll-aware.js";
 
 /**
@@ -38,13 +37,16 @@ export function createMeasurement(
   selectedElement: Element,
   cursorX: number,
   cursorY: number,
-  previousContext: CursorContext | null = null
-): MeasurementResult | null {
+  previousContext: CursorContext | null = null,
+  previousElement: Element | null = null
+): { element: Element; result: MeasurementResult } | null {
+
   const result = resolveAmbiguousContext(
     selectedElement,
     cursorX,
     cursorY,
-    previousContext
+    previousContext,
+    previousElement
   );
 
   if (!result) {
@@ -65,20 +67,20 @@ export function createMeasurement(
     secondaryScrollContainer || undefined
   );
 
-  const primaryClipped = clipToViewport(primary);
-  const secondaryClipped = clipToViewport(secondary);
-
   const lines = createMeasurementLines(
     context,
-    primaryClipped,
-    secondaryClipped
+    primary,
+    secondary
   );
 
   return {
-    context,
-    lines,
-    primary: primaryClipped,
-    secondary: secondaryClipped,
-    timestamp: performance.now(),
+    element: secondaryElement,
+    result: {
+      context,
+      lines,
+      primary,
+      secondary,
+      timestamp: performance.now(),
+    },
   };
 }

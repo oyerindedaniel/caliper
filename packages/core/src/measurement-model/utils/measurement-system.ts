@@ -8,7 +8,8 @@ import {
   createCalculatorIntegration,
   type CalculatorIntegration,
 } from "./calculator-integration.js";
-import type { SelectionSystem } from "./selection-system.js";
+import { createMeasurementLines } from "./measurement-result.js";
+
 
 export type { MeasurementState };
 
@@ -30,9 +31,7 @@ export interface MeasurementSystem {
   onStateChange: (listener: MeasurementSystemListener) => () => void;
 }
 
-export function createMeasurementSystem(
-  selectionSystem: SelectionSystem
-): MeasurementSystem {
+export function createMeasurementSystem(): MeasurementSystem {
   const baseReader = createReader();
   const reader = createFrequencyControlledReader(baseReader);
   const stateMachine = createStateMachine();
@@ -41,6 +40,7 @@ export function createMeasurementSystem(
   let abortController: AbortController | null = null;
   let currentResult: MeasurementResult | null = null;
   let previousContext: CursorContext | null = null;
+  let previousElement: Element | null = null;
 
   function notifyListeners() {
     listeners.forEach((listener) => listener());
@@ -67,23 +67,27 @@ export function createMeasurementSystem(
           // reader.recordFrameTime(performance.now());
 
           const start = performance.now();
-          const result = createMeasurement(
+          const measurement = createMeasurement(
             selectedElement,
             cursor.x,
             cursor.y,
-            previousContext || undefined
+            previousContext,
+            previousElement
           );
           const duration = performance.now() - start;
 
-          if (result) {
+          if (measurement) {
+            const { result, element } = measurement;
+
             if (signal.aborted) {
               resolve();
               return;
             }
 
-            console.log(`[Caliper] Measure: ${duration.toFixed(2)}ms`);
+            // console.log(`[Caliper] Measure: ${duration.toFixed(2)}ms`);
             currentResult = result;
             previousContext = result.context;
+            previousElement = element;
             stateMachine.transitionTo("MEASURING");
             notifyListeners();
           }
@@ -128,6 +132,8 @@ export function createMeasurementSystem(
     reader.cancel();
     stateMachine.transitionTo("IDLE");
     currentResult = null;
+    previousContext = null;
+    previousElement = null;
     notifyListeners();
   }
 

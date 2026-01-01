@@ -1,6 +1,6 @@
 /**
  * Get scroll-aware bounding rect
- * Accounts for scroll offsets in scroll containers
+ * Returns a Page-Relative rect (Document coordinates)
  */
 export function getScrollAwareRect(
   element: Element,
@@ -8,45 +8,26 @@ export function getScrollAwareRect(
 ): DOMRect {
   const rect = element.getBoundingClientRect();
 
-  // If no scroll container specified, use window scroll
-  if (!scrollContainer) {
-    return rect;
+  // If inside a specific scrollable container (like a overflow: scroll div)
+  if (scrollContainer && scrollContainer !== document.documentElement && scrollContainer !== document.body) {
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const scrollLeft = scrollContainer.scrollLeft;
+    const scrollTop = scrollContainer.scrollTop;
+
+    return new DOMRect(
+      rect.left - containerRect.left + scrollLeft,
+      rect.top - containerRect.top + scrollTop,
+      rect.width,
+      rect.height
+    );
   }
 
-  const containerRect = scrollContainer.getBoundingClientRect();
-  const scrollLeft = scrollContainer.scrollLeft;
-  const scrollTop = scrollContainer.scrollTop;
-
-  // Adjust rect relative to scroll container
+  // Default: Page-relative (relative to Document)
   return new DOMRect(
-    rect.left - containerRect.left + scrollLeft,
-    rect.top - containerRect.top + scrollTop,
+    rect.left + window.scrollX,
+    rect.top + window.scrollY,
     rect.width,
     rect.height
-  );
-}
-
-/**
- * Clip a rectangle to the viewport
- */
-export function clipToViewport(rect: DOMRect): DOMRect {
-  const viewport = {
-    left: 0,
-    top: 0,
-    right: window.innerWidth,
-    bottom: window.innerHeight,
-  };
-
-  const left = Math.max(rect.left, viewport.left);
-  const top = Math.max(rect.top, viewport.top);
-  const right = Math.min(rect.right, viewport.right);
-  const bottom = Math.min(rect.bottom, viewport.bottom);
-
-  return new DOMRect(
-    left,
-    top,
-    Math.max(0, right - left),
-    Math.max(0, bottom - top)
   );
 }
 

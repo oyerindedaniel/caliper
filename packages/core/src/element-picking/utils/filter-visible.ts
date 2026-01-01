@@ -3,7 +3,7 @@
  * Elements are ignored if they are invisible or zero-size
  */
 export function isVisible(element: Element): boolean {
-  if (!(element instanceof HTMLElement)) {
+  if (!(element instanceof HTMLElement || element instanceof SVGElement)) {
     return false;
   }
 
@@ -32,7 +32,7 @@ export function isVisible(element: Element): boolean {
  * Elements with zero width or height are ignored
  */
 export function hasSize(element: Element): boolean {
-  if (!(element instanceof HTMLElement)) {
+  if (!(element instanceof HTMLElement || element instanceof SVGElement)) {
     return false;
   }
 
@@ -45,6 +45,8 @@ export function hasSize(element: Element): boolean {
  * Combines visibility and size checks
  */
 export function isEligible(element: Element): boolean {
+  if (element.hasAttribute("data-caliper-ignore")) {
+    return false;
+  }
   return isVisible(element) && hasSize(element);
 }
-

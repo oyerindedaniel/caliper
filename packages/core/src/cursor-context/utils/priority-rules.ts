@@ -2,75 +2,60 @@ import type { CursorContext } from "../../shared/types/index.js";
 import { isEligible } from "../../element-picking/utils/filter-visible.js";
 
 /**
- * Hysteresis threshold for context switching
- * Prevents jitter when cursor is near boundaries
+ * ============================================================================
+ * HIT-TESTING CONTRACT
+ * ============================================================================
+ * Hit testing is paint-order based (via document.elementFromPoint).
+ * 
+ * To ensure correct behavior:
+ * - Overlay and editor UI layers MUST be non-interactive
+ *   (pointer-events: none) OR filtered via isEligible
+ * - Use data-caliper-ignore attribute to exclude elements
+ * ============================================================================
+ */
+
+
+/**
+ * Hysteresis configuration
  */
 const HYSTERESIS_THRESHOLD = 2; // pixels
 
 /**
- * Find the element matching a specific context type
- * Returns element reference - caller must extract primitive data immediately
+ * Find the first eligible element at a point, skipping Caliper's own UI
  */
-function findElementByContext(
-  selectedElement: Element,
-  context: CursorContext,
-  cursorX: number,
-  cursorY: number
-): Element | null {
-  let node = document.elementFromPoint(cursorX, cursorY);
+export function getElementAtPoint(x: number, y: number): Element | null {
+  const nodes = document.elementsFromPoint(x, y);
+  return nodes.find((node) => {
+    const isCaliper = node.closest("#caliper-overlay-root");
+    return !isCaliper && isEligible(node);
+  }) || null;
+}
+
+/**
+ * Find the topmost eligible element at a point (standard selection)
+ */
+export function getTopElementAtPoint(x: number, y: number): Element | null {
+  const node = document.elementFromPoint(x, y);
   if (!node) return null;
 
-  while (node) {
-    if (!isEligible(node)) {
-      node = node.parentElement;
-      continue;
-    }
+  const isCaliper = node.closest("#caliper-overlay-root");
+  if (isCaliper || !isEligible(node)) return null;
 
-    if (context === "child") {
-      if (node !== selectedElement && selectedElement.contains(node)) {
-        return node;
-      }
-    } else if (context === "sibling") {
-      if (
-        node !== selectedElement &&
-        !node.contains(selectedElement) &&
-        !selectedElement.contains(node)
-      ) {
-        return node;
-      }
-    } else if (context === "parent") {
-      if (node !== selectedElement && node.contains(selectedElement)) {
-        return node;
-      }
-    }
-
-    node = node.parentElement;
-  }
-
-  return null;
+  return node;
 }
 
 /**
  * Detect the best matching context and element using priority rules
- * Priority: child > sibling > parent
- * Returns element reference - caller must extract primitive data immediately
  */
 function detectBestContext(
   selectedElement: Element,
   cursorX: number,
   cursorY: number
 ): { context: CursorContext; element: Element } | null {
-  let node = document.elementFromPoint(cursorX, cursorY);
+  let node = getElementAtPoint(cursorX, cursorY);
   if (!node) return null;
 
-  const parent = selectedElement.parentElement;
-
   while (node) {
-    if (!isEligible(node)) {
-      node = node.parentElement;
-      continue;
-    }
-
     if (node !== selectedElement) {
       // 1. Child context: Target is inside selection
       if (selectedElement.contains(node)) {
@@ -93,37 +78,44 @@ function detectBestContext(
 }
 
 /**
+ * Calculate distance from point to nearest edge of rectangle
+ */
+function getDistanceToEdge(x: number, y: number, rect: DOMRect): number {
+  const dx = Math.min(Math.abs(x - rect.left), Math.abs(x - rect.right));
+  const dy = Math.min(Math.abs(y - rect.top), Math.abs(y - rect.bottom));
+  return Math.min(dx, dy);
+}
+
+/**
  * Apply priority rules when cursor position is ambiguous
- * "Closest enclosing meaningful box wins"
- * Returns both context and the secondary element
- *
- * NOTE: Element reference is ephemeral - caller must extract primitive data
- * (DOMRect) immediately and not store the element reference
  */
 export function resolveAmbiguousContext(
   selectedElement: Element,
   cursorX: number,
   cursorY: number,
-  previousContext: CursorContext | null
+  previousContext: CursorContext | null,
+  previousElement: Element | null = null
 ): { context: CursorContext; element: Element } | null {
   const result = detectBestContext(selectedElement, cursorX, cursorY);
   if (!result) return null;
 
   const { context: winnerContext, element: winnerElement } = result;
 
-  // Apply hysteresis if context changed
-  if (previousContext && previousContext !== winnerContext) {
-    const rect = winnerElement.getBoundingClientRect();
+  if (
+    previousContext &&
+    previousElement &&
+    (winnerContext !== previousContext || winnerElement !== previousElement)
+  ) {
+    const rect = previousElement.getBoundingClientRect();
     const distance = getDistanceToEdge(cursorX, cursorY, rect);
 
     if (distance <= HYSTERESIS_THRESHOLD) {
-      const previousElement = findElementByContext(
-        selectedElement,
-        previousContext,
-        cursorX,
-        cursorY
-      );
-      if (previousElement) {
+      // Sibling/Child context is more specific than Parent. 
+      // If we are moving FROM a parent TO a sibling/child, we should switch 
+      // immediately regardless of hysteresis to feel responsive and avoid "sticky" parents.
+      const isSwitchingToSpecific = (winnerContext === "sibling" || winnerContext === "child") && previousContext === "parent";
+
+      if (!isSwitchingToSpecific) {
         return { context: previousContext, element: previousElement };
       }
     }
@@ -134,7 +126,6 @@ export function resolveAmbiguousContext(
 
 /**
  * Detect the cursor context relative to the selected element
- * Returns: "parent" | "sibling" | "child" | null
  */
 export function detectContext(
   selectedElement: Element,
@@ -145,16 +136,8 @@ export function detectContext(
     selectedElement,
     cursorX,
     cursorY,
+    null,
     null
   );
   return result?.context ?? null;
-}
-
-/**
- * Calculate distance from point to nearest edge of rectangle
- */
-function getDistanceToEdge(x: number, y: number, rect: DOMRect): number {
-  const dx = Math.min(Math.abs(x - rect.left), Math.abs(x - rect.right));
-  const dy = Math.min(Math.abs(y - rect.top), Math.abs(y - rect.bottom));
-  return Math.min(dx, dy);
 }

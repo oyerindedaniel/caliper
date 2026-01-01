@@ -11,6 +11,8 @@ export {
 export {
   detectContext,
   resolveAmbiguousContext,
+  getElementAtPoint,
+  getTopElementAtPoint,
 } from "./cursor-context/utils/priority-rules.js";
 export * from "./geometry/utils/rect-math.js";
 export * from "./geometry/utils/distances.js";
@@ -52,3 +54,4 @@ export {
 } from "./shared/config/config-utils.js";
 export { showVersionInfo } from "./shared/utils/version-check.js";
 export { lerp, lerpRect } from "./shared/utils/math.js";
+export { diagnosticLogger, formatElement } from "./shared/utils/logger.js";

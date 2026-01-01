@@ -17,7 +17,7 @@ export function MeasurementLinesWithCalculator(
   const [hoveredLine, setHoveredLine] = createSignal<number | null>(null);
 
   return (
-    <svg class={`${PREFIX}overlay`}>
+    <svg class={`${PREFIX}overlay`} overflow="visible">
       <For each={props.lines}>
         {(line, index) => {
           const start = snapPoint(line.start);

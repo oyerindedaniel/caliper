@@ -13,7 +13,7 @@ interface MeasurementLinesProps {
  */
 export function MeasurementLines(props: MeasurementLinesProps) {
   return (
-    <svg class={`${PREFIX}overlay`}>
+    <svg class={`${PREFIX}overlay`} overflow="visible">
       <For each={props.lines}>
         {(line) => {
           const start = snapPoint(line.start);

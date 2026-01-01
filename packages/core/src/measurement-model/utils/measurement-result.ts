@@ -59,25 +59,25 @@ function calculateSiblingDistance(
   const distances = [
     {
       type: "distance" as const,
-      value: sibling.left - primary.right,
+      value: Math.abs(sibling.left - primary.right),
       start: { x: primary.right, y: (primary.top + primary.bottom) / 2 },
       end: { x: sibling.left, y: (sibling.top + sibling.bottom) / 2 },
     },
     {
       type: "distance" as const,
-      value: primary.left - sibling.right,
+      value: Math.abs(primary.left - sibling.right),
       start: { x: sibling.right, y: (sibling.top + sibling.bottom) / 2 },
       end: { x: primary.left, y: (primary.top + primary.bottom) / 2 },
     },
     {
       type: "distance" as const,
-      value: sibling.top - primary.bottom,
+      value: Math.abs(sibling.top - primary.bottom),
       start: { x: (primary.left + primary.right) / 2, y: primary.bottom },
       end: { x: (sibling.left + sibling.right) / 2, y: sibling.top },
     },
     {
       type: "distance" as const,
-      value: primary.top - sibling.bottom,
+      value: Math.abs(primary.top - sibling.bottom),
       start: { x: (sibling.left + sibling.right) / 2, y: sibling.bottom },
       end: { x: (primary.left + primary.right) / 2, y: primary.top },
     },
@@ -102,25 +102,25 @@ function calculatePaddingLines(
     return [
       {
         type: "left",
-        value: primary.left - container.left,
+        value: Math.abs(primary.left - container.left),
         start: { x: container.left, y: primary.top + primary.height / 2 },
         end: { x: primary.left, y: primary.top + primary.height / 2 },
       },
       {
         type: "top",
-        value: primary.top - container.top,
+        value: Math.abs(primary.top - container.top),
         start: { x: primary.left + primary.width / 2, y: container.top },
         end: { x: primary.left + primary.width / 2, y: primary.top },
       },
       {
         type: "right",
-        value: container.right - primary.right,
+        value: Math.abs(container.right - primary.right),
         start: { x: primary.right, y: primary.top + primary.height / 2 },
         end: { x: container.right, y: primary.top + primary.height / 2 },
       },
       {
         type: "bottom",
-        value: container.bottom - primary.bottom,
+        value: Math.abs(container.bottom - primary.bottom),
         start: { x: primary.left + primary.width / 2, y: primary.bottom },
         end: { x: primary.left + primary.width / 2, y: container.bottom },
       },
@@ -130,25 +130,25 @@ function calculatePaddingLines(
     return [
       {
         type: "left",
-        value: container.left - primary.left,
+        value: Math.abs(container.left - primary.left),
         start: { x: primary.left, y: container.top + container.height / 2 },
         end: { x: container.left, y: container.top + container.height / 2 },
       },
       {
         type: "top",
-        value: container.top - primary.top,
+        value: Math.abs(container.top - primary.top),
         start: { x: container.left + container.width / 2, y: primary.top },
         end: { x: container.left + container.width / 2, y: container.top },
       },
       {
         type: "right",
-        value: primary.right - container.right,
+        value: Math.abs(primary.right - container.right),
         start: { x: container.right, y: container.top + container.height / 2 },
         end: { x: primary.right, y: container.top + container.height / 2 },
       },
       {
         type: "bottom",
-        value: primary.bottom - container.bottom,
+        value: Math.abs(primary.bottom - container.bottom),
         start: { x: container.left + container.width / 2, y: container.bottom },
         end: { x: container.left + container.width / 2, y: primary.bottom },
       },

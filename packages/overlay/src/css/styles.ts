@@ -21,16 +21,27 @@ export const OVERLAY_STYLES = `
   --caliper-text: white;
 }
 
-.${CALIPER_PREFIX}overlay {
-  position: fixed;
+#caliper-overlay-root {
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   pointer-events: none;
+  overflow: visible;
   z-index: 999999;
-  contain: layout paint size;
-  will-change: transform;
+}
+
+.${CALIPER_PREFIX}overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.${CALIPER_PREFIX}alt-mode * {
+  pointer-events: none !important;
 }
 
 .${CALIPER_PREFIX}line {
@@ -41,7 +52,7 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}label {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
   background: var(--caliper-primary-90);
   color: var(--caliper-text);
@@ -52,14 +63,12 @@ export const OVERLAY_STYLES = `
   white-space: nowrap;
   z-index: 1000000;
   will-change: transform;
-  contain: layout paint;
 }
 
 .${CALIPER_PREFIX}boundary-box {
-  position: fixed;
+  position: absolute;
   pointer-events: none;
   box-sizing: border-box;
-  contain: layout paint size;
 }
 
 .${CALIPER_PREFIX}boundary-box-selected {
