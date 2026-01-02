@@ -85,6 +85,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
         if (!selectionTarget) {
           setAnchor(null);
           setTarget(null);
+          if (rafId) cancelAnimationFrame(rafId);
           return;
         }
 

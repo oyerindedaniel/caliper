@@ -9,7 +9,6 @@ import {
   type MeasurementLine,
   type CommandsConfig,
   type AnimationConfig,
-  getElementAtPoint,
   getTopElementAtPoint,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
@@ -67,9 +66,11 @@ export function Root(config: RootConfig) {
 
         if (element && selectionSystem) {
           setResult(null);
+          setCalculatorState(null);
 
           if (system) {
             system.abort();
+            system.getCalculator().close();
           }
 
           lastHoveredElement = null;

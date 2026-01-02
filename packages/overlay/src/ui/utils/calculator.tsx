@@ -1,4 +1,4 @@
-import { onMount, onCleanup, Show, createMemo } from "solid-js";
+import { onMount, onCleanup, Show } from "solid-js";
 import type { CalculatorState, CalculatorOperation } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
