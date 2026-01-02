@@ -44,7 +44,6 @@ const DEFAULT_OPTIONS: Options = {
     splitting: false,
     target: "esnext",
     treeshake: true,
-    watch: ["src", "../overlay/src", "../core/src"],
 };
 
 const esbuildPlugins = [
@@ -60,19 +59,27 @@ const esbuildPlugins = [
     }),
 ];
 
-export default defineConfig([
-    {
-        ...DEFAULT_OPTIONS,
-        format: ["iife"],
-        globalName: "Caliper",
-        platform: "browser",
-        esbuildPlugins,
-    },
-    {
-        ...DEFAULT_OPTIONS,
-        format: ["cjs", "esm"],
-        platform: "neutral",
-        splitting: true,
-        esbuildPlugins,
-    },
-]);
+export default defineConfig((options) => {
+    const watch = options.watch
+        ? ["src/**/*", "../overlay/src/**/*", "../core/src/**/*"]
+        : false;
+
+    return [
+        {
+            ...DEFAULT_OPTIONS,
+            format: ["iife"],
+            globalName: "Caliper",
+            platform: "browser",
+            esbuildPlugins,
+            watch,
+        },
+        {
+            ...DEFAULT_OPTIONS,
+            format: ["cjs", "esm"],
+            platform: "neutral",
+            splitting: true,
+            esbuildPlugins,
+            watch,
+        },
+    ];
+});

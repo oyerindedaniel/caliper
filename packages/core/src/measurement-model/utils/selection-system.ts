@@ -25,6 +25,7 @@ export function createSelectionSystem(): SelectionSystem {
 
     selectedElement = element;
 
+    console.log("element----", element);
     if (element) {
       requestAnimationFrame(() => {
         Promise.resolve().then(() => {

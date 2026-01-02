@@ -71,7 +71,7 @@ export function createCalculatorState(): {
         break;
 
       case "INPUT_DIGIT":
-        if (!state.isActive) return state;
+        if (!state.isActive || !state.operation) return state;
         state = {
           ...state,
           inputValue: state.inputValue + action.digit,
@@ -103,13 +103,10 @@ export function createCalculatorState(): {
         if (!state.isActive) return state;
 
         if (state.result !== null) {
-          // After result: return to base number
+          // Remove result first, keeping operation and input
           state = {
-            baseValue: state.baseValue,
-            operation: null,
-            inputValue: "",
+            ...state,
             result: null,
-            isActive: true,
           };
         } else if (state.inputValue.length > 0) {
           // Remove last digit

@@ -88,20 +88,23 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
           return;
         }
 
+        // Update target instantly
+        setTarget(measurementTarget ? {
+          left: measurementTarget.left,
+          top: measurementTarget.top,
+          width: measurementTarget.width,
+          height: measurementTarget.height
+        } : null);
+
         const animate = () => {
           // Anchor box follows the live selection (which freezes when Alt is held)
           const nextAnchor = lerpTo(anchor(), selectionTarget, factor);
           setAnchor(nextAnchor);
 
-          // Target box shows the secondary element during measurement
-          const nextTarget = lerpTo(target(), measurementTarget, factor, selectionTarget);
-          setTarget(nextTarget);
-
-          // Continue animating if either box hasn't reached its target
+          // Continue animating if anchor box hasn't reached its target
           const anchorMoving = nextAnchor && selectionTarget && !isRectSame(nextAnchor, selectionTarget, 0.01);
-          const targetMoving = nextTarget && measurementTarget && !isRectSame(nextTarget, measurementTarget, 0.01);
 
-          if (anchorMoving || targetMoving || (measurementTarget && !target())) {
+          if (anchorMoving) {
             rafId = requestAnimationFrame(animate);
           } else {
             rafId = null;

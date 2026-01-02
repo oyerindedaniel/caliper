@@ -6,17 +6,18 @@ const CALIPER_PREFIX = "caliper-";
 
 export const OVERLAY_STYLES = `
 :root {
-  --caliper-primary: #3b82f6;
-  --caliper-primary-90: rgba(59, 130, 246, 0.9);
-  --caliper-primary-95: rgba(59, 130, 246, 0.95);
-  --caliper-primary-50: rgba(59, 130, 246, 0.5);
-  --caliper-primary-05: rgba(59, 130, 246, 0.05);
-  --caliper-secondary: #10b981;
-  --caliper-secondary-50: rgba(16, 185, 129, 0.5);
-  --caliper-secondary-05: rgba(16, 185, 129, 0.05);
-  --caliper-calc-bg: rgba(59, 130, 246, 0.95);
-  --caliper-calc-shadow: rgba(0, 0, 0, 0.2);
-  --caliper-calc-op-highlight: rgba(255, 255, 255, 0.3);
+  interpolate-size: allow-keywords;
+  --caliper-primary: rgba(24, 160, 251, 1);
+  --caliper-primary-90: rgba(24, 160, 251, 0.9);
+  --caliper-primary-95: rgba(24, 160, 251, 0.95);
+  --caliper-primary-50: rgba(24, 160, 251, 0.5);
+  --caliper-primary-05: rgba(24, 160, 251, 0.05);
+  --caliper-secondary: rgba(242, 78, 30, 1);
+  --caliper-secondary-50: rgba(242, 78, 30, 0.5);
+  --caliper-secondary-05: rgba(242, 78, 30, 0.05);
+  --caliper-calc-bg: rgba(30, 30, 30, 0.95);
+  --caliper-calc-shadow: rgba(0, 0, 0, 0.25);
+  --caliper-calc-op-highlight: rgba(24, 160, 251, 0.3);
   --caliper-calc-text: white;
   --caliper-text: white;
 }
@@ -45,24 +46,40 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}line {
-  stroke: var(--caliper-primary);
+  stroke: var(--caliper-secondary);
   stroke-width: 1px;
-  stroke-dasharray: 4, 4;
   pointer-events: none;
 }
 
 .${CALIPER_PREFIX}label {
   position: absolute;
   pointer-events: none;
-  background: var(--caliper-primary-90);
+  background: var(--caliper-secondary);
   color: var(--caliper-text);
   padding: 2px 6px;
   border-radius: 3px;
-  font-size: 12px;
-  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
   white-space: nowrap;
   z-index: 1000000;
   will-change: transform;
+}
+
+.${CALIPER_PREFIX}selection-label {
+  position: absolute;
+  pointer-events: none;
+  background: var(--caliper-primary);
+  color: var(--caliper-text);
+  padding: 2px 4px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  white-space: nowrap;
+  z-index: 1000001;
+  will-change: transform, opacity;
+  transition: opacity 0.2s ease-in-out;
 }
 
 .${CALIPER_PREFIX}boundary-box {
@@ -89,17 +106,25 @@ export const OVERLAY_STYLES = `
   pointer-events: auto;
   background: var(--caliper-calc-bg);
   color: var(--caliper-calc-text);
-  padding: 6px 10px;
+  padding: 0 8px;
   border-radius: 4px;
-  font-size: 14px;
-  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
   z-index: 1000002;
-  box-shadow: 0 2px 8px var(--caliper-calc-shadow);
+  box-shadow: 0 4px 12px var(--caliper-calc-shadow);
   display: flex;
   align-items: center;
-  gap: 4px;
-  min-width: 200px;
+  gap: 6px;
+  height: 28px;
   user-select: none;
+  overflow: hidden;
+  will-change: transform, width;
+  transform-origin: center;
+  width: fit-content;
+  min-width: 32px;
+  white-space: nowrap;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .${CALIPER_PREFIX}calculator-base {
@@ -117,18 +142,21 @@ export const OVERLAY_STYLES = `
   border-radius: 2px;
   font-weight: bold;
   transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   animation: pulse 0.3s ease-in-out;
 }
 
 .${CALIPER_PREFIX}calculator-input {
-  min-width: 40px;
+  min-width: 16px;
   text-align: right;
   transition: all 0.2s;
 }
 
 .${CALIPER_PREFIX}calculator-result {
-  margin-left: 8px;
   font-weight: bold;
+  color: var(--caliper-primary);
   animation: slideIn 0.3s ease-out;
 }
 

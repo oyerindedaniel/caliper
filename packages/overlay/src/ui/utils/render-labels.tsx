@@ -28,7 +28,7 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
               transform: `translate3d(${midX}px, ${midY}px, 0) translate(-50%, -50%)`,
             }}
           >
-            {value}px
+            {value}
           </div>
         );
       }}

@@ -40,11 +40,11 @@ export const DEFAULT_COMMANDS: Required<CommandsConfig> = {
 };
 
 export const DEFAULT_THEME: Required<ThemeConfig> = {
-  primary: "#3b82f6",
-  secondary: "#10b981",
-  calcBg: "rgba(59, 130, 246, 0.95)",
-  calcShadow: "rgba(0, 0, 0, 0.2)",
-  calcOpHighlight: "rgba(255, 255, 255, 0.3)",
+  primary: "rgba(24, 160, 251, 1)",
+  secondary: "rgba(242, 78, 30, 1)",
+  calcBg: "rgba(30, 30, 30, 0.95)",
+  calcShadow: "rgba(0, 0, 0, 0.25)",
+  calcOpHighlight: "rgba(24, 160, 251, 0.3)",
   calcText: "white",
   text: "white",
 };

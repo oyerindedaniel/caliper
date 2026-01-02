@@ -1,4 +1,4 @@
-import { onMount, onCleanup, Show } from "solid-js";
+import { onMount, onCleanup, Show, createMemo } from "solid-js";
 import type { CalculatorState, CalculatorOperation } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
@@ -60,7 +60,7 @@ export function Calculator(props: CalculatorProps) {
   });
 
   const formatValue = (value: number): string => {
-    return Math.round(value * 100) / 100 + "px";
+    return Math.round(value * 100) / 100 + "";
   };
 
   return (

@@ -3,6 +3,7 @@ import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.j
 import { MeasurementLabels } from "./render-labels.jsx";
 import { Calculator } from "./calculator.jsx";
 import { BoundaryBoxes } from "./render-boundary-boxes.jsx";
+import { SelectionLabel } from "./render-selection-label.jsx";
 import { PREFIX } from "../../css/styles.js";
 import type { OverlayProps } from "../../types.js";
 
@@ -17,6 +18,11 @@ export function Overlay(props: OverlayProps) {
         measuredRect={(props.isAltPressed() || props.isFrozen()) ? (props.result()?.secondary || null) : null}
         isAltPressed={props.isAltPressed()}
         animation={props.animation}
+      />
+      <SelectionLabel
+        selectionRect={props.selectionRect()}
+        isAltPressed={props.isAltPressed()}
+        isFrozen={props.isFrozen()}
       />
       <Show when={(props.isAltPressed() || props.isFrozen()) ? props.result() : null}>
         {(result) => (

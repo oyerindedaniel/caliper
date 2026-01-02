@@ -51,6 +51,7 @@ export function Root(config: RootConfig) {
       setSelectionRect(rect);
     });
 
+
     const handleClick = (e: MouseEvent) => {
       const isSelectKey =
         (commands.select === "Control" && e.ctrlKey) ||
@@ -71,7 +72,6 @@ export function Root(config: RootConfig) {
             system.abort();
           }
 
-
           lastHoveredElement = null;
           suppressionFrames = 0;
           selectionSystem.select(element);
@@ -83,6 +83,7 @@ export function Root(config: RootConfig) {
     let mouseMoveRafId: number | null = null;
     let lastHoveredElement: Element | null = null;
     let suppressionFrames = 0;
+    let trailingTimer: ReturnType<typeof setTimeout> | null = null;
 
     const processMouseMove = () => {
       if (!lastMouseEvent || !selectionSystem) {
@@ -107,13 +108,29 @@ export function Root(config: RootConfig) {
 
           if (hoveredElement) {
             const isAncestor = lastHoveredElement && hoveredElement.contains(lastHoveredElement) && hoveredElement !== lastHoveredElement;
-            if (isAncestor && suppressionFrames < 1) {
+
+            if (trailingTimer) {
+              clearTimeout(trailingTimer);
+              trailingTimer = null;
+            }
+
+            if (isAncestor && suppressionFrames < 8) {
               suppressionFrames++;
+
+              trailingTimer = setTimeout(() => {
+                suppressionFrames = 0;
+                lastHoveredElement = hoveredElement;
+                selectionSystem?.select(hoveredElement);
+                trailingTimer = null;
+              }, 30);
             } else {
               suppressionFrames = 0;
               lastHoveredElement = hoveredElement;
               selectionSystem.select(hoveredElement);
             }
+          } else if (trailingTimer) {
+            clearTimeout(trailingTimer);
+            trailingTimer = null;
           }
         }
       }
@@ -150,20 +167,6 @@ export function Root(config: RootConfig) {
 
       if (calculatorState()) return;
 
-      const isSelectKey =
-        (commands.select === "Control" && e.ctrlKey) ||
-        (commands.select === "Meta" && e.metaKey);
-
-      if (isSelectKey && !isFrozen()) {
-        const x = lastMouseEvent?.clientX || 0;
-        const y = lastMouseEvent?.clientY || 0;
-        const element = getElementAtPoint(x, y);
-
-        if (element && selectionSystem) {
-          selectionSystem.select(element);
-        }
-      }
-
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
 
       if (isAltKey) {
@@ -190,24 +193,20 @@ export function Root(config: RootConfig) {
       }
       else if (isFrozen() && result()) {
         const key = e.key.toLowerCase();
-        const typeMap: Record<string, string> = {
+        const typeMap: Record<string, MeasurementLine["type"]> = {
           t: "top",
           r: "right",
           b: "bottom",
           l: "left",
+          d: "distance"
         };
         const targetType = typeMap[key];
-        if (targetType || key === "d") {
+        if (targetType) {
           const currentLines = result()?.lines || [];
-          const targetLine =
-            currentLines.find((l) => l.type === targetType) ||
-            (currentLines.length === 1 && (currentLines[0]?.type === "distance" || targetType)
-              ? currentLines[0]
-              : null);
-
+          const targetLine = currentLines.find((l) => l.type === targetType)
           if (targetLine) {
             e.preventDefault();
-            handleLineClick(targetLine, null as any);
+            handleLineClick(targetLine);
           }
         }
       }
@@ -255,6 +254,9 @@ export function Root(config: RootConfig) {
       if (mouseMoveRafId) {
         cancelAnimationFrame(mouseMoveRafId);
       }
+      if (trailingTimer) {
+        clearTimeout(trailingTimer);
+      }
 
       unsubscribe();
       unsubscribeRect();
@@ -271,7 +273,7 @@ export function Root(config: RootConfig) {
     });
   });
 
-  const handleLineClick = (line: MeasurementLine, event: MouseEvent) => {
+  const handleLineClick = (line: MeasurementLine) => {
     if (system) {
       const calc = system.getCalculator();
       calc.open(line.value);

@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="128" fill="#1E1E1E"/>
+  
+  <!-- Outer Frame (Partial) -->
+  <path d="M160 160V120H400V240M340 400H400V340" stroke="#18A0FB" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- The Measuring Crosshair (Figma Red) -->
+  <g transform="translate(256, 256)">
+    <!-- Vertical Line -->
+    <path d="M0 -120V120" stroke="#F24E1E" stroke-width="16" stroke-linecap="round"/>
+    <!-- Horizontal Line -->
+    <path d="M-120 0H120" stroke="#F24E1E" stroke-width="16" stroke-linecap="round"/>
+    <!-- Central Value Box -->
+    <rect x="-40" y="-25" width="80" height="50" rx="8" fill="#F24E1E"/>
+    <!-- Mock Value Lines -->
+    <rect x="-20" y="-2" width="40" height="4" rx="2" fill="white"/>
+  </g>
+  
+  <!-- Corner Dots -->
+  <circle cx="160" cy="160" r="12" fill="#18A0FB"/>
+  <circle cx="400" cy="120" r="12" fill="#18A0FB"/>
+  <circle cx="400" cy="400" r="12" fill="#18A0FB"/>
+</svg>
