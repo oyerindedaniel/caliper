@@ -5,30 +5,11 @@ import {
   type MeasurementResult,
 } from "./measurement-result.js";
 import {
-  getScrollAwareRect,
+  findCommonPortalHost,
+  findBestPortalHost,
 } from "../../geometry/utils/scroll-aware.js";
+import { diagnosticLogger, formatElement, formatRect } from "../../shared/utils/logger.js";
 
-/**
- * Find scroll container for an element
- */
-function findScrollContainer(element: Element): Element | null {
-  let parent = element.parentElement;
-  while (parent) {
-    const style = window.getComputedStyle(parent);
-    if (
-      style.overflow === "auto" ||
-      style.overflow === "scroll" ||
-      style.overflowX === "auto" ||
-      style.overflowX === "scroll" ||
-      style.overflowY === "auto" ||
-      style.overflowY === "scroll"
-    ) {
-      return parent;
-    }
-    parent = parent.parentElement;
-  }
-  return null;
-}
 
 /**
  * Create a measurement result from element and cursor position
@@ -55,16 +36,22 @@ export function createMeasurement(
 
   const { context, element: secondaryElement } = result;
 
-  const primaryScrollContainer = findScrollContainer(selectedElement);
-  const secondaryScrollContainer = findScrollContainer(secondaryElement);
+  if (secondaryElement === selectedElement) return null;
 
-  const primary = getScrollAwareRect(
-    selectedElement,
-    primaryScrollContainer || undefined
+  const primaryRect = selectedElement.getBoundingClientRect();
+  const secondaryRect = secondaryElement.getBoundingClientRect();
+
+  const primary = new DOMRect(
+    primaryRect.left + window.scrollX,
+    primaryRect.top + window.scrollY,
+    primaryRect.width,
+    primaryRect.height
   );
-  const secondary = getScrollAwareRect(
-    secondaryElement,
-    secondaryScrollContainer || undefined
+  const secondary = new DOMRect(
+    secondaryRect.left + window.scrollX,
+    secondaryRect.top + window.scrollY,
+    secondaryRect.width,
+    secondaryRect.height
   );
 
   const lines = createMeasurementLines(
@@ -72,6 +59,35 @@ export function createMeasurement(
     primary,
     secondary
   );
+
+  const container = findCommonPortalHost(selectedElement, secondaryElement);
+  const containerRect = container.getBoundingClientRect();
+
+  const primaryRelative = new DOMRect(
+    primaryRect.left - containerRect.left + container.scrollLeft,
+    primaryRect.top - containerRect.top + container.scrollTop,
+    primaryRect.width,
+    primaryRect.height
+  );
+
+  const secondaryRelative = new DOMRect(
+    secondaryRect.left - containerRect.left + container.scrollLeft,
+    secondaryRect.top - containerRect.top + container.scrollTop,
+    secondaryRect.width,
+    secondaryRect.height
+  );
+
+  const secondaryContainer = findBestPortalHost(secondaryElement);
+  const secondaryContainerRect = secondaryContainer.getBoundingClientRect();
+  const secondaryLocalRelative = new DOMRect(
+    secondaryRect.left - secondaryContainerRect.left + secondaryContainer.scrollLeft,
+    secondaryRect.top - secondaryContainerRect.top + secondaryContainer.scrollTop,
+    secondaryRect.width,
+    secondaryRect.height
+  );
+
+  diagnosticLogger.log(`[Measurement] Primary: ${formatElement(selectedElement)}, Secondary: ${formatElement(secondaryElement)}`);
+  diagnosticLogger.log(`[Measurement] Container: ${formatElement(container)}`);
 
   return {
     element: secondaryElement,
@@ -81,6 +97,12 @@ export function createMeasurement(
       primary,
       secondary,
       timestamp: performance.now(),
+      primaryRelative,
+      secondaryRelative,
+      secondaryElement,
+      container,
+      secondaryContainer,
+      secondaryLocalRelative,
     },
   };
 }

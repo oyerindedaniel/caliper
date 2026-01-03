@@ -5,18 +5,25 @@ import type {
   CalculatorState,
   MeasurementLine,
   AnimationConfig,
+  SelectionMetadata,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
 
 export interface OverlayProps {
   result: Accessor<MeasurementResult | null>;
   cursor: Accessor<{ x: number; y: number }>;
-  selectionRect: Accessor<DOMRect | null>;
+  selectionMetadata: Accessor<SelectionMetadata>;
   isAltPressed: Accessor<boolean>;
   isFrozen: Accessor<boolean>;
   animation: Required<AnimationConfig>;
+  viewport: Accessor<{
+    scrollX: number;
+    scrollY: number;
+    width: number;
+    height: number;
+  }>;
   calculatorState?: Accessor<CalculatorState | null>;
-  onLineClick?: (line: MeasurementLine, event: MouseEvent) => void;
+  onLineClick?: (line: MeasurementLine) => void;
   onCalculatorInput?: (key: string) => void;
   onCalculatorBackspace?: () => void;
   onCalculatorDelete?: () => void;

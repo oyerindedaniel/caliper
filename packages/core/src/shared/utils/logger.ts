@@ -1,17 +1,32 @@
-/**
- * Deduplicated logger to prevent console flooding
- */
 class DeduplicatedLogger {
     private lastMessage: string | null = null;
+    private count = 0;
 
     log(message: string) {
-        if (message === this.lastMessage) return;
+        if (message === this.lastMessage) {
+            this.count++;
+            return;
+        }
+
+        if (this.lastMessage && this.count > 0) {
+            console.log(`[x${this.count + 1}] ^`);
+        }
+
         console.log(message);
         this.lastMessage = message;
+        this.count = 0;
     }
 }
 
 export const diagnosticLogger = new DeduplicatedLogger();
+
+/**
+ * Format a DOMRect for logging
+ */
+export function formatRect(rect: DOMRect | null): string {
+    if (!rect) return "null";
+    return `{L:${rect.left.toFixed(1)}, T:${rect.top.toFixed(1)}, W:${rect.width}, H:${rect.height}}`;
+}
 
 /**
  * Format an element for logging with tag and text preview

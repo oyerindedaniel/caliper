@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.jsx";
 import { MeasurementLabels } from "./render-labels.jsx";
 import { Calculator } from "./calculator.jsx";
@@ -14,29 +15,40 @@ export function Overlay(props: OverlayProps) {
   return (
     <>
       <BoundaryBoxes
-        selectionRect={props.selectionRect()}
-        measuredRect={(props.isAltPressed() || props.isFrozen()) ? (props.result()?.secondary || null) : null}
+        metadata={props.selectionMetadata()}
+        result={props.result()}
         isAltPressed={props.isAltPressed()}
+        isFrozen={props.isFrozen()}
         animation={props.animation}
       />
       <SelectionLabel
-        selectionRect={props.selectionRect()}
+        metadata={props.selectionMetadata()}
         isAltPressed={props.isAltPressed()}
         isFrozen={props.isFrozen()}
+        viewport={props.viewport()}
       />
       <Show when={(props.isAltPressed() || props.isFrozen()) ? props.result() : null}>
         {(result) => (
-          <div class={`${PREFIX}overlay`}>
-            <MeasurementLinesWithCalculator
-              lines={result().lines}
-              onLineClick={props.onLineClick}
-            />
-            <MeasurementLabels
-              lines={result().lines}
-              cursorX={props.cursor().x}
-              cursorY={props.cursor().y}
-            />
-          </div>
+          <Portal mount={result().container || document.body}>
+            <div class={`${PREFIX}overlay`}>
+              <MeasurementLinesWithCalculator
+                lines={result().lines}
+                primary={result().primary}
+                primaryRelative={result().primaryRelative}
+                secondaryRelative={result().secondaryRelative}
+                onLineClick={props.onLineClick}
+              />
+              <MeasurementLabels
+                lines={result().lines}
+                primary={result().primary}
+                primaryRelative={result().primaryRelative}
+                secondaryRelative={result().secondaryRelative}
+                viewport={props.viewport()}
+                cursorX={props.cursor().x}
+                cursorY={props.cursor().y}
+              />
+            </div>
+          </Portal>
         )}
       </Show>
       <Show when={props.calculatorState?.()}>

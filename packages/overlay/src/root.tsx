@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal } from "solid-js";
+import { onMount, onCleanup, createSignal, createEffect } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
@@ -6,6 +6,7 @@ import {
   type SelectionSystem,
   type MeasurementResult,
   type CalculatorState,
+  type SelectionMetadata,
   type MeasurementLine,
   type CommandsConfig,
   type AnimationConfig,
@@ -22,7 +23,19 @@ export function Root(config: RootConfig) {
   const { commands, animation } = config;
   const [result, setResult] = createSignal<MeasurementResult | null>(null);
   const [cursor, setCursor] = createSignal({ x: 0, y: 0 });
-  const [selectionRect, setSelectionRect] = createSignal<DOMRect | null>(null);
+  const [viewport, setViewport] = createSignal({
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
+  const [selectionMetadata, setSelectionMetadata] = createSignal<SelectionMetadata>({
+    element: null,
+    rect: null,
+    relativeRect: null,
+    container: null,
+  });
   const [calculatorState, setCalculatorState] =
     createSignal<CalculatorState | null>(null);
 
@@ -30,6 +43,38 @@ export function Root(config: RootConfig) {
   let selectionSystem: SelectionSystem | null = null;
   const [isAltPressed, setIsAltPressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
+
+  let viewportRafId: number | null = null;
+  let pendingScroll = false;
+  let pendingResize = false;
+
+  const syncViewport = () => {
+    setViewport((prev) => {
+      const patch: Partial<typeof prev> = {};
+      if (pendingScroll || pendingResize) {
+        patch.scrollX = window.scrollX;
+        patch.scrollY = window.scrollY;
+      }
+      if (pendingResize) {
+        patch.width = window.innerWidth;
+        patch.height = window.innerHeight;
+      }
+      return { ...prev, ...patch };
+    });
+    pendingScroll = false;
+    pendingResize = false;
+    viewportRafId = null;
+  };
+
+  const scheduleScrollUpdate = () => {
+    pendingScroll = true;
+    if (!viewportRafId) viewportRafId = requestAnimationFrame(syncViewport);
+  };
+
+  const scheduleResizeUpdate = () => {
+    pendingResize = true;
+    if (!viewportRafId) viewportRafId = requestAnimationFrame(syncViewport);
+  };
 
   onMount(() => {
     selectionSystem = createSelectionSystem();
@@ -46,19 +91,34 @@ export function Root(config: RootConfig) {
     const currentResult = system.getCurrentResult();
     setResult(currentResult);
 
-    const unsubscribeRect = selectionSystem.onRectUpdate((rect) => {
-      setSelectionRect(rect);
+    const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
+
+    const unsubscribeUpdate = selectionSystem.onUpdate((metadata) => {
+      setSelectionMetadata(metadata);
     });
 
+    const isCommandActive = (e: MouseEvent): boolean => {
+      const { ctrlKey, metaKey, altKey, shiftKey } = e;
+      const key = commands.select;
+
+      const modifiers: Record<string, boolean> = {
+        Control: ctrlKey,
+        Meta: metaKey,
+        Alt: altKey,
+        Shift: shiftKey
+      };
+
+      if (key in modifiers) {
+        return Object.entries(modifiers).every(([name, value]) =>
+          name === key ? value === true : value === false
+        );
+      }
+
+      return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
+    };
 
     const handleClick = (e: MouseEvent) => {
-      const isSelectKey =
-        (commands.select === "Control" && e.ctrlKey) ||
-        (commands.select === "Meta" && e.metaKey) ||
-        e.ctrlKey ||
-        e.metaKey;
-
-      if (isSelectKey) {
+      if (isCommandActive(e)) {
         e.preventDefault();
         e.stopPropagation();
 
@@ -146,6 +206,7 @@ export function Root(config: RootConfig) {
       }
     };
 
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === commands.clear) {
         setIsAltPressed(false);
@@ -164,6 +225,10 @@ export function Root(config: RootConfig) {
           setResult(null);
         }
         return;
+      }
+
+      if (e.key === commands.select) {
+        setIsSelectKeyDown(true);
       }
 
       if (calculatorState()) return;
@@ -214,6 +279,10 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === commands.select) {
+        setIsSelectKeyDown(false);
+      }
+
       if (calculatorState()) return;
 
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
@@ -260,7 +329,7 @@ export function Root(config: RootConfig) {
       }
 
       unsubscribe();
-      unsubscribeRect();
+      unsubscribeUpdate();
 
       if (system) {
         system.cleanup();
@@ -271,6 +340,30 @@ export function Root(config: RootConfig) {
         selectionSystem.clear();
         selectionSystem = null;
       }
+    });
+  });
+
+  createEffect(() => {
+    const active = !!selectionMetadata().element || !!result();
+
+    if (active) {
+      window.addEventListener("scroll", scheduleScrollUpdate, { passive: true });
+      window.addEventListener("resize", scheduleResizeUpdate, { passive: true });
+      // Initial sync
+      pendingScroll = true;
+      pendingResize = true;
+      syncViewport();
+    }
+
+    onCleanup(() => {
+      window.removeEventListener("scroll", scheduleScrollUpdate);
+      window.removeEventListener("resize", scheduleResizeUpdate);
+      if (viewportRafId) {
+        cancelAnimationFrame(viewportRafId);
+        viewportRafId = null;
+      }
+      pendingScroll = false;
+      pendingResize = false;
     });
   });
 
@@ -331,10 +424,11 @@ export function Root(config: RootConfig) {
     <Overlay
       result={result}
       cursor={cursor}
-      selectionRect={selectionRect}
+      selectionMetadata={selectionMetadata}
       isAltPressed={isAltPressed}
       isFrozen={isFrozen}
       animation={animation}
+      viewport={viewport}
       calculatorState={calculatorState}
       onLineClick={handleLineClick}
       onCalculatorInput={handleCalculatorInput}

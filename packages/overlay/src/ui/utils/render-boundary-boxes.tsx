@@ -1,11 +1,18 @@
-import { createSignal, createEffect, onCleanup, on } from "solid-js";
-import { lerpRect, type AnimationConfig } from "@caliper/core";
+import { createEffect, createSignal, on, onCleanup, Show } from "solid-js";
+import { Portal } from "solid-js/web";
+import {
+  lerpRect,
+  type AnimationConfig,
+  type SelectionMetadata,
+  type MeasurementResult
+} from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface BoundaryBoxesProps {
-  selectionRect: DOMRect | null;
-  measuredRect: DOMRect | null;
+  metadata: SelectionMetadata;
+  result: MeasurementResult | null;
   isAltPressed: boolean;
+  isFrozen: boolean;
   animation: Required<AnimationConfig>;
 }
 
@@ -72,15 +79,21 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   createEffect(
     on(
       [
-        () => props.selectionRect,
-        () => props.measuredRect,
+        () => props.metadata,
+        () => props.result,
         () => props.isAltPressed,
+        () => props.isFrozen,
       ],
       () => {
         const factor = props.animation.lerpFactor;
 
-        const selectionTarget = props.selectionRect;
-        const measurementTarget = props.measuredRect;
+        const selectionTarget = props.metadata.relativeRect;
+
+        // Secondary relative rect if in measurement mode. 
+        // We use the local version for the box to avoid clipping.
+        const measurementTarget = (props.isAltPressed || props.isFrozen)
+          ? props.result?.secondaryLocalRelative
+          : null;
 
         if (!selectionTarget) {
           setAnchor(null);
@@ -89,7 +102,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
           return;
         }
 
-        // Update target instantly
+        // Update target instantly for hover secondary box
         setTarget(measurementTarget ? {
           left: measurementTarget.left,
           top: measurementTarget.top,
@@ -98,7 +111,6 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
         } : null);
 
         const animate = () => {
-          // Anchor box follows the live selection (which freezes when Alt is held)
           const nextAnchor = lerpTo(anchor(), selectionTarget, factor);
           setAnchor(nextAnchor);
 
@@ -124,30 +136,38 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
 
   return (
     <>
-      {anchor() && (
-        <div
-          class={`${PREFIX}boundary-box ${PREFIX}boundary-box-selected`}
-          style={{
-            left: 0,
-            top: 0,
-            width: `${anchor()!.width}px`,
-            height: `${anchor()!.height}px`,
-            transform: `translate3d(${anchor()!.left}px, ${anchor()!.top}px, 0)`,
-          }}
-        />
-      )}
-      {target() && (
-        <div
-          class={`${PREFIX}boundary-box ${PREFIX}boundary-box-secondary`}
-          style={{
-            left: 0,
-            top: 0,
-            width: `${target()!.width}px`,
-            height: `${target()!.height}px`,
-            transform: `translate3d(${target()!.left}px, ${target()!.top}px, 0)`,
-          }}
-        />
-      )}
+      <Show when={anchor()}>
+        {(current) => (
+          <Portal mount={props.metadata.container || document.body}>
+            <div
+              class={`${PREFIX}boundary-box ${PREFIX}boundary-box-selected`}
+              style={{
+                left: 0,
+                top: 0,
+                width: `${current().width}px`,
+                height: `${current().height}px`,
+                transform: `translate3d(${current().left}px, ${current().top}px, 0)`,
+              }}
+            />
+          </Portal>
+        )}
+      </Show>
+      <Show when={target()}>
+        {(current) => (
+          <Portal mount={props.result?.secondaryContainer || document.body}>
+            <div
+              class={`${PREFIX}boundary-box ${PREFIX}boundary-box-secondary`}
+              style={{
+                left: 0,
+                top: 0,
+                width: `${current().width}px`,
+                height: `${current().height}px`,
+                transform: `translate3d(${current().left}px, ${current().top}px, 0)`,
+              }}
+            />
+          </Portal>
+        )}
+      </Show>
     </>
   );
 }

@@ -19,6 +19,12 @@ export interface MeasurementResult {
   primary: DOMRect;
   secondary: DOMRect | null;
   timestamp: number;
+  primaryRelative: DOMRect | null;
+  secondaryRelative: DOMRect | null;
+  secondaryElement: Element | null;
+  container: Element | null;
+  secondaryContainer: Element | null;
+  secondaryLocalRelative: DOMRect | null;
 }
 
 /**
@@ -49,44 +55,99 @@ export function createMeasurementLines(
 }
 
 /**
- * Calculate shortest distance between sibling elements
+ * Calculate distance between two elements using Top/Bottom faces
  */
 function calculateSiblingDistance(
   primary: DOMRect,
   sibling: DOMRect
 ): MeasurementLine {
-  // Find the shortest edge distance
-  const distances = [
-    {
-      type: "distance" as const,
-      value: Math.abs(sibling.left - primary.right),
-      start: { x: primary.right, y: (primary.top + primary.bottom) / 2 },
-      end: { x: sibling.left, y: (sibling.top + sibling.bottom) / 2 },
-    },
-    {
-      type: "distance" as const,
-      value: Math.abs(primary.left - sibling.right),
-      start: { x: sibling.right, y: (sibling.top + sibling.bottom) / 2 },
-      end: { x: primary.left, y: (primary.top + primary.bottom) / 2 },
-    },
-    {
-      type: "distance" as const,
-      value: Math.abs(sibling.top - primary.bottom),
-      start: { x: (primary.left + primary.right) / 2, y: primary.bottom },
-      end: { x: (sibling.left + sibling.right) / 2, y: sibling.top },
-    },
-    {
-      type: "distance" as const,
-      value: Math.abs(primary.top - sibling.bottom),
-      start: { x: (sibling.left + sibling.right) / 2, y: sibling.bottom },
-      end: { x: (primary.left + primary.right) / 2, y: primary.top },
-    },
+  // 1. Check for Spans (Overlap on individual axes)
+  const overlapXStart = Math.max(primary.left, sibling.left);
+  const overlapXEnd = Math.min(primary.right, sibling.right);
+  const hasOverlapX = overlapXEnd > overlapXStart;
+
+  const overlapYStart = Math.max(primary.top, sibling.top);
+  const overlapYEnd = Math.min(primary.bottom, sibling.bottom);
+  const hasOverlapY = overlapYEnd > overlapYStart;
+
+  // 2. Decide Priority
+  // Case A: Stacked vertically (Shared Horizontal Span)
+  if (hasOverlapX && !hasOverlapY) {
+    const centerX = (overlapXStart + overlapXEnd) / 2;
+    const distBtoT = Math.abs(sibling.top - primary.bottom);
+    const distTtoB = Math.abs(primary.top - sibling.bottom);
+
+    // Pick closest faces on the shared span
+    const startY = distBtoT < distTtoB ? primary.bottom : primary.top;
+    const endY = distBtoT < distTtoB ? sibling.top : sibling.bottom;
+
+    return {
+      type: "distance",
+      value: Math.min(distBtoT, distTtoB),
+      start: { x: centerX, y: startY },
+      end: { x: centerX, y: endY },
+    };
+  }
+
+  // Case B: Side-by-Side (Shared Vertical Span)
+  if (hasOverlapY && !hasOverlapX) {
+    const centerY = (overlapYStart + overlapYEnd) / 2;
+    const distRtoL = Math.abs(sibling.left - primary.right);
+    const distLtoR = Math.abs(primary.left - sibling.right);
+
+    // Pick closest faces on the shared span
+    const startX = distRtoL < distLtoR ? primary.right : primary.left;
+    const endX = distRtoL < distLtoR ? sibling.left : sibling.right;
+
+    return {
+      type: "distance",
+      value: Math.min(distRtoL, distLtoR),
+      start: { x: startX, y: centerY },
+      end: { x: endX, y: centerY },
+    };
+  }
+
+  // Case C: Pure Diagonal (No shared spans) or Overlap (Total overlap)
+  // Fallback to closest Top/Bottom centers
+  const pFaces = [
+    { x: (primary.left + primary.right) / 2, y: primary.top },
+    { x: (primary.left + primary.right) / 2, y: primary.bottom },
+  ];
+  const sFaces = [
+    { x: (sibling.left + sibling.right) / 2, y: sibling.top },
+    { x: (sibling.left + sibling.right) / 2, y: sibling.bottom },
   ];
 
-  // Return the shortest distance
-  return distances.reduce((min, dist) =>
-    Math.abs(dist.value) < Math.abs(min.value) ? dist : min
-  );
+  let minD2 = Infinity;
+  let bestP = pFaces[0];
+  let bestS = sFaces[0];
+
+  for (const p of pFaces) {
+    for (const s of sFaces) {
+      const dx = p.x - s.x;
+      const dy = p.y - s.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < minD2) {
+        minD2 = d2;
+        bestP = p;
+        bestS = s;
+      }
+    }
+  }
+
+  const dx = bestP!.x - bestS!.x;
+  const dy = bestP!.y - bestS!.y;
+
+  // Snap to axis if nearly aligned 
+  const finalX = Math.abs(dx) < 1 ? bestP!.x : bestS!.x;
+  const finalY = Math.abs(dy) < 1 ? bestP!.y : bestS!.y;
+
+  return {
+    type: "distance",
+    value: Math.sqrt(minD2),
+    start: { x: bestP!.x, y: bestP!.y },
+    end: { x: finalX, y: finalY },
+  };
 }
 
 /**

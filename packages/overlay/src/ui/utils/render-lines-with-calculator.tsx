@@ -5,7 +5,10 @@ import { snapPoint } from "./pixel-snap.js";
 
 interface MeasurementLinesWithCalculatorProps {
   lines: MeasurementLine[];
-  onLineClick?: (line: MeasurementLine, event: MouseEvent) => void;
+  primary: DOMRect;
+  primaryRelative: DOMRect | null;
+  secondaryRelative: DOMRect | null;
+  onLineClick?: (line: MeasurementLine) => void;
 }
 
 /**
@@ -16,19 +19,35 @@ export function MeasurementLinesWithCalculator(
 ) {
   const [hoveredLine, setHoveredLine] = createSignal<number | null>(null);
 
+  // The container's absolute position in document coordinates
+  // (Where the 'top-left' of our portal box actually is in the global world)
+  const containerOriginX = () => {
+    if (props.primary && props.primaryRelative) {
+      return props.primary.left - props.primaryRelative.left;
+    }
+    return 0;
+  };
+
+  const containerOriginY = () => {
+    if (props.primary && props.primaryRelative) {
+      return props.primary.top - props.primaryRelative.top;
+    }
+    return 0;
+  };
+
   return (
     <svg class={`${PREFIX}overlay`} overflow="visible">
       <For each={props.lines}>
         {(line, index) => {
-          const start = snapPoint(line.start);
-          const end = snapPoint(line.end);
+          const start = snapPoint({ x: line.start.x - containerOriginX(), y: line.start.y - containerOriginY() });
+          const end = snapPoint({ x: line.end.x - containerOriginX(), y: line.end.y - containerOriginY() });
           const isHovered = hoveredLine() === index();
 
           const handleHover = () => setHoveredLine(index());
           const handleLeave = () => setHoveredLine(null);
-          const handleClick = (e: MouseEvent) => {
+          const handleClick = () => {
             if (props.onLineClick) {
-              props.onLineClick(line, e);
+              props.onLineClick(line);
             }
           };
 

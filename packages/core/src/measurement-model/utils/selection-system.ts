@@ -1,23 +1,46 @@
+import { deduceGeometry } from "../../geometry/utils/scroll-aware.js";
+import { diagnosticLogger, formatElement, formatRect } from "../../shared/utils/logger.js";
+
 /**
  * Selection system for tracking selected elements
  */
+
+export interface SelectionMetadata {
+  element: Element | null;
+  rect: DOMRect | null;
+  relativeRect: DOMRect | null;
+  container: Element | null;
+}
 
 export interface SelectionSystem {
   select: (element: Element | null) => void;
   getSelected: () => Element | null;
   getSelectedRect: () => DOMRect | null;
+  getMetadata: () => SelectionMetadata;
   clear: () => void;
-  onRectUpdate: (callback: (rect: DOMRect | null) => void) => () => void;
+  onUpdate: (callback: (metadata: SelectionMetadata) => void) => () => void;
 }
 
 export function createSelectionSystem(): SelectionSystem {
   let selectedElement: Element | null = null;
   let selectedRect: DOMRect | null = null;
+  let relativeRect: DOMRect | null = null;
+  let container: Element | null = null;
 
-  const rectUpdateListeners = new Set<(rect: DOMRect | null) => void>();
+  const updateListeners = new Set<(metadata: SelectionMetadata) => void>();
 
-  function notifyRectListeners() {
-    rectUpdateListeners.forEach((listener) => listener(selectedRect));
+  function getMetadata(): SelectionMetadata {
+    return {
+      element: selectedElement,
+      rect: selectedRect,
+      relativeRect,
+      container,
+    };
+  }
+
+  function notifyListeners() {
+    const metadata = getMetadata();
+    updateListeners.forEach((listener) => listener(metadata));
   }
 
   function select(element: Element | null) {
@@ -29,20 +52,25 @@ export function createSelectionSystem(): SelectionSystem {
       requestAnimationFrame(() => {
         Promise.resolve().then(() => {
           if (selectedElement === element) {
-            const rect = element.getBoundingClientRect();
-            selectedRect = new DOMRect(
-              rect.left + window.scrollX,
-              rect.top + window.scrollY,
-              rect.width,
-              rect.height
-            );
-            notifyRectListeners();
+            const geometry = deduceGeometry(element);
+            selectedRect = geometry.rect;
+            relativeRect = geometry.relativeRect;
+            container = geometry.container;
+
+            diagnosticLogger.log(`[SelectionSystem] Select: ${formatElement(element)}`);
+            diagnosticLogger.log(`[SelectionSystem] Rect: ${formatRect(selectedRect)}`);
+            diagnosticLogger.log(`[SelectionSystem] RelRect: ${formatRect(relativeRect)}`);
+            diagnosticLogger.log(`[SelectionSystem] Container: ${formatElement(container)}`);
+
+            notifyListeners();
           }
         });
       });
     } else {
       selectedRect = null;
-      notifyRectListeners();
+      relativeRect = null;
+      container = null;
+      notifyListeners();
     }
   }
 
@@ -58,10 +86,10 @@ export function createSelectionSystem(): SelectionSystem {
     select(null);
   }
 
-  function onRectUpdate(callback: (rect: DOMRect | null) => void) {
-    rectUpdateListeners.add(callback);
+  function onUpdate(callback: (metadata: SelectionMetadata) => void) {
+    updateListeners.add(callback);
     return () => {
-      rectUpdateListeners.delete(callback);
+      updateListeners.delete(callback);
     };
   }
 
@@ -69,7 +97,8 @@ export function createSelectionSystem(): SelectionSystem {
     select,
     getSelected,
     getSelectedRect,
+    getMetadata,
     clear,
-    onRectUpdate,
+    onUpdate,
   };
 }

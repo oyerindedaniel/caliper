@@ -21,13 +21,22 @@ import { isEligible } from "../../element-picking/utils/filter-visible.js";
 const HYSTERESIS_THRESHOLD = 2; // pixels
 
 /**
+ * Check if an element belongs to Caliper's portaled UI
+ */
+function isCaliperNode(node: Node | null): boolean {
+  if (!node || !(node instanceof Element)) return false;
+  return !!(node.closest("#caliper-overlay-root") || node.closest("[class*='caliper-']"));
+}
+
+/**
  * Find the first eligible element at a point, skipping Caliper's own UI
  */
 export function getElementAtPoint(x: number, y: number): Element | null {
   const nodes = document.elementsFromPoint(x, y);
+
   return nodes.find((node) => {
-    const isCaliper = node.closest("#caliper-overlay-root");
-    return !isCaliper && isEligible(node);
+    if (isCaliperNode(node)) return false;
+    return isEligible(node);
   }) || null;
 }
 
@@ -38,8 +47,7 @@ export function getTopElementAtPoint(x: number, y: number): Element | null {
   const node = document.elementFromPoint(x, y);
   if (!node) return null;
 
-  const isCaliper = node.closest("#caliper-overlay-root");
-  if (isCaliper || !isEligible(node)) return null;
+  if (isCaliperNode(node) || !isEligible(node)) return null;
 
   return node;
 }
