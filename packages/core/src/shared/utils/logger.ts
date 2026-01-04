@@ -16,6 +16,12 @@ class DeduplicatedLogger {
         this.lastMessage = message;
         this.count = 0;
     }
+
+    logSpatial(label: string, stable: { left: number; top: number }, delta: { x: number; y: number }) {
+        const liveX = stable.left - delta.x;
+        const liveY = stable.top - delta.y;
+        this.log(`[Spatial:${label}] Stable:(${stable.left.toFixed(1)}, ${stable.top.toFixed(1)}) Delta:(${delta.x.toFixed(1)}, ${delta.y.toFixed(1)}) -> Live:(${liveX.toFixed(1)}, ${liveY.toFixed(1)})`);
+    }
 }
 
 export const diagnosticLogger = new DeduplicatedLogger();

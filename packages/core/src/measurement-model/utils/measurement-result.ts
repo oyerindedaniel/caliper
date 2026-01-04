@@ -1,4 +1,5 @@
 import type { CursorContext } from "../../shared/types/index.js";
+import { type ScrollState, type PositionMode, type StickyConfig } from "../../geometry/utils/scroll-aware.js";
 
 /**
  * Pure data structure for measurement lines
@@ -8,6 +9,9 @@ export interface MeasurementLine {
   value: number;
   start: { x: number; y: number };
   end: { x: number; y: number };
+  // Which element each point should sync its scroll with
+  startSync?: "primary" | "secondary";
+  endSync?: "primary" | "secondary";
 }
 
 /**
@@ -19,12 +23,23 @@ export interface MeasurementResult {
   primary: DOMRect;
   secondary: DOMRect | null;
   timestamp: number;
-  primaryRelative: DOMRect | null;
-  secondaryRelative: DOMRect | null;
+  primaryHierarchy: ScrollState[];
+  secondaryHierarchy: ScrollState[];
   secondaryElement: Element | null;
-  container: Element | null;
-  secondaryContainer: Element | null;
-  secondaryLocalRelative: DOMRect | null;
+
+  // Position modes for precision sync
+  primaryPosition: PositionMode;
+  secondaryPosition: PositionMode;
+
+  // Sticky configs for precision sync
+  primarySticky?: StickyConfig;
+  secondarySticky?: StickyConfig;
+
+  // Initial window scrolls for precision sync
+  primaryWinX: number;
+  primaryWinY: number;
+  secondaryWinX: number;
+  secondaryWinY: number;
 }
 
 /**
@@ -42,11 +57,9 @@ export function createMeasurementLines(
   const lines: MeasurementLine[] = [];
 
   if (context === "sibling") {
-    // Case A: ONE line - shortest distance between edges
     const distance = calculateSiblingDistance(primary, secondary);
     lines.push(distance);
   } else if (context === "parent" || context === "child") {
-    // Case B/C: FOUR lines - padding distances
     const padding = calculatePaddingLines(primary, secondary, context);
     lines.push(...padding);
   }
@@ -61,7 +74,6 @@ function calculateSiblingDistance(
   primary: DOMRect,
   sibling: DOMRect
 ): MeasurementLine {
-  // 1. Check for Spans (Overlap on individual axes)
   const overlapXStart = Math.max(primary.left, sibling.left);
   const overlapXEnd = Math.min(primary.right, sibling.right);
   const hasOverlapX = overlapXEnd > overlapXStart;
@@ -70,14 +82,13 @@ function calculateSiblingDistance(
   const overlapYEnd = Math.min(primary.bottom, sibling.bottom);
   const hasOverlapY = overlapYEnd > overlapYStart;
 
-  // 2. Decide Priority
-  // Case A: Stacked vertically (Shared Horizontal Span)
+  const syncBase = { startSync: "primary", endSync: "secondary" } as const;
+
   if (hasOverlapX && !hasOverlapY) {
     const centerX = (overlapXStart + overlapXEnd) / 2;
     const distBtoT = Math.abs(sibling.top - primary.bottom);
     const distTtoB = Math.abs(primary.top - sibling.bottom);
 
-    // Pick closest faces on the shared span
     const startY = distBtoT < distTtoB ? primary.bottom : primary.top;
     const endY = distBtoT < distTtoB ? sibling.top : sibling.bottom;
 
@@ -86,16 +97,15 @@ function calculateSiblingDistance(
       value: Math.min(distBtoT, distTtoB),
       start: { x: centerX, y: startY },
       end: { x: centerX, y: endY },
+      ...syncBase
     };
   }
 
-  // Case B: Side-by-Side (Shared Vertical Span)
   if (hasOverlapY && !hasOverlapX) {
     const centerY = (overlapYStart + overlapYEnd) / 2;
     const distRtoL = Math.abs(sibling.left - primary.right);
     const distLtoR = Math.abs(primary.left - sibling.right);
 
-    // Pick closest faces on the shared span
     const startX = distRtoL < distLtoR ? primary.right : primary.left;
     const endX = distRtoL < distLtoR ? sibling.left : sibling.right;
 
@@ -104,11 +114,10 @@ function calculateSiblingDistance(
       value: Math.min(distRtoL, distLtoR),
       start: { x: startX, y: centerY },
       end: { x: endX, y: centerY },
+      ...syncBase
     };
   }
 
-  // Case C: Pure Diagonal (No shared spans) or Overlap (Total overlap)
-  // Fallback to closest Top/Bottom centers
   const pFaces = [
     { x: (primary.left + primary.right) / 2, y: primary.top },
     { x: (primary.left + primary.right) / 2, y: primary.bottom },
@@ -135,85 +144,92 @@ function calculateSiblingDistance(
     }
   }
 
-  const dx = bestP!.x - bestS!.x;
-  const dy = bestP!.y - bestS!.y;
-
-  // Snap to axis if nearly aligned 
-  const finalX = Math.abs(dx) < 1 ? bestP!.x : bestS!.x;
-  const finalY = Math.abs(dy) < 1 ? bestP!.y : bestS!.y;
+  const pFace = bestP ?? pFaces[0]!;
+  const sFace = bestS ?? sFaces[0]!;
 
   return {
     type: "distance",
     value: Math.sqrt(minD2),
-    start: { x: bestP!.x, y: bestP!.y },
-    end: { x: finalX, y: finalY },
+    start: { x: pFace.x, y: pFace.y },
+    end: { x: sFace.x, y: sFace.y },
+    ...syncBase
   };
 }
 
-/**
- * Calculate padding lines (left, top, right, bottom)
- */
 function calculatePaddingLines(
   primary: DOMRect,
   container: DOMRect,
   context: "parent" | "child"
 ): MeasurementLine[] {
   if (context === "parent") {
-    // Primary element's distance to parent edges
     return [
       {
         type: "left",
         value: Math.abs(primary.left - container.left),
         start: { x: container.left, y: primary.top + primary.height / 2 },
         end: { x: primary.left, y: primary.top + primary.height / 2 },
+        startSync: "secondary",
+        endSync: "primary"
       },
       {
         type: "top",
         value: Math.abs(primary.top - container.top),
         start: { x: primary.left + primary.width / 2, y: container.top },
         end: { x: primary.left + primary.width / 2, y: primary.top },
+        startSync: "secondary",
+        endSync: "primary"
       },
       {
         type: "right",
         value: Math.abs(container.right - primary.right),
         start: { x: primary.right, y: primary.top + primary.height / 2 },
         end: { x: container.right, y: primary.top + primary.height / 2 },
+        startSync: "primary",
+        endSync: "secondary"
       },
       {
         type: "bottom",
         value: Math.abs(container.bottom - primary.bottom),
         start: { x: primary.left + primary.width / 2, y: primary.bottom },
         end: { x: primary.left + primary.width / 2, y: container.bottom },
+        startSync: "primary",
+        endSync: "secondary"
       },
     ];
   } else {
-    // Child element's distance to primary (selected) element edges
     return [
       {
         type: "left",
         value: Math.abs(container.left - primary.left),
         start: { x: primary.left, y: container.top + container.height / 2 },
         end: { x: container.left, y: container.top + container.height / 2 },
+        startSync: "primary",
+        endSync: "secondary"
       },
       {
         type: "top",
         value: Math.abs(container.top - primary.top),
         start: { x: container.left + container.width / 2, y: primary.top },
         end: { x: container.left + container.width / 2, y: container.top },
+        startSync: "primary",
+        endSync: "secondary"
       },
       {
         type: "right",
         value: Math.abs(primary.right - container.right),
         start: { x: container.right, y: container.top + container.height / 2 },
         end: { x: primary.right, y: container.top + container.height / 2 },
+        startSync: "secondary",
+        endSync: "primary"
       },
       {
         type: "bottom",
         value: Math.abs(primary.bottom - container.bottom),
         start: { x: container.left + container.width / 2, y: container.bottom },
-        end: { x: container.left + container.width / 2, y: primary.bottom },
+        end: { x: primary.left + primary.width / 2, y: primary.bottom },
+        startSync: "secondary",
+        endSync: "primary"
       },
     ];
   }
 }
-

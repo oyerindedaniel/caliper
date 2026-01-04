@@ -7,7 +7,6 @@ import {
   type MeasurementResult,
   type CalculatorState,
   type SelectionMetadata,
-  type MeasurementLine,
   type CommandsConfig,
   type AnimationConfig,
   getTopElementAtPoint,
@@ -28,13 +27,16 @@ export function Root(config: RootConfig) {
     scrollY: window.scrollY,
     width: window.innerWidth,
     height: window.innerHeight,
+    version: 0,
   });
 
   const [selectionMetadata, setSelectionMetadata] = createSignal<SelectionMetadata>({
     element: null,
     rect: null,
-    relativeRect: null,
-    container: null,
+    scrollHierarchy: [],
+    position: "static",
+    initialWindowX: 0,
+    initialWindowY: 0,
   });
   const [calculatorState, setCalculatorState] =
     createSignal<CalculatorState | null>(null);
@@ -45,34 +47,19 @@ export function Root(config: RootConfig) {
   const [isFrozen, setIsFrozen] = createSignal(false);
 
   let viewportRafId: number | null = null;
-  let pendingScroll = false;
-  let pendingResize = false;
 
   const syncViewport = () => {
-    setViewport((prev) => {
-      const patch: Partial<typeof prev> = {};
-      if (pendingScroll || pendingResize) {
-        patch.scrollX = window.scrollX;
-        patch.scrollY = window.scrollY;
-      }
-      if (pendingResize) {
-        patch.width = window.innerWidth;
-        patch.height = window.innerHeight;
-      }
-      return { ...prev, ...patch };
-    });
-    pendingScroll = false;
-    pendingResize = false;
+    setViewport((prev) => ({
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      version: (prev.version || 0) + 1,
+    }));
     viewportRafId = null;
   };
 
-  const scheduleScrollUpdate = () => {
-    pendingScroll = true;
-    if (!viewportRafId) viewportRafId = requestAnimationFrame(syncViewport);
-  };
-
-  const scheduleResizeUpdate = () => {
-    pendingResize = true;
+  const scheduleUpdate = () => {
     if (!viewportRafId) viewportRafId = requestAnimationFrame(syncViewport);
   };
 
@@ -87,12 +74,6 @@ export function Root(config: RootConfig) {
       setIsFrozen(system.getState() === "FROZEN");
     });
 
-    // Initial sync
-    const currentResult = system.getCurrentResult();
-    setResult(currentResult);
-
-    const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
-
     const unsubscribeUpdate = selectionSystem.onUpdate((metadata) => {
       setSelectionMetadata(metadata);
     });
@@ -100,41 +81,32 @@ export function Root(config: RootConfig) {
     const isCommandActive = (e: MouseEvent): boolean => {
       const { ctrlKey, metaKey, altKey, shiftKey } = e;
       const key = commands.select;
-
       const modifiers: Record<string, boolean> = {
         Control: ctrlKey,
         Meta: metaKey,
         Alt: altKey,
         Shift: shiftKey
       };
-
       if (key in modifiers) {
         return Object.entries(modifiers).every(([name, value]) =>
           name === key ? value === true : value === false
         );
       }
-
-      return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
+      return false;
     };
 
     const handleClick = (e: MouseEvent) => {
       if (isCommandActive(e)) {
         e.preventDefault();
         e.stopPropagation();
-
         const element = getTopElementAtPoint(e.clientX, e.clientY);
-
         if (element && selectionSystem) {
           setResult(null);
           setCalculatorState(null);
-
           if (system) {
             system.abort();
             system.getCalculator().close();
           }
-
-          lastHoveredElement = null;
-          suppressionFrames = 0;
           selectionSystem.select(element);
         }
       }
@@ -151,33 +123,22 @@ export function Root(config: RootConfig) {
         mouseMoveRafId = null;
         return;
       }
-
       const e = lastMouseEvent;
       setCursor({ x: e.clientX, y: e.clientY });
-
       const selectedElement = selectionSystem.getSelected();
       const isAlt = isAltPressed();
       const state = system?.getState();
 
       if (selectedElement) {
         if (isAlt) {
-          if (system) {
-            system.measure(selectedElement, { x: e.clientX, y: e.clientY });
-          }
+          if (system) system.measure(selectedElement, { x: e.clientX, y: e.clientY });
         } else if (state !== "FROZEN") {
           const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
-
           if (hoveredElement) {
             const isAncestor = lastHoveredElement && hoveredElement.contains(lastHoveredElement) && hoveredElement !== lastHoveredElement;
-
-            if (trailingTimer) {
-              clearTimeout(trailingTimer);
-              trailingTimer = null;
-            }
-
+            if (trailingTimer) { clearTimeout(trailingTimer); trailingTimer = null; }
             if (isAncestor && suppressionFrames < 8) {
               suppressionFrames++;
-
               trailingTimer = setTimeout(() => {
                 suppressionFrames = 0;
                 lastHoveredElement = hoveredElement;
@@ -189,65 +150,33 @@ export function Root(config: RootConfig) {
               lastHoveredElement = hoveredElement;
               selectionSystem.select(hoveredElement);
             }
-          } else if (trailingTimer) {
-            clearTimeout(trailingTimer);
-            trailingTimer = null;
           }
         }
       }
-
       mouseMoveRafId = null;
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       lastMouseEvent = e;
-      if (!mouseMoveRafId) {
-        mouseMoveRafId = requestAnimationFrame(processMouseMove);
-      }
+      if (!mouseMoveRafId) mouseMoveRafId = requestAnimationFrame(processMouseMove);
     };
-
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === commands.clear) {
         setIsAltPressed(false);
         setIsFrozen(false);
         setCalculatorState(null);
-
-        if (selectionSystem) {
-          lastHoveredElement = null;
-          suppressionFrames = 0;
-          selectionSystem.clear();
-        }
-        if (system) {
-          system.abort();
-          const calc = system.getCalculator();
-          calc.close();
-          setResult(null);
-        }
+        if (selectionSystem) selectionSystem.clear();
+        if (system) { system.abort(); system.getCalculator().close(); setResult(null); }
         return;
       }
 
-      if (e.key === commands.select) {
-        setIsSelectKeyDown(true);
-      }
-
-      if (calculatorState()) return;
-
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
-
       if (isAltKey) {
         e.preventDefault();
-        if (!isAltPressed() && system) {
-          system.abort();
-          setResult(null);
-        }
+        if (!isAltPressed() && system) { system.abort(); setResult(null); }
         setIsAltPressed(true);
-      }
-      else if (
-        e.key === commands.freeze &&
-        e.target === document.body &&
-        system
-      ) {
+      } else if (e.key === commands.freeze && e.target === document.body && system) {
         const state = system.getState();
         if (state === "FROZEN") {
           e.preventDefault();
@@ -257,54 +186,13 @@ export function Root(config: RootConfig) {
           system.freeze();
         }
       }
-      else if (isFrozen() && result()) {
-        const key = e.key.toLowerCase();
-        const typeMap: Record<string, MeasurementLine["type"]> = {
-          t: "top",
-          r: "right",
-          b: "bottom",
-          l: "left",
-          d: "distance"
-        };
-        const targetType = typeMap[key];
-        if (targetType) {
-          const currentLines = result()?.lines || [];
-          const targetLine = currentLines.find((l) => l.type === targetType)
-          if (targetLine) {
-            e.preventDefault();
-            handleLineClick(targetLine);
-          }
-        }
-      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === commands.select) {
-        setIsSelectKeyDown(false);
-      }
-
-      if (calculatorState()) return;
-
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
-
       if (isAltKey) {
         e.preventDefault();
-        if (isAltPressed()) {
-          setIsAltPressed(false);
-          if (system) {
-            system.stop();
-          }
-        }
-      }
-    };
-
-    const handleBlur = () => {
-      if (isAltPressed()) {
-        setIsAltPressed(false);
-        if (system) {
-          system.stop();
-          setResult(null);
-        }
+        if (isAltPressed()) { setIsAltPressed(false); if (system) system.stop(); }
       }
     };
 
@@ -312,113 +200,34 @@ export function Root(config: RootConfig) {
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
       window.removeEventListener("click", handleClick, true);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("blur", handleBlur);
-
-      if (mouseMoveRafId) {
-        cancelAnimationFrame(mouseMoveRafId);
-      }
-      if (trailingTimer) {
-        clearTimeout(trailingTimer);
-      }
-
+      if (mouseMoveRafId) cancelAnimationFrame(mouseMoveRafId);
+      if (trailingTimer) clearTimeout(trailingTimer);
       unsubscribe();
       unsubscribeUpdate();
-
-      if (system) {
-        system.cleanup();
-        system = null;
-      }
-
-      if (selectionSystem) {
-        selectionSystem.clear();
-        selectionSystem = null;
-      }
+      if (system) { system.cleanup(); system = null; }
+      if (selectionSystem) { selectionSystem.clear(); selectionSystem = null; }
     });
   });
 
   createEffect(() => {
     const active = !!selectionMetadata().element || !!result();
-
     if (active) {
-      window.addEventListener("scroll", scheduleScrollUpdate, { passive: true });
-      window.addEventListener("resize", scheduleResizeUpdate, { passive: true });
-      // Initial sync
-      pendingScroll = true;
-      pendingResize = true;
+      window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
+      window.addEventListener("resize", scheduleUpdate, { passive: true });
       syncViewport();
     }
-
     onCleanup(() => {
-      window.removeEventListener("scroll", scheduleScrollUpdate);
-      window.removeEventListener("resize", scheduleResizeUpdate);
-      if (viewportRafId) {
-        cancelAnimationFrame(viewportRafId);
-        viewportRafId = null;
-      }
-      pendingScroll = false;
-      pendingResize = false;
+      window.removeEventListener("scroll", scheduleUpdate, { capture: true });
+      window.removeEventListener("resize", scheduleUpdate);
+      if (viewportRafId) { cancelAnimationFrame(viewportRafId); viewportRafId = null; }
     });
   });
-
-  const handleLineClick = (line: MeasurementLine) => {
-    if (system) {
-      const calc = system.getCalculator();
-      calc.open(line.value);
-      const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
-    }
-  };
-
-  const handleCalculatorInput = (key: string) => {
-    if (system) {
-      const calc = system.getCalculator();
-      calc.handleInput(key);
-      const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
-    }
-  };
-
-  const handleCalculatorBackspace = () => {
-    if (system) {
-      const calc = system.getCalculator();
-      calc.handleBackspace();
-      const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
-    }
-  };
-
-  const handleCalculatorDelete = () => {
-    if (system) {
-      const calc = system.getCalculator();
-      calc.handleDelete();
-      const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
-    }
-  };
-
-  const handleCalculatorEnter = () => {
-    if (system) {
-      const calc = system.getCalculator();
-      calc.handleEnter();
-      const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
-    }
-  };
-
-  const handleCalculatorClose = () => {
-    if (system) {
-      const calc = system.getCalculator();
-      calc.close();
-      setCalculatorState(null);
-    }
-  };
 
   return (
     <Overlay
@@ -430,12 +239,53 @@ export function Root(config: RootConfig) {
       animation={animation}
       viewport={viewport}
       calculatorState={calculatorState}
-      onLineClick={handleLineClick}
-      onCalculatorInput={handleCalculatorInput}
-      onCalculatorBackspace={handleCalculatorBackspace}
-      onCalculatorDelete={handleCalculatorDelete}
-      onCalculatorEnter={handleCalculatorEnter}
-      onCalculatorClose={handleCalculatorClose}
+      onLineClick={(line, liveValue) => {
+        if (system) {
+          const calc = system.getCalculator();
+          calc.open(liveValue);
+          const calcState = calc.getState();
+          setCalculatorState(calcState.isActive ? calcState : null);
+        }
+      }}
+      onCalculatorInput={(key) => {
+        if (system) {
+          const calc = system.getCalculator();
+          calc.handleInput(key);
+          const calcState = calc.getState();
+          setCalculatorState(calcState.isActive ? calcState : null);
+        }
+      }}
+      onCalculatorBackspace={() => {
+        if (system) {
+          const calc = system.getCalculator();
+          calc.handleBackspace();
+          const calcState = calc.getState();
+          setCalculatorState(calcState.isActive ? calcState : null);
+        }
+      }}
+      onCalculatorDelete={() => {
+        if (system) {
+          const calc = system.getCalculator();
+          calc.handleDelete();
+          const calcState = calc.getState();
+          setCalculatorState(calcState.isActive ? calcState : null);
+        }
+      }}
+      onCalculatorEnter={() => {
+        if (system) {
+          const calc = system.getCalculator();
+          calc.handleEnter();
+          const calcState = calc.getState();
+          setCalculatorState(calcState.isActive ? calcState : null);
+        }
+      }}
+      onCalculatorClose={() => {
+        if (system) {
+          const calc = system.getCalculator();
+          calc.close();
+          setCalculatorState(null);
+        }
+      }}
     />
   );
 }

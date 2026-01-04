@@ -1,6 +1,7 @@
 import { onMount, onCleanup, Show } from "solid-js";
 import type { CalculatorState, CalculatorOperation } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
+import { Icons } from "./icons.jsx";
 
 interface CalculatorProps {
   state: CalculatorState;
@@ -80,9 +81,16 @@ export function Calculator(props: CalculatorProps) {
         </span>
 
         <Show when={props.state.operation}>
-          {(operation) => (
-            <span class={`${PREFIX}calculator-operation`}>{operation()}</span>
-          )}
+          {(operation) => {
+            const Icon = Icons[operation() as keyof typeof Icons];
+            return (
+              <span class={`${PREFIX}calculator-operation`}>
+                <Show when={Icon} fallback={operation()}>
+                  <Icon />
+                </Show>
+              </span>
+            );
+          }}
         </Show>
 
         <Show when={props.state.inputValue || props.state.operation}>

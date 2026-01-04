@@ -1,5 +1,4 @@
-import { deduceGeometry } from "../../geometry/utils/scroll-aware.js";
-import { diagnosticLogger, formatElement, formatRect } from "../../shared/utils/logger.js";
+import { deduceGeometry, type ScrollState, type PositionMode, type StickyConfig } from "../../geometry/utils/scroll-aware.js";
 
 /**
  * Selection system for tracking selected elements
@@ -8,8 +7,11 @@ import { diagnosticLogger, formatElement, formatRect } from "../../shared/utils/
 export interface SelectionMetadata {
   element: Element | null;
   rect: DOMRect | null;
-  relativeRect: DOMRect | null;
-  container: Element | null;
+  scrollHierarchy: ScrollState[];
+  position: PositionMode;
+  stickyConfig?: StickyConfig;
+  initialWindowX: number;
+  initialWindowY: number;
 }
 
 export interface SelectionSystem {
@@ -24,8 +26,11 @@ export interface SelectionSystem {
 export function createSelectionSystem(): SelectionSystem {
   let selectedElement: Element | null = null;
   let selectedRect: DOMRect | null = null;
-  let relativeRect: DOMRect | null = null;
-  let container: Element | null = null;
+  let scrollHierarchy: ScrollState[] = [];
+  let position: PositionMode = "static";
+  let stickyConfig: StickyConfig | undefined;
+  let initialWindowX = 0;
+  let initialWindowY = 0;
 
   const updateListeners = new Set<(metadata: SelectionMetadata) => void>();
 
@@ -33,8 +38,11 @@ export function createSelectionSystem(): SelectionSystem {
     return {
       element: selectedElement,
       rect: selectedRect,
-      relativeRect,
-      container,
+      scrollHierarchy,
+      position,
+      stickyConfig,
+      initialWindowX,
+      initialWindowY,
     };
   }
 
@@ -54,13 +62,11 @@ export function createSelectionSystem(): SelectionSystem {
           if (selectedElement === element) {
             const geometry = deduceGeometry(element);
             selectedRect = geometry.rect;
-            relativeRect = geometry.relativeRect;
-            container = geometry.container;
-
-            diagnosticLogger.log(`[SelectionSystem] Select: ${formatElement(element)}`);
-            diagnosticLogger.log(`[SelectionSystem] Rect: ${formatRect(selectedRect)}`);
-            diagnosticLogger.log(`[SelectionSystem] RelRect: ${formatRect(relativeRect)}`);
-            diagnosticLogger.log(`[SelectionSystem] Container: ${formatElement(container)}`);
+            scrollHierarchy = geometry.scrollHierarchy;
+            position = geometry.position;
+            stickyConfig = geometry.stickyConfig;
+            initialWindowX = geometry.initialWindowX;
+            initialWindowY = geometry.initialWindowY;
 
             notifyListeners();
           }
@@ -68,8 +74,11 @@ export function createSelectionSystem(): SelectionSystem {
       });
     } else {
       selectedRect = null;
-      relativeRect = null;
-      container = null;
+      scrollHierarchy = [];
+      position = "static";
+      stickyConfig = undefined;
+      initialWindowX = 0;
+      initialWindowY = 0;
       notifyListeners();
     }
   }

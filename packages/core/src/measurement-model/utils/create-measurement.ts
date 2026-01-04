@@ -5,11 +5,8 @@ import {
   type MeasurementResult,
 } from "./measurement-result.js";
 import {
-  findCommonPortalHost,
-  findBestPortalHost,
+  deduceGeometry,
 } from "../../geometry/utils/scroll-aware.js";
-import { diagnosticLogger, formatElement, formatRect } from "../../shared/utils/logger.js";
-
 
 /**
  * Create a measurement result from element and cursor position
@@ -38,56 +35,17 @@ export function createMeasurement(
 
   if (secondaryElement === selectedElement) return null;
 
-  const primaryRect = selectedElement.getBoundingClientRect();
-  const secondaryRect = secondaryElement.getBoundingClientRect();
+  const primaryGeom = deduceGeometry(selectedElement);
+  const secondaryGeom = deduceGeometry(secondaryElement);
 
-  const primary = new DOMRect(
-    primaryRect.left + window.scrollX,
-    primaryRect.top + window.scrollY,
-    primaryRect.width,
-    primaryRect.height
-  );
-  const secondary = new DOMRect(
-    secondaryRect.left + window.scrollX,
-    secondaryRect.top + window.scrollY,
-    secondaryRect.width,
-    secondaryRect.height
-  );
+  const primary = primaryGeom.rect;
+  const secondary = secondaryGeom.rect;
 
   const lines = createMeasurementLines(
     context,
     primary,
     secondary
   );
-
-  const container = findCommonPortalHost(selectedElement, secondaryElement);
-  const containerRect = container.getBoundingClientRect();
-
-  const primaryRelative = new DOMRect(
-    primaryRect.left - containerRect.left + container.scrollLeft,
-    primaryRect.top - containerRect.top + container.scrollTop,
-    primaryRect.width,
-    primaryRect.height
-  );
-
-  const secondaryRelative = new DOMRect(
-    secondaryRect.left - containerRect.left + container.scrollLeft,
-    secondaryRect.top - containerRect.top + container.scrollTop,
-    secondaryRect.width,
-    secondaryRect.height
-  );
-
-  const secondaryContainer = findBestPortalHost(secondaryElement);
-  const secondaryContainerRect = secondaryContainer.getBoundingClientRect();
-  const secondaryLocalRelative = new DOMRect(
-    secondaryRect.left - secondaryContainerRect.left + secondaryContainer.scrollLeft,
-    secondaryRect.top - secondaryContainerRect.top + secondaryContainer.scrollTop,
-    secondaryRect.width,
-    secondaryRect.height
-  );
-
-  diagnosticLogger.log(`[Measurement] Primary: ${formatElement(selectedElement)}, Secondary: ${formatElement(secondaryElement)}`);
-  diagnosticLogger.log(`[Measurement] Container: ${formatElement(container)}`);
 
   return {
     element: secondaryElement,
@@ -97,12 +55,17 @@ export function createMeasurement(
       primary,
       secondary,
       timestamp: performance.now(),
-      primaryRelative,
-      secondaryRelative,
+      primaryHierarchy: primaryGeom.scrollHierarchy,
+      secondaryHierarchy: secondaryGeom.scrollHierarchy,
       secondaryElement,
-      container,
-      secondaryContainer,
-      secondaryLocalRelative,
+      primaryPosition: primaryGeom.position,
+      secondaryPosition: secondaryGeom.position,
+      primarySticky: primaryGeom.stickyConfig,
+      secondarySticky: secondaryGeom.stickyConfig,
+      primaryWinX: primaryGeom.initialWindowX,
+      primaryWinY: primaryGeom.initialWindowY,
+      secondaryWinX: secondaryGeom.initialWindowX,
+      secondaryWinY: secondaryGeom.initialWindowY,
     },
   };
 }

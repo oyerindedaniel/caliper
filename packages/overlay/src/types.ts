@@ -21,9 +21,10 @@ export interface OverlayProps {
     scrollY: number;
     width: number;
     height: number;
+    version: number;
   }>;
   calculatorState?: Accessor<CalculatorState | null>;
-  onLineClick?: (line: MeasurementLine) => void;
+  onLineClick?: (line: MeasurementLine, liveValue: number) => void;
   onCalculatorInput?: (key: string) => void;
   onCalculatorBackspace?: () => void;
   onCalculatorDelete?: () => void;

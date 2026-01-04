@@ -1,125 +1,148 @@
-import { For } from "solid-js";
-import { type MeasurementLine, diagnosticLogger } from "@caliper/core";
+import { For, Show, createMemo } from "solid-js";
+import { type MeasurementLine, type LiveGeometry } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
+
+interface SyncData {
+  geo: LiveGeometry | null;
+  delta: { deltaX: number; deltaY: number };
+}
 
 interface MeasurementLabelsProps {
   lines: MeasurementLine[];
-  primary: DOMRect;
-  primaryRelative: DOMRect | null;
-  secondaryRelative: DOMRect | null;
+  data: {
+    primary: SyncData;
+    secondary: SyncData;
+    common: { minX: number; maxX: number; minY: number; maxY: number };
+  };
   viewport: {
     scrollX: number;
     scrollY: number;
     width: number;
     height: number;
+    version: number;
   };
-  cursorX: number;
-  cursorY: number;
 }
 
 /**
- * Render measurement labels positioned at the midpoint of each line
+ * Render measurement labels using Viewport-Relative coordinates.
  */
 export function MeasurementLabels(props: MeasurementLabelsProps) {
-  const margin = 24;
+  const margin = 16;
 
-  const containerOriginX = () => {
-    if (props.primary && props.primaryRelative) {
-      return props.primary.left - props.primaryRelative.left;
-    }
-    return 0;
-  };
+  const getLivePointViewport = (line: MeasurementLine, type: "start" | "end") => {
+    const pt = type === "start" ? line.start : line.end;
+    const owner = type === "start" ? line.startSync : line.endSync;
 
-  const containerOriginY = () => {
-    if (props.primary && props.primaryRelative) {
-      return props.primary.top - props.primaryRelative.top;
+    let syncX = owner === "secondary" ? props.data.secondary : props.data.primary;
+    let syncY = owner === "secondary" ? props.data.secondary : props.data.primary;
+
+    if (line.type === "left" || line.type === "right") {
+      syncY = props.data.primary;
+    } else if (line.type === "top" || line.type === "bottom") {
+      syncX = props.data.primary;
+    } else if (line.type === "distance") {
+      if (Math.abs(line.start.x - line.end.x) < 1) syncX = props.data.primary;
+      if (Math.abs(line.start.y - line.end.y) < 1) syncY = props.data.primary;
     }
-    return 0;
+
+    return {
+      x: pt.x - (syncX?.delta.deltaX ?? 0) - props.viewport.scrollX,
+      y: pt.y - (syncY?.delta.deltaY ?? 0) - props.viewport.scrollY,
+    };
   };
 
   return (
-    <For each={props.lines}>
-      {(line) => {
-        const value = Math.round(line.value * 100) / 100;
+    <div class={`${PREFIX}viewport-fixed`} style={{ 'z-index': 1000000 }}>
+      <For each={props.lines}>
+        {(line: MeasurementLine) => {
+          const value = Math.round(line.value * 100) / 100;
 
-        const position = () => {
-          // Default midpoint
-          let labelX = (line.start.x + line.end.x) / 2;
-          let labelY = (line.start.y + line.end.y) / 2;
+          const position = createMemo(() => {
+            props.viewport.version;
 
-          // Viewport in document coordinates
-          const vLeft = props.viewport.scrollX + margin;
-          const vRight = props.viewport.scrollX + props.viewport.width - margin;
-          const vTop = props.viewport.scrollY + margin;
-          const vBottom = props.viewport.scrollY + props.viewport.height - margin;
+            const s = getLivePointViewport(line, "start");
+            const e = getLivePointViewport(line, "end");
 
-          const isVertical = Math.abs(line.start.x - line.end.x) < 0.1;
-          const isHorizontal = Math.abs(line.start.y - line.end.y) < 0.1;
+            const start = s;
+            const end = { ...e };
+            if (line.type === "top" || line.type === "bottom") end.x = s.x;
+            if (line.type === "left" || line.type === "right") end.y = s.y;
 
-          if (isVertical) {
-            const minY = Math.min(line.start.y, line.end.y);
-            const maxY = Math.max(line.start.y, line.end.y);
+            const dx = start.x - end.x;
+            const dy = start.y - end.y;
+            const liveValue = Math.sqrt(dx * dx + dy * dy);
 
-            // 1. Vertical Slide: Stay on the line segments visible in viewport
-            if (labelY < vTop || labelY > vBottom) {
-              const clampedMinY = Math.max(minY, vTop);
-              const clampedMaxY = Math.min(maxY, vBottom);
-              if (clampedMaxY > clampedMinY) {
-                labelY = (clampedMinY + clampedMaxY) / 2;
-              } else {
-                labelY = Math.max(vTop, Math.min(maxY, vBottom));
-              }
+            const naturalX = (start.x + end.x) / 2;
+            const naturalY = (start.y + end.y) / 2;
+
+            const vpMinX = 0;
+            const vpMaxX = props.viewport.width;
+            const vpMinY = 0;
+            const vpMaxY = props.viewport.height;
+
+            const common = props.data.common;
+            const hasCommon = isFinite(common.minX);
+
+            const cMinX = hasCommon ? Math.max(vpMinX, common.minX - props.viewport.scrollX) : vpMinX;
+            const cMaxX = hasCommon ? Math.min(vpMaxX, common.maxX - props.viewport.scrollX) : vpMaxX;
+            const cMinY = hasCommon ? Math.max(vpMinY, common.minY - props.viewport.scrollY) : vpMinY;
+            const cMaxY = hasCommon ? Math.min(vpMaxY, common.maxY - props.viewport.scrollY) : vpMaxY;
+
+            const lineMinX = Math.min(start.x, end.x);
+            const lineMaxX = Math.max(start.x, end.x);
+            const lineMinY = Math.min(start.y, end.y);
+            const lineMaxY = Math.max(start.y, end.y);
+
+            const isFullyHidden = (
+              lineMaxY < cMinY ||
+              lineMinY > cMaxY ||
+              lineMaxX < cMinX ||
+              lineMinX > cMaxX
+            );
+
+            if (isFullyHidden) return { x: 0, y: 0, isHidden: true, value: 0 };
+
+            const visibleLineMinX = Math.max(lineMinX, cMinX);
+            const visibleLineMaxX = Math.min(lineMaxX, cMaxX);
+            const visibleLineMinY = Math.max(lineMinY, cMinY);
+            const visibleLineMaxY = Math.min(lineMaxY, cMaxY);
+
+            const centerX = (visibleLineMinX + visibleLineMaxX) / 2;
+            const centerY = (visibleLineMinY + visibleLineMaxY) / 2;
+
+            let targetX = naturalX;
+            let targetY = naturalY;
+
+            if (Math.abs(start.x - end.x) < 1) { // Vertical
+              targetY = centerY;
+              targetX = Math.max(cMinX + margin, Math.min(cMaxX - margin, targetX));
+            } else if (Math.abs(start.y - end.y) < 1) { // Horizontal
+              targetX = centerX;
+              targetY = Math.max(cMinY + margin, Math.min(cMaxY - margin, targetY));
+            } else {
+              targetX = Math.max(cMinX + margin, Math.min(cMaxX - margin, naturalX));
+              targetY = Math.max(cMinY + margin, Math.min(cMaxY - margin, naturalY));
             }
-            // 2. Horizontal Stick: If element is scrolled horizontally, keep label visible
-            labelX = Math.max(vLeft, Math.min(labelX, vRight));
 
-          } else if (isHorizontal) {
-            const minX = Math.min(line.start.x, line.end.x);
-            const maxX = Math.max(line.start.x, line.end.x);
+            return { x: targetX, y: targetY, isHidden: false, value: liveValue };
+          });
 
-            // 1. Horizontal Slide: Stay on the line segments visible in viewport
-            if (labelX < vLeft || labelX > vRight) {
-              const clampedMinX = Math.max(minX, vLeft);
-              const clampedMaxX = Math.min(maxX, vRight);
-              if (clampedMaxX > clampedMinX) {
-                labelX = (clampedMinX + clampedMaxX) / 2;
-              } else {
-                labelX = Math.max(vLeft, Math.min(maxX, vRight));
-              }
-            }
-            // 2. Vertical Stick: If element is scrolled vertically, keep label visible
-            labelY = Math.max(vTop, Math.min(labelY, vBottom));
-
-          } else {
-            // Diagonal line - clamp both axes to viewport
-            labelX = Math.max(vLeft, Math.min(labelX, vRight));
-            labelY = Math.max(vTop, Math.min(labelY, vBottom));
-          }
-
-          // Local coordinates from relative rects 
-          if (props.primaryRelative) {
-            labelX -= containerOriginX();
-            labelY -= containerOriginY();
-          }
-
-          const pos = { x: labelX, y: labelY };
-          diagnosticLogger.log(`[MeasurementLabel] Value: ${value}, X/Y: ${pos.x.toFixed(2)}, ${pos.y.toFixed(2)}`);
-          return pos;
-        };
-
-        return (
-          <div
-            class={`${PREFIX}label`}
-            style={{
-              left: 0,
-              top: 0,
-              transform: `translate3d(${position().x}px, ${position().y}px, 0) translate(-50%, -50%)`,
-            }}
-          >
-            {value}
-          </div>
-        );
-      }}
-    </For>
+          return (
+            <Show when={position() && !position()!.isHidden}>
+              <div
+                class={`${PREFIX}label`}
+                style={{
+                  left: 0,
+                  top: 0,
+                  transform: `translate3d(${position()!.x}px, ${position()!.y}px, 0) translate(-50%, -50%)`,
+                }}
+              >
+                {Math.round(position()!.value * 100) / 100}
+              </div>
+            </Show>
+          );
+        }}
+      </For>
+    </div>
   );
 }
