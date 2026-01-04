@@ -29,6 +29,7 @@ export {
 export {
   createSelectionSystem,
   type SelectionSystem,
+  type SelectionMetadata,
 } from "./measurement-model/utils/selection-system.js";
 export * from "./calculator-model/utils/calculator.js";
 export {
@@ -54,4 +55,4 @@ export {
 } from "./shared/config/config-utils.js";
 export { showVersionInfo } from "./shared/utils/version-check.js";
 export { lerp, lerpRect } from "./shared/utils/math.js";
-export { diagnosticLogger, formatElement } from "./shared/utils/logger.js";
+export { diagnosticLogger, formatElement, formatRect } from "./shared/utils/logger.js";

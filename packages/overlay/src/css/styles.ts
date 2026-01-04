@@ -4,6 +4,16 @@
  */
 const CALIPER_PREFIX = "caliper-";
 
+/**
+ * Z-INDEX ORDERING NOTE:
+ * Elements are stacked from lowest to highest to ensure correct overlap:
+ * 1. Boundary Boxes (Secondary: 999997, Selected: 999998)
+ * 2. Main Overlay Roots (999999)
+ * 3. Measurement Labels (1000000)
+ * 4. Selection Metadata Labels (1000001)
+ * 5. Calculator (1000002) - Always on top for interaction
+ */
+
 export const OVERLAY_STYLES = `
 :root {
   interpolate-size: allow-keywords;
@@ -23,22 +33,34 @@ export const OVERLAY_STYLES = `
 }
 
 #caliper-overlay-root {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   pointer-events: none;
   overflow: visible;
   z-index: 999999;
 }
 
-.${CALIPER_PREFIX}overlay {
-  position: absolute;
+.${CALIPER_PREFIX}viewport-fixed {
+  position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.${CALIPER_PREFIX}overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 999999;
 }
 
 .${CALIPER_PREFIX}alt-mode * {
@@ -52,7 +74,7 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}label {
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   background: var(--caliper-secondary);
   color: var(--caliper-text);
@@ -67,7 +89,7 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}selection-label {
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   background: var(--caliper-primary);
   color: var(--caliper-text);
@@ -83,7 +105,7 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}boundary-box {
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   box-sizing: border-box;
 }
@@ -138,9 +160,8 @@ export const OVERLAY_STYLES = `
 
 .${CALIPER_PREFIX}calculator-operation {
   background-color: var(--caliper-calc-op-highlight);
-  padding: 2px 6px;
+  padding: 4px;
   border-radius: 2px;
-  font-weight: bold;
   transition: all 0.2s;
   display: inline-flex;
   align-items: center;

@@ -5,30 +5,8 @@ import {
   type MeasurementResult,
 } from "./measurement-result.js";
 import {
-  getScrollAwareRect,
+  deduceGeometry,
 } from "../../geometry/utils/scroll-aware.js";
-
-/**
- * Find scroll container for an element
- */
-function findScrollContainer(element: Element): Element | null {
-  let parent = element.parentElement;
-  while (parent) {
-    const style = window.getComputedStyle(parent);
-    if (
-      style.overflow === "auto" ||
-      style.overflow === "scroll" ||
-      style.overflowX === "auto" ||
-      style.overflowX === "scroll" ||
-      style.overflowY === "auto" ||
-      style.overflowY === "scroll"
-    ) {
-      return parent;
-    }
-    parent = parent.parentElement;
-  }
-  return null;
-}
 
 /**
  * Create a measurement result from element and cursor position
@@ -55,17 +33,13 @@ export function createMeasurement(
 
   const { context, element: secondaryElement } = result;
 
-  const primaryScrollContainer = findScrollContainer(selectedElement);
-  const secondaryScrollContainer = findScrollContainer(secondaryElement);
+  if (secondaryElement === selectedElement) return null;
 
-  const primary = getScrollAwareRect(
-    selectedElement,
-    primaryScrollContainer || undefined
-  );
-  const secondary = getScrollAwareRect(
-    secondaryElement,
-    secondaryScrollContainer || undefined
-  );
+  const primaryGeom = deduceGeometry(selectedElement);
+  const secondaryGeom = deduceGeometry(secondaryElement);
+
+  const primary = primaryGeom.rect;
+  const secondary = secondaryGeom.rect;
 
   const lines = createMeasurementLines(
     context,
@@ -81,6 +55,17 @@ export function createMeasurement(
       primary,
       secondary,
       timestamp: performance.now(),
+      primaryHierarchy: primaryGeom.scrollHierarchy,
+      secondaryHierarchy: secondaryGeom.scrollHierarchy,
+      secondaryElement,
+      primaryPosition: primaryGeom.position,
+      secondaryPosition: secondaryGeom.position,
+      primarySticky: primaryGeom.stickyConfig,
+      secondarySticky: secondaryGeom.stickyConfig,
+      primaryWinX: primaryGeom.initialWindowX,
+      primaryWinY: primaryGeom.initialWindowY,
+      secondaryWinX: secondaryGeom.initialWindowX,
+      secondaryWinY: secondaryGeom.initialWindowY,
     },
   };
 }

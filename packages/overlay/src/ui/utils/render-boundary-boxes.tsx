@@ -1,33 +1,43 @@
-import { createSignal, createEffect, onCleanup, on } from "solid-js";
-import { lerpRect, type AnimationConfig } from "@caliper/core";
+import { createEffect, createSignal, on, onCleanup, Show, createMemo } from "solid-js";
+import { Portal } from "solid-js/web";
+import {
+  lerpRect,
+  type AnimationConfig,
+  type SelectionMetadata,
+  type MeasurementResult,
+  getLiveGeometry,
+  type LiveGeometry,
+} from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface BoundaryBoxesProps {
-  selectionRect: DOMRect | null;
-  measuredRect: DOMRect | null;
+  metadata: SelectionMetadata;
+  result: MeasurementResult | null;
   isAltPressed: boolean;
+  isFrozen: boolean;
   animation: Required<AnimationConfig>;
-}
-
-interface AnimatedRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
+  viewport: {
+    scrollX: number;
+    scrollY: number;
+    width: number;
+    height: number;
+    version: number;
+  };
 }
 
 /**
- * Render boundary boxes for selected and secondary elements
+ * Render boundary boxes for selected and secondary elements.
  */
 export function BoundaryBoxes(props: BoundaryBoxesProps) {
-  const [anchor, setAnchor] = createSignal<AnimatedRect | null>(null);
-  const [target, setTarget] = createSignal<AnimatedRect | null>(null);
+  const [anchor, setAnchor] = createSignal<LiveGeometry | null>(null);
+  const [target, setTarget] = createSignal<LiveGeometry | null>(null);
 
+  let lastElement: Element | null = null;
   let rafId: number | null = null;
 
   const isRectSame = (
-    a: AnimatedRect | DOMRect | null,
-    b: AnimatedRect | DOMRect | null,
+    a: { left: number; top: number; width: number; height: number } | null,
+    b: { left: number; top: number; width: number; height: number } | null,
     threshold = 0.1
   ) => {
     if (!a || !b) return false;
@@ -40,80 +50,107 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   };
 
   const lerpTo = (
-    current: AnimatedRect | null,
-    target: DOMRect | null,
-    lerpFactor: number,
-    startFrom: DOMRect | null = null
-  ): AnimatedRect | null => {
-    if (!target) return null;
+    current: LiveGeometry | null,
+    targetGeo: LiveGeometry | null,
+    lerpFactor: number
+  ): LiveGeometry | null => {
+    if (!targetGeo) return null;
+    if (!current) return { ...targetGeo };
 
-    const targetRect = {
-      left: target.left,
-      top: target.top,
-      width: target.width,
-      height: target.height,
+    const next = lerpRect(current, targetGeo, lerpFactor);
+
+    if (isRectSame(next, targetGeo, 0.1)) {
+      return { ...targetGeo };
+    }
+
+    return {
+      ...targetGeo,
+      left: next.left,
+      top: next.top,
+      width: next.width,
+      height: next.height
     };
-
-    if (!current) {
-      return startFrom
-        ? { left: startFrom.left, top: startFrom.top, width: startFrom.width, height: startFrom.height }
-        : targetRect;
-    }
-
-    const next = lerpRect(current, targetRect, lerpFactor);
-
-    if (isRectSame(next, targetRect, 0.1)) {
-      return targetRect;
-    }
-
-    return next;
   };
+
+  const liveSelectionTarget = createMemo(() => {
+    // Only re-run when viewport version or metadata changes
+    props.viewport.version;
+    return getLiveGeometry(
+      props.metadata.rect,
+      props.metadata.scrollHierarchy,
+      props.metadata.position,
+      props.metadata.stickyConfig,
+      props.metadata.initialWindowX,
+      props.metadata.initialWindowY
+    );
+  });
+
+  const liveSecondaryTarget = createMemo(() => {
+    props.viewport.version;
+    const res = props.result;
+    if (!(props.isAltPressed || props.isFrozen) || !res) return null;
+    return getLiveGeometry(
+      res.secondary,
+      res.secondaryHierarchy,
+      res.secondaryPosition,
+      res.secondarySticky,
+      res.secondaryWinX,
+      res.secondaryWinY
+    );
+  });
 
   createEffect(
     on(
       [
-        () => props.selectionRect,
-        () => props.measuredRect,
-        () => props.isAltPressed,
+        liveSelectionTarget,
+        liveSecondaryTarget,
+        () => props.animation.lerpFactor,
+        () => props.metadata.element
       ],
-      () => {
-        const factor = props.animation.lerpFactor;
-
-        const selectionTarget = props.selectionRect;
-        const measurementTarget = props.measuredRect;
-
-        if (!selectionTarget) {
+      ([selection, secondary, factor, element]) => {
+        if (!selection) {
           setAnchor(null);
           setTarget(null);
-          if (rafId) cancelAnimationFrame(rafId);
+          lastElement = null;
+          if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
           return;
         }
 
-        // Update target instantly
-        setTarget(measurementTarget ? {
-          left: measurementTarget.left,
-          top: measurementTarget.top,
-          width: measurementTarget.width,
-          height: measurementTarget.height
-        } : null);
+        const isNewElement = lastElement !== element;
 
-        const animate = () => {
-          // Anchor box follows the live selection (which freezes when Alt is held)
-          const nextAnchor = lerpTo(anchor(), selectionTarget, factor);
-          setAnchor(nextAnchor);
+        setTarget(secondary);
 
-          // Continue animating if anchor box hasn't reached its target
-          const anchorMoving = nextAnchor && selectionTarget && !isRectSame(nextAnchor, selectionTarget, 0.01);
+        if (isNewElement) {
+          // SELECTION CHANGE: Start lerp animation
+          lastElement = element;
 
-          if (anchorMoving) {
-            rafId = requestAnimationFrame(animate);
-          } else {
-            rafId = null;
+          const animate = () => {
+            const currentAnchor = anchor();
+            const nextAnchor = lerpTo(currentAnchor, selection, factor);
+            setAnchor(nextAnchor);
+
+            if (!isRectSame(nextAnchor, selection, 0.05)) {
+              rafId = requestAnimationFrame(animate);
+            } else {
+              rafId = null;
+            }
+          };
+
+          if (rafId) cancelAnimationFrame(rafId);
+          rafId = requestAnimationFrame(animate);
+        } else {
+          // SCROLL or SAME ELEMENT: Snap instantly to stay glued
+          // We don't update lastElement here because it hasn't changed
+          if (!rafId) {
+            setAnchor(selection);
           }
-        };
-
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = requestAnimationFrame(animate);
+          // Note: If an animation IS running (rafId exists) and we scroll, 
+          // we let the animation loop handle the update to prevent 'jams'.
+          // The animate loop uses 'selection' which is a memo that includes viewport.version
+        }
       }
     )
   );
@@ -124,30 +161,40 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
 
   return (
     <>
-      {anchor() && (
-        <div
-          class={`${PREFIX}boundary-box ${PREFIX}boundary-box-selected`}
-          style={{
-            left: 0,
-            top: 0,
-            width: `${anchor()!.width}px`,
-            height: `${anchor()!.height}px`,
-            transform: `translate3d(${anchor()!.left}px, ${anchor()!.top}px, 0)`,
-          }}
-        />
-      )}
-      {target() && (
-        <div
-          class={`${PREFIX}boundary-box ${PREFIX}boundary-box-secondary`}
-          style={{
-            left: 0,
-            top: 0,
-            width: `${target()!.width}px`,
-            height: `${target()!.height}px`,
-            transform: `translate3d(${target()!.left}px, ${target()!.top}px, 0)`,
-          }}
-        />
-      )}
+      <Show when={anchor()}>
+        {(current) => (
+          <Portal mount={document.body}>
+            <div
+              class={`${PREFIX}boundary-box ${PREFIX}boundary-box-selected`}
+              style={{
+                left: 0,
+                top: 0,
+                width: `${current().width}px`,
+                height: `${current().height}px`,
+                transform: `translate3d(${current().left - props.viewport.scrollX}px, ${current().top - props.viewport.scrollY}px, 0)`,
+                "clip-path": current().clipPath
+              }}
+            />
+          </Portal>
+        )}
+      </Show>
+      <Show when={target()}>
+        {(current) => (
+          <Portal mount={document.body}>
+            <div
+              class={`${PREFIX}boundary-box ${PREFIX}boundary-box-secondary`}
+              style={{
+                left: 0,
+                top: 0,
+                width: `${current().width}px`,
+                height: `${current().height}px`,
+                transform: `translate3d(${current().left - props.viewport.scrollX}px, ${current().top - props.viewport.scrollY}px, 0)`,
+                "clip-path": current().clipPath
+              }}
+            />
+          </Portal>
+        )}
+      </Show>
     </>
   );
 }

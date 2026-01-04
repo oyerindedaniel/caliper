@@ -9,7 +9,8 @@ export default function Playground() {
       <header style={{ marginBottom: "40px" }}>
         <h1 style={{ fontSize: "32px", marginBottom: "10px" }}>CALIPER Playground</h1>
         <p style={{ fontSize: "16px", color: "#666" }}>
-          Visual sandbox for testing measurement behavior and edge cases
+          Visual sandbox for testing measurement behavior and edge cases.
+          <a href="/stress-test" style={{ marginLeft: "15px", color: "#0070f3", fontWeight: "bold" }}>Launch Stress Test →</a>
         </p>
       </header>
 
