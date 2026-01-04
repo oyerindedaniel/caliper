@@ -156,12 +156,16 @@ function calculateSiblingDistance(
   };
 }
 
+/**
+ * Calculate padding lines (left, top, right, bottom)
+ */
 function calculatePaddingLines(
   primary: DOMRect,
   container: DOMRect,
   context: "parent" | "child"
 ): MeasurementLine[] {
   if (context === "parent") {
+    // Primary element's distance to parent edges
     return [
       {
         type: "left",
@@ -197,6 +201,7 @@ function calculatePaddingLines(
       },
     ];
   } else {
+    // Child element's distance to primary (selected) element edges
     return [
       {
         type: "left",
