@@ -25,6 +25,13 @@ interface BoundaryBoxesProps {
   };
 }
 
+interface AnimatedRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 /**
  * Render boundary boxes for selected and secondary elements.
  */
@@ -36,8 +43,8 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   let rafId: number | null = null;
 
   const isRectSame = (
-    a: { left: number; top: number; width: number; height: number } | null,
-    b: { left: number; top: number; width: number; height: number } | null,
+    a: AnimatedRect | null,
+    b: AnimatedRect | null,
     threshold = 0.1
   ) => {
     if (!a || !b) return false;
@@ -73,7 +80,6 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   };
 
   const liveSelectionTarget = createMemo(() => {
-    // Only re-run when viewport version or metadata changes
     props.viewport.version;
     return getLiveGeometry(
       props.metadata.rect,
