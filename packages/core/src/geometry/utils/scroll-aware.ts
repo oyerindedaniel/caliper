@@ -422,6 +422,33 @@ function getInheritedPositionMode(element: Element): { mode: PositionMode; ancho
   return { mode: "static", anchor: null };
 }
 
+/**
+ * Calculates the exact layout offset of an element relative to a container.
+ */
+function getDistanceFromContainer(target: HTMLElement, container: Element) {
+  let x = 0;
+  let y = 0;
+  let current = target;
+
+  while (current && current !== container && current.offsetParent) {
+    x += current.offsetLeft;
+    y += current.offsetTop;
+
+    const parent = current.offsetParent as HTMLElement;
+    x += parent.clientLeft || 0;
+    y += parent.clientTop || 0;
+
+    current = parent;
+  }
+
+  if (container instanceof HTMLElement) {
+    x -= container.clientLeft || 0;
+    y -= container.clientTop || 0;
+  }
+
+  return { x, y };
+}
+
 export function deduceGeometry(element: Element): DeducedGeometry {
   const rect = element.getBoundingClientRect();
   const scrollHierarchy = getScrollHierarchy(element);
@@ -429,31 +456,17 @@ export function deduceGeometry(element: Element): DeducedGeometry {
   const initialWindowX = window.scrollX;
   const initialWindowY = window.scrollY;
 
-  // Determine actual effective positioning
   const { mode: position, anchor } = getInheritedPositionMode(element);
 
   let stickyConfig;
   if (position === "sticky" && anchor) {
-    // Thresholds come from the anchor (even if deduced for a child)
     const style = window.getComputedStyle(anchor);
 
-    // Nearest scroll container of the anchor
     const parent = getScrollHierarchy(anchor)[0]?.element || document.documentElement;
-    const parentRect = parent.getBoundingClientRect();
     const isDoc = parent === document.documentElement;
 
-    const currentScrollX = isDoc ? initialWindowX : (parent as HTMLElement).scrollLeft;
-    const currentScrollY = isDoc ? initialWindowY : (parent as HTMLElement).scrollTop;
-
-    const containerL = parentRect.left + (isDoc ? 0 : (parent as HTMLElement).clientLeft);
-    const containerT = parentRect.top + (isDoc ? 0 : (parent as HTMLElement).clientTop);
-
-    // Anchor's current rect in container space
     const anchorRect = anchor.getBoundingClientRect();
-    const relLeft = anchorRect.left - containerL;
-    const relTop = anchorRect.top - containerT;
 
-    // childRel positions relative to anchor
     const childRelTop = rect.top - anchorRect.top;
     const childRelLeft = rect.left - anchorRect.left;
     const childRelBottom = anchorRect.bottom - rect.bottom;
@@ -464,20 +477,20 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     const l = parseStickyOffset(style.left);
     const r = parseStickyOffset(style.right);
 
+    const naturalPos = getDistanceFromContainer(anchor, parent);
+
     stickyConfig = {
       top: t === null ? null : t + childRelTop,
       bottom: b === null ? null : b + childRelBottom,
       left: l === null ? null : l + childRelLeft,
       right: r === null ? null : r + childRelRight,
-      naturalTop: relTop + currentScrollY + childRelTop,
-      naturalLeft: relLeft + currentScrollX + childRelLeft,
+      naturalTop: naturalPos.y + childRelTop,
+      naturalLeft: naturalPos.x + childRelLeft,
       containerWidth: isDoc ? window.innerWidth : (parent as HTMLElement).clientWidth,
       containerHeight: isDoc ? window.innerHeight : (parent as HTMLElement).clientHeight,
       elementWidth: anchorRect.width,
       elementHeight: anchorRect.height,
     };
-
-    console.log('[DeduceGeometry] Config created', stickyConfig);
   }
 
   return {
