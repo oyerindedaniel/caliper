@@ -502,3 +502,21 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     initialWindowY
   };
 }
+
+/**
+ * Clamp a viewport-relative point to the visibility window of a geometry,
+ * accounting for the current viewport scroll.
+ */
+export function clampPointToGeometry(
+  pt: { x: number; y: number },
+  geo: LiveGeometry | null | undefined,
+  viewport: { scrollX: number; scrollY: number }
+): { x: number; y: number } {
+  if (!geo) return pt;
+
+  return {
+    x: Math.max(geo.visibleMinX - viewport.scrollX, Math.min(pt.x, geo.visibleMaxX - viewport.scrollX)),
+    y: Math.max(geo.visibleMinY - viewport.scrollY, Math.min(pt.y, geo.visibleMaxY - viewport.scrollY)),
+  };
+}
+
