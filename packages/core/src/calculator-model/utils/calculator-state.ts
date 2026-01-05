@@ -19,6 +19,7 @@ export type CalculatorAction =
   | { type: "BACKSPACE" }
   | { type: "DELETE" }
   | { type: "ENTER" }
+  | { type: "SYNC_VALUE"; value: number }
   | { type: "CLOSE" };
 
 export function createCalculatorState(): {
@@ -68,6 +69,16 @@ export function createCalculatorState(): {
           result: null,
           isActive: true,
         };
+        break;
+
+      case "SYNC_VALUE":
+        // Only sync if the user hasn't started an operation yet
+        if (state.isActive && state.operation === null) {
+          state = {
+            ...state,
+            baseValue: action.value,
+          };
+        }
         break;
 
       case "INPUT_DIGIT":

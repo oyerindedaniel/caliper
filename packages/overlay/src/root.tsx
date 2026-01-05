@@ -43,6 +43,7 @@ export function Root(config: RootConfig) {
   });
 
   const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
+  const [activeCalculatorLine, setActiveCalculatorLine] = createSignal<MeasurementLine | null>(null);
   const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
 
   let system: MeasurementSystem | null = null;
@@ -359,12 +360,30 @@ export function Root(config: RootConfig) {
     });
   });
 
+  createEffect(() => {
+    const calcLine = activeCalculatorLine();
+    const currentResult = result();
+
+    if (calcLine && currentResult && system) {
+      viewport().version;
+
+      const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
+      if (matchingLine) {
+        const liveValue = getLiveLineValue(matchingLine, currentResult);
+        const calc = system.getCalculator();
+        calc.syncValue(liveValue);
+        setCalculatorState(calc.getState());
+      }
+    }
+  });
+
   const handleLineClick = (line: MeasurementLine, liveValue: number) => {
     if (system) {
       const calc = system.getCalculator();
       calc.open(liveValue);
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
+      setActiveCalculatorLine(line);
     }
   };
 
@@ -374,6 +393,9 @@ export function Root(config: RootConfig) {
       calc.handleInput(key);
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
+      if (calcState.operation) {
+        setActiveCalculatorLine(null);
+      }
     }
   };
 
@@ -383,6 +405,9 @@ export function Root(config: RootConfig) {
       calc.handleBackspace();
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
+      if (!calcState.isActive) {
+        setActiveCalculatorLine(null);
+      }
     }
   };
 
@@ -392,6 +417,7 @@ export function Root(config: RootConfig) {
       calc.handleDelete();
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
+      setActiveCalculatorLine(null);
     }
   };
 
@@ -401,6 +427,7 @@ export function Root(config: RootConfig) {
       calc.handleEnter();
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
+      setActiveCalculatorLine(null);
     }
   };
 
@@ -409,6 +436,7 @@ export function Root(config: RootConfig) {
       const calc = system.getCalculator();
       calc.close();
       setCalculatorState(null);
+      setActiveCalculatorLine(null);
     }
   };
 
