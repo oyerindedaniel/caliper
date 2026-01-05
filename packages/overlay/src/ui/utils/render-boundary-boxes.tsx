@@ -126,27 +126,37 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
         }
 
         const isNewElement = lastElement !== element;
+        const useLerp = props.animation.enabled !== false;
 
         setTarget(secondary);
 
         if (isNewElement) {
-          // SELECTION CHANGE: Start lerp animation
           lastElement = element;
 
-          const animate = () => {
-            const currentAnchor = anchor();
-            const nextAnchor = lerpTo(currentAnchor, selection, factor);
-            setAnchor(nextAnchor);
+          if (useLerp) {
+            // SELECTION CHANGE: Start lerp animation
+            const animate = () => {
+              const currentAnchor = anchor();
+              const nextAnchor = lerpTo(currentAnchor, selection, factor);
+              setAnchor(nextAnchor);
 
-            if (!isRectSame(nextAnchor, selection, 0.05)) {
-              rafId = requestAnimationFrame(animate);
-            } else {
+              if (!isRectSame(nextAnchor, selection, 0.05)) {
+                rafId = requestAnimationFrame(animate);
+              } else {
+                rafId = null;
+              }
+            };
+
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(animate);
+          } else {
+            // SNAP: No animation
+            if (rafId) {
+              cancelAnimationFrame(rafId);
               rafId = null;
             }
-          };
-
-          if (rafId) cancelAnimationFrame(rafId);
-          rafId = requestAnimationFrame(animate);
+            setAnchor(selection);
+          }
         } else {
           // SCROLL or SAME ELEMENT: Snap instantly to stay glued
           // We don't update lastElement here because it hasn't changed

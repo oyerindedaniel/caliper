@@ -10,6 +10,8 @@ import {
   type CommandsConfig,
   type AnimationConfig,
   getTopElementAtPoint,
+  getLiveLineValue,
+  MeasurementLine,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
@@ -20,6 +22,7 @@ interface RootConfig {
 
 export function Root(config: RootConfig) {
   const { commands, animation } = config;
+
   const [result, setResult] = createSignal<MeasurementResult | null>(null);
   const [cursor, setCursor] = createSignal({ x: 0, y: 0 });
   const [viewport, setViewport] = createSignal({
@@ -38,11 +41,13 @@ export function Root(config: RootConfig) {
     initialWindowX: 0,
     initialWindowY: 0,
   });
-  const [calculatorState, setCalculatorState] =
-    createSignal<CalculatorState | null>(null);
+
+  const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
+  const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
+
   const [isAltPressed, setIsAltPressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
 
@@ -60,7 +65,9 @@ export function Root(config: RootConfig) {
   };
 
   const scheduleUpdate = () => {
-    if (!viewportRafId) viewportRafId = requestAnimationFrame(syncViewport);
+    if (!viewportRafId) {
+      viewportRafId = requestAnimationFrame(syncViewport);
+    }
   };
 
   onMount(() => {
@@ -68,11 +75,18 @@ export function Root(config: RootConfig) {
     system = createMeasurementSystem();
 
     const unsubscribe = system.onStateChange(() => {
-      if (!system) return;
+      if (!system) {
+        return;
+      }
+
       const currentResult = system.getCurrentResult();
       setResult(currentResult);
       setIsFrozen(system.getState() === "FROZEN");
     });
+
+    // Initial sync
+    const currentResult = system.getCurrentResult();
+    setResult(currentResult);
 
     const unsubscribeUpdate = selectionSystem.onUpdate((metadata) => {
       setSelectionMetadata(metadata);
@@ -85,28 +99,35 @@ export function Root(config: RootConfig) {
         Control: ctrlKey,
         Meta: metaKey,
         Alt: altKey,
-        Shift: shiftKey
+        Shift: shiftKey,
       };
+
       if (key in modifiers) {
         return Object.entries(modifiers).every(([name, value]) =>
           name === key ? value === true : value === false
         );
       }
-      return false;
+
+      return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
     };
 
     const handleClick = (e: MouseEvent) => {
       if (isCommandActive(e)) {
         e.preventDefault();
         e.stopPropagation();
+
         const element = getTopElementAtPoint(e.clientX, e.clientY);
         if (element && selectionSystem) {
           setResult(null);
           setCalculatorState(null);
+
           if (system) {
             system.abort();
             system.getCalculator().close();
           }
+
+          lastHoveredElement = null;
+          suppressionFrames = 0;
           selectionSystem.select(element);
         }
       }
@@ -123,20 +144,33 @@ export function Root(config: RootConfig) {
         mouseMoveRafId = null;
         return;
       }
+
       const e = lastMouseEvent;
       setCursor({ x: e.clientX, y: e.clientY });
+
       const selectedElement = selectionSystem.getSelected();
       const isAlt = isAltPressed();
       const state = system?.getState();
 
       if (selectedElement) {
         if (isAlt) {
-          if (system) system.measure(selectedElement, { x: e.clientX, y: e.clientY });
+          if (system) {
+            system.measure(selectedElement, { x: e.clientX, y: e.clientY });
+          }
         } else if (state !== "FROZEN") {
           const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
+
           if (hoveredElement) {
-            const isAncestor = lastHoveredElement && hoveredElement.contains(lastHoveredElement) && hoveredElement !== lastHoveredElement;
-            if (trailingTimer) { clearTimeout(trailingTimer); trailingTimer = null; }
+            const isAncestor =
+              lastHoveredElement &&
+              hoveredElement.contains(lastHoveredElement) &&
+              hoveredElement !== lastHoveredElement;
+
+            if (trailingTimer) {
+              clearTimeout(trailingTimer);
+              trailingTimer = null;
+            }
+
             if (isAncestor && suppressionFrames < 8) {
               suppressionFrames++;
               trailingTimer = setTimeout(() => {
@@ -150,15 +184,21 @@ export function Root(config: RootConfig) {
               lastHoveredElement = hoveredElement;
               selectionSystem.select(hoveredElement);
             }
+          } else if (trailingTimer) {
+            clearTimeout(trailingTimer);
+            trailingTimer = null;
           }
         }
       }
+
       mouseMoveRafId = null;
     };
 
     const handleMouseMove = (e: MouseEvent) => {
       lastMouseEvent = e;
-      if (!mouseMoveRafId) mouseMoveRafId = requestAnimationFrame(processMouseMove);
+      if (!mouseMoveRafId) {
+        mouseMoveRafId = requestAnimationFrame(processMouseMove);
+      }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -166,18 +206,41 @@ export function Root(config: RootConfig) {
         setIsAltPressed(false);
         setIsFrozen(false);
         setCalculatorState(null);
-        if (selectionSystem) selectionSystem.clear();
-        if (system) { system.abort(); system.getCalculator().close(); setResult(null); }
+
+        if (selectionSystem) {
+          lastHoveredElement = null;
+          suppressionFrames = 0;
+          selectionSystem.clear();
+        }
+
+        if (system) {
+          system.abort();
+          const calc = system.getCalculator();
+          calc.close();
+          setResult(null);
+        }
+
         return;
       }
 
+      if (e.key === commands.select) {
+        setIsSelectKeyDown(true);
+      }
+
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
+
       if (isAltKey) {
         e.preventDefault();
-        if (!isAltPressed() && system) { system.abort(); setResult(null); }
+
+        if (!isAltPressed() && system) {
+          system.abort();
+          setResult(null);
+        }
+
         setIsAltPressed(true);
       } else if (e.key === commands.freeze && e.target === document.body && system) {
         const state = system.getState();
+
         if (state === "FROZEN") {
           e.preventDefault();
           system.unfreeze(isAltPressed());
@@ -185,14 +248,58 @@ export function Root(config: RootConfig) {
           e.preventDefault();
           system.freeze();
         }
+      } else if (isFrozen() && result()) {
+        const key = e.key.toLowerCase();
+        const typeMap: Record<string, MeasurementLine["type"]> = {
+          t: "top",
+          r: "right",
+          b: "bottom",
+          l: "left",
+          d: "distance",
+        };
+
+        const targetType = typeMap[key];
+        if (targetType) {
+          const currentLines = result()?.lines || [];
+          const targetLine = currentLines.find((l) => l.type === targetType);
+
+          if (targetLine) {
+            e.preventDefault();
+            const liveValue = getLiveLineValue(targetLine, result());
+            handleLineClick(targetLine, liveValue);
+          }
+        }
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === commands.select) {
+        setIsSelectKeyDown(false);
+      }
+
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
+
       if (isAltKey) {
         e.preventDefault();
-        if (isAltPressed()) { setIsAltPressed(false); if (system) system.stop(); }
+
+        if (isAltPressed()) {
+          setIsAltPressed(false);
+
+          if (system) {
+            system.stop();
+          }
+        }
+      }
+    };
+
+    const handleBlur = () => {
+      if (isAltPressed()) {
+        setIsAltPressed(false);
+
+        if (system) {
+          system.stop();
+          setResult(null);
+        }
       }
     };
 
@@ -200,34 +307,110 @@ export function Root(config: RootConfig) {
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
       window.removeEventListener("click", handleClick, true);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      if (mouseMoveRafId) cancelAnimationFrame(mouseMoveRafId);
-      if (trailingTimer) clearTimeout(trailingTimer);
+      window.removeEventListener("blur", handleBlur);
+
+      if (mouseMoveRafId) {
+        cancelAnimationFrame(mouseMoveRafId);
+      }
+
+      if (trailingTimer) {
+        clearTimeout(trailingTimer);
+      }
+
       unsubscribe();
       unsubscribeUpdate();
-      if (system) { system.cleanup(); system = null; }
-      if (selectionSystem) { selectionSystem.clear(); selectionSystem = null; }
+
+      if (system) {
+        system.cleanup();
+        system = null;
+      }
+
+      if (selectionSystem) {
+        selectionSystem.clear();
+        selectionSystem = null;
+      }
     });
   });
 
   createEffect(() => {
     const active = !!selectionMetadata().element || !!result();
+
     if (active) {
       window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
       window.addEventListener("resize", scheduleUpdate, { passive: true });
       syncViewport();
     }
+
     onCleanup(() => {
       window.removeEventListener("scroll", scheduleUpdate, { capture: true });
       window.removeEventListener("resize", scheduleUpdate);
-      if (viewportRafId) { cancelAnimationFrame(viewportRafId); viewportRafId = null; }
+
+      if (viewportRafId) {
+        cancelAnimationFrame(viewportRafId);
+        viewportRafId = null;
+      }
     });
   });
+
+  const handleLineClick = (line: MeasurementLine, liveValue: number) => {
+    if (system) {
+      const calc = system.getCalculator();
+      calc.open(liveValue);
+      const calcState = calc.getState();
+      setCalculatorState(calcState.isActive ? calcState : null);
+    }
+  };
+
+  const handleCalculatorInput = (key: string) => {
+    if (system) {
+      const calc = system.getCalculator();
+      calc.handleInput(key);
+      const calcState = calc.getState();
+      setCalculatorState(calcState.isActive ? calcState : null);
+    }
+  };
+
+  const handleCalculatorBackspace = () => {
+    if (system) {
+      const calc = system.getCalculator();
+      calc.handleBackspace();
+      const calcState = calc.getState();
+      setCalculatorState(calcState.isActive ? calcState : null);
+    }
+  };
+
+  const handleCalculatorDelete = () => {
+    if (system) {
+      const calc = system.getCalculator();
+      calc.handleDelete();
+      const calcState = calc.getState();
+      setCalculatorState(calcState.isActive ? calcState : null);
+    }
+  };
+
+  const handleCalculatorEnter = () => {
+    if (system) {
+      const calc = system.getCalculator();
+      calc.handleEnter();
+      const calcState = calc.getState();
+      setCalculatorState(calcState.isActive ? calcState : null);
+    }
+  };
+
+  const handleCalculatorClose = () => {
+    if (system) {
+      const calc = system.getCalculator();
+      calc.close();
+      setCalculatorState(null);
+    }
+  };
 
   return (
     <Overlay
@@ -239,53 +422,12 @@ export function Root(config: RootConfig) {
       animation={animation}
       viewport={viewport}
       calculatorState={calculatorState}
-      onLineClick={(line, liveValue) => {
-        if (system) {
-          const calc = system.getCalculator();
-          calc.open(liveValue);
-          const calcState = calc.getState();
-          setCalculatorState(calcState.isActive ? calcState : null);
-        }
-      }}
-      onCalculatorInput={(key) => {
-        if (system) {
-          const calc = system.getCalculator();
-          calc.handleInput(key);
-          const calcState = calc.getState();
-          setCalculatorState(calcState.isActive ? calcState : null);
-        }
-      }}
-      onCalculatorBackspace={() => {
-        if (system) {
-          const calc = system.getCalculator();
-          calc.handleBackspace();
-          const calcState = calc.getState();
-          setCalculatorState(calcState.isActive ? calcState : null);
-        }
-      }}
-      onCalculatorDelete={() => {
-        if (system) {
-          const calc = system.getCalculator();
-          calc.handleDelete();
-          const calcState = calc.getState();
-          setCalculatorState(calcState.isActive ? calcState : null);
-        }
-      }}
-      onCalculatorEnter={() => {
-        if (system) {
-          const calc = system.getCalculator();
-          calc.handleEnter();
-          const calcState = calc.getState();
-          setCalculatorState(calcState.isActive ? calcState : null);
-        }
-      }}
-      onCalculatorClose={() => {
-        if (system) {
-          const calc = system.getCalculator();
-          calc.close();
-          setCalculatorState(null);
-        }
-      }}
+      onLineClick={handleLineClick}
+      onCalculatorInput={handleCalculatorInput}
+      onCalculatorBackspace={handleCalculatorBackspace}
+      onCalculatorDelete={handleCalculatorDelete}
+      onCalculatorEnter={handleCalculatorEnter}
+      onCalculatorClose={handleCalculatorClose}
     />
   );
 }

@@ -1,5 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
-import { type MeasurementLine, type LiveGeometry } from "@caliper/core";
+import { type MeasurementLine, type LiveGeometry, getLiveLineValue, getLivePoint } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface SyncData {
@@ -22,36 +22,6 @@ interface MeasurementLinesProps {
     version: number;
   };
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
-}
-
-/**
- * Get live coordinates for a line endpoint in VIEWPORT space.
- */
-function getLivePointViewport(
-  pt: { x: number; y: number },
-  owner: "primary" | "secondary" | undefined,
-  line: MeasurementLine,
-  primary: SyncData,
-  secondary: SyncData,
-  scrollX: number,
-  scrollY: number
-) {
-  let syncX = owner === "secondary" ? secondary : primary;
-  let syncY = owner === "secondary" ? secondary : primary;
-
-  if (line.type === "left" || line.type === "right") {
-    syncY = primary;
-  } else if (line.type === "top" || line.type === "bottom") {
-    syncX = primary;
-  } else if (line.type === "distance") {
-    if (Math.abs(line.start.x - line.end.x) < 1) syncX = primary;
-    if (Math.abs(line.start.y - line.end.y) < 1) syncY = primary;
-  }
-
-  return {
-    x: pt.x - (syncX?.delta.deltaX ?? 0) - scrollX,
-    y: pt.y - (syncY?.delta.deltaY ?? 0) - scrollY,
-  };
 }
 
 /**
@@ -91,22 +61,22 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
       <g clip-path={hasClipping() ? `url(#${clipPathId})` : undefined}>
         <For each={props.lines}>
           {(line, index) => {
-            const start = () => getLivePointViewport(
+            const start = () => getLivePoint(
               line.start,
               line.startSync,
               line,
-              props.data.primary,
-              props.data.secondary,
+              props.data.primary.delta,
+              props.data.secondary.delta,
               props.viewport.scrollX,
               props.viewport.scrollY
             );
 
-            const endRaw = () => getLivePointViewport(
+            const endRaw = () => getLivePoint(
               line.end,
               line.endSync,
               line,
-              props.data.primary,
-              props.data.secondary,
+              props.data.primary.delta,
+              props.data.secondary.delta,
               props.viewport.scrollX,
               props.viewport.scrollY
             );

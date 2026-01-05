@@ -1,5 +1,5 @@
 import { For, Show, createMemo } from "solid-js";
-import { type MeasurementLine, type LiveGeometry } from "@caliper/core";
+import { type MeasurementLine, type LiveGeometry, getLivePoint } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface SyncData {
@@ -29,39 +29,32 @@ interface MeasurementLabelsProps {
 export function MeasurementLabels(props: MeasurementLabelsProps) {
   const margin = 16;
 
-  const getLivePointViewport = (line: MeasurementLine, type: "start" | "end") => {
-    const pt = type === "start" ? line.start : line.end;
-    const owner = type === "start" ? line.startSync : line.endSync;
-
-    let syncX = owner === "secondary" ? props.data.secondary : props.data.primary;
-    let syncY = owner === "secondary" ? props.data.secondary : props.data.primary;
-
-    if (line.type === "left" || line.type === "right") {
-      syncY = props.data.primary;
-    } else if (line.type === "top" || line.type === "bottom") {
-      syncX = props.data.primary;
-    } else if (line.type === "distance") {
-      if (Math.abs(line.start.x - line.end.x) < 1) syncX = props.data.primary;
-      if (Math.abs(line.start.y - line.end.y) < 1) syncY = props.data.primary;
-    }
-
-    return {
-      x: pt.x - (syncX?.delta.deltaX ?? 0) - props.viewport.scrollX,
-      y: pt.y - (syncY?.delta.deltaY ?? 0) - props.viewport.scrollY,
-    };
-  };
 
   return (
     <div class={`${PREFIX}viewport-fixed`} style={{ 'z-index': 1000000 }}>
       <For each={props.lines}>
         {(line: MeasurementLine) => {
-          const value = Math.round(line.value * 100) / 100;
-
           const position = createMemo(() => {
             props.viewport.version;
 
-            const s = getLivePointViewport(line, "start");
-            const e = getLivePointViewport(line, "end");
+            const s = getLivePoint(
+              line.start,
+              line.startSync,
+              line,
+              props.data.primary.delta,
+              props.data.secondary.delta,
+              props.viewport.scrollX,
+              props.viewport.scrollY
+            );
+            const e = getLivePoint(
+              line.end,
+              line.endSync,
+              line,
+              props.data.primary.delta,
+              props.data.secondary.delta,
+              props.viewport.scrollX,
+              props.viewport.scrollY
+            );
 
             const start = s;
             const end = { ...e };
