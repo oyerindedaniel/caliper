@@ -21,6 +21,8 @@ export {
   type MeasurementResult,
   type MeasurementLine,
   createMeasurementLines,
+  getLiveLineValue,
+  getLivePoint,
 } from "./measurement-model/utils/measurement-result.js";
 export {
   createMeasurementSystem,

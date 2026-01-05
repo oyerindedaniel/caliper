@@ -1,5 +1,10 @@
 import type { CursorContext } from "../../shared/types/index.js";
-import { type ScrollState, type PositionMode, type StickyConfig } from "../../geometry/utils/scroll-aware.js";
+import {
+  type ScrollState,
+  type PositionMode,
+  type StickyConfig,
+  getTotalScrollDelta
+} from "../../geometry/utils/scroll-aware.js";
 
 /**
  * Pure data structure for measurement lines
@@ -238,3 +243,91 @@ function calculatePaddingLines(
     ];
   }
 }
+
+/**
+ * Calculate the live coordinates of a point in a line, accounting for scroll.
+ */
+export function getLivePoint(
+  pt: { x: number; y: number },
+  owner: "primary" | "secondary" | undefined,
+  line: Pick<MeasurementLine, "type" | "start" | "end">,
+  primaryDelta: { deltaX: number; deltaY: number },
+  secondaryDelta: { deltaX: number; deltaY: number },
+  scrollX: number = 0,
+  scrollY: number = 0
+) {
+  let syncX = owner === "secondary" ? secondaryDelta : primaryDelta;
+  let syncY = owner === "secondary" ? secondaryDelta : primaryDelta;
+
+  if (line.type === "left" || line.type === "right") {
+    syncY = primaryDelta;
+  } else if (line.type === "top" || line.type === "bottom") {
+    syncX = primaryDelta;
+  } else if (line.type === "distance") {
+    // Do not force sync for distance lines; let points move with their owners.
+  }
+
+  return {
+    x: pt.x - (syncX?.deltaX ?? 0) - scrollX,
+    y: pt.y - (syncY?.deltaY ?? 0) - scrollY,
+  };
+}
+
+/**
+ * Pure math helper to calculate the live distance of a line.
+ */
+export function getLiveLineValue(
+  line: MeasurementLine,
+  result: MeasurementResult | null
+): number {
+  if (!result) {
+    return line.value;
+  }
+
+  const primaryDelta = getTotalScrollDelta(
+    result.primaryHierarchy,
+    result.primaryPosition,
+    result.primarySticky,
+    result.primaryWinX,
+    result.primaryWinY
+  );
+
+  const secondaryDelta = getTotalScrollDelta(
+    result.secondaryHierarchy,
+    result.secondaryPosition,
+    result.secondarySticky,
+    result.secondaryWinX,
+    result.secondaryWinY
+  );
+
+  const startPoint = getLivePoint(
+    line.start,
+    line.startSync,
+    line,
+    primaryDelta,
+    secondaryDelta
+  );
+
+  const endPoint = getLivePoint(
+    line.end,
+    line.endSync,
+    line,
+    primaryDelta,
+    secondaryDelta
+  );
+
+  // Force axiality for axial types to handle any float precision drift
+  if (line.type === "top" || line.type === "bottom") {
+    endPoint.x = startPoint.x;
+  }
+
+  if (line.type === "left" || line.type === "right") {
+    endPoint.y = startPoint.y;
+  }
+
+  const dx = startPoint.x - endPoint.x;
+  const dy = startPoint.y - endPoint.y;
+
+  return Math.sqrt(dx * dx + dy * dy);
+}
+

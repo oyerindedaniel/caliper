@@ -86,6 +86,30 @@ export function getScrollHierarchy(element: Element): ScrollState[] {
   return hierarchy;
 }
 
+
+/**
+ * Internal logic for capped sticky position
+ */
+function calculateStickyRef(
+  scroll: number,
+  naturalPos: number,
+  threshold: number,
+  containerDim: number,
+  elementDim: number,
+  isOppositeMode: boolean
+): number {
+  const staticRel = naturalPos - scroll;
+  if (!isOppositeMode) {
+    let stuck = Math.max(staticRel, threshold);
+    stuck = Math.min(stuck, containerDim - elementDim);
+    return stuck;
+  } else {
+    let stuck = Math.min(staticRel, containerDim - elementDim - threshold);
+    stuck = Math.max(stuck, 0);
+    return stuck;
+  }
+}
+
 /**
  * Internal logic for capped sticky delta
  */
@@ -100,27 +124,25 @@ function calculateStickyDelta(
 ): number {
   if (threshold === null) return currentScroll - initialScroll;
 
-  // Static relative position if it weren't forced to stick
-  const staticRel = naturalPos - currentScroll;
+  const startRef = calculateStickyRef(
+    initialScroll,
+    naturalPos,
+    threshold,
+    containerDim,
+    elementDim,
+    isOppositeMode
+  );
 
-  let stuckRel = staticRel;
-  if (!isOppositeMode) {
-    // top / left
-    stuckRel = Math.max(staticRel, threshold);
-    // don't push outside bottom container edge
-    stuckRel = Math.min(stuckRel, containerDim - elementDim);
-  } else {
-    // bottom / right
-    stuckRel = Math.min(staticRel, containerDim - elementDim - threshold);
-    stuckRel = Math.max(stuckRel, 0);
-  }
+  const endRef = calculateStickyRef(
+    currentScroll,
+    naturalPos,
+    threshold,
+    containerDim,
+    elementDim,
+    isOppositeMode
+  );
 
-  // Current physical position in container coords
-  const currentPhysicalPos = naturalPos - currentScroll;
-  // How much we've shifted from the "static" scroll path
-  const stickyCorrection = currentPhysicalPos - stuckRel;
-
-  return (currentScroll - initialScroll) + stickyCorrection;
+  return startRef - endRef;
 }
 
 export function getTotalScrollDelta(
@@ -400,6 +422,33 @@ function getInheritedPositionMode(element: Element): { mode: PositionMode; ancho
   return { mode: "static", anchor: null };
 }
 
+/**
+ * Calculates the exact layout offset of an element relative to a container.
+ */
+function getDistanceFromContainer(target: HTMLElement, container: Element) {
+  let x = 0;
+  let y = 0;
+  let current = target;
+
+  while (current && current !== container && current.offsetParent) {
+    x += current.offsetLeft;
+    y += current.offsetTop;
+
+    const parent = current.offsetParent as HTMLElement;
+    x += parent.clientLeft || 0;
+    y += parent.clientTop || 0;
+
+    current = parent;
+  }
+
+  if (container instanceof HTMLElement) {
+    x -= container.clientLeft || 0;
+    y -= container.clientTop || 0;
+  }
+
+  return { x, y };
+}
+
 export function deduceGeometry(element: Element): DeducedGeometry {
   const rect = element.getBoundingClientRect();
   const scrollHierarchy = getScrollHierarchy(element);
@@ -407,42 +456,36 @@ export function deduceGeometry(element: Element): DeducedGeometry {
   const initialWindowX = window.scrollX;
   const initialWindowY = window.scrollY;
 
-  // Determine actual effective positioning
   const { mode: position, anchor } = getInheritedPositionMode(element);
 
   let stickyConfig;
   if (position === "sticky" && anchor) {
-    // Thresholds come from the anchor (even if deduced for a child)
     const style = window.getComputedStyle(anchor);
 
-    // Nearest scroll container of the anchor
     const parent = getScrollHierarchy(anchor)[0]?.element || document.documentElement;
-    const parentRect = parent.getBoundingClientRect();
     const isDoc = parent === document.documentElement;
 
-    const currentScrollX = isDoc ? initialWindowX : (parent as HTMLElement).scrollLeft;
-    const currentScrollY = isDoc ? initialWindowY : (parent as HTMLElement).scrollTop;
-
-    const containerL = parentRect.left + (isDoc ? 0 : (parent as HTMLElement).clientLeft);
-    const containerT = parentRect.top + (isDoc ? 0 : (parent as HTMLElement).clientTop);
-
-    // Anchor's current rect in container space
     const anchorRect = anchor.getBoundingClientRect();
-    const relLeft = anchorRect.left - containerL;
-    const relTop = anchorRect.top - containerT;
 
-    // StickyConfig tracks the ANCHOR behavior
-    // But natural offset must also account for child-to-anchor offset
-    const childRelX = rect.left - anchorRect.left;
-    const childRelY = rect.top - anchorRect.top;
+    const childRelTop = rect.top - anchorRect.top;
+    const childRelLeft = rect.left - anchorRect.left;
+    const childRelBottom = anchorRect.bottom - rect.bottom;
+    const childRelRight = anchorRect.right - rect.right;
+
+    const t = parseStickyOffset(style.top);
+    const b = parseStickyOffset(style.bottom);
+    const l = parseStickyOffset(style.left);
+    const r = parseStickyOffset(style.right);
+
+    const naturalPos = getDistanceFromContainer(anchor, parent);
 
     stickyConfig = {
-      top: parseStickyOffset(style.top),
-      bottom: parseStickyOffset(style.bottom),
-      left: parseStickyOffset(style.left),
-      right: parseStickyOffset(style.right),
-      naturalTop: relTop + currentScrollY + childRelY,
-      naturalLeft: relLeft + currentScrollX + childRelX,
+      top: t === null ? null : t + childRelTop,
+      bottom: b === null ? null : b + childRelBottom,
+      left: l === null ? null : l + childRelLeft,
+      right: r === null ? null : r + childRelRight,
+      naturalTop: naturalPos.y + childRelTop,
+      naturalLeft: naturalPos.x + childRelLeft,
       containerWidth: isDoc ? window.innerWidth : (parent as HTMLElement).clientWidth,
       containerHeight: isDoc ? window.innerHeight : (parent as HTMLElement).clientHeight,
       elementWidth: anchorRect.width,
