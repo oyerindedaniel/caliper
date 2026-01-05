@@ -86,6 +86,30 @@ export function getScrollHierarchy(element: Element): ScrollState[] {
   return hierarchy;
 }
 
+
+/**
+ * Internal logic for capped sticky position
+ */
+function calculateStickyRef(
+  scroll: number,
+  naturalPos: number,
+  threshold: number,
+  containerDim: number,
+  elementDim: number,
+  isOppositeMode: boolean
+): number {
+  const staticRel = naturalPos - scroll;
+  if (!isOppositeMode) {
+    let stuck = Math.max(staticRel, threshold);
+    stuck = Math.min(stuck, containerDim - elementDim);
+    return stuck;
+  } else {
+    let stuck = Math.min(staticRel, containerDim - elementDim - threshold);
+    stuck = Math.max(stuck, 0);
+    return stuck;
+  }
+}
+
 /**
  * Internal logic for capped sticky delta
  */
@@ -100,27 +124,25 @@ function calculateStickyDelta(
 ): number {
   if (threshold === null) return currentScroll - initialScroll;
 
-  // Static relative position if it weren't forced to stick
-  const staticRel = naturalPos - currentScroll;
+  const startRef = calculateStickyRef(
+    initialScroll,
+    naturalPos,
+    threshold,
+    containerDim,
+    elementDim,
+    isOppositeMode
+  );
 
-  let stuckRel = staticRel;
-  if (!isOppositeMode) {
-    // top / left
-    stuckRel = Math.max(staticRel, threshold);
-    // don't push outside bottom container edge
-    stuckRel = Math.min(stuckRel, containerDim - elementDim);
-  } else {
-    // bottom / right
-    stuckRel = Math.min(staticRel, containerDim - elementDim - threshold);
-    stuckRel = Math.max(stuckRel, 0);
-  }
+  const endRef = calculateStickyRef(
+    currentScroll,
+    naturalPos,
+    threshold,
+    containerDim,
+    elementDim,
+    isOppositeMode
+  );
 
-  // Current physical position in container coords
-  const currentPhysicalPos = naturalPos - currentScroll;
-  // How much we've shifted from the "static" scroll path
-  const stickyCorrection = currentPhysicalPos - stuckRel;
-
-  return (currentScroll - initialScroll) + stickyCorrection;
+  return startRef - endRef;
 }
 
 export function getTotalScrollDelta(
@@ -454,6 +476,8 @@ export function deduceGeometry(element: Element): DeducedGeometry {
       elementWidth: anchorRect.width,
       elementHeight: anchorRect.height,
     };
+
+    console.log('[DeduceGeometry] Config created', stickyConfig);
   }
 
   return {

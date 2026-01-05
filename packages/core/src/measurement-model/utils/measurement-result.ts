@@ -264,12 +264,7 @@ export function getLivePoint(
   } else if (line.type === "top" || line.type === "bottom") {
     syncX = primaryDelta;
   } else if (line.type === "distance") {
-    if (Math.abs(line.start.x - line.end.x) < 1) {
-      syncX = primaryDelta;
-    }
-    if (Math.abs(line.start.y - line.end.y) < 1) {
-      syncY = primaryDelta;
-    }
+    // Do not force sync for distance lines; let points move with their owners.
   }
 
   return {

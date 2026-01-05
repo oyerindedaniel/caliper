@@ -37,6 +37,10 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
           const position = createMemo(() => {
             props.viewport.version;
 
+            if (line.type === "distance" && props.viewport.scrollY > 0) {
+              // Logs removed
+            }
+
             const s = getLivePoint(
               line.start,
               line.startSync,
