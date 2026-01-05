@@ -11,7 +11,7 @@ import {
   type AnimationConfig,
   getTopElementAtPoint,
   getLiveLineValue,
-  MeasurementLine,
+  type MeasurementLine,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 

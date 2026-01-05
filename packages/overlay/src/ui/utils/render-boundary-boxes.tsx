@@ -140,7 +140,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
               const nextAnchor = lerpTo(currentAnchor, selection, factor);
               setAnchor(nextAnchor);
 
-              if (!isRectSame(nextAnchor, selection, 0.05)) {
+              if (selection && !isRectSame(nextAnchor, selection, 0.05)) {
                 rafId = requestAnimationFrame(animate);
               } else {
                 rafId = null;
@@ -163,9 +163,6 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
           if (!rafId) {
             setAnchor(selection);
           }
-          // Note: If an animation IS running (rafId exists) and we scroll, 
-          // we let the animation loop handle the update to prevent 'jams'.
-          // The animate loop uses 'selection' which is a memo that includes viewport.version
         }
       }
     )

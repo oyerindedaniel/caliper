@@ -431,18 +431,24 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     const relLeft = anchorRect.left - containerL;
     const relTop = anchorRect.top - containerT;
 
-    // StickyConfig tracks the ANCHOR behavior
-    // But natural offset must also account for child-to-anchor offset
-    const childRelX = rect.left - anchorRect.left;
-    const childRelY = rect.top - anchorRect.top;
+    // childRel positions relative to anchor
+    const childRelTop = rect.top - anchorRect.top;
+    const childRelLeft = rect.left - anchorRect.left;
+    const childRelBottom = anchorRect.bottom - rect.bottom;
+    const childRelRight = anchorRect.right - rect.right;
+
+    const t = parseStickyOffset(style.top);
+    const b = parseStickyOffset(style.bottom);
+    const l = parseStickyOffset(style.left);
+    const r = parseStickyOffset(style.right);
 
     stickyConfig = {
-      top: parseStickyOffset(style.top),
-      bottom: parseStickyOffset(style.bottom),
-      left: parseStickyOffset(style.left),
-      right: parseStickyOffset(style.right),
-      naturalTop: relTop + currentScrollY + childRelY,
-      naturalLeft: relLeft + currentScrollX + childRelX,
+      top: t === null ? null : t + childRelTop,
+      bottom: b === null ? null : b + childRelBottom,
+      left: l === null ? null : l + childRelLeft,
+      right: r === null ? null : r + childRelRight,
+      naturalTop: relTop + currentScrollY + childRelTop,
+      naturalLeft: relLeft + currentScrollX + childRelLeft,
       containerWidth: isDoc ? window.innerWidth : (parent as HTMLElement).clientWidth,
       containerHeight: isDoc ? window.innerHeight : (parent as HTMLElement).clientHeight,
       elementWidth: anchorRect.width,
