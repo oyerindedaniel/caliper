@@ -13,6 +13,7 @@ export interface CalculatorIntegration {
   handleDelete: () => void;
   handleEnter: () => void;
   close: () => void;
+  syncValue: (value: number) => void;
   getResult: () => number | null;
 }
 
@@ -53,6 +54,10 @@ export function createCalculatorIntegration(): CalculatorIntegration {
     calculator.dispatch({ type: "CLOSE" });
   }
 
+  function syncValue(value: number) {
+    calculator.dispatch({ type: "SYNC_VALUE", value });
+  }
+
   function getResult(): number | null {
     const state = calculator.getState();
     return state.result;
@@ -66,6 +71,7 @@ export function createCalculatorIntegration(): CalculatorIntegration {
     handleDelete,
     handleEnter,
     close,
+    syncValue,
     getResult,
   };
 }

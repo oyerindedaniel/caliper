@@ -1,5 +1,5 @@
 import { For, Show, createMemo } from "solid-js";
-import { type MeasurementLine, type LiveGeometry, getLivePoint } from "@caliper/core";
+import { type MeasurementLine, type LiveGeometry, getLivePoint, clampPointToGeometry } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface SyncData {
@@ -37,7 +37,7 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
           const position = createMemo(() => {
             props.viewport.version;
 
-            const s = getLivePoint(
+            const sRaw = getLivePoint(
               line.start,
               line.startSync,
               line,
@@ -46,7 +46,7 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
               props.viewport.scrollX,
               props.viewport.scrollY
             );
-            const e = getLivePoint(
+            const eRaw = getLivePoint(
               line.end,
               line.endSync,
               line,
@@ -56,17 +56,16 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
               props.viewport.scrollY
             );
 
-            const start = s;
-            const end = { ...e };
-            if (line.type === "top" || line.type === "bottom") end.x = s.x;
-            if (line.type === "left" || line.type === "right") end.y = s.y;
+            const dxRaw = sRaw.x - eRaw.x;
+            const dyRaw = sRaw.y - eRaw.y;
+            const liveValue = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
 
-            const dx = start.x - end.x;
-            const dy = start.y - end.y;
-            const liveValue = Math.sqrt(dx * dx + dy * dy);
+            const start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+            const eClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
 
-            const naturalX = (start.x + end.x) / 2;
-            const naturalY = (start.y + end.y) / 2;
+            const end = { ...eClamped };
+            if (line.type === "top" || line.type === "bottom") end.x = start.x;
+            if (line.type === "left" || line.type === "right") end.y = start.y;
 
             const vpMinX = 0;
             const vpMaxX = props.viewport.width;
@@ -86,22 +85,21 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
             const lineMinY = Math.min(start.y, end.y);
             const lineMaxY = Math.max(start.y, end.y);
 
+            // Hide if the entire visible segment is out of viewport
             const isFullyHidden = (
-              lineMaxY < cMinY ||
-              lineMinY > cMaxY ||
-              lineMaxX < cMinX ||
-              lineMinX > cMaxX
+              lineMaxY < 0 ||
+              lineMinY > props.viewport.height ||
+              lineMaxX < 0 ||
+              lineMinX > props.viewport.width
             );
 
             if (isFullyHidden) return { x: 0, y: 0, isHidden: true, value: 0 };
 
-            const visibleLineMinX = Math.max(lineMinX, cMinX);
-            const visibleLineMaxX = Math.min(lineMaxX, cMaxX);
-            const visibleLineMinY = Math.max(lineMinY, cMinY);
-            const visibleLineMaxY = Math.min(lineMaxY, cMaxY);
+            const centerX = (start.x + end.x) / 2;
+            const centerY = (start.y + end.y) / 2;
 
-            const centerX = (visibleLineMinX + visibleLineMaxX) / 2;
-            const centerY = (visibleLineMinY + visibleLineMaxY) / 2;
+            const naturalX = centerX;
+            const naturalY = centerY;
 
             let targetX = naturalX;
             let targetY = naturalY;
