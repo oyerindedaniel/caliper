@@ -1,3 +1,12 @@
+/**
+ * Calculator configuration and shortcuts.
+ * This file defines how users can customize the calculator triggers and appearance.
+ */
+
+export type DeepRequired<T> = {
+  [K in keyof T]-?: DeepRequired<T[K]>;
+};
+
 export interface ThemeConfig {
   primary?: string;
   secondary?: string;
@@ -6,6 +15,17 @@ export interface ThemeConfig {
   calcOpHighlight?: string;
   calcText?: string;
   text?: string;
+}
+
+/**
+ * Keyboard shortcuts for measurement sides.
+ */
+export interface CalculatorShortcuts {
+  top?: string;
+  bottom?: string;
+  left?: string;
+  right?: string;
+  distance?: string;
 }
 
 export interface CommandsConfig {
@@ -17,7 +37,11 @@ export interface CommandsConfig {
   select?: string;
   /** Key to clear current selection (default: Escape) */
   clear?: string;
+  /** Custom keys to trigger calculator for specific sides (default: t, r, b, l) */
+  calculator?: CalculatorShortcuts;
 }
+
+
 
 export interface AnimationConfig {
   /** Enable smooth lerp animation for boundary box hover (default: true) */
@@ -32,14 +56,21 @@ export interface OverlayConfig {
   animation?: AnimationConfig;
 }
 
-export const DEFAULT_COMMANDS: Required<CommandsConfig> = {
+export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
   activate: "Alt",
   freeze: " ",
   select: "Control",
   clear: "Escape",
+  calculator: {
+    top: "t",
+    right: "r",
+    bottom: "b",
+    left: "l",
+    distance: "d",
+  },
 };
 
-export const DEFAULT_THEME: Required<ThemeConfig> = {
+export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {
   primary: "rgba(24, 160, 251, 1)",
   secondary: "rgba(242, 78, 30, 1)",
   calcBg: "rgba(30, 30, 30, 0.95)",
@@ -49,7 +80,7 @@ export const DEFAULT_THEME: Required<ThemeConfig> = {
   text: "white",
 };
 
-export const DEFAULT_ANIMATION: Required<AnimationConfig> = {
+export const DEFAULT_ANIMATION: DeepRequired<AnimationConfig> = {
   enabled: true,
   lerpFactor: 0.25,
 };

@@ -36,11 +36,8 @@ export function createCalculatorState(): {
   };
 
   function calculate(): number | null {
-    if (!state.operation || state.inputValue === "") {
-      return null;
-    }
-
-    const inputNum = parseFloat(state.inputValue);
+    const val = state.inputValue === "" ? "0" : state.inputValue;
+    const inputNum = parseFloat(val);
     if (isNaN(inputNum)) {
       return null;
     }
@@ -85,7 +82,7 @@ export function createCalculatorState(): {
         if (!state.isActive || !state.operation) return state;
         state = {
           ...state,
-          inputValue: state.inputValue + action.digit,
+          inputValue: state.inputValue === "0" ? action.digit : state.inputValue + action.digit,
         };
         break;
 
@@ -159,7 +156,7 @@ export function createCalculatorState(): {
         break;
 
       case "ENTER":
-        if (!state.isActive || !state.operation || state.inputValue === "") {
+        if (!state.isActive || !state.operation) {
           return state;
         }
         const result = calculate();
