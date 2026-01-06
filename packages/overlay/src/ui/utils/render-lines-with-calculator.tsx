@@ -13,6 +13,7 @@ interface MeasurementLinesProps {
     primary: SyncData;
     secondary: SyncData;
     common: { minX: number; maxX: number; minY: number; maxY: number };
+    isSameContext: boolean;
   };
   viewport: {
     scrollX: number;
@@ -85,10 +86,15 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
               const sRaw = startRaw();
               const eRaw = endRaw();
 
-              const start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
-              const eRawClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+              let start = sRaw;
+              let end = eRaw;
 
-              const end = { ...eRawClamped };
+              if (!props.data.isSameContext) {
+                start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+                const eRawClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+                end = { ...eRawClamped };
+              }
+
               if (line.type === "top" || line.type === "bottom") end.x = start.x;
               if (line.type === "left" || line.type === "right") end.y = start.y;
 

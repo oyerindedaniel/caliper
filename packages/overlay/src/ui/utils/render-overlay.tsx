@@ -66,6 +66,13 @@ export function Overlay(props: OverlayProps) {
         res.secondaryHierarchy,
         props.selectionMetadata().element!,
         res.secondaryElement!
+      ),
+      isSameContext: !!(
+        (res.primaryPosition === res.secondaryPosition &&
+          res.primaryHierarchy.length === res.secondaryHierarchy.length &&
+          res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element)) ||
+        res.secondaryElement?.contains(props.selectionMetadata().element!) ||
+        props.selectionMetadata().element?.contains(res.secondaryElement!)
       )
     };
   });

@@ -207,6 +207,7 @@ export function Root(config: RootConfig) {
         setIsAltPressed(false);
         setIsFrozen(false);
         setCalculatorState(null);
+        setActiveCalculatorLine(null);
 
         if (selectionSystem) {
           lastHoveredElement = null;
