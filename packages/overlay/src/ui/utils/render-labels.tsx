@@ -13,6 +13,7 @@ interface MeasurementLabelsProps {
     primary: SyncData;
     secondary: SyncData;
     common: { minX: number; maxX: number; minY: number; maxY: number };
+    isSameContext: boolean;
   };
   viewport: {
     scrollX: number;
@@ -60,12 +61,20 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
             const dyRaw = sRaw.y - eRaw.y;
             const liveValue = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
 
-            const start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
-            const eClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+            let start = sRaw;
+            let end = eRaw;
 
-            const end = { ...eClamped };
+            if (!props.data.isSameContext) {
+              start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+              const eClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+              end = { ...eClamped };
+            }
+
             if (line.type === "top" || line.type === "bottom") end.x = start.x;
             if (line.type === "left" || line.type === "right") end.y = start.y;
+
+            const naturalX = (start.x + end.x) / 2;
+            const naturalY = (start.y + end.y) / 2;
 
             const vpMinX = 0;
             const vpMaxX = props.viewport.width;
@@ -85,21 +94,22 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
             const lineMinY = Math.min(start.y, end.y);
             const lineMaxY = Math.max(start.y, end.y);
 
-            // Hide if the entire visible segment is out of viewport
             const isFullyHidden = (
-              lineMaxY < 0 ||
-              lineMinY > props.viewport.height ||
-              lineMaxX < 0 ||
-              lineMinX > props.viewport.width
+              lineMaxY < cMinY ||
+              lineMinY > cMaxY ||
+              lineMaxX < cMinX ||
+              lineMinX > cMaxX
             );
 
             if (isFullyHidden) return { x: 0, y: 0, isHidden: true, value: 0 };
 
-            const centerX = (start.x + end.x) / 2;
-            const centerY = (start.y + end.y) / 2;
+            const visibleLineMinX = Math.max(lineMinX, cMinX);
+            const visibleLineMaxX = Math.min(lineMaxX, cMaxX);
+            const visibleLineMinY = Math.max(lineMinY, cMinY);
+            const visibleLineMaxY = Math.min(lineMaxY, cMaxY);
 
-            const naturalX = centerX;
-            const naturalY = centerY;
+            const centerX = (visibleLineMinX + visibleLineMaxX) / 2;
+            const centerY = (visibleLineMinY + visibleLineMaxY) / 2;
 
             let targetX = naturalX;
             let targetY = naturalY;

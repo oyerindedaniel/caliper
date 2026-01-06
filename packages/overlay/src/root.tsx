@@ -367,6 +367,7 @@ export function Root(config: RootConfig) {
 
     if (calcLine && currentResult && system) {
       viewport().version;
+
       const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
       if (matchingLine) {
         const liveValue = getLiveLineValue(matchingLine, currentResult);
