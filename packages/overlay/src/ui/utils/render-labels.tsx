@@ -58,9 +58,17 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
               props.viewport.scrollY
             );
 
-            const dxRaw = sRaw.x - eRaw.x;
-            const dyRaw = sRaw.y - eRaw.y;
-            const liveValue = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
+            const dxRaw = Math.abs(sRaw.x - eRaw.x);
+            const dyRaw = Math.abs(sRaw.y - eRaw.y);
+
+            let liveValue = 0;
+            if (line.type === "top" || line.type === "bottom") {
+              liveValue = dyRaw;
+            } else if (line.type === "left" || line.type === "right") {
+              liveValue = dxRaw;
+            } else {
+              liveValue = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
+            }
 
             let start = sRaw;
             let end = eRaw;

@@ -2,15 +2,6 @@
  * Scroll-Aware Geometry Engine
  */
 
-export function getScrollAwareRect(rect: DOMRect): DOMRect {
-  return new DOMRect(
-    rect.left + window.scrollX,
-    rect.top + window.scrollY,
-    rect.width,
-    rect.height
-  );
-}
-
 export interface ScrollState {
   element: HTMLElement;
   initialScrollTop: number;
@@ -59,6 +50,15 @@ export interface LiveGeometry {
   visibleMaxX: number;
   visibleMinY: number;
   visibleMaxY: number;
+}
+
+export function getScrollAwareRect(rect: DOMRect): DOMRect {
+  return new DOMRect(
+    rect.left + window.scrollX,
+    rect.top + window.scrollY,
+    rect.width,
+    rect.height
+  );
 }
 
 export function isScrollContainer(element: Element): boolean {

@@ -1,8 +1,9 @@
 import type {
   OverlayConfig,
   ThemeConfig,
-  CommandsConfig,
   AnimationConfig,
+  CommandsConfig,
+  DeepRequired
 } from "./overlay-config.js";
 import { DEFAULT_COMMANDS, DEFAULT_ANIMATION } from "./overlay-config.js";
 
@@ -29,18 +30,26 @@ export function applyTheme(theme?: ThemeConfig) {
 
 export function mergeCommands(
   userCommands?: CommandsConfig
-): Required<CommandsConfig> {
+): DeepRequired<CommandsConfig> {
   return {
     activate: userCommands?.activate ?? DEFAULT_COMMANDS.activate,
     freeze: userCommands?.freeze ?? DEFAULT_COMMANDS.freeze,
     select: userCommands?.select ?? DEFAULT_COMMANDS.select,
     clear: userCommands?.clear ?? DEFAULT_COMMANDS.clear,
+    calculator: {
+      top: userCommands?.calculator?.top ?? DEFAULT_COMMANDS.calculator.top,
+      right: userCommands?.calculator?.right ?? DEFAULT_COMMANDS.calculator.right,
+      bottom:
+        userCommands?.calculator?.bottom ?? DEFAULT_COMMANDS.calculator.bottom,
+      left: userCommands?.calculator?.left ?? DEFAULT_COMMANDS.calculator.left,
+      distance: userCommands?.calculator?.distance ?? DEFAULT_COMMANDS.calculator.distance,
+    },
   };
 }
 
 export function mergeAnimation(
   userAnimation?: AnimationConfig
-): Required<AnimationConfig> {
+): DeepRequired<AnimationConfig> {
   return {
     enabled: userAnimation?.enabled ?? DEFAULT_ANIMATION.enabled,
     lerpFactor: userAnimation?.lerpFactor ?? DEFAULT_ANIMATION.lerpFactor,

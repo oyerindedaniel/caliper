@@ -12,12 +12,13 @@ import {
   getTopElementAtPoint,
   getLiveLineValue,
   type MeasurementLine,
+  type DeepRequired,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
 interface RootConfig {
-  commands: Required<CommandsConfig>;
-  animation: Required<AnimationConfig>;
+  commands: DeepRequired<CommandsConfig>;
+  animation: DeepRequired<AnimationConfig>;
 }
 
 export function Root(config: RootConfig) {
@@ -253,12 +254,14 @@ export function Root(config: RootConfig) {
         }
       } else if (isFrozen() && result()) {
         const key = e.key.toLowerCase();
+        const { calculator } = commands;
+
         const typeMap: Record<string, MeasurementLine["type"]> = {
-          t: "top",
-          r: "right",
-          b: "bottom",
-          l: "left",
-          d: "distance",
+          [calculator.top]: "top",
+          [calculator.right]: "right",
+          [calculator.bottom]: "bottom",
+          [calculator.left]: "left",
+          [calculator.distance]: "distance",
         };
 
         const targetType = typeMap[key];

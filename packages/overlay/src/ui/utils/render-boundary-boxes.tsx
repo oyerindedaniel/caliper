@@ -7,6 +7,7 @@ import {
   type MeasurementResult,
   getLiveGeometry,
   type LiveGeometry,
+  type DeepRequired,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
@@ -15,7 +16,7 @@ interface BoundaryBoxesProps {
   result: MeasurementResult | null;
   isAltPressed: boolean;
   isFrozen: boolean;
-  animation: Required<AnimationConfig>;
+  animation: DeepRequired<AnimationConfig>;
   viewport: {
     scrollX: number;
     scrollY: number;

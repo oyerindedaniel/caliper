@@ -211,32 +211,32 @@ function calculatePaddingLines(
       {
         type: "left",
         value: Math.abs(container.left - primary.left),
-        start: { x: primary.left, y: primary.top + primary.height / 2 },
-        end: { x: container.left, y: primary.top + primary.height / 2 },
+        start: { x: primary.left, y: container.top + container.height / 2 },
+        end: { x: container.left, y: container.top + container.height / 2 },
         startSync: "primary",
         endSync: "secondary"
       },
       {
         type: "top",
         value: Math.abs(container.top - primary.top),
-        start: { x: primary.left + primary.width / 2, y: primary.top },
-        end: { x: primary.left + primary.width / 2, y: container.top },
+        start: { x: container.left + container.width / 2, y: primary.top },
+        end: { x: container.left + container.width / 2, y: container.top },
         startSync: "primary",
         endSync: "secondary"
       },
       {
         type: "right",
         value: Math.abs(primary.right - container.right),
-        start: { x: container.right, y: primary.top + primary.height / 2 },
-        end: { x: primary.right, y: primary.top + primary.height / 2 },
+        start: { x: container.right, y: container.top + container.height / 2 },
+        end: { x: primary.right, y: container.top + container.height / 2 },
         startSync: "secondary",
         endSync: "primary"
       },
       {
         type: "bottom",
         value: Math.abs(primary.bottom - container.bottom),
-        start: { x: primary.left + primary.width / 2, y: container.bottom },
-        end: { x: primary.left + primary.width / 2, y: primary.bottom },
+        start: { x: container.left + container.width / 2, y: container.bottom },
+        end: { x: container.left + container.width / 2, y: primary.bottom },
         startSync: "secondary",
         endSync: "primary"
       },
@@ -308,17 +308,15 @@ export function getLiveLineValue(
     secondaryDelta
   );
 
-  // Force axiality for axial types to handle any float precision drift
+  const dx = Math.abs(startPoint.x - endPoint.x);
+  const dy = Math.abs(startPoint.y - endPoint.y);
+
   if (line.type === "top" || line.type === "bottom") {
-    endPoint.x = startPoint.x;
+    return dy;
   }
-
   if (line.type === "left" || line.type === "right") {
-    endPoint.y = startPoint.y;
+    return dx;
   }
-
-  const dx = startPoint.x - endPoint.x;
-  const dy = startPoint.y - endPoint.y;
 
   return Math.sqrt(dx * dx + dy * dy);
 }

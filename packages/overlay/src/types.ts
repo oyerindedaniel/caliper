@@ -6,6 +6,7 @@ import type {
   MeasurementLine,
   AnimationConfig,
   SelectionMetadata,
+  DeepRequired,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
 
@@ -15,7 +16,7 @@ export interface OverlayProps {
   selectionMetadata: Accessor<SelectionMetadata>;
   isAltPressed: Accessor<boolean>;
   isFrozen: Accessor<boolean>;
-  animation: Required<AnimationConfig>;
+  animation: DeepRequired<AnimationConfig>;
   viewport: Accessor<{
     scrollX: number;
     scrollY: number;

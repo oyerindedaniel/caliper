@@ -115,7 +115,14 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
                 onMouseLeave={() => setHoveredLine(null)}
                 onClick={() => {
                   const { x1, y1, x2, y2 } = getFinalCoords();
-                  const liveValue = Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+                  let liveValue = 0;
+                  if (line.type === "top" || line.type === "bottom") {
+                    liveValue = Math.abs(y1 - y2);
+                  } else if (line.type === "left" || line.type === "right") {
+                    liveValue = Math.abs(x1 - x2);
+                  } else {
+                    liveValue = Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+                  }
                   props.onLineClick?.(line, liveValue);
                 }}
                 style={{ 'pointer-events': 'auto', cursor: 'pointer' }}
