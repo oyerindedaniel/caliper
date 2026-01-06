@@ -256,17 +256,8 @@ export function getLivePoint(
   scrollX: number = 0,
   scrollY: number = 0
 ) {
-  let syncX = owner === "secondary" ? secondaryDelta : primaryDelta;
-  let syncY = owner === "secondary" ? secondaryDelta : primaryDelta;
-
-  if (line.type === "left" || line.type === "right") {
-    syncY = primaryDelta;
-  } else if (line.type === "top" || line.type === "bottom") {
-    syncX = primaryDelta;
-  } else if (line.type === "distance") {
-    // Do not force sync for distance lines; let points move with their owners.
-  }
-
+  const syncX = owner === "secondary" ? secondaryDelta : primaryDelta;
+  const syncY = owner === "secondary" ? secondaryDelta : primaryDelta;
 
   return {
     x: pt.x - (syncX?.deltaX ?? 0) - scrollX,

@@ -47,6 +47,7 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
               props.viewport.scrollX,
               props.viewport.scrollY
             );
+
             const eRaw = getLivePoint(
               line.end,
               line.endSync,
@@ -70,8 +71,14 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
               end = { ...eClamped };
             }
 
-            if (line.type === "top" || line.type === "bottom") end.x = start.x;
-            if (line.type === "left" || line.type === "right") end.y = start.y;
+            if (line.type === "top" || line.type === "bottom") {
+              // If start is primary, end follows start.x, vice versa.
+              if (line.startSync === "primary") end.x = start.x;
+              else start.x = end.x;
+            } else if (line.type === "left" || line.type === "right") {
+              if (line.startSync === "primary") end.y = start.y;
+              else start.y = end.y;
+            }
 
             const naturalX = (start.x + end.x) / 2;
             const naturalY = (start.y + end.y) / 2;
@@ -129,7 +136,7 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
           });
 
           return (
-            <Show when={position() && !position()!.isHidden}>
+            <Show when={position() && !position().isHidden}>
               <div
                 class={`${PREFIX}label`}
                 style={{

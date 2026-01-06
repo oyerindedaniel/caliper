@@ -102,10 +102,12 @@ export function createCalculatorState(): {
             isActive: true,
           };
         } else {
+          // Switch operation or set first operation
           state = {
             ...state,
             operation: action.operation,
             inputValue: "",
+            result: null
           };
         }
         break;
