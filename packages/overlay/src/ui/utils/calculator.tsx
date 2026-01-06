@@ -78,12 +78,12 @@ export function Calculator(props: CalculatorProps) {
           {formatValue(props.state.baseValue)}
         </span>
 
-        <Show when={props.state.operation}>
+        <Show keyed when={props.state.operation}>
           {(operation) => {
-            const Icon = Icons[operation() as keyof typeof Icons];
+            const Icon = Icons[operation as keyof typeof Icons];
             return (
               <span class={`${PREFIX}calculator-operation`}>
-                <Show when={Icon} fallback={operation()}>
+                <Show when={Icon} fallback={operation}>
                   <Icon />
                 </Show>
               </span>

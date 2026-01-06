@@ -91,9 +91,14 @@ export function createCalculatorState(): {
 
       case "INPUT_OPERATION":
         if (!state.isActive) return state;
-        // If already has operation and input, calculate first
-        if (state.operation && state.inputValue !== "") {
-          const newBase = calculate() ?? state.baseValue;
+
+        const hasResult = state.result !== null;
+        // Allow switching if input is empty or just a single "0" (placeholder/mistake)
+        const isSwitchable = state.inputValue === "" || state.inputValue === "0";
+
+        if (hasResult || (state.operation && !isSwitchable)) {
+          // If we have a result or meaningful input, commit current calc as new base
+          const newBase = hasResult ? state.result! : (calculate() ?? state.baseValue);
           state = {
             baseValue: newBase,
             operation: action.operation,
@@ -102,7 +107,7 @@ export function createCalculatorState(): {
             isActive: true,
           };
         } else {
-          // Switch operation or set first operation
+          // Just switch the operation
           state = {
             ...state,
             operation: action.operation,

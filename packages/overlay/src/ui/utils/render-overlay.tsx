@@ -112,20 +112,18 @@ export function Overlay(props: OverlayProps) {
           </Portal>
         )}
       </Show>
-      <Show when={props.calculatorState?.()}>
-        {(calcState) => (
-          <Portal mount={document.body}>
-            <Calculator
-              state={calcState()}
-              onInput={props.onCalculatorInput || (() => { })}
-              onBackspace={props.onCalculatorBackspace || (() => { })}
-              onDelete={props.onCalculatorDelete || (() => { })}
-              onEnter={props.onCalculatorEnter || (() => { })}
-              onClose={props.onCalculatorClose || (() => { })}
-              position={{ x: props.cursor().x, y: props.cursor().y }}
-            />
-          </Portal>
-        )}
+      <Show when={props.calculatorState && props.calculatorState() !== null}>
+        <Portal mount={document.body}>
+          <Calculator
+            state={props.calculatorState!()!}
+            onInput={props.onCalculatorInput || (() => { })}
+            onBackspace={props.onCalculatorBackspace || (() => { })}
+            onDelete={props.onCalculatorDelete || (() => { })}
+            onEnter={props.onCalculatorEnter || (() => { })}
+            onClose={props.onCalculatorClose || (() => { })}
+            position={{ x: props.cursor().x, y: props.cursor().y }}
+          />
+        </Portal>
       </Show>
     </>
   );
