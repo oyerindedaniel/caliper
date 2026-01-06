@@ -308,17 +308,15 @@ export function getLiveLineValue(
     secondaryDelta
   );
 
-  // Force axiality for axial types to handle any float precision drift
+  const dx = Math.abs(startPoint.x - endPoint.x);
+  const dy = Math.abs(startPoint.y - endPoint.y);
+
   if (line.type === "top" || line.type === "bottom") {
-    endPoint.x = startPoint.x;
+    return dy;
   }
-
   if (line.type === "left" || line.type === "right") {
-    endPoint.y = startPoint.y;
+    return dx;
   }
-
-  const dx = startPoint.x - endPoint.x;
-  const dy = startPoint.y - endPoint.y;
 
   return Math.sqrt(dx * dx + dy * dy);
 }
