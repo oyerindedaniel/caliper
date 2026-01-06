@@ -17,7 +17,6 @@ interface CalculatorProps {
  * Calculator input control
  */
 export function Calculator(props: CalculatorProps) {
-  let containerRef: HTMLDivElement | undefined;
 
   onMount(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -67,7 +66,6 @@ export function Calculator(props: CalculatorProps) {
   return (
     <Show when={props.state.isActive}>
       <div
-        ref={containerRef}
         class={`${PREFIX}calculator`}
         style={{
           left: `${props.position.x + 10}px`,
@@ -80,12 +78,12 @@ export function Calculator(props: CalculatorProps) {
           {formatValue(props.state.baseValue)}
         </span>
 
-        <Show when={props.state.operation}>
+        <Show keyed when={props.state.operation}>
           {(operation) => {
-            const Icon = Icons[operation() as keyof typeof Icons];
+            const Icon = Icons[operation as keyof typeof Icons];
             return (
               <span class={`${PREFIX}calculator-operation`}>
-                <Show when={Icon} fallback={operation()}>
+                <Show when={Icon} fallback={operation}>
                   <Icon />
                 </Show>
               </span>

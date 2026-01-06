@@ -237,6 +237,7 @@ export function Root(config: RootConfig) {
         if (!isAltPressed() && system) {
           system.abort();
           setResult(null);
+          handleCalculatorClose();
         }
 
         setIsAltPressed(true);
