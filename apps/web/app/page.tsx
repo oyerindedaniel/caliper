@@ -18,10 +18,10 @@ export default function Home() {
           height={50}
           priority
         />
-        <p>Essential tooling for the detail-obsessed design engineer.</p>
+        <p>Essential tooling for detail-obsessed design engineer.</p>
 
-        <Instructions />
         <Installation />
+        <Instructions />
         <CommandTable />
       </main>
       <footer className={styles.footer}>

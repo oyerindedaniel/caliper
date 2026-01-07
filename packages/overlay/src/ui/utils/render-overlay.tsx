@@ -10,6 +10,7 @@ import { MeasurementLabels } from "./render-labels.jsx";
 import { Calculator } from "./calculator.jsx";
 import { BoundaryBoxes } from "./render-boundary-boxes.jsx";
 import { SelectionLabel } from "./render-selection-label.jsx";
+import { ProjectionOverlay } from "./projection.jsx";
 import { PREFIX } from "../../css/styles.js";
 import type { OverlayProps } from "../../types.js";
 
@@ -112,7 +113,10 @@ export function Overlay(props: OverlayProps) {
           </Portal>
         )}
       </Show>
-      <Show when={props.calculatorState && props.calculatorState() !== null}>
+      <Show when={
+        props.calculatorState &&
+        props.calculatorState() !== null
+      }>
         <Portal mount={document.body}>
           <Calculator
             state={props.calculatorState!()!}
@@ -122,6 +126,19 @@ export function Overlay(props: OverlayProps) {
             onEnter={props.onCalculatorEnter || (() => { })}
             onClose={props.onCalculatorClose || (() => { })}
             position={{ x: props.cursor().x, y: props.cursor().y }}
+          />
+        </Portal>
+      </Show>
+      <Show when={
+        props.projectionState &&
+        props.projectionState()?.direction !== null &&
+        props.projectionState()?.element === props.selectionMetadata().element
+      }>
+        <Portal mount={document.body}>
+          <ProjectionOverlay
+            projectionState={props.projectionState!}
+            metadata={props.selectionMetadata}
+            viewport={props.viewport}
           />
         </Portal>
       </Show>

@@ -44,6 +44,13 @@ export function mergeCommands(
       left: userCommands?.calculator?.left ?? DEFAULT_COMMANDS.calculator.left,
       distance: userCommands?.calculator?.distance ?? DEFAULT_COMMANDS.calculator.distance,
     },
+    projection: {
+      top: userCommands?.projection?.top ?? DEFAULT_COMMANDS.projection.top,
+      left: userCommands?.projection?.left ?? DEFAULT_COMMANDS.projection.left,
+      bottom:
+        userCommands?.projection?.bottom ?? DEFAULT_COMMANDS.projection.bottom,
+      right: userCommands?.projection?.right ?? DEFAULT_COMMANDS.projection.right,
+    },
   };
 }
 

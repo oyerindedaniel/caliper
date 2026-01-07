@@ -17,7 +17,7 @@ export interface MeasurementSystem {
   measure: (
     selectedElement: Element,
     cursor: { x: number; y: number }
-  ) => Promise<void>;
+  ) => void;
   abort: () => void;
   stop: () => void;
   freeze: () => void;
@@ -35,7 +35,7 @@ export function createMeasurementSystem(): MeasurementSystem {
   const stateMachine = createStateMachine();
   const calculator = createCalculatorIntegration();
   const listeners = new Set<MeasurementSystemListener>();
-  let abortController: AbortController | null = null;
+
   let currentResult: MeasurementResult | null = null;
   let previousContext: CursorContext | null = null;
   let previousElement: Element | null = null;
@@ -44,67 +44,34 @@ export function createMeasurementSystem(): MeasurementSystem {
     listeners.forEach((listener) => listener());
   }
 
-  async function measure(
+  function measure(
     selectedElement: Element,
     cursor: { x: number; y: number }
-  ): Promise<void> {
-    abortController?.abort();
-    abortController = new AbortController();
-    const signal = abortController.signal;
-
+  ): void {
     stateMachine.transitionTo("ARMED");
 
-    try {
-      await new Promise<void>((resolve) => {
-        const scheduled = reader.scheduleRead(() => {
-          if (signal.aborted) {
-            resolve();
-            return;
-          }
+    reader.scheduleRead(() => {
+      const start = performance.now();
 
-          // reader.recordFrameTime(performance.now());
+      const measurement = createMeasurement(
+        selectedElement,
+        cursor.x,
+        cursor.y,
+        previousContext,
+        previousElement
+      );
 
-          const start = performance.now();
-          const measurement = createMeasurement(
-            selectedElement,
-            cursor.x,
-            cursor.y,
-            previousContext,
-            previousElement
-          );
-          const duration = performance.now() - start;
+      // reader.recordFrameTime(performance.now());
 
-          if (measurement) {
-            const { result, element } = measurement;
-
-            if (signal.aborted) {
-              resolve();
-              return;
-            }
-
-            // console.log(`[Caliper] Measure: ${duration.toFixed(2)}ms`);
-            currentResult = result;
-            previousContext = result.context;
-            previousElement = element;
-            stateMachine.transitionTo("MEASURING");
-            notifyListeners();
-          }
-
-          resolve();
-        });
-
-        // If the read was queued or throttled, resolve the promise immediately.
-        // We don't want to block the caller since a newer request will supersede this one.
-        if (!scheduled) {
-          resolve();
-        }
-      });
-    } catch (error) {
-      if (!signal.aborted) {
-        console.error("MeasurementSystem: Error during measurement", error);
-        stateMachine.transitionTo("IDLE");
+      if (measurement) {
+        const { result, element } = measurement;
+        currentResult = result;
+        previousContext = result.context;
+        previousElement = element;
+        stateMachine.transitionTo("MEASURING");
+        notifyListeners();
       }
-    }
+    });
   }
 
   function freeze() {
@@ -123,12 +90,9 @@ export function createMeasurementSystem(): MeasurementSystem {
   }
 
   function abort() {
-    if (abortController) {
-      abortController.abort();
-      abortController = null;
-    }
     reader.cancel();
     stateMachine.transitionTo("IDLE");
+    calculator.close();
     currentResult = null;
     previousContext = null;
     previousElement = null;
@@ -136,12 +100,6 @@ export function createMeasurementSystem(): MeasurementSystem {
   }
 
   function stop() {
-    // Stop the active reader/computation, but DO NOT clear the result.
-    // This allows the last measurement to stay on screen until aborted.
-    if (abortController) {
-      abortController.abort();
-      abortController = null;
-    }
     reader.cancel();
     if (stateMachine.getState() === "MEASURING") {
       stateMachine.transitionTo("IDLE");
@@ -151,12 +109,10 @@ export function createMeasurementSystem(): MeasurementSystem {
 
   function cleanup() {
     abort();
-
-    abortController = null;
+    listeners.clear();
     currentResult = null;
     previousContext = null;
-
-    reader.cancel();
+    previousElement = null;
   }
 
   function getState(): MeasurementState {

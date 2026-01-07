@@ -2,17 +2,23 @@ import { onMount, onCleanup, createSignal, createEffect } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
+  createSuppressionDelegate,
+  createProjectionSystem,
   type MeasurementSystem,
   type SelectionSystem,
   type MeasurementResult,
   type CalculatorState,
+  type ProjectionState,
   type SelectionMetadata,
   type CommandsConfig,
   type AnimationConfig,
   getTopElementAtPoint,
   getLiveLineValue,
+  getLiveGeometry,
   type MeasurementLine,
   type DeepRequired,
+  type ProjectionSystem,
+  type ProjectionDirection,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
@@ -44,11 +50,13 @@ export function Root(config: RootConfig) {
   });
 
   const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
+  const [projectionState, setProjectionState] = createSignal<ProjectionState>({ direction: null, value: "", element: null });
   const [activeCalculatorLine, setActiveCalculatorLine] = createSignal<MeasurementLine | null>(null);
   const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
+  let projectionSystem: ProjectionSystem | null = null;
 
   const [isAltPressed, setIsAltPressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
@@ -75,6 +83,11 @@ export function Root(config: RootConfig) {
   onMount(() => {
     selectionSystem = createSelectionSystem();
     system = createMeasurementSystem();
+    projectionSystem = createProjectionSystem();
+
+    const unsubscribeProjection = projectionSystem.onUpdate((state) => {
+      setProjectionState(state);
+    });
 
     const unsubscribe = system.onStateChange(() => {
       if (!system) {
@@ -123,13 +136,18 @@ export function Root(config: RootConfig) {
           setResult(null);
           setCalculatorState(null);
 
+          if (projectionSystem) {
+            projectionSystem.clear();
+          }
+
           if (system) {
             system.abort();
             system.getCalculator().close();
           }
 
           lastHoveredElement = null;
-          suppressionFrames = 0;
+          selectionDelegate.cancel();
+          measureDelegate.cancel();
           selectionSystem.select(element);
         }
       }
@@ -138,8 +156,20 @@ export function Root(config: RootConfig) {
     let lastMouseEvent: MouseEvent | null = null;
     let mouseMoveRafId: number | null = null;
     let lastHoveredElement: Element | null = null;
-    let suppressionFrames = 0;
-    let trailingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const selectionDelegate = createSuppressionDelegate((el: Element) => {
+      lastHoveredElement = el;
+      selectionSystem?.select(el);
+    });
+
+    const measureDelegate = createSuppressionDelegate(
+      (el: Element, cursor: { x: number; y: number }, hover: Element | null) => {
+        if (hover) {
+          lastHoveredElement = hover;
+        }
+        system?.measure(el, cursor);
+      }
+    );
 
     const processMouseMove = () => {
       if (!lastMouseEvent || !selectionSystem) {
@@ -148,47 +178,28 @@ export function Root(config: RootConfig) {
       }
 
       const e = lastMouseEvent;
-      setCursor({ x: e.clientX, y: e.clientY });
+      const cursorPoint = { x: e.clientX, y: e.clientY };
+      setCursor(cursorPoint);
 
       const selectedElement = selectionSystem.getSelected();
       const isAlt = isAltPressed();
       const state = system?.getState();
 
       if (selectedElement) {
+        const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
+        const isAncestor =
+          hoveredElement &&
+          lastHoveredElement &&
+          hoveredElement.contains(lastHoveredElement) &&
+          hoveredElement !== lastHoveredElement;
+
         if (isAlt) {
           if (system) {
-            system.measure(selectedElement, { x: e.clientX, y: e.clientY });
+            measureDelegate.execute(!!isAncestor, selectedElement, cursorPoint, hoveredElement);
           }
         } else if (state !== "FROZEN") {
-          const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
-
           if (hoveredElement) {
-            const isAncestor =
-              lastHoveredElement &&
-              hoveredElement.contains(lastHoveredElement) &&
-              hoveredElement !== lastHoveredElement;
-
-            if (trailingTimer) {
-              clearTimeout(trailingTimer);
-              trailingTimer = null;
-            }
-
-            if (isAncestor && suppressionFrames < 8) {
-              suppressionFrames++;
-              trailingTimer = setTimeout(() => {
-                suppressionFrames = 0;
-                lastHoveredElement = hoveredElement;
-                selectionSystem?.select(hoveredElement);
-                trailingTimer = null;
-              }, 30);
-            } else {
-              suppressionFrames = 0;
-              lastHoveredElement = hoveredElement;
-              selectionSystem.select(hoveredElement);
-            }
-          } else if (trailingTimer) {
-            clearTimeout(trailingTimer);
-            trailingTimer = null;
+            selectionDelegate.execute(!!isAncestor, hoveredElement);
           }
         }
       }
@@ -212,8 +223,13 @@ export function Root(config: RootConfig) {
 
         if (selectionSystem) {
           lastHoveredElement = null;
-          suppressionFrames = 0;
+          selectionDelegate.cancel();
+          measureDelegate.cancel();
           selectionSystem.clear();
+        }
+
+        if (projectionSystem) {
+          projectionSystem.clear();
         }
 
         if (system) {
@@ -235,10 +251,15 @@ export function Root(config: RootConfig) {
       if (isAltKey) {
         e.preventDefault();
 
-        if (!isAltPressed() && system) {
-          system.abort();
-          setResult(null);
-          handleCalculatorClose();
+        if (!isAltPressed()) {
+          if (system) {
+            system.abort();
+            setResult(null);
+            handleCalculatorClose();
+          }
+          if (projectionSystem) {
+            projectionSystem.clear();
+          }
         }
 
         setIsAltPressed(true);
@@ -266,13 +287,74 @@ export function Root(config: RootConfig) {
 
         const targetType = typeMap[key];
         if (targetType) {
+          e.preventDefault();
           const currentLines = result()?.lines || [];
           const targetLine = currentLines.find((l) => l.type === targetType);
 
           if (targetLine) {
-            e.preventDefault();
             const liveValue = getLiveLineValue(targetLine, result());
             handleLineClick(targetLine, liveValue);
+          }
+        }
+      } else if (selectionMetadata().element) {
+        const key = e.key.toLowerCase();
+        const { projection } = commands;
+        const isNumeric = /^\d$/.test(key);
+        const isBackspace = e.key === "Backspace";
+        const isEnter = e.key === "Enter";
+
+        const dirMap: Record<string, ProjectionDirection> = {
+          [projection.top]: "top",
+          [projection.left]: "left",
+          [projection.bottom]: "bottom",
+          [projection.right]: "right",
+        };
+
+        const dir = dirMap[key];
+        const isDirection = !!dir;
+        const isProjectionActive = projectionState().direction !== null;
+
+        if (isDirection || isNumeric || isBackspace || (isEnter && isProjectionActive)) {
+          e.preventDefault();
+
+          const getRunway = (dir: ProjectionDirection) => {
+            const metadata = selectionMetadata();
+
+            const live = getLiveGeometry(
+              metadata.rect,
+              metadata.scrollHierarchy,
+              metadata.position,
+              metadata.stickyConfig,
+              metadata.initialWindowX,
+              metadata.initialWindowY
+            );
+
+            if (!live) return undefined;
+
+            let runway: number;
+            switch (dir) {
+              case "top": runway = live.top - window.scrollY; break;
+              case "bottom": runway = window.innerHeight - (live.top - window.scrollY + live.height); break;
+              case "left": runway = live.left - window.scrollX; break;
+              case "right": runway = window.innerWidth - (live.left - window.scrollX + live.width); break;
+            }
+            return runway;
+          };
+
+          if (isDirection && projectionSystem) {
+            const currentElement = selectionMetadata().element;
+            if (currentElement) {
+              projectionSystem.setElement(currentElement as HTMLElement);
+            }
+            projectionSystem.setDirection(dir);
+            const maxRunway = getRunway(dir);
+            if (maxRunway !== undefined) projectionSystem.capValue(maxRunway);
+          } else if (isNumeric && projectionSystem) {
+            const currentDir = projectionState().direction;
+            const max = currentDir ? getRunway(currentDir) : undefined;
+            projectionSystem.appendValue(key, max);
+          } else if (isBackspace && projectionSystem) {
+            projectionSystem.backspace();
           }
         }
       }
@@ -326,12 +408,12 @@ export function Root(config: RootConfig) {
         cancelAnimationFrame(mouseMoveRafId);
       }
 
-      if (trailingTimer) {
-        clearTimeout(trailingTimer);
-      }
+      selectionDelegate.cancel();
+      measureDelegate.cancel();
 
       unsubscribe();
       unsubscribeUpdate();
+      unsubscribeProjection();
 
       if (system) {
         system.cleanup();
@@ -341,6 +423,11 @@ export function Root(config: RootConfig) {
       if (selectionSystem) {
         selectionSystem.clear();
         selectionSystem = null;
+      }
+
+      if (projectionSystem) {
+        projectionSystem.clear();
+        projectionSystem = null;
       }
     });
   });
@@ -455,6 +542,7 @@ export function Root(config: RootConfig) {
       animation={animation}
       viewport={viewport}
       calculatorState={calculatorState}
+      projectionState={projectionState}
       onLineClick={handleLineClick}
       onCalculatorInput={handleCalculatorInput}
       onCalculatorBackspace={handleCalculatorBackspace}
