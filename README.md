@@ -70,9 +70,4 @@ if (import.meta.env.DEV) {
 | **Calculator: Left** | `l` |
 | **Calculator: Distance** | `d` |
 
----
 
-<p align="center">
-  <a href="https://github.com/oyerindedaniel/caliper">Github</a> • 
-  <a href="https://danieloyerinde.com">Daniel Oyerinde</a>
-</p>
