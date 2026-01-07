@@ -61,7 +61,6 @@ export function createMeasurementSystem(): MeasurementSystem {
         previousElement
       );
 
-      // Adapt frequency based on measurement performance
       // reader.recordFrameTime(performance.now());
 
       if (measurement) {
@@ -93,6 +92,7 @@ export function createMeasurementSystem(): MeasurementSystem {
   function abort() {
     reader.cancel();
     stateMachine.transitionTo("IDLE");
+    calculator.close();
     currentResult = null;
     previousContext = null;
     previousElement = null;
@@ -110,6 +110,9 @@ export function createMeasurementSystem(): MeasurementSystem {
   function cleanup() {
     abort();
     listeners.clear();
+    currentResult = null;
+    previousContext = null;
+    previousElement = null;
   }
 
   function getState(): MeasurementState {
