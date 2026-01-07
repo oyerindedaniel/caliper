@@ -7,6 +7,7 @@ import type {
   AnimationConfig,
   SelectionMetadata,
   DeepRequired,
+  ProjectionState,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
 
@@ -25,6 +26,7 @@ export interface OverlayProps {
     version: number;
   }>;
   calculatorState?: Accessor<CalculatorState | null>;
+  projectionState?: Accessor<ProjectionState>;
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
   onCalculatorInput?: (key: string) => void;
   onCalculatorBackspace?: () => void;

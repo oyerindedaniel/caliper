@@ -3,17 +3,22 @@ import {
   createMeasurementSystem,
   createSelectionSystem,
   createSuppressionDelegate,
+  createProjectionSystem,
   type MeasurementSystem,
   type SelectionSystem,
   type MeasurementResult,
   type CalculatorState,
+  type ProjectionState,
   type SelectionMetadata,
   type CommandsConfig,
   type AnimationConfig,
   getTopElementAtPoint,
   getLiveLineValue,
+  getLiveGeometry,
   type MeasurementLine,
   type DeepRequired,
+  type ProjectionSystem,
+  type ProjectionDirection,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
@@ -45,11 +50,13 @@ export function Root(config: RootConfig) {
   });
 
   const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
+  const [projectionState, setProjectionState] = createSignal<ProjectionState>({ direction: null, value: "", element: null });
   const [activeCalculatorLine, setActiveCalculatorLine] = createSignal<MeasurementLine | null>(null);
   const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
+  let projectionSystem: ProjectionSystem | null = null;
 
   const [isAltPressed, setIsAltPressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
@@ -76,6 +83,11 @@ export function Root(config: RootConfig) {
   onMount(() => {
     selectionSystem = createSelectionSystem();
     system = createMeasurementSystem();
+    projectionSystem = createProjectionSystem();
+
+    const unsubscribeProjection = projectionSystem.onUpdate((state) => {
+      setProjectionState(state);
+    });
 
     const unsubscribe = system.onStateChange(() => {
       if (!system) {
@@ -123,6 +135,10 @@ export function Root(config: RootConfig) {
         if (element && selectionSystem) {
           setResult(null);
           setCalculatorState(null);
+
+          if (projectionSystem) {
+            projectionSystem.clear();
+          }
 
           if (system) {
             system.abort();
@@ -212,6 +228,10 @@ export function Root(config: RootConfig) {
           selectionSystem.clear();
         }
 
+        if (projectionSystem) {
+          projectionSystem.clear();
+        }
+
         if (system) {
           system.abort();
           const calc = system.getCalculator();
@@ -231,10 +251,15 @@ export function Root(config: RootConfig) {
       if (isAltKey) {
         e.preventDefault();
 
-        if (!isAltPressed() && system) {
-          system.abort();
-          setResult(null);
-          handleCalculatorClose();
+        if (!isAltPressed()) {
+          if (system) {
+            system.abort();
+            setResult(null);
+            handleCalculatorClose();
+          }
+          if (projectionSystem) {
+            projectionSystem.clear();
+          }
         }
 
         setIsAltPressed(true);
@@ -262,13 +287,74 @@ export function Root(config: RootConfig) {
 
         const targetType = typeMap[key];
         if (targetType) {
+          e.preventDefault();
           const currentLines = result()?.lines || [];
           const targetLine = currentLines.find((l) => l.type === targetType);
 
           if (targetLine) {
-            e.preventDefault();
             const liveValue = getLiveLineValue(targetLine, result());
             handleLineClick(targetLine, liveValue);
+          }
+        }
+      } else if (selectionMetadata().element) {
+        const key = e.key.toLowerCase();
+        const { projection } = commands;
+        const isNumeric = /^\d$/.test(key);
+        const isBackspace = e.key === "Backspace";
+        const isEnter = e.key === "Enter";
+
+        const dirMap: Record<string, ProjectionDirection> = {
+          [projection.top]: "top",
+          [projection.left]: "left",
+          [projection.bottom]: "bottom",
+          [projection.right]: "right",
+        };
+
+        const dir = dirMap[key];
+        const isDirection = !!dir;
+        const isProjectionActive = projectionState().direction !== null;
+
+        if (isDirection || isNumeric || isBackspace || (isEnter && isProjectionActive)) {
+          e.preventDefault();
+
+          const getRunway = (dir: ProjectionDirection) => {
+            const metadata = selectionMetadata();
+
+            const live = getLiveGeometry(
+              metadata.rect,
+              metadata.scrollHierarchy,
+              metadata.position,
+              metadata.stickyConfig,
+              metadata.initialWindowX,
+              metadata.initialWindowY
+            );
+
+            if (!live) return undefined;
+
+            let runway: number;
+            switch (dir) {
+              case "top": runway = live.top - window.scrollY; break;
+              case "bottom": runway = window.innerHeight - (live.top - window.scrollY + live.height); break;
+              case "left": runway = live.left - window.scrollX; break;
+              case "right": runway = window.innerWidth - (live.left - window.scrollX + live.width); break;
+            }
+            return runway;
+          };
+
+          if (isDirection && projectionSystem) {
+            const currentElement = selectionMetadata().element;
+            if (currentElement) {
+              projectionSystem.setElement(currentElement as HTMLElement);
+            }
+            projectionSystem.setDirection(dir);
+            const maxRunway = getRunway(dir);
+            if (maxRunway !== undefined) projectionSystem.capValue(maxRunway);
+          } else if (isNumeric && projectionSystem) {
+            const currentDir = projectionState().direction;
+            const max = currentDir ? getRunway(currentDir) : undefined;
+            projectionSystem.appendValue(key, max);
+          } else if (isBackspace && projectionSystem) {
+            projectionSystem.backspace();
           }
         }
       }
@@ -327,6 +413,7 @@ export function Root(config: RootConfig) {
 
       unsubscribe();
       unsubscribeUpdate();
+      unsubscribeProjection();
 
       if (system) {
         system.cleanup();
@@ -336,6 +423,11 @@ export function Root(config: RootConfig) {
       if (selectionSystem) {
         selectionSystem.clear();
         selectionSystem = null;
+      }
+
+      if (projectionSystem) {
+        projectionSystem.clear();
+        projectionSystem = null;
       }
     });
   });
@@ -450,6 +542,7 @@ export function Root(config: RootConfig) {
       animation={animation}
       viewport={viewport}
       calculatorState={calculatorState}
+      projectionState={projectionState}
       onLineClick={handleLineClick}
       onCalculatorInput={handleCalculatorInput}
       onCalculatorBackspace={handleCalculatorBackspace}

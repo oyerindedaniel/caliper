@@ -48,7 +48,16 @@ export {
   createCalculatorIntegration,
   type CalculatorIntegration,
 } from "./measurement-model/utils/calculator-integration.js";
-export * from "./shared/types/index.js";
+export {
+  createProjectionSystem,
+  type ProjectionSystem,
+} from "./measurement-model/utils/projection-system.js";
+export type {
+  CursorContext,
+  SyncSource,
+  ProjectionDirection,
+  ProjectionState,
+} from "./shared/types/index.js";
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";
 export * from "./shared/config/overlay-config.js";

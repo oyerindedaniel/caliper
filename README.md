@@ -1,6 +1,6 @@
 # <p align="center"><img src="apps/web/public/caliper_logo.svg" alt="Caliper" width="200" /></p>
 
-<p align="center">Essential tooling for the detail-obsessed design engineer.</p>
+<p align="center">Essential tooling for detail-obsessed design engineer.</p>
 
 ---
 

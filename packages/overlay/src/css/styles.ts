@@ -30,6 +30,9 @@ export const OVERLAY_STYLES = `
   --caliper-calc-op-highlight: rgba(24, 160, 251, 0.3);
   --caliper-calc-text: white;
   --caliper-text: white;
+  --caliper-projection: rgba(155, 81, 224, 1);
+  --caliper-projection-90: rgba(155, 81, 224, 0.9);
+  --caliper-projection-light: rgba(155, 81, 224, 0.2);
 }
 
 #caliper-overlay-root {
@@ -73,6 +76,13 @@ export const OVERLAY_STYLES = `
   pointer-events: none;
 }
 
+.${CALIPER_PREFIX}projection-line {
+  stroke: var(--caliper-projection);
+  stroke-width: 2px;
+  stroke-dasharray: 4 2;
+  pointer-events: none;
+}
+
 .${CALIPER_PREFIX}label {
   position: fixed;
   pointer-events: none;
@@ -86,6 +96,11 @@ export const OVERLAY_STYLES = `
   white-space: nowrap;
   z-index: 1000000;
   will-change: transform;
+}
+
+.${CALIPER_PREFIX}projection-label {
+  background: var(--caliper-projection);
+  z-index: 1000001;
 }
 
 .${CALIPER_PREFIX}selection-label {
@@ -123,7 +138,7 @@ export const OVERLAY_STYLES = `
   z-index: 999997;
 }
 
-.${CALIPER_PREFIX}calculator {
+.${CALIPER_PREFIX}calculator, .${CALIPER_PREFIX}projection-input {
   position: fixed;
   pointer-events: auto;
   background: var(--caliper-calc-bg);
@@ -149,6 +164,20 @@ export const OVERLAY_STYLES = `
   transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.${CALIPER_PREFIX}projection-input {
+  border-left: 3px solid var(--caliper-projection);
+}
+
+.${CALIPER_PREFIX}projection-direction-tag {
+  background: var(--caliper-projection-light);
+  color: var(--caliper-projection);
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 2px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
 .${CALIPER_PREFIX}calculator-base {
   opacity: 0.7;
   transition: opacity 0.2s;
@@ -169,10 +198,15 @@ export const OVERLAY_STYLES = `
   animation: pulse 0.3s ease-in-out;
 }
 
-.${CALIPER_PREFIX}calculator-input {
+.${CALIPER_PREFIX}calculator-input, .${CALIPER_PREFIX}projection-current-value {
   min-width: 8px;
   text-align: right;
   transition: all 0.2s;
+}
+
+.${CALIPER_PREFIX}projection-current-value {
+  color: var(--caliper-projection);
+  font-weight: bold;
 }
 
 .${CALIPER_PREFIX}calculator-result {

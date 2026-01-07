@@ -68,8 +68,9 @@ export function Calculator(props: CalculatorProps) {
       <div
         class={`${PREFIX}calculator`}
         style={{
-          left: `${props.position.x + 10}px`,
-          top: `${props.position.y + 10}px`,
+          top: "0",
+          left: "0",
+          transform: `translate3d(${props.position.x + 10}px, ${props.position.y + 10}px, 0)`,
         }}
       >
         <span

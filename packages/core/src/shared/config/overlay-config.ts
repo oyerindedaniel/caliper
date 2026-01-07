@@ -28,6 +28,16 @@ export interface CalculatorShortcuts {
   distance?: string;
 }
 
+/**
+ * Keyboard shortcuts for projection directions.
+ */
+export interface ProjectionShortcuts {
+  top?: string;
+  left?: string;
+  bottom?: string;
+  right?: string;
+}
+
 export interface CommandsConfig {
   /** Key to activate measuring mode (default: Alt) */
   activate?: string;
@@ -39,6 +49,8 @@ export interface CommandsConfig {
   clear?: string;
   /** Custom keys to trigger calculator for specific sides (default: t, r, b, l) */
   calculator?: CalculatorShortcuts;
+  /** Custom keys to trigger projection for specific directions (default: w, a, s, d) */
+  projection?: ProjectionShortcuts;
 }
 
 
@@ -67,6 +79,12 @@ export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
     bottom: "b",
     left: "l",
     distance: "d",
+  },
+  projection: {
+    top: "w",
+    left: "a",
+    bottom: "s",
+    right: "d",
   },
 };
 
