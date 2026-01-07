@@ -11,6 +11,7 @@ import { Calculator } from "./calculator.jsx";
 import { BoundaryBoxes } from "./render-boundary-boxes.jsx";
 import { SelectionLabel } from "./render-selection-label.jsx";
 import { ProjectionOverlay } from "./projection.jsx";
+import { RulerOverlay } from "./ruler.jsx";
 import { PREFIX } from "../../css/styles.js";
 import type { OverlayProps } from "../../types.js";
 
@@ -139,6 +140,17 @@ export function Overlay(props: OverlayProps) {
             projectionState={props.projectionState!}
             metadata={props.selectionMetadata}
             viewport={props.viewport}
+          />
+        </Portal>
+      </Show>
+      <Show when={props.rulerState && props.rulerState().lines.length > 0}>
+        <Portal mount={document.body}>
+          <RulerOverlay
+            state={props.rulerState!}
+            viewport={props.viewport}
+            onUpdate={props.onRulerUpdate || (() => { })}
+            onRemove={props.onRulerRemove || (() => { })}
+            onClearAll={props.onRulerClearAll || (() => { })}
           />
         </Portal>
       </Show>

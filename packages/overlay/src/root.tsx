@@ -15,10 +15,13 @@ import {
   getTopElementAtPoint,
   getLiveLineValue,
   getLiveGeometry,
+  createRulerSystem,
   type MeasurementLine,
   type DeepRequired,
   type ProjectionSystem,
   type ProjectionDirection,
+  type RulerSystem,
+  type RulerState,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 
@@ -57,6 +60,9 @@ export function Root(config: RootConfig) {
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
   let projectionSystem: ProjectionSystem | null = null;
+  let rulerSystem: RulerSystem | null = null;
+
+  const [rulerState, setRulerState] = createSignal<RulerState>({ lines: [] });
 
   const [isAltPressed, setIsAltPressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
@@ -87,6 +93,11 @@ export function Root(config: RootConfig) {
 
     const unsubscribeProjection = projectionSystem.onUpdate((state) => {
       setProjectionState(state);
+    });
+
+    rulerSystem = createRulerSystem();
+    const unsubscribeRuler = rulerSystem.onUpdate((state) => {
+      setRulerState(state);
     });
 
     const unsubscribe = system.onStateChange(() => {
@@ -244,6 +255,15 @@ export function Root(config: RootConfig) {
 
       if (e.key === commands.select) {
         setIsSelectKeyDown(true);
+      }
+
+      if (e.key.toLowerCase() === commands.ruler && e.shiftKey && rulerSystem) {
+        e.preventDefault();
+        const vp = viewport();
+        const x = Math.max(0, Math.min(cursor().x, vp.width));
+        const y = Math.max(0, Math.min(cursor().y, vp.height));
+        rulerSystem.addPair(x, y);
+        return;
       }
 
       const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
@@ -414,20 +434,16 @@ export function Root(config: RootConfig) {
       unsubscribe();
       unsubscribeUpdate();
       unsubscribeProjection();
+      unsubscribeRuler();
 
-      if (system) {
-        system.cleanup();
-        system = null;
-      }
-
-      if (selectionSystem) {
-        selectionSystem.clear();
-        selectionSystem = null;
-      }
+      handleCleanup();
 
       if (projectionSystem) {
-        projectionSystem.clear();
         projectionSystem = null;
+      }
+
+      if (rulerSystem) {
+        rulerSystem = null;
       }
     });
   });
@@ -532,6 +548,25 @@ export function Root(config: RootConfig) {
     }
   };
 
+  const handleRulerUpdate = (id: string, position: number) => {
+    rulerSystem?.updateLine(id, position);
+  };
+
+  const handleRulerRemove = (id: string) => {
+    rulerSystem?.removeLine(id);
+  };
+
+  const handleRulerClearAll = () => {
+    rulerSystem?.clear();
+  };
+
+  const handleCleanup = () => {
+    if (system) system.cleanup();
+    if (selectionSystem) selectionSystem.clear();
+    if (projectionSystem) projectionSystem.clear();
+    if (rulerSystem) rulerSystem.clear();
+  };
+
   return (
     <Overlay
       result={result}
@@ -543,7 +578,11 @@ export function Root(config: RootConfig) {
       viewport={viewport}
       calculatorState={calculatorState}
       projectionState={projectionState}
+      rulerState={rulerState}
       onLineClick={handleLineClick}
+      onRulerUpdate={handleRulerUpdate}
+      onRulerRemove={handleRulerRemove}
+      onRulerClearAll={handleRulerClearAll}
       onCalculatorInput={handleCalculatorInput}
       onCalculatorBackspace={handleCalculatorBackspace}
       onCalculatorDelete={handleCalculatorDelete}

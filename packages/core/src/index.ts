@@ -52,11 +52,17 @@ export {
   createProjectionSystem,
   type ProjectionSystem,
 } from "./measurement-model/utils/projection-system.js";
+export {
+  createRulerSystem,
+  type RulerSystem,
+} from "./ruler-model/utils/ruler-system.js";
 export type {
   CursorContext,
   SyncSource,
   ProjectionDirection,
   ProjectionState,
+  RulerLine,
+  RulerState,
 } from "./shared/types/index.js";
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";

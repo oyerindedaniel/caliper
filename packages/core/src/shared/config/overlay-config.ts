@@ -15,6 +15,7 @@ export interface ThemeConfig {
   calcOpHighlight?: string;
   calcText?: string;
   text?: string;
+  projection?: string;
 }
 
 /**
@@ -51,6 +52,8 @@ export interface CommandsConfig {
   calculator?: CalculatorShortcuts;
   /** Custom keys to trigger projection for specific directions (default: w, a, s, d) */
   projection?: ProjectionShortcuts;
+  /** Key to trigger ruler lines - must be Shift + this key (default: r) */
+  ruler?: string;
 }
 
 
@@ -86,6 +89,7 @@ export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
     bottom: "s",
     right: "d",
   },
+  ruler: "r",
 };
 
 export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {
@@ -96,6 +100,7 @@ export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {
   calcOpHighlight: "rgba(24, 160, 251, 0.3)",
   calcText: "white",
   text: "white",
+  projection: "rgba(155, 81, 224, 1)",
 };
 
 export const DEFAULT_ANIMATION: DeepRequired<AnimationConfig> = {

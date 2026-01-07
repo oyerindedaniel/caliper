@@ -258,6 +258,19 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}line-clickable:hover {
   stroke-width: 2px;
 }
+
+.${CALIPER_PREFIX}ruler-line-visual {
+  transition: transform 0.1s ease-out;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.${CALIPER_PREFIX}ruler-label {
+  background: var(--caliper-primary);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  will-change: transform;
+}
 `;
 
 export const PREFIX = CALIPER_PREFIX;
