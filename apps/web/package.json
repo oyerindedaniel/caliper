@@ -11,10 +11,13 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@caliper/core": "workspace:*",
     "@repo/ui": "workspace:*",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "next": "16.1.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-syntax-highlighter": "^16.1.0"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
