@@ -20,7 +20,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
         />
         <Script
-          src={`/caliper.js?v=${process.env.NODE_ENV === 'development' ? Date.now() : '1'}`}
+          src={`/caliper.js?v=${Date.now()}`}
           strategy="beforeInteractive"
           crossOrigin="anonymous"
         />

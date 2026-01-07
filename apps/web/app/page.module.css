@@ -30,11 +30,13 @@
 .main {
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: 12px;
   grid-row-start: 2;
+  width: 100%;
+  max-width: 600px;
 }
 
-.main ol {
+.main p {
   font-family: var(--font-geist-mono);
   padding-left: 0;
   margin: 0;
@@ -183,4 +185,119 @@ button.secondary {
   .logo {
     filter: invert();
   }
+}
+
+.tableContainer {
+  width: 100%;
+  margin: 0;
+}
+
+.commandTable {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--gray-rgb);
+  font-size: 14px;
+}
+
+.commandTable th {
+  font-family: var(--font-geist-mono);
+  font-weight: 600;
+  text-align: left;
+  padding: 12px;
+  border-bottom: 2px solid var(--gray-alpha-200);
+}
+
+.commandTable td {
+  font-family: var(--font-geist-sans);
+  padding: 12px;
+  border-bottom: 1px solid var(--gray-alpha-200);
+}
+
+.commandTable td pre {
+  font-family: var(--font-geist-mono);
+  background: var(--gray-alpha-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  margin: 0;
+  font-size: 12px;
+}
+
+.installContainer {
+  width: 100%;
+  margin: 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0px;
+  border-bottom: 1px solid var(--gray-alpha-200);
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: 8px 16px;
+  font-family: var(--font-geist-sans);
+  font-size: 14px;
+  cursor: pointer;
+  color: #888;
+  border-bottom: 2px solid transparent;
+  width: 100px;
+  /* Uniform width */
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.activeTab {
+  color: var(--gray-rgb);
+  border-bottom-color: var(--gray-rgb);
+  font-weight: 500;
+}
+
+.codeBlock {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--gray-alpha-200);
+  background: var(--gray-alpha-100);
+}
+
+.sectionHeader {
+  font-family: var(--font-geist-mono);
+  font-size: 0.8rem;
+  margin-top: 40px;
+  text-transform: uppercase;
+  opacity: 0.5;
+  letter-spacing: 0.05em;
+}
+
+.commandsHeader {
+  margin-top: 32px;
+}
+
+.instructionList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.instructionItem {
+  font-family: var(--font-geist-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--gray-rgb);
+  opacity: 0.8;
+}
+
+.instructionItem strong {
+  color: var(--foreground);
+  font-weight: 600;
+  background: var(--gray-alpha-100);
+  padding: 1px 4px;
+  border-radius: 3px;
 }

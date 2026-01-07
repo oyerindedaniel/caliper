@@ -170,7 +170,7 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}calculator-input {
-  min-width: 16px;
+  min-width: 8px;
   text-align: right;
   transition: all 0.2s;
 }
