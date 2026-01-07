@@ -15,11 +15,10 @@ export function createFrequencyControlledReader(
   let lastReadTime = 0;
   let readInterval = DEFAULT_READ_INTERVAL;
   const frameTimes: number[] = [];
+  let trailingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let pendingTask: { callback: () => void; urgent: boolean } | null = null;
 
   function adaptToFrameRate(fps: number) {
-    // If app is running at 60fps, read at 30fps
-    // If app is running at 30fps, read at 15fps
-    // This ensures we don't consume more than half the frame budget
     readInterval = Math.ceil(1000 / (fps / 2));
   }
 
@@ -29,7 +28,6 @@ export function createFrequencyControlledReader(
       frameTimes.shift();
     }
 
-    // Calculate current FPS and adapt
     if (frameTimes.length >= 2) {
       const last = frameTimes[frameTimes.length - 1];
       const first = frameTimes[0];
@@ -41,37 +39,41 @@ export function createFrequencyControlledReader(
     }
   }
 
-  let trailingTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  function executeNow() {
+    if (!pendingTask) return;
+    const { callback, urgent } = pendingTask;
+    pendingTask = null;
 
-  function scheduleRead(callback: () => void, urgent = false): boolean {
+    lastReadTime = performance.now();
+    baseReader.scheduleRead(callback, urgent);
+  }
+
+  function scheduleRead(callback: () => void, urgent = false): void {
+    pendingTask = { callback, urgent };
+
     const now = performance.now();
     const timeSinceLastRead = now - lastReadTime;
 
-    if (!urgent && timeSinceLastRead < readInterval) {
+    if (urgent || timeSinceLastRead >= readInterval) {
       if (trailingTimeoutId !== null) {
         clearTimeout(trailingTimeoutId);
+        trailingTimeoutId = null;
       }
+      executeNow();
+      return;
+    }
+
+    if (trailingTimeoutId === null) {
       trailingTimeoutId = setTimeout(() => {
         trailingTimeoutId = null;
-        scheduleRead(callback, false);
+        executeNow();
       }, readInterval - timeSinceLastRead);
-      return false;
     }
-
-    if (trailingTimeoutId !== null) {
-      clearTimeout(trailingTimeoutId);
-      trailingTimeoutId = null;
-    }
-
-    const scheduled = baseReader.scheduleRead(callback, urgent);
-    if (scheduled) {
-      lastReadTime = now;
-    }
-    return scheduled;
   }
 
   function cancel() {
     baseReader.cancel();
+    pendingTask = null;
     if (trailingTimeoutId !== null) {
       clearTimeout(trailingTimeoutId);
       trailingTimeoutId = null;

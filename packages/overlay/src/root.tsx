@@ -2,6 +2,7 @@ import { onMount, onCleanup, createSignal, createEffect } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
+  createSuppressionDelegate,
   type MeasurementSystem,
   type SelectionSystem,
   type MeasurementResult,
@@ -129,7 +130,8 @@ export function Root(config: RootConfig) {
           }
 
           lastHoveredElement = null;
-          suppressionFrames = 0;
+          selectionDelegate.cancel();
+          measureDelegate.cancel();
           selectionSystem.select(element);
         }
       }
@@ -138,8 +140,20 @@ export function Root(config: RootConfig) {
     let lastMouseEvent: MouseEvent | null = null;
     let mouseMoveRafId: number | null = null;
     let lastHoveredElement: Element | null = null;
-    let suppressionFrames = 0;
-    let trailingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const selectionDelegate = createSuppressionDelegate((el: Element) => {
+      lastHoveredElement = el;
+      selectionSystem?.select(el);
+    });
+
+    const measureDelegate = createSuppressionDelegate(
+      (el: Element, cursor: { x: number; y: number }, hover: Element | null) => {
+        if (hover) {
+          lastHoveredElement = hover;
+        }
+        system?.measure(el, cursor);
+      }
+    );
 
     const processMouseMove = () => {
       if (!lastMouseEvent || !selectionSystem) {
@@ -148,47 +162,28 @@ export function Root(config: RootConfig) {
       }
 
       const e = lastMouseEvent;
-      setCursor({ x: e.clientX, y: e.clientY });
+      const cursorPoint = { x: e.clientX, y: e.clientY };
+      setCursor(cursorPoint);
 
       const selectedElement = selectionSystem.getSelected();
       const isAlt = isAltPressed();
       const state = system?.getState();
 
       if (selectedElement) {
+        const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
+        const isAncestor =
+          hoveredElement &&
+          lastHoveredElement &&
+          hoveredElement.contains(lastHoveredElement) &&
+          hoveredElement !== lastHoveredElement;
+
         if (isAlt) {
           if (system) {
-            system.measure(selectedElement, { x: e.clientX, y: e.clientY });
+            measureDelegate.execute(!!isAncestor, selectedElement, cursorPoint, hoveredElement);
           }
         } else if (state !== "FROZEN") {
-          const hoveredElement = getTopElementAtPoint(e.clientX, e.clientY);
-
           if (hoveredElement) {
-            const isAncestor =
-              lastHoveredElement &&
-              hoveredElement.contains(lastHoveredElement) &&
-              hoveredElement !== lastHoveredElement;
-
-            if (trailingTimer) {
-              clearTimeout(trailingTimer);
-              trailingTimer = null;
-            }
-
-            if (isAncestor && suppressionFrames < 8) {
-              suppressionFrames++;
-              trailingTimer = setTimeout(() => {
-                suppressionFrames = 0;
-                lastHoveredElement = hoveredElement;
-                selectionSystem?.select(hoveredElement);
-                trailingTimer = null;
-              }, 30);
-            } else {
-              suppressionFrames = 0;
-              lastHoveredElement = hoveredElement;
-              selectionSystem.select(hoveredElement);
-            }
-          } else if (trailingTimer) {
-            clearTimeout(trailingTimer);
-            trailingTimer = null;
+            selectionDelegate.execute(!!isAncestor, hoveredElement);
           }
         }
       }
@@ -212,7 +207,8 @@ export function Root(config: RootConfig) {
 
         if (selectionSystem) {
           lastHoveredElement = null;
-          suppressionFrames = 0;
+          selectionDelegate.cancel();
+          measureDelegate.cancel();
           selectionSystem.clear();
         }
 
@@ -326,9 +322,8 @@ export function Root(config: RootConfig) {
         cancelAnimationFrame(mouseMoveRafId);
       }
 
-      if (trailingTimer) {
-        clearTimeout(trailingTimer);
-      }
+      selectionDelegate.cancel();
+      measureDelegate.cancel();
 
       unsubscribe();
       unsubscribeUpdate();

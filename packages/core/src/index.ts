@@ -4,6 +4,10 @@ export {
   type FrequencyControlledReader,
 } from "./scheduling/frequency-control.js";
 export {
+  createSuppressionDelegate,
+  type SuppressionOptions,
+} from "./scheduling/suppression.js";
+export {
   isVisible,
   hasSize,
   isEligible,
