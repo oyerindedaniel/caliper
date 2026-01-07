@@ -8,3 +8,13 @@ export interface ProjectionState {
     value: string;
     element: HTMLElement | null;
 }
+
+export interface RulerLine {
+    id: string;
+    type: "horizontal" | "vertical";
+    position: number; // Viewport-relative coordinate (x for vertical, y for horizontal)
+}
+
+export interface RulerState {
+    lines: RulerLine[];
+}

@@ -26,6 +26,8 @@ export function applyTheme(theme?: ThemeConfig) {
   if (theme.calcText)
     root.style.setProperty("--caliper-calc-text", theme.calcText);
   if (theme.text) root.style.setProperty("--caliper-text", theme.text);
+  if (theme.projection)
+    root.style.setProperty("--caliper-projection", theme.projection);
 }
 
 export function mergeCommands(
@@ -51,6 +53,7 @@ export function mergeCommands(
         userCommands?.projection?.bottom ?? DEFAULT_COMMANDS.projection.bottom,
       right: userCommands?.projection?.right ?? DEFAULT_COMMANDS.projection.right,
     },
+    ruler: userCommands?.ruler ?? DEFAULT_COMMANDS.ruler,
   };
 }
 

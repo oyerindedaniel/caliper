@@ -8,6 +8,7 @@ import type {
   SelectionMetadata,
   DeepRequired,
   ProjectionState,
+  RulerState,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
 
@@ -27,7 +28,11 @@ export interface OverlayProps {
   }>;
   calculatorState?: Accessor<CalculatorState | null>;
   projectionState?: Accessor<ProjectionState>;
+  rulerState?: Accessor<RulerState>;
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
+  onRulerUpdate?: (id: string, position: number) => void;
+  onRulerRemove?: (id: string) => void;
+  onRulerClearAll?: () => void;
   onCalculatorInput?: (key: string) => void;
   onCalculatorBackspace?: () => void;
   onCalculatorDelete?: () => void;
