@@ -29,6 +29,8 @@ declare global {
   }
 }
 
+let activeInstance: OverlayInstance | null = null;
+
 export function createOverlay(
   config?: OverlayConfig,
 ): OverlayInstance {
@@ -40,11 +42,14 @@ export function createOverlay(
     };
   }
 
+  if (activeInstance?.mounted) {
+    return activeInstance;
+  }
+
+  // Sync with global window object if someone else set it
   if (window.__CALIPER__?.mounted) {
-    console.warn(
-      "[CALIPER] Overlay is already mounted. Call dispose() on the existing instance before creating a new one."
-    );
-    return window.__CALIPER__;
+    activeInstance = window.__CALIPER__;
+    return activeInstance;
   }
 
   const windowConfig = getConfig();
@@ -63,6 +68,11 @@ export function createOverlay(
     mounted: false,
     mount: (container?: HTMLElement) => {
       if (instance.mounted) return;
+
+      if (document.getElementById("caliper-overlay-root")) {
+        instance.mounted = true;
+        return;
+      }
 
       if (mergedConfig.theme) {
         applyTheme(mergedConfig.theme);
@@ -85,6 +95,7 @@ export function createOverlay(
         overlayContainer.remove();
         removeStyles();
         instance.mounted = false;
+        if (activeInstance === instance) activeInstance = null;
       };
 
       instance.mounted = true;
@@ -96,6 +107,15 @@ export function createOverlay(
       }
     },
   };
+
+
+  activeInstance = instance;
+  window.__CALIPER__ = instance;
+
+  // Auto-mount in browser
+  if (IS_BROWSER) {
+    instance.mount();
+  }
 
   return instance;
 }
