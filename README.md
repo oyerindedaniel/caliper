@@ -89,6 +89,16 @@ init({
 });
 ```
 
+### Excluding Elements
+
+To prevent Caliper from measuring specific elements (like sidebars, floating buttons, or decorative overlays), add the `data-caliper-ignore` attribute:
+
+```html
+<div data-caliper-ignore>
+  <!-- This element and its children will be ignored by Caliper -->
+</div>
+```
+
 ---
 
 ## Interaction Guide ⌨️

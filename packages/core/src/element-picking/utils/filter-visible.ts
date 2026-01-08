@@ -45,7 +45,7 @@ export function hasSize(element: Element): boolean {
  * Combines visibility and size checks
  */
 export function isEligible(element: Element): boolean {
-  if (element.hasAttribute("data-caliper-ignore")) {
+  if (element.closest("[data-caliper-ignore]")) {
     return false;
   }
   return isVisible(element) && hasSize(element);

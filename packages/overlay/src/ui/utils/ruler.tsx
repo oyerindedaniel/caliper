@@ -309,11 +309,10 @@ export function RulerOverlay(props: RulerOverlayProps) {
 
         return result;
     });
-
     return (
         <div
             class={`${PREFIX}ruler-layer`}
-            style={{ "pointer-events": "none" }}
+            data-caliper-ignore
             onPointerDown={handlePointerDown}
             onDblClick={handleDoubleClick}
             onPointerOver={handlePointerOver}
@@ -325,7 +324,8 @@ export function RulerOverlay(props: RulerOverlayProps) {
                         <g
                             data-caliper-ignore
                             style={{ cursor: "pointer", "pointer-events": "auto" }}
-                            onClick={() => {
+                            onClick={(e) => {
+                                e.stopPropagation();
                                 props.onLineClick?.({
                                     type: "distance",
                                     value: bridge.value,
@@ -364,7 +364,8 @@ export function RulerOverlay(props: RulerOverlayProps) {
                     <div
                         data-caliper-ignore
                         class={`${PREFIX}label ${PREFIX}ruler-bridge-label`}
-                        onClick={() => {
+                        onClick={(e) => {
+                            e.stopPropagation();
                             props.onLineClick?.({
                                 type: "distance",
                                 value: bridge.value,
@@ -373,19 +374,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
                             }, bridge.value);
                         }}
                         style={{
-                            position: "fixed",
-                            left: "0",
-                            top: "0",
                             transform: `translate3d(${bridge.labelX}px, ${bridge.labelY}px, 0) translate(-50%, -50%)`,
-                            background: "var(--caliper-secondary)",
-                            "z-index": 1000003,
-                            "font-size": "10px",
-                            padding: "1px 4px",
-                            "border-radius": "2px",
-                            color: "white",
-                            "box-shadow": "0 1px 3px rgba(0,0,0,0.2)",
-                            cursor: "pointer",
-                            "pointer-events": "auto"
                         }}
                     >
                         {Math.round(bridge.value * 100) / 100}
