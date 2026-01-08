@@ -159,7 +159,7 @@ export function Root() {
         </button>
       </div>
 
-      <div className={styles.codeBlock}>
+      <div className={styles.codeBlock} suppressHydrationWarning>
         <SyntaxHighlighter
           language="tsx"
           style={vscDarkPlus}

@@ -36,11 +36,13 @@
         "dist"
     ],
     "scripts": {
-        "build": "tsup --env.NODE_ENV production",
+        "prebuild": "node scripts/write-version.mjs",
+        "build": "pnpm run clean && pnpm run prebuild && tsup --env.NODE_ENV production",
         "build:watch": "tsup --watch",
         "lint": "eslint . --max-warnings 0",
         "check-types": "tsc --noEmit",
-        "clean": "tsup --clean"
+        "clean": "tsup --clean",
+        "release": "pnpm publish --access public"
     },
     "keywords": [
         "caliper",
