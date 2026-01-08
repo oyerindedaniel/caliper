@@ -32,14 +32,9 @@ export interface OverlayProps {
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
   onRulerUpdate?: (id: string, position: number) => void;
   onRulerRemove?: (id: string) => void;
-  onRulerClearAll?: () => void;
   onCalculatorInput?: (key: string) => void;
   onCalculatorBackspace?: () => void;
   onCalculatorDelete?: () => void;
   onCalculatorEnter?: () => void;
   onCalculatorClose?: () => void;
-}
-
-export interface OverlayOptions {
-  // Future options can be added here
 }

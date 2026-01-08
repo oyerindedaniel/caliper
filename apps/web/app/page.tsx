@@ -4,6 +4,8 @@ import Image from "next/image";
 import styles from "./page.module.css";
 import { CommandTable } from "./command";
 import { Installation } from "./installation";
+import { Configuration } from "./configuration";
+import { Configurator } from "./configurator";
 import { Instructions } from "./instructions";
 
 export default function Home() {
@@ -17,10 +19,13 @@ export default function Home() {
           width={171.5}
           height={50}
           priority
+          unoptimized
         />
         <p>Essential tooling for detail-obsessed design engineer.</p>
 
         <Installation />
+        <Configuration />
+        <Configurator />
         <Instructions />
         <CommandTable />
       </main>

@@ -250,6 +250,11 @@ button.secondary {
   transition: all 0.2s;
 }
 
+.tab:hover:not(.activeTab) {
+  color: #bbb;
+  background: var(--gray-alpha-100);
+}
+
 .activeTab {
   color: var(--gray-rgb);
   border-bottom-color: var(--gray-rgb);
@@ -270,6 +275,15 @@ button.secondary {
   margin-top: 40px;
   text-transform: uppercase;
   opacity: 0.5;
+  letter-spacing: 0.05em;
+}
+
+.subHeader {
+  font-family: var(--font-geist-mono);
+  font-size: 0.8rem;
+  margin-top: 24px;
+  text-transform: uppercase;
+  opacity: 0.7;
   letter-spacing: 0.05em;
 }
 
@@ -300,4 +314,88 @@ button.secondary {
   background: var(--gray-alpha-100);
   padding: 1px 4px;
   border-radius: 3px;
+}
+
+.configuratorGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  width: 100%;
+  margin-top: 16px;
+}
+
+.configControl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.configLabel {
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.configInput {
+  background: var(--gray-alpha-100);
+  border: 1px solid var(--gray-alpha-200);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--gray-rgb);
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.configInput:focus {
+  border-color: var(--gray-rgb);
+}
+
+.configAction {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+
+.copyButton {
+  appearance: none;
+  width: 100%;
+  background: var(--foreground);
+  color: var(--background);
+  border: 1px solid transparent;
+  border-radius: 128px;
+  padding: 10px 16px;
+  font-family: var(--font-geist-sans);
+  font-weight: 500;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.copyButton:hover {
+  background: var(--button-primary-hover);
+}
+
+.copyButton:active {
+  opacity: 0.8;
+}
+
+.copyStatus {
+  font-family: var(--font-geist-mono);
+  font-size: 12px;
+  color: #10b981;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.copyStatusVisible {
+  opacity: 1;
 }

@@ -67,6 +67,7 @@ export default defineConfig((options) => {
     return [
         {
             ...DEFAULT_OPTIONS,
+            entry: { "index": "./src/auto.ts" },
             format: ["iife"],
             globalName: "Caliper",
             platform: "browser",
@@ -75,6 +76,7 @@ export default defineConfig((options) => {
         },
         {
             ...DEFAULT_OPTIONS,
+            entry: ["./src/index.ts"],
             format: ["cjs", "esm"],
             platform: "neutral",
             splitting: true,

@@ -1,6 +1,5 @@
 import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
-import type { OverlayOptions } from "./types.js";
 import type { OverlayConfig } from "@caliper/core";
 import {
   applyTheme,
@@ -32,7 +31,6 @@ declare global {
 
 export function createOverlay(
   config?: OverlayConfig,
-  options?: OverlayOptions
 ): OverlayInstance {
   if (!IS_BROWSER) {
     return {
@@ -102,15 +100,10 @@ export function createOverlay(
   return instance;
 }
 
-export type { OverlayProps, OverlayOptions } from "./types.js";
+export type { OverlayProps } from "./types.js";
 
 if (IS_BROWSER) {
   showVersionInfo(process.env.VERSION).catch(() => {
     // Silently fail
   });
-
-  const windowConfig = getConfig();
-  const instance = createOverlay(windowConfig);
-  window.__CALIPER__ = instance;
-  instance.mount();
 }

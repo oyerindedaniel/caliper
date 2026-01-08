@@ -28,6 +28,8 @@ export function applyTheme(theme?: ThemeConfig) {
   if (theme.text) root.style.setProperty("--caliper-text", theme.text);
   if (theme.projection)
     root.style.setProperty("--caliper-projection", theme.projection);
+  if (theme.ruler)
+    root.style.setProperty("--caliper-ruler", theme.ruler);
 }
 
 export function mergeCommands(
@@ -74,7 +76,28 @@ declare global {
 
 export function getConfig(): OverlayConfig {
   if (typeof window !== "undefined") {
-    return window.__CALIPER_CONFIG__ ?? {};
+    const windowConfig = window.__CALIPER_CONFIG__ ?? {};
+
+    const currentScript = document.currentScript as HTMLScriptElement;
+    const dataConfig = currentScript?.getAttribute("data-config") ||
+      document.querySelector("script[data-config]")?.getAttribute("data-config");
+
+    if (dataConfig) {
+      try {
+        const parsed = JSON.parse(dataConfig);
+        return {
+          ...windowConfig,
+          ...parsed,
+          theme: { ...windowConfig.theme, ...parsed.theme },
+          commands: { ...windowConfig.commands, ...parsed.commands },
+          animation: { ...windowConfig.animation, ...parsed.animation },
+        };
+      } catch (e) {
+        console.warn("[CALIPER] Failed to parse data-config attribute", e);
+      }
+    }
+
+    return windowConfig;
   }
   return {};
 }
