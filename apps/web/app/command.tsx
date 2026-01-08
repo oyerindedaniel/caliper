@@ -22,6 +22,8 @@ export function CommandTable() {
         { key: "Projection: Bottom", command: DEFAULT_COMMANDS.projection.bottom },
         { key: "Projection: Right", command: DEFAULT_COMMANDS.projection.right },
         { key: "Viewport Ruler", command: `Shift + ${DEFAULT_COMMANDS.ruler}` },
+        { key: "Chain Rulers", command: "Shift + Click" },
+        { key: "Nudge Ruler", command: "Arrow Keys" },
     ];
 
     return (
