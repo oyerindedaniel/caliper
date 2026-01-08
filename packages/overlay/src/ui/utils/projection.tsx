@@ -6,6 +6,7 @@ interface ProjectionOverlayProps {
     projectionState: Accessor<ProjectionState>;
     metadata: Accessor<SelectionMetadata>;
     viewport: Accessor<{ scrollX: number; scrollY: number; width: number; height: number; version: number }>;
+    isFocused?: boolean;
 }
 
 export function ProjectionOverlay(props: ProjectionOverlayProps) {
@@ -20,6 +21,7 @@ export function ProjectionOverlay(props: ProjectionOverlayProps) {
                 projectionState={props.projectionState}
                 metadata={props.metadata}
                 viewport={props.viewport}
+                isFocused={props.isFocused}
             />
         </Show>
     );
@@ -120,6 +122,7 @@ function ProjectionInput(props: {
     projectionState: Accessor<ProjectionState>;
     metadata: Accessor<SelectionMetadata>;
     viewport: Accessor<{ scrollX: number; scrollY: number; width: number; height: number; version: number }>;
+    isFocused?: boolean;
 }) {
     const style = createMemo(() => {
         const vp = props.viewport();
@@ -146,7 +149,7 @@ function ProjectionInput(props: {
 
     return (
         <div
-            class={`${PREFIX}projection-input`}
+            class={`${PREFIX}projection-input ${props.isFocused ? `${PREFIX}projection-input-focused` : ""}`}
             style={style()}
         >
             <span class={`${PREFIX}projection-direction-tag`}>

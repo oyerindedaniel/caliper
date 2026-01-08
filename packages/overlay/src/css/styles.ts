@@ -161,7 +161,14 @@ export const OVERLAY_STYLES = `
   width: fit-content;
   min-width: 32px;
   white-space: nowrap;
-  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  border: 1px solid transparent;
+}
+
+.${CALIPER_PREFIX}calculator-focused, .${CALIPER_PREFIX}projection-input-focused {
+  border-color: var(--caliper-primary);
+  box-shadow: 0 0 0 2px var(--caliper-primary-50), 0 4px 12px var(--caliper-calc-shadow);
+  background: var(--caliper-calc-bg);
 }
 
 .${CALIPER_PREFIX}projection-input {

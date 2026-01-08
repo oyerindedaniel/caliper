@@ -24,6 +24,7 @@ import {
   type RulerState,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
+import { PREFIX } from "./css/styles.js";
 
 interface RootConfig {
   commands: DeepRequired<CommandsConfig>;
@@ -56,6 +57,7 @@ export function Root(config: RootConfig) {
   const [projectionState, setProjectionState] = createSignal<ProjectionState>({ direction: null, value: "", element: null });
   const [activeCalculatorLine, setActiveCalculatorLine] = createSignal<MeasurementLine | null>(null);
   const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
+  const [activeInputFocus, setActiveInputFocus] = createSignal<"calculator" | "projection">("calculator");
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
@@ -138,6 +140,16 @@ export function Root(config: RootConfig) {
     };
 
     const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+
+      // If clicking on our own interactive UI, don't do background logic
+      if (target.closest(`[data-caliper-ignore]`) || target.closest(`.${PREFIX}projection-input`)) {
+        if (target.closest(`.${PREFIX}projection-input`)) {
+          setActiveInputFocus("projection");
+        }
+        return;
+      }
+
       if (isCommandActive(e)) {
         e.preventDefault();
         e.stopPropagation();
@@ -146,6 +158,7 @@ export function Root(config: RootConfig) {
         if (element && selectionSystem) {
           setResult(null);
           setCalculatorState(null);
+          setActiveInputFocus("calculator");
 
           if (projectionSystem) {
             projectionSystem.clear();
@@ -228,7 +241,6 @@ export function Root(config: RootConfig) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === commands.clear) {
         setIsAltPressed(false);
-        setIsFrozen(false);
         setCalculatorState(null);
         setActiveCalculatorLine(null);
 
@@ -293,57 +305,72 @@ export function Root(config: RootConfig) {
         if (state === "FROZEN") {
           e.preventDefault();
           system.unfreeze(isAltPressed());
-        } else if (state === "MEASURING" || system.getCurrentResult()) {
+        } else if (selectionMetadata().element) {
           e.preventDefault();
           system.freeze();
         }
-      } else if (isFrozen() && result()) {
+      } else {
         const key = e.key.toLowerCase();
-        const { calculator } = commands;
+        const { calculator, projection } = commands;
+        const isCalcActive = !!calculatorState();
+        const isProjActive = projectionState().direction !== null;
 
-        const typeMap: Record<string, MeasurementLine["type"]> = {
-          [calculator.top]: "top",
-          [calculator.right]: "right",
-          [calculator.bottom]: "bottom",
-          [calculator.left]: "left",
-          [calculator.distance]: "distance",
-        };
+        // 1. Handle Active Calculator Inputs (Numbers, Operators, etc)
+        // High priority if focused OR if projection is not even active
+        const shouldCalcGetNumbers = isCalcActive && (activeInputFocus() === "calculator" || !isProjActive);
 
-        const targetType = typeMap[key];
-        if (targetType) {
-          e.preventDefault();
-          const currentLines = result()?.lines || [];
-          const targetLine = currentLines.find((l) => l.type === targetType);
+        if (isCalcActive && (shouldCalcGetNumbers || !/^\d$/.test(e.key))) {
+          const isNumeric = /^[0-9]$/.test(e.key);
+          const isOperator = /^[+\-*/]$/.test(e.key);
+          const isDecimal = e.key === ".";
+          const isBackspace = e.key === "Backspace";
+          const isDelete = e.key === "Delete";
+          const isEnter = e.key === "Enter";
+          const isEscape = e.key === "Escape";
 
-          if (targetLine) {
-            const liveValue = getLiveLineValue(targetLine, result());
-            handleLineClick(targetLine, liveValue);
+          if (isNumeric || isOperator || isDecimal || isBackspace || isDelete || isEnter || isEscape) {
+            // Only eat numbers if we have priority
+            if ((isNumeric || isBackspace || isDecimal) && !shouldCalcGetNumbers) {
+              // fall through to projection
+            } else {
+              e.preventDefault();
+              e.stopPropagation();
+
+              if (isNumeric || isOperator || isDecimal) handleCalculatorInput(e.key);
+              else if (isBackspace) handleCalculatorBackspace();
+              else if (isDelete) handleCalculatorDelete();
+              else if (isEnter) handleCalculatorEnter();
+              else if (isEscape) handleCalculatorClose();
+              return;
+            }
           }
         }
-      } else if (selectionMetadata().element) {
-        const key = e.key.toLowerCase();
-        const { projection } = commands;
-        const isNumeric = /^\d$/.test(key);
-        const isBackspace = e.key === "Backspace";
-        const isEnter = e.key === "Enter";
 
+        // 2. Handle Projection Directions (WASD)
+        // These keys take precedence over Measurement line triggers (like 'd' for distance).
         const dirMap: Record<string, ProjectionDirection> = {
           [projection.top]: "top",
           [projection.left]: "left",
           [projection.bottom]: "bottom",
           [projection.right]: "right",
         };
-
         const dir = dirMap[key];
-        const isDirection = !!dir;
-        const isProjectionActive = projectionState().direction !== null;
 
-        if (isDirection || isNumeric || isBackspace || (isEnter && isProjectionActive)) {
+        if (dir && selectionMetadata().element) {
           e.preventDefault();
+          const currentElement = selectionMetadata().element;
+          if (currentElement) {
+            projectionSystem?.setElement(currentElement as HTMLElement);
+          }
+          projectionSystem?.setDirection(dir);
+
+          // Lock the measurement when we start projecting
+          if (system) {
+            system.freeze();
+          }
 
           const getRunway = (dir: ProjectionDirection) => {
             const metadata = selectionMetadata();
-
             const live = getLiveGeometry(
               metadata.rect,
               metadata.scrollHierarchy,
@@ -352,34 +379,71 @@ export function Root(config: RootConfig) {
               metadata.initialWindowX,
               metadata.initialWindowY
             );
-
             if (!live) return undefined;
-
             const vp = viewport();
-            let runway: number;
             switch (dir) {
-              case "top": runway = live.top - window.scrollY; break;
-              case "bottom": runway = vp.height - (live.top - window.scrollY + live.height); break;
-              case "left": runway = live.left - window.scrollX; break;
-              case "right": runway = vp.width - (live.left - window.scrollX + live.width); break;
+              case "top": return live.top - window.scrollY;
+              case "bottom": return vp.height - (live.top - window.scrollY + live.height);
+              case "left": return live.left - window.scrollX;
+              case "right": return vp.width - (live.left - window.scrollX + live.width);
             }
-            return runway;
           };
 
-          if (isDirection && projectionSystem) {
-            const currentElement = selectionMetadata().element;
-            if (currentElement) {
-              projectionSystem.setElement(currentElement as HTMLElement);
-            }
-            projectionSystem.setDirection(dir);
-            const maxRunway = getRunway(dir);
-            if (maxRunway !== undefined) projectionSystem.capValue(maxRunway);
-          } else if (isNumeric && projectionSystem) {
+          const maxRunway = getRunway(dir);
+          if (maxRunway !== undefined) projectionSystem?.capValue(maxRunway);
+          return;
+        }
+
+        // 3. Handle Projection Value Inputs (Numeric/Backspace)
+        // Only if Projection is active and has focus priority (or calculator is closed).
+        if (isProjActive) {
+          const isNumeric = /^\d$/.test(key);
+          const isBackspace = e.key === "Backspace";
+          const hasPriority = activeInputFocus() === "projection" || !isCalcActive;
+
+          if ((isNumeric || isBackspace) && hasPriority) {
+            e.preventDefault();
             const currentDir = projectionState().direction;
-            const max = currentDir ? getRunway(currentDir) : undefined;
-            projectionSystem.appendValue(key, max);
-          } else if (isBackspace && projectionSystem) {
-            projectionSystem.backspace();
+            if (isNumeric && currentDir) {
+              const metadata = selectionMetadata();
+              const live = getLiveGeometry(metadata.rect, metadata.scrollHierarchy, metadata.position, metadata.stickyConfig, metadata.initialWindowX, metadata.initialWindowY);
+              const vp = viewport();
+              let max: number | undefined;
+              if (live) {
+                if (currentDir === "top") max = live.top - window.scrollY;
+                else if (currentDir === "bottom") max = vp.height - (live.top - window.scrollY + live.height);
+                else if (currentDir === "left") max = live.left - window.scrollX;
+                else if (currentDir === "right") max = vp.width - (live.left - window.scrollX + live.width);
+              }
+              projectionSystem?.appendValue(key, max);
+            } else if (isBackspace) {
+              projectionSystem?.backspace();
+            }
+            return;
+          }
+        }
+
+        // 4. Handle Measurement Line Triggers (to Open Calculator)
+        // Only occurs if key wasn't swallowed by Projection/Calculator inputs above.
+        if (isFrozen() && result()) {
+          const typeMap: Record<string, MeasurementLine["type"]> = {
+            [calculator.top]: "top",
+            [calculator.right]: "right",
+            [calculator.bottom]: "bottom",
+            [calculator.left]: "left",
+            [calculator.distance]: "distance",
+          };
+
+          const targetType = typeMap[key];
+          if (targetType) {
+            e.preventDefault();
+            const currentLines = result()?.lines || [];
+            const targetLine = currentLines.find((l) => l.type === targetType);
+
+            if (targetLine) {
+              const liveValue = getLiveLineValue(targetLine, result());
+              handleLineClick(targetLine, liveValue);
+            }
           }
         }
       }
@@ -494,6 +558,7 @@ export function Root(config: RootConfig) {
     if (system) {
       const calc = system.getCalculator();
       calc.open(liveValue);
+      setActiveInputFocus("calculator");
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
       setActiveCalculatorLine(line);
@@ -504,6 +569,11 @@ export function Root(config: RootConfig) {
     if (system) {
       const calc = system.getCalculator();
       calc.handleInput(key);
+
+      if (/^[+\-*/.]$/.test(key)) {
+        setActiveInputFocus("calculator");
+      }
+
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
       if (calcState.operation) {
@@ -580,13 +650,10 @@ export function Root(config: RootConfig) {
       calculatorState={calculatorState}
       projectionState={projectionState}
       rulerState={rulerState}
+      activeFocus={activeInputFocus}
       onLineClick={handleLineClick}
       onRulerUpdate={handleRulerUpdate}
       onRulerRemove={handleRulerRemove}
-      onCalculatorInput={handleCalculatorInput}
-      onCalculatorBackspace={handleCalculatorBackspace}
-      onCalculatorDelete={handleCalculatorDelete}
-      onCalculatorEnter={handleCalculatorEnter}
       onCalculatorClose={handleCalculatorClose}
     />
   );

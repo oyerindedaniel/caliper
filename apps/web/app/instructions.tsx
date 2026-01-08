@@ -20,7 +20,7 @@ export function Instructions() {
                     4. <strong>Space</strong> — Freeze the current measurements
                 </li>
                 <li className={styles.instructionItem}>
-                    5. <strong>T, R, B, L, D</strong> — Trigger calculator on selected element
+                    5. <strong>T, R, B, L, D</strong> (or <strong>Click</strong>) — Send distances directly to the calculator.
                 </li>
             </ul>
 
@@ -46,10 +46,16 @@ export function Instructions() {
                     </span>
                 </li>
                 <li className={styles.instructionItem}>
+                    <strong>Chained Measurement</strong> — <strong>Shift + Click</strong> multiple parallel rulers to calculate and reveal distances between them.
+                </li>
+                <li className={styles.instructionItem}>
                     <strong>Magnetic Snapping</strong> — Rulers automatically snap to active projection lines when dragged nearby.
                 </li>
                 <li className={styles.instructionItem}>
                     <strong>Deselect/Remove</strong> — Click empty space to deselect; press <strong>Delete/Backspace</strong> or <strong>Double-Click</strong> to remove.
+                </li>
+                <li className={styles.instructionItem}>
+                    <strong>Input Priority</strong> — Typing operators (<strong>+ - * / .</strong>) automatically focuses the calculator for instant audits.
                 </li>
                 <li className={styles.instructionItem}>
                     <strong>Escape</strong> — Clear all rulers, calculators, and projections.

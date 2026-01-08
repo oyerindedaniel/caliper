@@ -164,7 +164,7 @@ export function Configurator() {
             </p>
 
             <div className={styles.subHeader}>Core Commands</div>
-            <div className={styles.configuratorGrid}>
+            <div className={styles.configuratorGrid} suppressHydrationWarning>
                 <ShortcutField label="Activate Overlay" value={commands.activate} id="activate" isDuplicate={conflicts.has("activate")} onUpdate={update} />
                 <ShortcutField label="Freeze System" value={commands.freeze} id="freeze" isDuplicate={conflicts.has("freeze")} onUpdate={update} />
                 <ShortcutField label="Deep Select" value={commands.select} id="select" isDuplicate={conflicts.has("select")} onUpdate={update} />
@@ -173,7 +173,7 @@ export function Configurator() {
             </div>
 
             <div className={styles.subHeader}>Calculator Triggers</div>
-            <div className={styles.configuratorGrid}>
+            <div className={styles.configuratorGrid} suppressHydrationWarning>
                 <ShortcutField label="Top Edge" value={commands.calcTop} id="calcTop" isDuplicate={conflicts.has("calcTop")} onUpdate={update} />
                 <ShortcutField label="Right Edge" value={commands.calcRight} id="calcRight" isDuplicate={conflicts.has("calcRight")} onUpdate={update} />
                 <ShortcutField label="Bottom Edge" value={commands.calcBottom} id="calcBottom" isDuplicate={conflicts.has("calcBottom")} onUpdate={update} />
@@ -182,7 +182,7 @@ export function Configurator() {
             </div>
 
             <div className={styles.subHeader}>Projection Alignment</div>
-            <div className={styles.configuratorGrid}>
+            <div className={styles.configuratorGrid} suppressHydrationWarning>
                 <ShortcutField label="Project Up" value={commands.projTop} id="projTop" isDuplicate={conflicts.has("projTop")} onUpdate={update} />
                 <ShortcutField label="Project Right" value={commands.projRight} id="projRight" isDuplicate={conflicts.has("projRight")} onUpdate={update} />
                 <ShortcutField label="Project Down" value={commands.projBottom} id="projBottom" isDuplicate={conflicts.has("projBottom")} onUpdate={update} />

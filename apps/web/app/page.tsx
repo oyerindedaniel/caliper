@@ -7,6 +7,7 @@ import { Installation } from "./installation";
 import { Configuration } from "./configuration";
 import { Configurator } from "./configurator";
 import { Instructions } from "./instructions";
+import { Footer } from "./footer";
 
 export default function Home() {
   return (
@@ -21,7 +22,7 @@ export default function Home() {
           priority
           unoptimized
         />
-        <p>Essential tooling for detail-obsessed design engineer.</p>
+        <p>Essential tooling for detail-obsessed design engineers.</p>
 
         <Installation />
         <Configuration />
@@ -29,29 +30,7 @@ export default function Home() {
         <Instructions />
         <CommandTable />
       </main>
-      <footer className={styles.footer}>
-        <a
-          href="https://github.com/oyerindedaniel/caliper"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Github
-        </a>
-        <a
-          href="https://danieloyerinde.com"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Daniel Oyerinde →
-        </a>
-      </footer>
+      <Footer />
     </div>
   );
 }

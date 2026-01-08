@@ -1,64 +1,19 @@
-import { onMount, onCleanup, Show } from "solid-js";
-import type { CalculatorState, CalculatorOperation } from "@caliper/core";
+import { Show } from "solid-js";
+import type { CalculatorState } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 import { Icons } from "./icons.jsx";
 
 interface CalculatorProps {
   state: CalculatorState;
-  onInput: (key: string) => void;
-  onBackspace: () => void;
-  onDelete: () => void;
-  onEnter: () => void;
   onClose: () => void;
   position: { x: number; y: number };
+  isFocused?: boolean;
 }
 
 /**
  * Calculator input control
  */
 export function Calculator(props: CalculatorProps) {
-
-  onMount(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (!props.state.isActive) return;
-
-      if (
-        /^[0-9+\-*/]$/.test(e.key) ||
-        e.key === "Backspace" ||
-        e.key === "Delete" ||
-        e.key === "Enter" ||
-        e.key === "Escape"
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-
-      if (/^[0-9]$/.test(e.key)) {
-        props.onInput(e.key);
-      } else if (
-        e.key === "+" ||
-        e.key === "-" ||
-        e.key === "*" ||
-        e.key === "/"
-      ) {
-        props.onInput(e.key as CalculatorOperation);
-      } else if (e.key === "Backspace") {
-        props.onBackspace();
-      } else if (e.key === "Delete") {
-        props.onDelete();
-      } else if (e.key === "Enter") {
-        props.onEnter();
-      } else if (e.key === "Escape") {
-        props.onClose();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    onCleanup(() => {
-      window.removeEventListener("keydown", handleKeyDown);
-    });
-  });
-
   const formatValue = (value: number): string => {
     return Math.round(value * 100) / 100 + "";
   };
@@ -66,7 +21,7 @@ export function Calculator(props: CalculatorProps) {
   return (
     <Show when={props.state.isActive}>
       <div
-        class={`${PREFIX}calculator`}
+        class={`${PREFIX}calculator ${props.isFocused ? `${PREFIX}calculator-focused` : ""}`}
         style={{
           top: "0",
           left: "0",

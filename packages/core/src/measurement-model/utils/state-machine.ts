@@ -24,7 +24,7 @@ export function createStateMachine(): StateMachine {
 
     const validTransitions: Record<MeasurementState, MeasurementState[]> = {
       IDLE: ["ARMED", "FROZEN"],
-      ARMED: ["MEASURING", "IDLE"],
+      ARMED: ["MEASURING", "FROZEN", "IDLE"],
       MEASURING: ["FROZEN", "IDLE"],
       FROZEN: ["MEASURING", "IDLE"],
     };

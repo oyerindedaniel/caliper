@@ -14,7 +14,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 - **Interactive Overlay**: Real-time measurement lines and labels with smooth, high-fidelity animations.
 - **Selection System**: Lock elements for side-by-side comparison (Ctrl + Click).
 - **Edge Projections**: Check alignment across the entire viewport using relative projections (W/A/S/D).
-- **Viewport Rulers**: Draggable guidelines with magnetic snapping for auditing layout grids (Shift + R).
+- **Viewport Rulers**: Draggable guidelines with magnetic snapping and chained distance measurements (Shift + R).
 - **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/D).
 - **Full Customization**: Fully configurable shortcuts and theme colors.
 
@@ -110,14 +110,24 @@ init({
 - **Shift + Arrows** — Nudge by 10px.
 - **Alt + Arrows** — Nudge by 0.1px for sub-pixel auditing.
 - **Magnetic Snap** — Rulers automatically snap to active projection lines.
+- **Chained Measurement** — Link multiple parallel rulers with **Shift + Click** to reveal gaps.
+- **Auto-Focus** — Typing operators (**+ - * / .**) instantly switches focus to the calculator.
 
 ---
 
 ## License ⚖️
 
-This project is licensed under the **Polyform Shield License 1.0.0**. 
+This project is licensed under the **MIT License**.
 
 - **Allowed**: Personal and commercial use, modification, and distribution.
-- **Restricted**: You cannot use this source code to build a competing product or service.
+- **Open**: Completely permissive with no restrictions on derivative works or competition.
+
+---
+
+## Author & Acknowledgement 👤
+
+**Caliper** is built and maintained with precision by **[Daniel Oyerinde](https://danieloyerinde.com)**.
+
+If you find this tool helpful in your design-to-code workflow, consider giving it a star on **[GitHub](https://github.com/oyerindedaniel/caliper)**.
 
 Copyright © 2026 Daniel Oyerinde.
