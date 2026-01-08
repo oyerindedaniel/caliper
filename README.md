@@ -1,4 +1,7 @@
-# Caliper 📐
+<div align="center">
+  <img src="apps/web/public/caliper_logo.svg" width="144" alt="Caliper Logo" />
+  <h1>Caliper</h1>
+</div>
 
 **Essential tooling for detail-obsessed design engineers.**
 
@@ -12,7 +15,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 - **Interactive Overlay**: Real-time measurement lines and labels with smooth, high-fidelity animations.
 - **Selection System**: Lock elements for side-by-side comparison (Ctrl + Click).
 - **Edge Projections**: Check alignment across the entire viewport using relative projections (W/A/S/D).
-- **Viewport Rulers**: Draggable guidelines for auditing complex layout grids (Shift + R).
+- **Viewport Rulers**: Draggable guidelines with magnetic snapping for auditing layout grids (Shift + R).
 - **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/D).
 - **Full Customization**: Fully configurable shortcuts and theme colors.
 
@@ -65,12 +68,12 @@ export default function RootLayout({ children }) {
 
 ## Configuration 🛠️
 
-Caliper can be customized to fit your specific design system and workflow.
+Caliper can be customized to fit your specific design system and workflow. `init()` automatically mounts the overlay in the browser.
 
 ```ts
 import { init } from "@aspect/caliper";
 
-const caliper = init({
+init({
   theme: {
     primary: "#18A0FB",    // Main brand color
     ruler: "#AC2323",      // Guideline color
@@ -85,21 +88,29 @@ const caliper = init({
     lerpFactor: 0.2        // Smoothness (0-1)
   }
 });
-
-caliper.mount();
 ```
 
 ---
 
-## Usage ⌨️
+## Interaction Guide ⌨️
 
+### Measurements
 - **Ctrl + Click** — Select an element.
 - **Hover** — View relative distances to target.
 - **Alt** — Hold to reveal the overlay.
 - **Space** — Freeze the current state.
+
+### Analysis tools
 - **W / A / S / D** — Trigger edge projections.
-- **Shift + R** — Drag rulers from edges.
-- **Escape** — Clear all.
+- **Shift + R** — Create a pair of vertical and horizontal guidelines at the cursor.
+- **Numeric Keypad** — Type numbers while projecting to set specific edge distances.
+- **Escape** — Clear all active measurements, rulers, and projections.
+
+### Ruler Precision
+- **Arrow Keys** — Nudge selected ruler lines by 1px.
+- **Shift + Arrows** — Nudge by 10px.
+- **Alt + Arrows** — Nudge by 0.1px for sub-pixel auditing.
+- **Magnetic Snap** — Rulers automatically snap to active projection lines.
 
 ---
 
