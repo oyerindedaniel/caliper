@@ -27,7 +27,7 @@ Caliper is designed to be side-effect-free in production and easy to integrate i
 ### Method 1: NPM (Recommended)
 
 ```bash
-npm install @aspect/caliper
+pnpm install @aspect/caliper
 ```
 
 **Next.js (App Router)**
