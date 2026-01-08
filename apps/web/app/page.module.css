@@ -7,13 +7,14 @@
   --button-secondary-hover: #f2f2f2;
 
   display: grid;
-  grid-template-rows: 20px 1fr 20px;
+  grid-template-rows: auto 1fr auto;
   align-items: center;
   justify-items: center;
   min-height: 100svh;
   padding: 80px;
   gap: 64px;
   font-synthesis: none;
+  width: 100%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -172,38 +173,107 @@ button.secondary {
   transform: scale(1.1);
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .page {
-    padding: 32px;
+    padding: 40px 16px;
     padding-bottom: 80px;
-  }
-
-  .main {
+    gap: 32px;
+    display: flex;
+    flex-direction: column;
     align-items: center;
   }
 
-  .main ol {
-    text-align: center;
+  .main {
+    max-width: 100%;
+    align-items: flex-start;
+  }
+
+  .main p,
+  .instructionItem {
+    font-size: 13px;
+    line-height: 20px;
+    text-align: left;
+  }
+
+  /* Force table to collapse into a list on mobile */
+  .commandTable,
+  .commandTable thead,
+  .commandTable tbody,
+  .commandTable th,
+  .commandTable td,
+  .commandTable tr {
+    display: block;
+  }
+
+  .commandTable thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+
+  .commandTable tr {
+    border: 1px solid var(--gray-alpha-200);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    padding: 12px;
+    background: var(--gray-alpha-100);
+    width: 100%;
+  }
+
+  .commandTable td {
+    border: none;
+    padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    white-space: normal;
+  }
+
+  .commandTable td:first-child {
+    font-weight: 600;
+    font-size: 12px;
+    opacity: 0.6;
+    text-transform: uppercase;
+    font-family: var(--font-geist-mono);
+  }
+
+  .commandTable td pre {
+    margin: 0;
   }
 
   .ctas {
     flex-direction: column;
+    width: 100%;
   }
 
-  .ctas a {
-    font-size: 14px;
-    height: 40px;
-    padding: 0 16px;
-  }
-
-  a.secondary {
-    min-width: auto;
+  .ctas a,
+  button.secondary {
+    min-width: auto !important;
+    width: 100%;
   }
 
   .footer {
     flex-wrap: wrap;
     align-items: center;
     justify-content: center;
+    gap: 16px;
+    font-size: 13px;
+    margin-top: 40px;
+    width: 100%;
+  }
+
+  .configuratorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .sectionHeader {
+    font-size: 0.75rem;
+    margin-top: 32px;
+  }
+
+  .subHeader {
+    font-size: 0.75rem;
   }
 }
 
@@ -211,6 +281,10 @@ button.secondary {
   .logo {
     filter: invert();
   }
+}
+
+.clickableRow:hover {
+  background: var(--gray-alpha-100);
 }
 
 .tableContainer {
@@ -293,6 +367,7 @@ button.secondary {
   overflow: hidden;
   border: 1px solid var(--gray-alpha-200);
   background: var(--gray-alpha-100);
+  overflow-x: auto;
 }
 
 .sectionHeader {

@@ -1,27 +1,32 @@
-import { DEFAULT_COMMANDS } from "@caliper/core/static";
 import styles from "./page.module.css";
+import { useFocus } from "./context";
+import { useOS } from "./hooks/use-os";
 
 interface CommandItem {
     key: string;
     command: string;
+    configId?: string;
 }
 
 export function CommandTable() {
+    const { focusInput } = useFocus();
+    const { getControlKey } = useOS();
+
     const commands: CommandItem[] = [
-        { key: "Activate", command: DEFAULT_COMMANDS.activate },
-        { key: "Freeze/Unfreeze", command: DEFAULT_COMMANDS.freeze === " " ? "Space" : DEFAULT_COMMANDS.freeze },
-        { key: "Select Element", command: `${DEFAULT_COMMANDS.select} + Click` },
-        { key: "Clear Selection", command: DEFAULT_COMMANDS.clear },
-        { key: "Calculator: Top", command: DEFAULT_COMMANDS.calculator.top },
-        { key: "Calculator: Right", command: DEFAULT_COMMANDS.calculator.right },
-        { key: "Calculator: Bottom", command: DEFAULT_COMMANDS.calculator.bottom },
-        { key: "Calculator: Left", command: DEFAULT_COMMANDS.calculator.left },
-        { key: "Calculator: Distance", command: DEFAULT_COMMANDS.calculator.distance },
-        { key: "Projection: Top", command: DEFAULT_COMMANDS.projection.top },
-        { key: "Projection: Left", command: DEFAULT_COMMANDS.projection.left },
-        { key: "Projection: Bottom", command: DEFAULT_COMMANDS.projection.bottom },
-        { key: "Projection: Right", command: DEFAULT_COMMANDS.projection.right },
-        { key: "Viewport Ruler", command: `Shift + ${DEFAULT_COMMANDS.ruler}` },
+        { key: "Activate", command: "Alt", configId: "activate" },
+        { key: "Freeze/Unfreeze", command: "Space", configId: "freeze" },
+        { key: "Select Element", command: `${getControlKey()} + Hold + Click`, configId: "select" },
+        { key: "Clear Selection", command: "Escape", configId: "clear" },
+        { key: "Calculator: Top", command: "t", configId: "calcTop" },
+        { key: "Calculator: Right", command: "r", configId: "calcRight" },
+        { key: "Calculator: Bottom", command: "b", configId: "calcBottom" },
+        { key: "Calculator: Left", command: "l", configId: "calcLeft" },
+        { key: "Calculator: Distance", command: "d", configId: "calcDist" },
+        { key: "Projection: Top", command: "w", configId: "projTop" },
+        { key: "Projection: Left", command: "a", configId: "projLeft" },
+        { key: "Projection: Bottom", command: "s", configId: "projBottom" },
+        { key: "Projection: Right", command: "d", configId: "projRight" },
+        { key: "Viewport Ruler", command: "Shift + r", configId: "ruler" },
         { key: "Chain Rulers", command: "Shift + Click" },
         { key: "Nudge Ruler", command: "Arrow Keys" },
     ];
@@ -40,7 +45,12 @@ export function CommandTable() {
                 </thead>
                 <tbody>
                     {commands.map((item) => (
-                        <tr key={item.key}>
+                        <tr
+                            key={item.key}
+                            onClick={() => item.configId && focusInput(item.configId)}
+                            style={{ cursor: item.configId ? 'pointer' : 'default' }}
+                            className={item.configId ? styles.clickableRow : ""}
+                        >
                             <td>{item.key}</td>
                             <td>
                                 <pre>{item.command}</pre>

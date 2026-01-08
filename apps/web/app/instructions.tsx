@@ -1,6 +1,9 @@
 import styles from "./page.module.css";
+import { useOS } from "./hooks/use-os";
 
 export function Instructions() {
+    const { getControlKey } = useOS();
+
     return (
         <>
             <h2 className={styles.sectionHeader}>How to Use</h2>
@@ -8,7 +11,7 @@ export function Instructions() {
             <h3 className={styles.subHeader}>Core Measurement</h3>
             <ul className={styles.instructionList}>
                 <li className={styles.instructionItem}>
-                    1. <strong>Ctrl + Click</strong> — Select an element to begin
+                    1. <strong>{getControlKey()} + Hold + Click</strong> — Select an element to begin (250ms hold)
                 </li>
                 <li className={styles.instructionItem}>
                     2. <strong>Hover</strong> — Change focus or view relative distances

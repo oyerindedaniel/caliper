@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import styles from "./page.module.css";
+import { useOS } from "./hooks/use-os";
 
 type ConfigSection = "overview" | "theme" | "commands" | "animation";
 
 export function Configuration() {
     const [section, setSection] = useState<ConfigSection>("overview");
+    const { getSelectKey } = useOS();
 
     const overviewCode = `export interface OverlayConfig {
   theme?: ThemeConfig;
@@ -28,7 +30,7 @@ export function Configuration() {
     const commandsCode = `export interface CommandsConfig {
   activate?: string;   // Toggle measuring (default: Alt)
   freeze?: string;     // Freeze current lines (default: Space)
-  select?: string;     // Deep select element (default: Control)
+  select?: string;     // Deep select element (default: Hold + ${getSelectKey()})
   clear?: string;      // Wipe all overlays (default: Escape)
   ruler?: string;      // Add viewport ruler (default: r)
   

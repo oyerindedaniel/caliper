@@ -57,7 +57,7 @@ importers:
 
   apps/playground:
     dependencies:
-      '@aspect/caliper':
+      '@oyerinde/caliper':
         specifier: workspace:*
         version: link:../../packages/caliper
       next:
@@ -134,6 +134,9 @@ importers:
       eslint:
         specifier: ^9.39.1
         version: 9.39.1
+      prettier:
+        specifier: ^3.7.4
+        version: 3.7.4
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -1971,6 +1974,7 @@ packages:
   prettier@3.7.4:
     resolution: {integrity: sha512-v6UNi1+3hSlVvv8fSaoUbggEM5VErKmmpGA7Pl3HF8V6uKY7rvClBOJlH6yNwQtfTueNkGVpOv/mtWL9L4bgRA==}
     engines: {node: '>=14'}
+    hasBin: true
 
   prismjs@1.30.0:
     resolution: {integrity: sha512-DEvV2ZF2r2/63V+tK8hQvrR2ZGn10srHbXviTlcv7Kpzw8jWiNTqbVgjO3IY8RxrrOUF8VPMQQFysYYYv0YZxw==}

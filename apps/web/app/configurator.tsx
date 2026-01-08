@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import styles from "./page.module.css";
+import { useFocus } from "./context";
 
 const ShortcutField = ({
     label,
@@ -13,33 +14,41 @@ const ShortcutField = ({
     id: string;
     isDuplicate: boolean;
     onUpdate: (id: string, value: string) => void;
-}) => (
-    <div className={styles.configControl}>
-        <label className={styles.configLabel}>{label}</label>
-        <div style={{ position: 'relative' }}>
-            <input
-                type="text"
-                className={`${styles.configInput} ${isDuplicate ? styles.inputError : ""}`}
-                style={isDuplicate ? { borderColor: '#ef4444', color: '#ef4444' } : {}}
-                value={value === " " ? "Space" : value}
-                onChange={(e) => onUpdate(id, e.target.value === "Space" ? " " : e.target.value)}
-                placeholder="Key"
-            />
-            {isDuplicate && (
-                <span title="Duplicate check: Core commands must be unique. Contextual commands (Calculator vs Projection) can share keys." style={{
-                    position: 'absolute',
-                    right: '8px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    fontSize: '10px',
-                    color: '#ef4444',
-                    fontWeight: 'bold',
-                    cursor: 'help'
-                }}>!</span>
-            )}
+}) => {
+    const { registerInput } = useFocus();
+
+    return (
+        <div className={styles.configControl}>
+            <label className={styles.configLabel}>{label}</label>
+            <div style={{ position: 'relative', width: '100%' }}>
+                <input
+                    ref={(el) => registerInput(id, el)}
+                    type="text"
+                    className={`${styles.configInput} ${isDuplicate ? styles.inputError : ""}`}
+                    style={{
+                        ...(isDuplicate ? { borderColor: '#ef4444', color: '#ef4444' } : {}),
+                        width: '100%'
+                    }}
+                    value={value === " " ? "Space" : value}
+                    onChange={(e) => onUpdate(id, e.target.value === "Space" ? " " : e.target.value)}
+                    placeholder="Key"
+                />
+                {isDuplicate && (
+                    <span title="Duplicate check: Core commands must be unique. Contextual commands (Calculator vs Projection) can share keys." style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        fontSize: '10px',
+                        color: '#ef4444',
+                        fontWeight: 'bold',
+                        cursor: 'help'
+                    }}>!</span>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 export function Configurator() {
     const [commands, setCommands] = useState({
@@ -72,7 +81,6 @@ export function Configurator() {
             const val1 = normalize(commands[id1 as keyof typeof commands]);
             if (!val1) return;
 
-            // Check against all other fields
             Object.entries(commands).forEach(([id2, val2]) => {
                 if (id1 === id2) return;
                 if (val1 === normalize(val2)) {

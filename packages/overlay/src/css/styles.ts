@@ -1,8 +1,9 @@
+import { DEFAULT_THEME, CALIPER_PREFIX } from "@caliper/core";
+
 /**
  * Raw CSS strings for overlay styles
  * Scoped with unique prefix to avoid collisions
  */
-const CALIPER_PREFIX = "caliper-";
 
 /**
  * Z-INDEX ORDERING NOTE:
@@ -17,22 +18,23 @@ const CALIPER_PREFIX = "caliper-";
 export const OVERLAY_STYLES = `
 :root {
   interpolate-size: allow-keywords;
-  --caliper-primary: rgba(24, 160, 251, 1);
-  --caliper-primary-90: rgba(24, 160, 251, 0.9);
-  --caliper-primary-95: rgba(24, 160, 251, 0.95);
-  --caliper-primary-50: rgba(24, 160, 251, 0.5);
-  --caliper-primary-05: rgba(24, 160, 251, 0.05);
-  --caliper-secondary: rgba(242, 78, 30, 1);
-  --caliper-secondary-50: rgba(242, 78, 30, 0.5);
-  --caliper-secondary-05: rgba(242, 78, 30, 0.05);
-  --caliper-calc-bg: rgba(30, 30, 30, 0.95);
-  --caliper-calc-shadow: rgba(0, 0, 0, 0.25);
-  --caliper-calc-op-highlight: rgba(24, 160, 251, 0.3);
-  --caliper-calc-text: white;
-  --caliper-text: white;
-  --caliper-projection: rgba(155, 81, 224, 1);
-  --caliper-projection-90: rgba(155, 81, 224, 0.9);
-  --caliper-projection-light: rgba(155, 81, 224, 0.2);
+  --caliper-primary: ${DEFAULT_THEME.primary};
+  --caliper-primary-90: ${DEFAULT_THEME.primary.replace("1)", "0.9)")};
+  --caliper-primary-95: ${DEFAULT_THEME.primary.replace("1)", "0.95)")};
+  --caliper-primary-50: ${DEFAULT_THEME.primary.replace("1)", "0.5)")};
+  --caliper-primary-05: ${DEFAULT_THEME.primary.replace("1)", "0.05)")};
+  --caliper-secondary: ${DEFAULT_THEME.secondary};
+  --caliper-secondary-50: ${DEFAULT_THEME.secondary.replace("1)", "0.5)")};
+  --caliper-secondary-05: ${DEFAULT_THEME.secondary.replace("1)", "0.05)")};
+  --caliper-calc-bg: ${DEFAULT_THEME.calcBg};
+  --caliper-calc-shadow: ${DEFAULT_THEME.calcShadow};
+  --caliper-calc-op-highlight: ${DEFAULT_THEME.calcOpHighlight};
+  --caliper-calc-text: ${DEFAULT_THEME.calcText};
+  --caliper-text: ${DEFAULT_THEME.text};
+  --caliper-projection: ${DEFAULT_THEME.projection};
+  --caliper-projection-90: ${DEFAULT_THEME.projection.replace("1)", "0.9)")};
+  --caliper-projection-light: ${DEFAULT_THEME.projection.replace("1)", "0.2)")};
+  --caliper-ruler: ${DEFAULT_THEME.ruler};
 }
 
 #caliper-overlay-root {
@@ -137,7 +139,7 @@ export const OVERLAY_STYLES = `
 
 .${CALIPER_PREFIX}boundary-box-selected {
   border: 2px solid var(--caliper-primary);
-  background: var(--caliper-primary-05);
+  background: transparent;
   z-index: 999998;
   will-change: transform, width, height;
 }
