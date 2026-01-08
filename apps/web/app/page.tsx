@@ -22,7 +22,7 @@ export default function Home() {
           priority
           unoptimized
         />
-        <p>Essential tooling for detail-obsessed design engineer.</p>
+        <p>Essential tooling for detail-obsessed design engineers.</p>
 
         <Installation />
         <Configuration />

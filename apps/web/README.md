@@ -117,9 +117,17 @@ init({
 
 ## License ⚖️
 
-This project is licensed under the **Polyform Shield License 1.0.0**. 
+This project is licensed under the **MIT License**.
 
 - **Allowed**: Personal and commercial use, modification, and distribution.
-- **Restricted**: You cannot use this source code to build a competing product or service.
+- **Open**: Completely permissive with no restrictions on derivative works or competition.
+
+---
+
+## Author & Acknowledgement 👤
+
+**Caliper** is built and maintained with precision by **[Daniel Oyerinde](https://danieloyerinde.com)**.
+
+If you find this tool helpful in your design-to-code workflow, consider giving it a star on **[GitHub](https://github.com/oyerindedaniel/caliper)**.
 
 Copyright © 2026 Daniel Oyerinde.

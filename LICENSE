@@ -1,29 +1,21 @@
-Polyform Shield License 1.0.0
+MIT License
 
-Acceptance
-In order to get any license under these terms, you must agree to them as each other person or entity that would be done with the software.
+Copyright (c) 2026 Daniel Oyerinde
 
-Copyright Grant
-Each contributor grants you a non-exclusive, worldwide, royalty-free, non-sublicensable license to use, copy, and modify the software for any purpose except a competitive purpose.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Patent Grant
-Each contributor grants you a non-exclusive, worldwide, royalty-free, non-sublicensable license to make, have made, use, sell, offer for sale, import, and otherwise transfer the software, as far as they can, for any purpose except a competitive purpose.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-Competitive Purpose
-A competitive purpose is providing the software to third parties, or making the software's functions available to third parties, as a service or product that competes with the software or any other product or service offered by a contributor using the software at the time you first provide the service or product.
-
-Attribution
-You must include the copyright notice and the text of these terms in any copy of the software you distribute.
-
-Symmetry
-If you start any lawsuit against a contributor for patent infringement, the license grants they provide to you under these terms end immediately.
-
-Disclaimer of Warranties
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
-
-Limitation of Liability
-IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-End
-Terms: https://polyformproject.org/licenses/shield/1.0.0
-Copyright: 2026 Daniel Oyerinde
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

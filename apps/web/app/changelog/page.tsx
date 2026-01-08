@@ -9,21 +9,42 @@ export default function Changelog() {
     return (
         <div className={styles.page}>
             <main className={styles.main}>
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
-                    <Link href="/">
-                        <Image
-                            className="imgDark"
-                            src="/caliper_logo.svg"
-                            alt="Caliper logo"
-                            width={171.5}
-                            height={50}
-                            priority
-                            unoptimized
-                        />
+                <div style={{ marginBottom: '32px' }}>
+                    <Link href="/" style={{
+                        color: 'var(--gray-rgb)',
+                        textDecoration: 'none',
+                        fontSize: '14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        opacity: 0.6,
+                        transition: 'opacity 0.2s',
+                        fontFamily: 'var(--font-geist-sans)'
+                    }} onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}>
+                        ← Back to Home
                     </Link>
                 </div>
 
-                <h1 className={styles.sectionHeader} style={{ fontSize: '1.5rem', opacity: 1, textTransform: 'none', marginTop: '0' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
+                    <Image
+                        className="imgDark"
+                        src="/caliper_logo.svg"
+                        alt="Caliper logo"
+                        width={171.5}
+                        height={50}
+                        priority
+                        unoptimized
+                    />
+                </div>
+
+                <h1 className={styles.sectionHeader} style={{
+                    fontSize: '1.5rem',
+                    opacity: 1,
+                    textTransform: 'none',
+                    marginTop: '0',
+                    fontFamily: 'var(--font-geist-sans)'
+                }}>
                     Changelog
                 </h1>
                 <p className={styles.instructionItem} style={{ marginBottom: '24px' }}>
@@ -70,11 +91,6 @@ export default function Changelog() {
                     </li>
                 </ul>
 
-                <div style={{ marginTop: '40px' }}>
-                    <Link href="/" className={styles.copyButton} style={{ textDecoration: 'none', width: 'auto', display: 'inline-flex', padding: '10px 24px' }}>
-                        ← Back to Home
-                    </Link>
-                </div>
             </main>
 
             <Footer />
