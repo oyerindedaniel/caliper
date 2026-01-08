@@ -61,6 +61,13 @@ export function Instructions() {
                     <strong>Escape</strong> — Clear all rulers, calculators, and projections.
                 </li>
             </ul>
+
+            <h3 className={styles.subHeader}>Excluding Elements</h3>
+            <ul className={styles.instructionList}>
+                <li className={styles.instructionItem}>
+                    <strong>data-caliper-ignore</strong> — Add this attribute to any element you want Caliper to skip during measurement and snapping.
+                </li>
+            </ul>
         </>
     );
 }

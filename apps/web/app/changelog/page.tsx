@@ -9,7 +9,7 @@ export default function Changelog() {
     return (
         <div className={styles.page}>
             <main className={styles.main}>
-                <div style={{ marginBottom: '32px' }}>
+                <div style={{ marginBottom: '32px' }} data-caliper-ignore>
                     <Link href="/" style={{
                         color: 'var(--gray-rgb)',
                         textDecoration: 'none',

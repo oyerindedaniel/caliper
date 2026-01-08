@@ -66,6 +66,16 @@ export const OVERLAY_STYLES = `
   z-index: 999999;
 }
 
+.${CALIPER_PREFIX}ruler-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 1000000;
+}
+
 .${CALIPER_PREFIX}alt-mode * {
   pointer-events: none !important;
 }
@@ -277,6 +287,21 @@ export const OVERLAY_STYLES = `
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   will-change: transform;
+}
+
+.${CALIPER_PREFIX}ruler-bridge-label {
+  position: fixed;
+  left: 0;
+  top: 0;
+  background: var(--caliper-secondary);
+  z-index: 1000003;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  pointer-events: auto;
 }
 `;
 
