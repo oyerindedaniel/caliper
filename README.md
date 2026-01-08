@@ -1,6 +1,5 @@
 <div align="center">
   <img src="apps/web/public/caliper_logo.svg" width="144" alt="Caliper Logo" />
-  <h1>Caliper</h1>
 </div>
 
 **Essential tooling for detail-obsessed design engineers.**
