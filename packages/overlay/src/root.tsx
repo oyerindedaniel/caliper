@@ -38,8 +38,8 @@ export function Root(config: RootConfig) {
   const [viewport, setViewport] = createSignal({
     scrollX: window.scrollX,
     scrollY: window.scrollY,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: document.documentElement.clientWidth,
+    height: document.documentElement.clientHeight,
     version: 0,
   });
 
@@ -73,8 +73,8 @@ export function Root(config: RootConfig) {
     setViewport((prev) => ({
       scrollX: window.scrollX,
       scrollY: window.scrollY,
-      width: window.innerWidth,
-      height: window.innerHeight,
+      width: document.documentElement.clientWidth,
+      height: document.documentElement.clientHeight,
       version: (prev.version || 0) + 1,
     }));
     viewportRafId = null;
@@ -243,6 +243,10 @@ export function Root(config: RootConfig) {
           projectionSystem.clear();
         }
 
+        if (rulerSystem) {
+          rulerSystem.clear();
+        }
+
         if (system) {
           system.abort();
           const calc = system.getCalculator();
@@ -351,12 +355,13 @@ export function Root(config: RootConfig) {
 
             if (!live) return undefined;
 
+            const vp = viewport();
             let runway: number;
             switch (dir) {
               case "top": runway = live.top - window.scrollY; break;
-              case "bottom": runway = window.innerHeight - (live.top - window.scrollY + live.height); break;
+              case "bottom": runway = vp.height - (live.top - window.scrollY + live.height); break;
               case "left": runway = live.left - window.scrollX; break;
-              case "right": runway = window.innerWidth - (live.left - window.scrollX + live.width); break;
+              case "right": runway = vp.width - (live.left - window.scrollX + live.width); break;
             }
             return runway;
           };
@@ -556,10 +561,6 @@ export function Root(config: RootConfig) {
     rulerSystem?.removeLine(id);
   };
 
-  const handleRulerClearAll = () => {
-    rulerSystem?.clear();
-  };
-
   const handleCleanup = () => {
     if (system) system.cleanup();
     if (selectionSystem) selectionSystem.clear();
@@ -582,7 +583,6 @@ export function Root(config: RootConfig) {
       onLineClick={handleLineClick}
       onRulerUpdate={handleRulerUpdate}
       onRulerRemove={handleRulerRemove}
-      onRulerClearAll={handleRulerClearAll}
       onCalculatorInput={handleCalculatorInput}
       onCalculatorBackspace={handleCalculatorBackspace}
       onCalculatorDelete={handleCalculatorDelete}

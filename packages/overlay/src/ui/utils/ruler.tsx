@@ -1,13 +1,22 @@
-import { For, Show, createSignal, createMemo, type Accessor, onMount, onCleanup } from "solid-js";
-import { type RulerState, type RulerLine } from "@caliper/core";
+import { For, Show, createSignal, createMemo, type Accessor, onMount, onCleanup, createEffect } from "solid-js";
+import {
+    type RulerState,
+    type RulerLine,
+    type ProjectionState,
+    type SelectionMetadata,
+    getLiveGeometry,
+    RULER_SNAP_THRESHOLD,
+    RULER_HIT_SIZE
+} from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface RulerOverlayProps {
     state: Accessor<RulerState>;
     viewport: Accessor<{ width: number; height: number; scrollX: number; scrollY: number }>;
+    projectionState?: Accessor<ProjectionState>;
+    metadata?: Accessor<SelectionMetadata>;
     onUpdate: (id: string, position: number) => void;
     onRemove: (id: string) => void;
-    onClearAll: () => void;
 }
 
 /**
@@ -18,48 +27,72 @@ export function RulerOverlay(props: RulerOverlayProps) {
     const [hoveredId, setHoveredId] = createSignal<string | null>(null);
     const [selectedId, setSelectedId] = createSignal<string | null>(null);
 
-    const handlePointerDown = (e: PointerEvent) => {
-        const target = e.target as HTMLElement;
-        const id = target.getAttribute("data-ruler-id");
-        const type = target.getAttribute("data-ruler-type");
-
-        if (!id || !type) {
+    createEffect(() => {
+        const lines = props.state().lines;
+        const currentId = selectedId();
+        if (currentId && !lines.find(l => l.id === currentId)) {
             setSelectedId(null);
-            return;
         }
+    });
 
-        e.preventDefault();
-        e.stopPropagation();
-        setDraggingId(id);
-        setSelectedId(id);
+    const getSnapPoints = (isV: boolean) => {
+        const points: number[] = [];
+        const state = props.projectionState?.();
+        const meta = props.metadata?.();
+        const vp = props.viewport();
 
-        const onPointerMove = (moveEvent: PointerEvent) => {
-            const vp = props.viewport();
-            let pos = type === "vertical" ? moveEvent.clientX : moveEvent.clientY;
+        if (state && meta && meta.element && state.direction) {
+            const live = getLiveGeometry(
+                meta.rect,
+                meta.scrollHierarchy,
+                meta.position,
+                meta.stickyConfig,
+                meta.initialWindowX,
+                meta.initialWindowY
+            );
 
-            const max = type === "vertical" ? vp.width : vp.height;
-            pos = Math.max(0, Math.min(pos, max));
+            if (live) {
+                const value = parseInt(state.value) || 0;
+                const liveX = live.left - vp.scrollX;
+                const liveY = live.top - vp.scrollY;
 
-            props.onUpdate(id, pos);
-        };
+                if (isV) {
+                    // Vertical ruler snaps to X points
+                    if (state.direction === "left") {
+                        points.push(liveX, liveX - value);
+                    } else if (state.direction === "right") {
+                        points.push(liveX + live.width, liveX + live.width + value);
+                    } else {
+                        // For top/bottom projections, we can snap to the center line or side edges
+                        points.push(liveX, liveX + live.width, liveX + live.width / 2);
+                    }
+                } else {
+                    // Horizontal ruler snaps to Y points
+                    if (state.direction === "top") {
+                        points.push(liveY, liveY - value);
+                    } else if (state.direction === "bottom") {
+                        points.push(liveY + live.height, liveY + live.height + value);
+                    } else {
+                        // For left/right projections, we can snap to top/bottom edges or center
+                        points.push(liveY, liveY + live.height, liveY + live.height / 2);
+                    }
+                }
+            }
+        }
+        return points;
+    };
 
-        const onPointerUp = () => {
-            setDraggingId(null);
-            window.removeEventListener("pointermove", onPointerMove);
-            window.removeEventListener("pointerup", onPointerUp);
-        };
-
-        window.addEventListener("pointermove", onPointerMove);
-        window.addEventListener("pointerup", onPointerUp);
+    const applySnap = (pos: number, isV: boolean) => {
+        const points = getSnapPoints(isV);
+        for (const p of points) {
+            if (Math.abs(pos - p) <= RULER_SNAP_THRESHOLD) {
+                return p;
+            }
+        }
+        return pos;
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-        if (e.key === "Escape") {
-            props.onClearAll();
-            setSelectedId(null);
-            return;
-        }
-
         const activeId = selectedId();
         if (!activeId) return;
 
@@ -90,19 +123,67 @@ export function RulerOverlay(props: RulerOverlayProps) {
         if (delta !== 0) {
             e.preventDefault();
             const vp = props.viewport();
-            const max = isV ? vp.width : vp.height;
-            const newPos = Math.max(0, Math.min(activeLine.position + delta, max));
+            const max = (isV ? vp.width : vp.height) - 1;
+            let newPos = Math.max(0, Math.min(activeLine.position + delta, max));
+
+            newPos = applySnap(newPos, isV);
+
             props.onUpdate(activeId, newPos);
         }
     };
 
     onMount(() => {
+        const handleGlobalClick = (e: PointerEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest(`.${PREFIX}ruler-line-hit`)) {
+                setSelectedId(null);
+            }
+        };
+
+        window.addEventListener("pointerdown", handleGlobalClick);
         window.addEventListener("keydown", handleKeyDown);
+
+        onCleanup(() => {
+            window.removeEventListener("pointerdown", handleGlobalClick);
+            window.removeEventListener("keydown", handleKeyDown);
+        });
     });
 
-    onCleanup(() => {
-        window.removeEventListener("keydown", handleKeyDown);
-    });
+    const handlePointerDown = (e: PointerEvent) => {
+        const target = e.target as HTMLElement;
+        const id = target.getAttribute("data-ruler-id");
+        const type = target.getAttribute("data-ruler-type");
+
+        if (!id || !type) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+        setDraggingId(id);
+        setSelectedId(id);
+
+        const onPointerMove = (moveEvent: PointerEvent) => {
+            const vp = props.viewport();
+            const isV = type === "vertical";
+            let pos = isV ? moveEvent.clientX : moveEvent.clientY;
+            const max = (isV ? vp.width : vp.height) - 1;
+
+            pos = Math.max(0, Math.min(pos, max));
+
+            // Apply Snapping
+            pos = applySnap(pos, isV);
+
+            props.onUpdate(id, pos);
+        };
+
+        const onPointerUp = () => {
+            setDraggingId(null);
+            window.removeEventListener("pointermove", onPointerMove);
+            window.removeEventListener("pointerup", onPointerUp);
+        };
+
+        window.addEventListener("pointermove", onPointerMove);
+        window.addEventListener("pointerup", onPointerUp);
+    };
 
     const handleDoubleClick = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
@@ -162,11 +243,15 @@ function RulerLineItem(props: {
             top: "0",
             width: isV ? "1px" : "100%",
             height: isV ? "100%" : "1px",
-            transform: `translate3d(${isV ? pos : 0}px, ${isV ? 0 : pos}px, 0) ${isActive ? (isV ? "scaleX(2)" : "scaleY(2)") : "scale(1)"}`,
-            opacity: props.isSelected ? "1" : "0.8",
-            filter: props.isSelected ? "drop-shadow(0 0 2px var(--caliper-primary))" : "none",
+            transform: `translate3d(${isV ? pos : 0}px, ${isV ? 0 : pos}px, 0) ${isActive ? (isV ? "scaleX(1.5)" : "scaleY(1.5)") : "scale(1)"}`,
+            opacity: props.isSelected ? "1" : (props.isHovered ? "0.8" : "0.6"),
+            filter: props.isSelected ? "drop-shadow(0 0 1.5px var(--caliper-primary))" : "none",
+            "transform-origin": "center",
         };
     });
+
+    const hitSize = createMemo(() => `${RULER_HIT_SIZE}px`);
+    const hitOffset = createMemo(() => (RULER_HIT_SIZE - 1) / 2);
 
     return (
         <>
@@ -179,9 +264,9 @@ function RulerLineItem(props: {
                     position: "fixed",
                     left: "0",
                     top: "0",
-                    width: props.line.type === "vertical" ? "11px" : "100%",
-                    height: props.line.type === "vertical" ? "100%" : "11px",
-                    transform: `translate3d(${props.line.type === "vertical" ? props.line.position - 5 : 0}px, ${props.line.type === "vertical" ? 0 : props.line.position - 5}px, 0)`,
+                    width: props.line.type === "vertical" ? hitSize() : "100%",
+                    height: props.line.type === "vertical" ? "100%" : hitSize(),
+                    transform: `translate3d(${props.line.type === "vertical" ? props.line.position - hitOffset() : 0}px, ${props.line.type === "vertical" ? 0 : props.line.position - hitOffset()}px, 0)`,
                     cursor: props.line.type === "vertical" ? "col-resize" : "row-resize",
                     "pointer-events": "auto",
                     "z-index": 1000001,
@@ -193,7 +278,7 @@ function RulerLineItem(props: {
                 class={`${PREFIX}ruler-line-visual`}
                 style={{
                     position: "fixed",
-                    "background-color": "var(--caliper-primary, rgba(24, 160, 251, 1))",
+                    "background-color": "var(--caliper-ruler, var(--caliper-primary, rgba(24, 160, 251, 1)))",
                     "z-index": 1000000,
                     ...lineStyle(),
                 }}

@@ -16,6 +16,7 @@ export interface ThemeConfig {
   calcText?: string;
   text?: string;
   projection?: string;
+  ruler?: string;
 }
 
 /**
@@ -101,6 +102,7 @@ export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {
   calcText: "white",
   text: "white",
   projection: "rgba(155, 81, 224, 1)",
+  ruler: "rgba(24, 160, 251, 1)",
 };
 
 export const DEFAULT_ANIMATION: DeepRequired<AnimationConfig> = {

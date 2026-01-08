@@ -148,9 +148,10 @@ export function Overlay(props: OverlayProps) {
           <RulerOverlay
             state={props.rulerState!}
             viewport={props.viewport}
+            projectionState={props.projectionState}
+            metadata={props.selectionMetadata}
             onUpdate={props.onRulerUpdate || (() => { })}
             onRemove={props.onRulerRemove || (() => { })}
-            onClearAll={props.onRulerClearAll || (() => { })}
           />
         </Portal>
       </Show>

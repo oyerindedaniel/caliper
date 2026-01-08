@@ -1,3 +1,5 @@
+import { SUPPRESSION_MAX_FRAMES, SUPPRESSION_DELAY } from "../shared/constants/index.js";
+
 export interface SuppressionOptions {
     maxFrames?: number;
     delay?: number;
@@ -12,8 +14,8 @@ export function createSuppressionDelegate<T extends any[]>(
     action: (...args: T) => void,
     options: SuppressionOptions = {}
 ) {
-    const maxFrames = options.maxFrames ?? 8;
-    const delay = options.delay ?? 30;
+    const maxFrames = options.maxFrames ?? SUPPRESSION_MAX_FRAMES;
+    const delay = options.delay ?? SUPPRESSION_DELAY;
 
     let suppressionFrames = 0;
     let trailingTimer: ReturnType<typeof setTimeout> | null = null;

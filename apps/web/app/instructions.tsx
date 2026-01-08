@@ -4,6 +4,8 @@ export function Instructions() {
     return (
         <>
             <h2 className={styles.sectionHeader}>How to Use</h2>
+
+            <h3 className={styles.subHeader}>Core Measurement</h3>
             <ul className={styles.instructionList}>
                 <li className={styles.instructionItem}>
                     1. <strong>Ctrl + Click</strong> — Select an element to begin
@@ -18,7 +20,39 @@ export function Instructions() {
                     4. <strong>Space</strong> — Freeze the current measurements
                 </li>
                 <li className={styles.instructionItem}>
-                    5. <strong>T, R, B, L, D</strong> — Open side calculator for selection
+                    5. <strong>T, R, B, L, D</strong> — Trigger calculator on selected element
+                </li>
+            </ul>
+
+            <h3 className={styles.subHeader}>Projection (Edge Alignment)</h3>
+            <ul className={styles.instructionList}>
+                <li className={styles.instructionItem}>
+                    <strong>W / A / S / D</strong> — Project element edges across the viewport to check alignment.
+                </li>
+                <li className={styles.instructionItem}>
+                    <strong>Numeric Input</strong> — While projecting, type a number to align the projection to a specific edge distance.
+                </li>
+            </ul>
+
+            <h3 className={styles.subHeader}>Viewport Rulers</h3>
+            <ul className={styles.instructionList}>
+                <li className={styles.instructionItem}>
+                    <strong>Shift + R</strong> — Create a pair of vertical and horizontal guidelines at the cursor.
+                </li>
+                <li className={styles.instructionItem}>
+                    <strong>Precision Control</strong> — Select a ruler and use <strong>Arrow Keys</strong> to nudge.
+                    <span style={{ opacity: 0.6, fontSize: '12px', display: 'block', marginTop: '4px' }}>
+                        Shift+Arrow: 10px | Alt+Arrow: 0.1px
+                    </span>
+                </li>
+                <li className={styles.instructionItem}>
+                    <strong>Magnetic Snapping</strong> — Rulers automatically snap to active projection lines when dragged nearby.
+                </li>
+                <li className={styles.instructionItem}>
+                    <strong>Deselect/Remove</strong> — Click empty space to deselect; press <strong>Delete/Backspace</strong> or <strong>Double-Click</strong> to remove.
+                </li>
+                <li className={styles.instructionItem}>
+                    <strong>Escape</strong> — Clear all rulers, calculators, and projections.
                 </li>
             </ul>
         </>

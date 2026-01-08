@@ -6,6 +6,16 @@
     "main": "dist/index.js",
     "module": "dist/index.js",
     "types": "dist/index.d.ts",
+    "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
+    "homepage": "https://github.com/oyerindedaniel/caliper#readme",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/oyerindedaniel/caliper.git",
+        "directory": "packages/caliper"
+    },
+    "bugs": {
+        "url": "https://github.com/oyerindedaniel/caliper/issues"
+    },
     "exports": {
         ".": {
             "import": {
@@ -37,11 +47,19 @@
         "measurement",
         "overlay",
         "devtools",
+        "design-tool",
+        "pixel-perfect",
         "react",
         "vue",
-        "solid"
+        "solid",
+        "svelte",
+        "nextjs",
+        "nuxt",
+        "astro",
+        "tanstack-start",
+        "browser-tools"
     ],
-    "license": "MIT",
+    "license": "Polyform-Shield-1.0.0",
     "devDependencies": {
         "@babel/core": "^7.24.0",
         "@babel/preset-typescript": "^7.28.5",
