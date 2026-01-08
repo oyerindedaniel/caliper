@@ -22,6 +22,7 @@ import {
   type ProjectionDirection,
   type RulerSystem,
   type RulerState,
+  SELECTION_HOLD_DURATION,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -120,7 +121,34 @@ export function Root(config: RootConfig) {
       setSelectionMetadata(metadata);
     });
 
-    const isCommandActive = (e: MouseEvent): boolean => {
+    let pointerDownTime = 0;
+    let selectionTimeoutId: number | null = null;
+    let lastPointerPos = { x: 0, y: 0 };
+
+    const performSelection = (x: number, y: number) => {
+      const element = getTopElementAtPoint(x, y);
+      if (element && selectionSystem) {
+        setResult(null);
+        setCalculatorState(null);
+        setActiveInputFocus("calculator");
+
+        if (projectionSystem) {
+          projectionSystem.clear();
+        }
+
+        if (system) {
+          system.abort();
+          system.getCalculator().close();
+        }
+
+        lastHoveredElement = null;
+        selectionDelegate.cancel();
+        measureDelegate.cancel();
+        selectionSystem.select(element);
+      }
+    };
+
+    const isCommandActive = (e: MouseEvent | PointerEvent | KeyboardEvent): boolean => {
       const { ctrlKey, metaKey, altKey, shiftKey } = e;
       const key = commands.select;
       const modifiers: Record<string, boolean> = {
@@ -139,7 +167,27 @@ export function Root(config: RootConfig) {
       return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
     };
 
-    const handleClick = (e: MouseEvent) => {
+    const handlePointerDown = (e: PointerEvent) => {
+      lastPointerPos = { x: e.clientX, y: e.clientY };
+
+      if (isCommandActive(e)) {
+        pointerDownTime = Date.now();
+        if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
+        selectionTimeoutId = window.setTimeout(() => {
+          performSelection(lastPointerPos.x, lastPointerPos.y);
+          selectionTimeoutId = null;
+        }, SELECTION_HOLD_DURATION);
+      } else {
+        pointerDownTime = 0;
+      }
+    };
+
+    const handlePointerUp = (e: PointerEvent) => {
+      if (selectionTimeoutId) {
+        window.clearTimeout(selectionTimeoutId);
+        selectionTimeoutId = null;
+      }
+
       const target = e.target as HTMLElement;
 
       // If clicking on our own interactive UI, don't do background logic
@@ -147,34 +195,11 @@ export function Root(config: RootConfig) {
         if (target.closest(`.${PREFIX}projection-input`)) {
           setActiveInputFocus("projection");
         }
+        pointerDownTime = 0;
         return;
       }
 
-      if (isCommandActive(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const element = getTopElementAtPoint(e.clientX, e.clientY);
-        if (element && selectionSystem) {
-          setResult(null);
-          setCalculatorState(null);
-          setActiveInputFocus("calculator");
-
-          if (projectionSystem) {
-            projectionSystem.clear();
-          }
-
-          if (system) {
-            system.abort();
-            system.getCalculator().close();
-          }
-
-          lastHoveredElement = null;
-          selectionDelegate.cancel();
-          measureDelegate.cancel();
-          selectionSystem.select(element);
-        }
-      }
+      pointerDownTime = 0;
     };
 
     let lastMouseEvent: MouseEvent | null = null;
@@ -233,6 +258,7 @@ export function Root(config: RootConfig) {
 
     const handleMouseMove = (e: MouseEvent) => {
       lastMouseEvent = e;
+      lastPointerPos = { x: e.clientX, y: e.clientY };
       if (!mouseMoveRafId) {
         mouseMoveRafId = requestAnimationFrame(processMouseMove);
       }
@@ -480,14 +506,16 @@ export function Root(config: RootConfig) {
       }
     };
 
-    window.addEventListener("click", handleClick, true);
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
-      window.removeEventListener("click", handleClick, true);
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);

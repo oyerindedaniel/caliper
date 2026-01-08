@@ -1,6 +1,7 @@
-<div align="center">
-  <img src="apps/web/public/caliper_logo.svg" width="144" alt="Caliper Logo" />
-</div>
+<img src="apps/web/public/caliper_logo.svg" width="144" alt="Caliper Logo" style="margin-bottom: 24px;" />
+
+[![Unpkg Bundle Size](https://img.shields.io/bundlephobia/minzip/@oyerinde/caliper?style=for-the-badge&color=18A0FB&labelColor=1a1a1a)](https://bundlephobia.com/package/@oyerinde/caliper)
+[![NPM Version](https://img.shields.io/npm/v/@oyerinde/caliper?style=for-the-badge&color=AC2323&labelColor=1a1a1a)](https://www.npmjs.com/package/@oyerinde/caliper)
 
 **Essential tooling for detail-obsessed design engineers.**
 
@@ -12,7 +13,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 
 - **Core Measurement**: High-precision boundary detection and distance calculation between DOM elements.
 - **Interactive Overlay**: Real-time measurement lines and labels with smooth, high-fidelity animations.
-- **Selection System**: Lock elements for side-by-side comparison (Ctrl + Click).
+- **Selection System**: Lock elements for side-by-side comparison (Cmd/Ctrl + Click).
 - **Edge Projections**: Check alignment across the entire viewport using relative projections (W/A/S/D).
 - **Viewport Rulers**: Draggable guidelines with magnetic snapping and chained distance measurements (Shift + R).
 - **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/D).
@@ -27,7 +28,7 @@ Caliper is designed to be side-effect-free in production and easy to integrate i
 ### Method 1: NPM (Recommended)
 
 ```bash
-pnpm install @aspect/caliper
+pnpm install @oyerinde/caliper
 ```
 
 **Next.js (App Router)**
@@ -41,7 +42,7 @@ export default function RootLayout({ children }) {
       <body>
         {process.env.NODE_ENV === "development" && (
           <Script
-            src="https://unpkg.com/@aspect/caliper/dist/index.global.js"
+            src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
             data-config={JSON.stringify({ theme: { primary: '#18A0FB' } })}
             strategy="afterInteractive"
           />
@@ -58,7 +59,7 @@ export default function RootLayout({ children }) {
 ```html
 <!-- Automatically mounts in development -->
 <script 
-  src="https://unpkg.com/@aspect/caliper/dist/index.global.js"
+  src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
   data-config='{"theme": {"primary": "#18A0FB"}}'
 ></script>
 ```
@@ -70,7 +71,7 @@ export default function RootLayout({ children }) {
 Caliper can be customized to fit your specific design system and workflow. `init()` automatically mounts the overlay in the browser.
 
 ```ts
-import { init } from "@aspect/caliper";
+import { init } from "@oyerinde/caliper";
 
 init({
   theme: {
@@ -104,7 +105,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 ## Interaction Guide ⌨️
 
 ### Measurements
-- **Ctrl + Click** — Select an element.
+- **Cmd/Ctrl + Hold + Click** (250ms) — Select an element.
 - **Hover** — View relative distances to target.
 - **Alt** — Hold to reveal the overlay.
 - **Space** — Freeze the current state.

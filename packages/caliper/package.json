@@ -1,7 +1,7 @@
 {
-    "name": "@aspect/caliper",
+    "name": "@oyerinde/caliper",
     "version": "0.1.0",
-    "description": "Browser-based measurement tool overlay",
+    "description": "High-precision browser measurements, projections, and layout auditing",
     "type": "module",
     "main": "dist/index.js",
     "module": "dist/index.js",
@@ -33,7 +33,9 @@
         }
     },
     "files": [
-        "dist"
+        "dist",
+        "CHANGELOG.md",
+        "LICENSE"
     ],
     "scripts": {
         "prebuild": "node scripts/write-version.mjs",

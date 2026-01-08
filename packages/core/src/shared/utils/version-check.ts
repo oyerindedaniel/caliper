@@ -14,10 +14,7 @@ const CALIPER_ASCII = `
 
 async function fetchLatestVersion(): Promise<VersionInfo | null> {
   try {
-    const timestamp = Date.now();
-    const target = `https://caliper.danieloyerinde.com/version.json?t=${timestamp}`;
-    const endpoint = `https://corsproxy.io/?${encodeURIComponent(target)}`;
-
+    const endpoint = `https://unpkg.com/@oyerinde/caliper@latest/package.json`;
     const response = await fetch(endpoint, {
       method: "GET",
       cache: "no-store",
@@ -57,7 +54,7 @@ export async function showVersionInfo(currentVersion: string): Promise<void> {
   if (typeof window === "undefined") return;
 
   console.log(
-    `%c${CALIPER_ASCII}\n%cVersion: ${currentVersion}`,
+    `%c${CALIPER_ASCII}\n%cDocs -> https://caliper.danieloyerinde.com`,
     "color: #3b82f6; font-weight: bold; font-family: monospace;",
     "color: #6b7280; font-family: monospace;"
   );
@@ -71,9 +68,8 @@ export async function showVersionInfo(currentVersion: string): Promise<void> {
       const comparison = compareVersions(currentVersion, latestInfo.version);
       if (comparison < 0) {
         console.log(
-          `%c⚠ Update available: ${latestInfo.version} (you're on ${currentVersion})\n%cRun: pnpm add @aspect/caliper@latest`,
-          "color: #f59e0b; font-weight: bold; font-family: monospace;",
-          "color: #6b7280; font-family: monospace;"
+          `%c⚠ Update available: ${latestInfo.version} (you're on ${currentVersion})`,
+          "color: #f59e0b; font-weight: bold; font-family: monospace;"
         );
       }
     })

@@ -2,6 +2,7 @@
  * Calculator configuration and shortcuts.
  * This file defines how users can customize the calculator triggers and appearance.
  */
+import { OS } from "../utils/os.js";
 
 export type DeepRequired<T> = {
   [K in keyof T]-?: DeepRequired<T[K]>;
@@ -75,7 +76,7 @@ export interface OverlayConfig {
 export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
   activate: "Alt",
   freeze: " ",
-  select: "Control",
+  select: OS.getControlKey(),
   clear: "Escape",
   calculator: {
     top: "t",

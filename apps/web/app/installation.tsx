@@ -17,7 +17,7 @@ export default function RootLayout({ children }) {
       <body>
         {process.env.NODE_ENV === "development" && (
           <Script
-             src="https://unpkg.com/@aspect/caliper/dist/index.global.js"
+             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
              data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
              strategy="afterInteractive"
           />
@@ -30,19 +30,19 @@ export default function RootLayout({ children }) {
 
   const viteCode = `<!-- index.html -->
 <script type="module">
-  import { init } from "https://unpkg.com/@aspect/caliper/dist/index.js";
+  import { init } from "https://unpkg.com/@oyerinde/caliper/dist/index.js";
   
   if (import.meta.env.DEV) {
-    init({ theme: { primary: '#AC2323' } }).mount();
+    init({ theme: { primary: '#AC2323' } });
   }
 </script>`;
 
   const astroCode = `// src/components/Caliper.astro
 <script type="module">
-  import { init } from "@aspect/caliper";
+  import { init } from "@oyerinde/caliper";
   
   if (import.meta.env.DEV) {
-    init().mount();
+    init();
   }
 </script>
 
@@ -54,7 +54,7 @@ export default defineNuxtConfig({
     head: {
       script: [
         {
-          src: 'https://unpkg.com/@aspect/caliper/dist/index.global.js',
+          src: 'https://unpkg.com/@oyerinde/caliper/dist/index.global.js',
           'data-config': JSON.stringify({ theme: { primary: '#AC2323' } }),
           defer: true
         }
@@ -70,7 +70,7 @@ export default defineNuxtConfig({
   import { init } from "https://unpkg.com/@aspect/caliper/dist/index.js";
   
   if (import.meta.env.DEV) {
-    init().mount();
+    init();
   }
 </script>`;
 
@@ -84,7 +84,7 @@ export function Root() {
         <Meta />
         {process.env.NODE_ENV === 'development' && (
           <script
-            src="https://unpkg.com/@aspect/caliper/dist/index.global.js"
+            src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
             data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
             async
           />
@@ -159,7 +159,7 @@ export function Root() {
         </button>
       </div>
 
-      <div className={styles.codeBlock} suppressHydrationWarning>
+      <div className={styles.codeBlock}>
         <SyntaxHighlighter
           language="tsx"
           style={vscDarkPlus}
@@ -177,6 +177,7 @@ export function Root() {
             fontFamily: "var(--font-geist-mono)",
             background: "transparent",
             padding: "20px",
+            overflowX: "auto"
           }}
         >
           {getCode()}
