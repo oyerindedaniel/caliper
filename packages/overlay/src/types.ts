@@ -29,12 +29,9 @@ export interface OverlayProps {
   calculatorState?: Accessor<CalculatorState | null>;
   projectionState?: Accessor<ProjectionState>;
   rulerState?: Accessor<RulerState>;
+  activeFocus?: Accessor<"calculator" | "projection">;
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
   onRulerUpdate?: (id: string, position: number) => void;
   onRulerRemove?: (id: string) => void;
-  onCalculatorInput?: (key: string) => void;
-  onCalculatorBackspace?: () => void;
-  onCalculatorDelete?: () => void;
-  onCalculatorEnter?: () => void;
   onCalculatorClose?: () => void;
 }

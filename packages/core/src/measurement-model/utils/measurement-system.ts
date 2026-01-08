@@ -76,7 +76,7 @@ export function createMeasurementSystem(): MeasurementSystem {
 
   function freeze() {
     const state = stateMachine.getState();
-    if ((state === "MEASURING" || state === "IDLE") && currentResult) {
+    if (state === "MEASURING" || state === "IDLE" || state === "ARMED") {
       stateMachine.transitionTo("FROZEN");
       notifyListeners();
     }

@@ -121,12 +121,9 @@ export function Overlay(props: OverlayProps) {
         <Portal mount={document.body}>
           <Calculator
             state={props.calculatorState!()!}
-            onInput={props.onCalculatorInput || (() => { })}
-            onBackspace={props.onCalculatorBackspace || (() => { })}
-            onDelete={props.onCalculatorDelete || (() => { })}
-            onEnter={props.onCalculatorEnter || (() => { })}
             onClose={props.onCalculatorClose || (() => { })}
             position={{ x: props.cursor().x, y: props.cursor().y }}
+            isFocused={props.activeFocus?.() === "calculator"}
           />
         </Portal>
       </Show>
@@ -140,6 +137,7 @@ export function Overlay(props: OverlayProps) {
             projectionState={props.projectionState!}
             metadata={props.selectionMetadata}
             viewport={props.viewport}
+            isFocused={props.activeFocus?.() === "projection"}
           />
         </Portal>
       </Show>
@@ -150,8 +148,10 @@ export function Overlay(props: OverlayProps) {
             viewport={props.viewport}
             projectionState={props.projectionState}
             metadata={props.selectionMetadata}
+            result={props.result}
             onUpdate={props.onRulerUpdate || (() => { })}
             onRemove={props.onRulerRemove || (() => { })}
+            onLineClick={props.onLineClick}
           />
         </Portal>
       </Show>

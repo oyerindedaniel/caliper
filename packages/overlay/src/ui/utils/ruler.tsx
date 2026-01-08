@@ -4,6 +4,8 @@ import {
     type RulerLine,
     type ProjectionState,
     type SelectionMetadata,
+    type MeasurementResult,
+    type MeasurementLine,
     getLiveGeometry,
     RULER_SNAP_THRESHOLD,
     RULER_HIT_SIZE
@@ -15,8 +17,10 @@ interface RulerOverlayProps {
     viewport: Accessor<{ width: number; height: number; scrollX: number; scrollY: number }>;
     projectionState?: Accessor<ProjectionState>;
     metadata?: Accessor<SelectionMetadata>;
+    result?: Accessor<MeasurementResult | null>;
     onUpdate: (id: string, position: number) => void;
     onRemove: (id: string) => void;
+    onLineClick?: (line: MeasurementLine, liveValue: number) => void;
 }
 
 /**
@@ -25,13 +29,21 @@ interface RulerOverlayProps {
 export function RulerOverlay(props: RulerOverlayProps) {
     const [draggingId, setDraggingId] = createSignal<string | null>(null);
     const [hoveredId, setHoveredId] = createSignal<string | null>(null);
-    const [selectedId, setSelectedId] = createSignal<string | null>(null);
+    const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set<string>());
 
     createEffect(() => {
         const lines = props.state().lines;
-        const currentId = selectedId();
-        if (currentId && !lines.find(l => l.id === currentId)) {
-            setSelectedId(null);
+        const currentIds = selectedIds();
+        const validIds = new Set<string>();
+
+        currentIds.forEach(id => {
+            if (lines.find(l => l.id === id)) {
+                validIds.add(id);
+            }
+        });
+
+        if (validIds.size !== currentIds.size) {
+            setSelectedIds(validIds);
         }
     });
 
@@ -39,9 +51,10 @@ export function RulerOverlay(props: RulerOverlayProps) {
         const points: number[] = [];
         const state = props.projectionState?.();
         const meta = props.metadata?.();
+        const res = props.result?.();
         const vp = props.viewport();
 
-        if (state && meta && meta.element && state.direction) {
+        if (meta && meta.element) {
             const live = getLiveGeometry(
                 meta.rect,
                 meta.scrollHierarchy,
@@ -52,33 +65,50 @@ export function RulerOverlay(props: RulerOverlayProps) {
             );
 
             if (live) {
-                const value = parseInt(state.value) || 0;
                 const liveX = live.left - vp.scrollX;
                 const liveY = live.top - vp.scrollY;
 
                 if (isV) {
-                    // Vertical ruler snaps to X points
-                    if (state.direction === "left") {
-                        points.push(liveX, liveX - value);
-                    } else if (state.direction === "right") {
-                        points.push(liveX + live.width, liveX + live.width + value);
-                    } else {
-                        // For top/bottom projections, we can snap to the center line or side edges
-                        points.push(liveX, liveX + live.width, liveX + live.width / 2);
-                    }
+                    points.push(liveX, liveX + live.width, liveX + live.width / 2);
                 } else {
-                    // Horizontal ruler snaps to Y points
-                    if (state.direction === "top") {
-                        points.push(liveY, liveY - value);
-                    } else if (state.direction === "bottom") {
-                        points.push(liveY + live.height, liveY + live.height + value);
+                    points.push(liveY, liveY + live.height, liveY + live.height / 2);
+                }
+
+                if (state && state.direction && state.element === meta.element) {
+                    const value = parseInt(state.value) || 0;
+                    if (isV) {
+                        if (state.direction === "left") points.push(liveX - value);
+                        else if (state.direction === "right") points.push(liveX + live.width + value);
                     } else {
-                        // For left/right projections, we can snap to top/bottom edges or center
-                        points.push(liveY, liveY + live.height, liveY + live.height / 2);
+                        if (state.direction === "top") points.push(liveY - value);
+                        else if (state.direction === "bottom") points.push(liveY + live.height + value);
                     }
                 }
             }
         }
+
+        if (res && res.secondary) {
+            const live = getLiveGeometry(
+                res.secondary,
+                res.secondaryHierarchy,
+                res.secondaryPosition,
+                res.secondarySticky,
+                res.secondaryWinX,
+                res.secondaryWinY
+            );
+
+            if (live) {
+                const liveX = live.left - vp.scrollX;
+                const liveY = live.top - vp.scrollY;
+
+                if (isV) {
+                    points.push(liveX, liveX + live.width, liveX + live.width / 2);
+                } else {
+                    points.push(liveY, liveY + live.height, liveY + live.height / 2);
+                }
+            }
+        }
+
         return points;
     };
 
@@ -93,23 +123,27 @@ export function RulerOverlay(props: RulerOverlayProps) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-        const activeId = selectedId();
-        if (!activeId) return;
+        const activeIds = selectedIds();
+        if (activeIds.size === 0) return;
 
         if (e.key === "Delete" || e.key === "Backspace") {
-            props.onRemove(activeId);
-            setSelectedId(null);
+            const idsToRemove = Array.from(activeIds);
+            idsToRemove.forEach(id => props.onRemove(id));
+            setSelectedIds(new Set<string>());
             return;
         }
 
-        const activeLine = props.state().lines.find(l => l.id === activeId);
-        if (!activeLine) return;
+        const lines = props.state().lines;
+        const activeLines = lines.filter(l => activeIds.has(l.id));
+        if (activeLines.length === 0) return;
 
-        const isV = activeLine.type === "vertical";
         let step = 1;
         if (e.shiftKey) step = 10;
         else if (e.altKey) step = 0.1;
 
+        const firstLine = activeLines[0];
+        if (!firstLine) return;
+        const isV = firstLine.type === "vertical";
         let delta = 0;
 
         if (isV) {
@@ -123,20 +157,26 @@ export function RulerOverlay(props: RulerOverlayProps) {
         if (delta !== 0) {
             e.preventDefault();
             const vp = props.viewport();
-            const max = (isV ? vp.width : vp.height) - 1;
-            let newPos = Math.max(0, Math.min(activeLine.position + delta, max));
-
-            newPos = applySnap(newPos, isV);
-
-            props.onUpdate(activeId, newPos);
+            activeLines.forEach(line => {
+                const isLineV = line.type === "vertical";
+                const max = (isLineV ? vp.width : vp.height) - 1;
+                let newPos = Math.max(0, Math.min(line.position + delta, max));
+                newPos = applySnap(newPos, isLineV);
+                props.onUpdate(line.id, newPos);
+            });
         }
     };
 
     onMount(() => {
         const handleGlobalClick = (e: PointerEvent) => {
             const target = e.target as HTMLElement;
-            if (!target.closest(`.${PREFIX}ruler-line-hit`)) {
-                setSelectedId(null);
+            if (
+                !target.closest(`.${PREFIX}ruler-line-hit`) &&
+                !target.closest(`.${PREFIX}ruler-bridge-label`) &&
+                !target.closest(`.${PREFIX}line-hit-target`) &&
+                !target.closest(`[data-caliper-ignore]`)
+            ) {
+                setSelectedIds(new Set<string>());
             }
         };
 
@@ -159,7 +199,19 @@ export function RulerOverlay(props: RulerOverlayProps) {
         e.preventDefault();
         e.stopPropagation();
         setDraggingId(id);
-        setSelectedId(id);
+
+        if (e.shiftKey) {
+            setSelectedIds(prev => {
+                const next = new Set<string>(prev);
+                if (next.has(id)) next.delete(id);
+                else next.add(id);
+                return next;
+            });
+        } else {
+            if (!selectedIds().has(id)) {
+                setSelectedIds(new Set<string>([id]));
+            }
+        }
 
         const onPointerMove = (moveEvent: PointerEvent) => {
             const vp = props.viewport();
@@ -168,10 +220,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
             const max = (isV ? vp.width : vp.height) - 1;
 
             pos = Math.max(0, Math.min(pos, max));
-
-            // Apply Snapping
             pos = applySnap(pos, isV);
-
             props.onUpdate(id, pos);
         };
 
@@ -190,7 +239,11 @@ export function RulerOverlay(props: RulerOverlayProps) {
         const id = target.getAttribute("data-ruler-id");
         if (id) {
             props.onRemove(id);
-            setSelectedId(null);
+            setSelectedIds(prev => {
+                const next = new Set<string>(prev);
+                next.delete(id);
+                return next;
+            });
         }
     };
 
@@ -205,6 +258,58 @@ export function RulerOverlay(props: RulerOverlayProps) {
         if (target.hasAttribute("data-ruler-id")) setHoveredId(null);
     };
 
+    const bridges = createMemo(() => {
+        const ids = selectedIds();
+        if (ids.size < 2) return [];
+
+        const lines = props.state().lines.filter(l => ids.has(l.id));
+        const vLines = lines.filter(l => l.type === "vertical").sort((a, b) => a.position - b.position);
+        const hLines = lines.filter(l => l.type === "horizontal").sort((a, b) => a.position - b.position);
+
+        const result: Array<{
+            x1: number; y1: number; x2: number; y2: number;
+            value: number;
+            type: "vertical" | "horizontal";
+            labelX: number; labelY: number;
+        }> = [];
+
+        const vp = props.viewport();
+
+        for (let i = 0; i < vLines.length - 1; i++) {
+            const l1 = vLines[i]!;
+            const l2 = vLines[i + 1]!;
+            const val = l2.position - l1.position;
+            if (val > 0) {
+                result.push({
+                    x1: l1.position, y1: vp.height / 2 + 100, // Move default bridge line off center for better visibility
+                    x2: l2.position, y2: vp.height / 2 + 100,
+                    value: val,
+                    type: "vertical",
+                    labelX: l1.position + val / 2,
+                    labelY: vp.height / 2 + 85
+                });
+            }
+        }
+
+        for (let i = 0; i < hLines.length - 1; i++) {
+            const l1 = hLines[i]!;
+            const l2 = hLines[i + 1]!;
+            const val = l2.position - l1.position;
+            if (val > 0) {
+                result.push({
+                    x1: vp.width / 2 + 100, y1: l1.position,
+                    x2: vp.width / 2 + 100, y2: l2.position,
+                    value: val,
+                    type: "horizontal",
+                    labelX: vp.width / 2 + 115,
+                    labelY: l1.position + val / 2
+                });
+            }
+        }
+
+        return result;
+    });
+
     return (
         <div
             class={`${PREFIX}ruler-layer`}
@@ -214,13 +319,87 @@ export function RulerOverlay(props: RulerOverlayProps) {
             onPointerOver={handlePointerOver}
             onPointerOut={handlePointerOut}
         >
+            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 999999, "pointer-events": "none", position: "fixed", top: 0, left: 0, width: "100%", height: "100%" }}>
+                <For each={bridges()}>
+                    {(bridge) => (
+                        <g
+                            data-caliper-ignore
+                            style={{ cursor: "pointer", "pointer-events": "auto" }}
+                            onClick={() => {
+                                props.onLineClick?.({
+                                    type: "distance",
+                                    value: bridge.value,
+                                    start: { x: bridge.x1, y: bridge.y1 },
+                                    end: { x: bridge.x2, y: bridge.y2 }
+                                }, bridge.value);
+                            }}
+                        >
+                            <line
+                                class={`${PREFIX}line-hit-target`}
+                                x1={bridge.x1}
+                                y1={bridge.y1}
+                                x2={bridge.x2}
+                                y2={bridge.y2}
+                                stroke="transparent"
+                                stroke-width="15"
+                            />
+                            <line
+                                x1={bridge.x1}
+                                y1={bridge.y1}
+                                x2={bridge.x2}
+                                y2={bridge.y2}
+                                stroke="var(--caliper-secondary)"
+                                stroke-width="1"
+                                stroke-dasharray="4 2"
+                            />
+                            <circle cx={bridge.x1} cy={bridge.y1} r="2.5" fill="var(--caliper-secondary)" />
+                            <circle cx={bridge.x2} cy={bridge.y2} r="2.5" fill="var(--caliper-secondary)" />
+                        </g>
+                    )}
+                </For>
+            </svg>
+
+            <For each={bridges()}>
+                {(bridge) => (
+                    <div
+                        data-caliper-ignore
+                        class={`${PREFIX}label ${PREFIX}ruler-bridge-label`}
+                        onClick={() => {
+                            props.onLineClick?.({
+                                type: "distance",
+                                value: bridge.value,
+                                start: { x: bridge.x1, y: bridge.y1 },
+                                end: { x: bridge.x2, y: bridge.y2 }
+                            }, bridge.value);
+                        }}
+                        style={{
+                            position: "fixed",
+                            left: "0",
+                            top: "0",
+                            transform: `translate3d(${bridge.labelX}px, ${bridge.labelY}px, 0) translate(-50%, -50%)`,
+                            background: "var(--caliper-secondary)",
+                            "z-index": 1000003,
+                            "font-size": "10px",
+                            padding: "1px 4px",
+                            "border-radius": "2px",
+                            color: "white",
+                            "box-shadow": "0 1px 3px rgba(0,0,0,0.2)",
+                            cursor: "pointer",
+                            "pointer-events": "auto"
+                        }}
+                    >
+                        {Math.round(bridge.value * 100) / 100}
+                    </div>
+                )}
+            </For>
+
             <For each={props.state().lines}>
                 {(line) => (
                     <RulerLineItem
                         line={line}
                         isDragging={draggingId() === line.id}
                         isHovered={hoveredId() === line.id}
-                        isSelected={selectedId() === line.id}
+                        isSelected={selectedIds().has(line.id)}
                     />
                 )}
             </For>
@@ -297,7 +476,7 @@ function RulerLineItem(props: {
                         opacity: props.isSelected && !props.isHovered && !props.isDragging ? "0.7" : "1",
                     }}
                 >
-                    {Math.round(props.line.position)}px
+                    {Math.round(props.line.position * 100) / 100}
                 </div>
             </Show>
         </>
