@@ -91,9 +91,9 @@ export function getConfig(): OverlayConfig {
   if (typeof window !== "undefined") {
     const windowConfig = window.__CALIPER_CONFIG__ ?? {};
 
-    const currentScript = document.currentScript as HTMLScriptElement;
+    const currentScript = typeof document !== "undefined" ? (document.currentScript as HTMLScriptElement) : null;
     const dataConfig = currentScript?.getAttribute("data-config") ||
-      document.querySelector("script[data-config]")?.getAttribute("data-config");
+      (typeof document !== "undefined" ? document.querySelector("script[data-config]")?.getAttribute("data-config") : null);
 
     if (dataConfig) {
       try {
@@ -123,11 +123,11 @@ export function getConfig(): OverlayConfig {
  *
  * @example
  * ```ts
-  * import { setConfig } from "@caliper/core";
+ * import { setConfig } from "@caliper/core";
  *
  * setConfig({
-    *   theme: { primary: "#ff0000" },
-    *   commands: { activate: "Alt" }
+ *   theme: { primary: "#ff0000" },
+ *   commands: { activate: "Alt" }
  * });
  * ```
  */

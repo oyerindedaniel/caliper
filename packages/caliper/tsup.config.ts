@@ -46,7 +46,7 @@ const DEFAULT_OPTIONS: Options = {
     treeshake: true,
 };
 
-const esbuildPlugins = [
+const getEsbuildPlugins = () => [
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     babel({
         filter: /\.(tsx|jsx)$/,
@@ -60,7 +60,8 @@ const esbuildPlugins = [
 ];
 
 export default defineConfig((options) => {
-    const watch = options.watch
+    const isProd = process.env.NODE_ENV === "production";
+    const watch = !isProd && options.watch
         ? ["src/**/*", "../overlay/src/**/*", "../core/src/**/*"]
         : false;
 
@@ -71,17 +72,28 @@ export default defineConfig((options) => {
             format: ["iife"],
             globalName: "Caliper",
             platform: "browser",
-            esbuildPlugins,
+            esbuildPlugins: getEsbuildPlugins(),
             watch,
         },
         {
             ...DEFAULT_OPTIONS,
             entry: ["./src/index.ts"],
             format: ["cjs", "esm"],
-            platform: "neutral",
+            platform: "browser",
             splitting: true,
-            esbuildPlugins,
+            esbuildPlugins: getEsbuildPlugins(),
             watch,
         },
-    ];
+        {
+            ...DEFAULT_OPTIONS,
+            entry: { "index.server": "./src/index.server.ts" },
+            format: ["cjs", "esm"],
+            platform: "node",
+            noExternal: [],
+            external: ["solid-js", "@caliper/core", "@caliper/overlay"],
+            esbuildPlugins: [],
+            dts: false,
+            watch,
+        },
+    ] as Options[];
 });

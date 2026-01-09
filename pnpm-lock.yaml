@@ -97,6 +97,9 @@ importers:
       '@caliper/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@oyerinde/caliper':
+        specifier: file:../../packages/caliper/oyerinde-caliper-0.1.0.tgz
+        version: file:packages/caliper/oyerinde-caliper-0.1.0.tgz
       '@repo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -142,16 +145,6 @@ importers:
         version: 5.9.3
 
   packages/caliper:
-    dependencies:
-      '@caliper/core':
-        specifier: workspace:*
-        version: link:../core
-      '@caliper/overlay':
-        specifier: workspace:*
-        version: link:../overlay
-      solid-js:
-        specifier: ^1.9.10
-        version: 1.9.10
     devDependencies:
       '@babel/core':
         specifier: ^7.24.0
@@ -159,6 +152,12 @@ importers:
       '@babel/preset-typescript':
         specifier: ^7.28.5
         version: 7.28.5(@babel/core@7.28.5)
+      '@caliper/core':
+        specifier: workspace:*
+        version: link:../core
+      '@caliper/overlay':
+        specifier: workspace:*
+        version: link:../overlay
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
@@ -177,6 +176,9 @@ importers:
       eslint:
         specifier: ^9.39.1
         version: 9.39.1
+      solid-js:
+        specifier: ^1.9.10
+        version: 1.9.10
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.4.31)(typescript@5.9.3)
@@ -869,6 +871,10 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
+
+  '@oyerinde/caliper@file:packages/caliper/oyerinde-caliper-0.1.0.tgz':
+    resolution: {integrity: sha512-mfKqnjbTa1Vi/HlaqRXfwD2agXQwbjwF7AkHXQX1kDT2A3MhB1HIsiJw5cuHqZcqWCLaSt+cghaHVZsdZopjhw==, tarball: file:packages/caliper/oyerinde-caliper-0.1.0.tgz}
+    version: 0.1.0
 
   '@rollup/rollup-android-arm-eabi@4.54.0':
     resolution: {integrity: sha512-OywsdRHrFvCdvsewAInDKCNyR3laPA2mc9bRYJ6LBp5IyvF3fvXbbNR0bSzHlZVFtn6E0xw2oZlyjg4rKCVcng==}
@@ -2853,6 +2859,8 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.19.1
+
+  '@oyerinde/caliper@file:packages/caliper/oyerinde-caliper-0.1.0.tgz': {}
 
   '@rollup/rollup-android-arm-eabi@4.54.0':
     optional: true

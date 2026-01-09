@@ -18,7 +18,8 @@
     "next": "16.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-syntax-highlighter": "^16.1.0"
+    "react-syntax-highlighter": "^16.1.0",
+    "@oyerinde/caliper": "file:../../packages/caliper/oyerinde-caliper-0.1.0.tgz"
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",

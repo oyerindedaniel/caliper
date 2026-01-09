@@ -18,13 +18,29 @@
     },
     "exports": {
         ".": {
-            "import": {
-                "types": "./dist/index.d.ts",
-                "default": "./dist/index.js"
+            "browser": {
+                "import": {
+                    "types": "./dist/index.d.ts",
+                    "default": "./dist/index.js"
+                },
+                "require": {
+                    "types": "./dist/index.d.cts",
+                    "default": "./dist/index.cjs"
+                }
             },
-            "require": {
-                "types": "./dist/index.d.cts",
-                "default": "./dist/index.cjs"
+            "node": {
+                "import": "./dist/index.server.js",
+                "require": "./dist/index.server.cjs"
+            },
+            "default": {
+                "import": {
+                    "types": "./dist/index.d.ts",
+                    "default": "./dist/index.js"
+                },
+                "require": {
+                    "types": "./dist/index.d.cts",
+                    "default": "./dist/index.cjs"
+                }
             }
         },
         "./iife": {
@@ -44,8 +60,8 @@
         "build:watch": "tsup --watch",
         "lint": "eslint . --max-warnings 0",
         "check-types": "tsc --noEmit",
-        "clean": "tsup --clean",
-        "pack": "pnpm build && pnpm pack",
+        "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\"",
+        "pack:prod": "pnpm run build && pnpm pack",
         "release": "pnpm publish --access public"
     },
     "keywords": [
@@ -69,6 +85,8 @@
     "devDependencies": {
         "@babel/core": "^7.24.0",
         "@babel/preset-typescript": "^7.28.5",
+        "@caliper/core": "workspace:*",
+        "@caliper/overlay": "workspace:*",
         "@repo/eslint-config": "workspace:*",
         "@repo/typescript-config": "workspace:*",
         "@types/node": "^22.15.3",
@@ -76,11 +94,8 @@
         "esbuild-plugin-babel": "^0.2.3",
         "eslint": "^9.39.1",
         "tsup": "^8.5.1",
-        "typescript": "5.9.3"
-    },
-    "dependencies": {
-        "@caliper/core": "workspace:*",
-        "@caliper/overlay": "workspace:*",
+        "typescript": "5.9.3",
         "solid-js": "^1.9.10"
-    }
+    },
+    "dependencies": {}
 }
