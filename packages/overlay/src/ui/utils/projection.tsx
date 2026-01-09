@@ -140,9 +140,9 @@ function ProjectionLines(props: {
                     x2={lineData()!.x2}
                     y2={lineData()!.y2}
                     class={`${PREFIX}line-hit-target`}
+                    data-caliper-ignore
                     stroke="transparent"
                     stroke-width="15"
-                    style={{ "pointer-events": "auto", cursor: "pointer" }}
                     onClick={handleLineClick}
                     onMouseEnter={() => setIsHovered(true)}
                     onMouseLeave={() => setIsHovered(false)}
@@ -159,12 +159,11 @@ function ProjectionLines(props: {
             <Show when={lineData()!.showLabel}>
                 <div
                     class={`${PREFIX}label ${PREFIX}projection-label`}
+                    data-caliper-ignore
                     style={{
                         top: 0,
                         left: 0,
                         transform: `translate3d(${lineData()!.labelX}px, ${lineData()!.labelY}px, 0) translate(-50%, -50%)`,
-                        "pointer-events": "auto",
-                        cursor: "pointer"
                     }}
                     onClick={handleLineClick}
                 >
@@ -219,6 +218,7 @@ function ProjectionInput(props: {
     return (
         <div
             class={`${PREFIX}projection-input ${props.isFocused ? `${PREFIX}projection-input-focused` : ""}`}
+            data-caliper-ignore
             style={style()}
         >
             <span class={`${PREFIX}projection-direction-tag`}>

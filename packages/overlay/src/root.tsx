@@ -71,6 +71,9 @@ export function Root(config: RootConfig) {
   const [isFrozen, setIsFrozen] = createSignal(false);
 
   let viewportRafId: number | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+  let observedPrimary: Element | null = null;
+  let observedSecondary: Element | null = null;
 
   const syncViewport = () => {
     setViewport((prev) => ({
@@ -108,9 +111,18 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      const currentResult = system.getCurrentResult();
-      setResult(currentResult);
-      setIsFrozen(system.getState() === "FROZEN");
+      const newState = system.getState();
+      const wasFrozen = isFrozen();
+      const nowFrozen = newState === "FROZEN";
+
+      if (wasFrozen !== nowFrozen) {
+        setIsFrozen(nowFrozen);
+      }
+
+      if (!nowFrozen || !wasFrozen) {
+        const currentResult = system.getCurrentResult();
+        setResult(currentResult);
+      }
     });
 
     // Initial sync
@@ -559,13 +571,29 @@ export function Root(config: RootConfig) {
   });
 
 
+  const updateResizeObservations = (primaryEl: Element | null, secondaryEl: Element | null) => {
+    if (!resizeObserver) return;
+
+    if (observedPrimary && observedPrimary !== primaryEl) {
+      resizeObserver.unobserve(observedPrimary);
+      observedPrimary = null;
+    }
+    if (observedSecondary && observedSecondary !== secondaryEl && observedSecondary !== primaryEl) {
+      resizeObserver.unobserve(observedSecondary);
+      observedSecondary = null;
+    }
+
+    if (primaryEl && primaryEl !== observedPrimary) {
+      resizeObserver.observe(primaryEl);
+      observedPrimary = primaryEl;
+    }
+    if (secondaryEl && secondaryEl !== primaryEl && secondaryEl !== observedSecondary) {
+      resizeObserver.observe(secondaryEl);
+      observedSecondary = secondaryEl;
+    }
+  };
+
   createEffect(() => {
-    const primaryEl = selectionMetadata().element;
-    const currentResult = result();
-    const secondaryEl = currentResult?.secondaryElement ?? null;
-
-    if (!primaryEl && !secondaryEl) return;
-
     let resizeTimer: number | null = null;
     let lastRun = 0;
     let pendingPrimaryRect: DOMRect | null = null;
@@ -586,12 +614,12 @@ export function Root(config: RootConfig) {
       scheduleUpdate();
     };
 
-    const handleResize = (entries: ResizeObserverEntry[]) => {
+    resizeObserver = new ResizeObserver((entries: ResizeObserverEntry[]) => {
       for (const entry of entries) {
         const rect = entry.target.getBoundingClientRect();
-        if (entry.target === primaryEl) {
+        if (entry.target === observedPrimary) {
           pendingPrimaryRect = rect;
-        } else if (entry.target === secondaryEl) {
+        } else if (entry.target === observedSecondary) {
           pendingSecondaryRect = rect;
         }
       }
@@ -605,21 +633,22 @@ export function Root(config: RootConfig) {
       } else if (!resizeTimer) {
         resizeTimer = window.setTimeout(() => requestAnimationFrame(runUpdates), remaining);
       }
-    };
-
-    const observer = new ResizeObserver(handleResize);
-
-    if (primaryEl) {
-      observer.observe(primaryEl);
-    }
-    if (secondaryEl && secondaryEl !== primaryEl) {
-      observer.observe(secondaryEl);
-    }
+    });
 
     onCleanup(() => {
-      observer.disconnect();
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      observedPrimary = null;
+      observedSecondary = null;
       if (resizeTimer) clearTimeout(resizeTimer);
     });
+  });
+
+  createEffect(() => {
+    const primaryEl = selectionMetadata().element;
+    const currentResult = result();
+    const secondaryEl = currentResult?.secondaryElement ?? null;
+    updateResizeObservations(primaryEl, secondaryEl);
   });
 
   createEffect(() => {

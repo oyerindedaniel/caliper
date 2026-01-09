@@ -24,7 +24,7 @@ export default function HomePage() {
                         priority
                         unoptimized
                     />
-                    <p data-caliper-ignore>Essential tooling for detail-obsessed design engineers. High-precision browser measurements, projections, and layout auditing.</p>
+                    <p>Essential tooling for detail-obsessed design engineers. High-precision browser measurements, projections, and layout auditing.</p>
 
                     <Installation />
                     <TryCaliper />

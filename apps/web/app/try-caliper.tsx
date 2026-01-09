@@ -4,14 +4,15 @@ import styles from "./page.module.css";
 import { useOS } from "./hooks/use-os";
 
 export function TryCaliper() {
-    const { getAltKey } = useOS();
+    const { getAltKey, getSelectKey } = useOS();
 
     return (
         <section className={styles.trySection}>
             <div className={styles.tryHeader}>
                 <span className={styles.tryBadge}>Live Audit Playground</span>
                 <p className={styles.tryHint}>
-                    Hold <strong>{getAltKey()}</strong> and hover over the elements below to start measuring.
+                    Select an element (<strong>{getSelectKey()} + Hold + Click</strong>), then hold <strong>{getAltKey()}</strong> and hover to measure.
+                    Press <strong>Space</strong> to freeze, then click any label to use the calculator.
                 </p>
             </div>
 

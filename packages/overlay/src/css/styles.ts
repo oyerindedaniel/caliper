@@ -86,19 +86,21 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}line {
   stroke: var(--caliper-secondary);
   stroke-width: 1px;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .${CALIPER_PREFIX}projection-line {
   stroke: var(--caliper-projection);
   stroke-width: 2px;
   stroke-dasharray: 4 2;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .${CALIPER_PREFIX}label {
   position: fixed;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
   background: var(--caliper-secondary);
   color: var(--caliper-text);
   padding: 2px 6px;
@@ -282,7 +284,6 @@ export const OVERLAY_STYLES = `
 
 .${CALIPER_PREFIX}ruler-line-visual {
   transition: transform 0.1s ease-out;
-  pointer-events: none;
   will-change: transform;
 }
 
@@ -301,8 +302,6 @@ export const OVERLAY_STYLES = `
   z-index: 1000003;
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  cursor: pointer;
-  pointer-events: auto;
   border: 2px solid var(--caliper-primary);
 }
 `;

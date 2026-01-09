@@ -2,7 +2,7 @@ import styles from "./page.module.css";
 import { useOS } from "./hooks/use-os";
 
 export function Instructions() {
-    const { getControlKey } = useOS();
+    const { getControlKey, getAltKey } = useOS();
 
     return (
         <>
@@ -17,7 +17,7 @@ export function Instructions() {
                     2. <strong>Hover</strong> — Change focus or view relative distances
                 </li>
                 <li className={styles.instructionItem}>
-                    3. <strong>Alt</strong> — Hold to reveal the measurement overlay
+                    3. <strong>{getAltKey()} + Hover</strong> — Hold to reveal measurements to other elements
                 </li>
                 <li className={styles.instructionItem}>
                     4. <strong>Space</strong> — Freeze the current measurements
@@ -45,7 +45,7 @@ export function Instructions() {
                 <li className={styles.instructionItem}>
                     <strong>Precision Control</strong> — Select a ruler and use <strong>Arrow Keys</strong> to nudge.
                     <span style={{ opacity: 0.6, fontSize: '12px', display: 'block', marginTop: '4px' }}>
-                        Shift+Arrow: 10px | Alt+Arrow: 0.1px
+                        Shift+Arrow: 10px | {getAltKey()}+Arrow: 0.1px
                     </span>
                 </li>
                 <li className={styles.instructionItem}>
