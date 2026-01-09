@@ -17,6 +17,8 @@ const version = process.env.NODE_ENV === "production"
     ? getPackageVersion()
     : "[DEV]";
 
+console.log("Version: ", version);
+
 const banner = `/**
  * @license MIT
  *
