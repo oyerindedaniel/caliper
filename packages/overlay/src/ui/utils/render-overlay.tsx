@@ -138,6 +138,7 @@ export function Overlay(props: OverlayProps) {
             metadata={props.selectionMetadata}
             viewport={props.viewport}
             isFocused={props.activeFocus?.() === "projection"}
+            onLineClick={props.onLineClick}
           />
         </Portal>
       </Show>

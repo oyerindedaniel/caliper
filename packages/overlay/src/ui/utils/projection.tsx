@@ -1,12 +1,13 @@
-import { Show, createMemo, type Accessor } from "solid-js";
+import { Show, createMemo, type Accessor, createSignal } from "solid-js";
 import { PREFIX } from "../../css/styles.js";
-import { type ProjectionState, type SelectionMetadata, getLiveGeometry } from "@caliper/core";
+import { type ProjectionState, type SelectionMetadata, getLiveGeometry, type MeasurementLine } from "@caliper/core";
 
 interface ProjectionOverlayProps {
     projectionState: Accessor<ProjectionState>;
     metadata: Accessor<SelectionMetadata>;
     viewport: Accessor<{ scrollX: number; scrollY: number; width: number; height: number; version: number }>;
     isFocused?: boolean;
+    onLineClick?: (line: MeasurementLine, liveValue: number) => void;
 }
 
 export function ProjectionOverlay(props: ProjectionOverlayProps) {
@@ -16,6 +17,7 @@ export function ProjectionOverlay(props: ProjectionOverlayProps) {
                 projectionState={props.projectionState}
                 metadata={props.metadata}
                 viewport={props.viewport}
+                onLineClick={props.onLineClick}
             />
             <ProjectionInput
                 projectionState={props.projectionState}
@@ -31,6 +33,7 @@ function ProjectionLines(props: {
     projectionState: Accessor<ProjectionState>;
     metadata: Accessor<SelectionMetadata>;
     viewport: Accessor<{ scrollX: number; scrollY: number; width: number; height: number; version: number }>;
+    onLineClick?: (line: MeasurementLine, liveValue: number) => void;
 }) {
     const lineData = createMemo(() => {
         const vp = props.viewport();
@@ -52,48 +55,79 @@ function ProjectionLines(props: {
 
         let x1 = 0, y1 = 0, x2 = 0, y2 = 0;
         let labelX = 0, labelY = 0;
+        let visibleY1 = 0, visibleY2 = 0, visibleX1 = 0, visibleX2 = 0;
 
-        const vWidth = vp.width;
-        const vHeight = vp.height;
+        const docWidth = document.documentElement.scrollWidth;
+        const docHeight = document.documentElement.scrollHeight;
 
         const liveX = live.left - vp.scrollX;
         const liveY = live.top - vp.scrollY;
+
+
+        let isOffScreen = false;
 
         switch (state.direction) {
             case "top":
                 x1 = x2 = liveX + live.width / 2;
                 y1 = liveY;
-                y2 = Math.max(0, y1 - value);
+                y2 = Math.max(-vp.scrollY, y1 - value);
                 labelX = x1;
-                labelY = y2 - 10;
+                visibleY1 = Math.max(0, Math.min(vp.height, y1));
+                visibleY2 = Math.max(0, Math.min(vp.height, y2));
+                if (Math.abs(visibleY1 - visibleY2) < 1) isOffScreen = true;
+                labelY = (Math.min(visibleY1, visibleY2) + Math.max(visibleY1, visibleY2)) / 2;
                 break;
             case "bottom":
                 x1 = x2 = liveX + live.width / 2;
                 y1 = liveY + live.height;
-                y2 = Math.min(vHeight, y1 + value);
+                y2 = Math.min(docHeight - vp.scrollY, y1 + value);
                 labelX = x1;
-                labelY = y2 + 10;
+                visibleY1 = Math.max(0, Math.min(vp.height, y1));
+                visibleY2 = Math.max(0, Math.min(vp.height, y2));
+                if (Math.abs(visibleY1 - visibleY2) < 1) isOffScreen = true;
+                labelY = (Math.min(visibleY1, visibleY2) + Math.max(visibleY1, visibleY2)) / 2;
                 break;
             case "left":
                 y1 = y2 = liveY + live.height / 2;
                 x1 = liveX;
-                x2 = Math.max(0, x1 - value);
-                labelX = x2 - 10;
+                x2 = Math.max(-vp.scrollX, x1 - value);
+                visibleX1 = Math.max(0, Math.min(vp.width, x1));
+                visibleX2 = Math.max(0, Math.min(vp.width, x2));
+                if (Math.abs(visibleX1 - visibleX2) < 1) isOffScreen = true;
+                labelX = (Math.min(visibleX1, visibleX2) + Math.max(visibleX1, visibleX2)) / 2;
                 labelY = y1;
                 break;
             case "right":
                 y1 = y2 = liveY + live.height / 2;
                 x1 = liveX + live.width;
-                x2 = Math.min(vWidth, x1 + value);
-                labelX = x2 + 10;
+                x2 = Math.min(docWidth - vp.scrollX, x1 + value);
+                visibleX1 = Math.max(0, Math.min(vp.width, x1));
+                visibleX2 = Math.max(0, Math.min(vp.width, x2));
+                if (Math.abs(visibleX1 - visibleX2) < 1) isOffScreen = true;
+                labelX = (Math.min(visibleX1, visibleX2) + Math.max(visibleX1, visibleX2)) / 2;
                 labelY = y1;
                 break;
         }
 
         const actualValue = Math.round(Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2));
 
-        return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden };
+        return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen };
     });
+
+    const [isHovered, setIsHovered] = createSignal(false);
+
+    const handleLineClick = (e: MouseEvent) => {
+        e.stopPropagation();
+        const data = lineData();
+        if (data) {
+            props.onLineClick?.({
+                type: "distance",
+                value: data.actualValue,
+                start: { x: data.x1, y: data.y1 },
+                end: { x: data.x2, y: data.y2 }
+            }, data.actualValue);
+        }
+    };
 
     return (
         <Show when={lineData() && !lineData()?.isHidden}>
@@ -103,14 +137,33 @@ function ProjectionLines(props: {
                     y1={lineData()!.y1}
                     x2={lineData()!.x2}
                     y2={lineData()!.y2}
+                    class={`${PREFIX}line-hit-target`}
+                    stroke="transparent"
+                    stroke-width="15"
+                    style={{ "pointer-events": "auto", cursor: "pointer" }}
+                    onClick={handleLineClick}
+                    onMouseEnter={() => setIsHovered(true)}
+                    onMouseLeave={() => setIsHovered(false)}
+                />
+                <line
+                    x1={lineData()!.x1}
+                    y1={lineData()!.y1}
+                    x2={lineData()!.x2}
+                    y2={lineData()!.y2}
                     class={`${PREFIX}projection-line`}
+                    stroke-width={isHovered() ? 2 : 1}
                 />
             </svg>
             <div
                 class={`${PREFIX}label ${PREFIX}projection-label`}
                 style={{
+                    top: 0,
+                    left: 0,
                     transform: `translate3d(${lineData()!.labelX}px, ${lineData()!.labelY}px, 0) translate(-50%, -50%)`,
+                    "pointer-events": "auto",
+                    cursor: "pointer"
                 }}
+                onClick={handleLineClick}
             >
                 {lineData()!.actualValue}px
             </div>
@@ -140,10 +193,22 @@ function ProjectionInput(props: {
 
         if (!live || live.isHidden) return { display: "none" };
 
+        const windowTop = live.top - vp.scrollY;
+        const windowLeft = live.left - vp.scrollX;
+
+        const inputHeight = 35;
+        const margin = 10;
+
+        const shouldFlip = windowTop < (inputHeight + margin);
+
+        const y = shouldFlip
+            ? windowTop + live.height + margin
+            : windowTop - inputHeight;
+
         return {
             top: "0",
             left: "0",
-            transform: `translate3d(${live.left - vp.scrollX}px, ${live.top - vp.scrollY - 35}px, 0)`,
+            transform: `translate3d(${windowLeft}px, ${y}px, 0)`,
         };
     });
 
@@ -158,7 +223,6 @@ function ProjectionInput(props: {
             <span class={`${PREFIX}projection-current-value`}>
                 {props.projectionState().value || "0"}
             </span>
-            <span style={{ opacity: 0.5 }}>px</span>
         </div>
     );
 }

@@ -5,7 +5,6 @@ export const DEFAULT_READ_INTERVAL = 16; // ~60fps
 /** Event Suppression / Debouncing */
 export const SUPPRESSION_MAX_FRAMES = 8;
 export const SUPPRESSION_DELAY = 30;
-export const SELECTION_HOLD_DURATION = 250;
 
 /** Ruler System Limits */
 export const MAX_RULER_PAIRS = 8;

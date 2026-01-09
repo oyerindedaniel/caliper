@@ -33,6 +33,7 @@ export function Configuration() {
   select?: string;     // Deep select element (default: Hold + ${getSelectKey()})
   clear?: string;      // Wipe all overlays (default: Escape)
   ruler?: string;      // Add viewport ruler (default: r)
+  selectionHoldDuration?: number; // Selection hold time (default: 250)
   
   calculator?: {
     top?: string;      // Measure from top edge (default: t)
