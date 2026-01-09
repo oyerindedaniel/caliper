@@ -56,6 +56,9 @@ export function mergeCommands(
       right: userCommands?.projection?.right ?? DEFAULT_COMMANDS.projection.right,
     },
     ruler: userCommands?.ruler ?? DEFAULT_COMMANDS.ruler,
+    selectionHoldDuration: userCommands?.selectionHoldDuration
+      ? Number(userCommands.selectionHoldDuration)
+      : DEFAULT_COMMANDS.selectionHoldDuration,
   };
 }
 
@@ -64,7 +67,9 @@ export function mergeAnimation(
 ): DeepRequired<AnimationConfig> {
   return {
     enabled: userAnimation?.enabled ?? DEFAULT_ANIMATION.enabled,
-    lerpFactor: userAnimation?.lerpFactor ?? DEFAULT_ANIMATION.lerpFactor,
+    lerpFactor: userAnimation?.lerpFactor !== undefined
+      ? Number(userAnimation.lerpFactor)
+      : DEFAULT_ANIMATION.lerpFactor,
   };
 }
 

@@ -274,8 +274,8 @@ export const OVERLAY_STYLES = `
   cursor: pointer;
 }
 
+
 .${CALIPER_PREFIX}line-clickable:hover {
-  stroke-width: 2px;
 }
 
 .${CALIPER_PREFIX}ruler-line-visual {
@@ -297,13 +297,11 @@ export const OVERLAY_STYLES = `
   top: 0;
   background: var(--caliper-secondary);
   z-index: 1000003;
-  font-size: 10px;
-  padding: 1px 4px;
-  border-radius: 2px;
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   pointer-events: auto;
+  border: 2px solid var(--caliper-primary);
 }
 `;
 

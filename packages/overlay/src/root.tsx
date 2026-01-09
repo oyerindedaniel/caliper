@@ -22,7 +22,6 @@ import {
   type ProjectionDirection,
   type RulerSystem,
   type RulerState,
-  SELECTION_HOLD_DURATION,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -176,7 +175,7 @@ export function Root(config: RootConfig) {
         selectionTimeoutId = window.setTimeout(() => {
           performSelection(lastPointerPos.x, lastPointerPos.y);
           selectionTimeoutId = null;
-        }, SELECTION_HOLD_DURATION);
+        }, commands.selectionHoldDuration);
       } else {
         pointerDownTime = 0;
       }
@@ -360,7 +359,7 @@ export function Root(config: RootConfig) {
               // fall through to projection
             } else {
               e.preventDefault();
-              e.stopPropagation();
+              e.stopImmediatePropagation();
 
               if (isNumeric || isOperator || isDecimal) handleCalculatorInput(e.key);
               else if (isBackspace) handleCalculatorBackspace();
@@ -384,6 +383,7 @@ export function Root(config: RootConfig) {
 
         if (dir && selectionMetadata().element) {
           e.preventDefault();
+          e.stopImmediatePropagation();
           const currentElement = selectionMetadata().element;
           if (currentElement) {
             projectionSystem?.setElement(currentElement as HTMLElement);
@@ -406,13 +406,7 @@ export function Root(config: RootConfig) {
               metadata.initialWindowY
             );
             if (!live) return undefined;
-            const vp = viewport();
-            switch (dir) {
-              case "top": return live.top - window.scrollY;
-              case "bottom": return vp.height - (live.top - window.scrollY + live.height);
-              case "left": return live.left - window.scrollX;
-              case "right": return vp.width - (live.left - window.scrollX + live.width);
-            }
+            return getMaxProjectionDistance(dir, live);
           };
 
           const maxRunway = getRunway(dir);
@@ -429,17 +423,15 @@ export function Root(config: RootConfig) {
 
           if ((isNumeric || isBackspace) && hasPriority) {
             e.preventDefault();
+            e.stopImmediatePropagation();
             const currentDir = projectionState().direction;
             if (isNumeric && currentDir) {
               const metadata = selectionMetadata();
               const live = getLiveGeometry(metadata.rect, metadata.scrollHierarchy, metadata.position, metadata.stickyConfig, metadata.initialWindowX, metadata.initialWindowY);
-              const vp = viewport();
+
               let max: number | undefined;
               if (live) {
-                if (currentDir === "top") max = live.top - window.scrollY;
-                else if (currentDir === "bottom") max = vp.height - (live.top - window.scrollY + live.height);
-                else if (currentDir === "left") max = live.left - window.scrollX;
-                else if (currentDir === "right") max = vp.width - (live.left - window.scrollX + live.width);
+                max = getMaxProjectionDistance(currentDir, live);
               }
               projectionSystem?.appendValue(key, max);
             } else if (isBackspace) {
@@ -509,16 +501,16 @@ export function Root(config: RootConfig) {
     window.addEventListener("pointerdown", handlePointerDown, true);
     window.addEventListener("pointerup", handlePointerUp, true);
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keyup", handleKeyUp, true);
     window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
       window.removeEventListener("pointerdown", handlePointerDown, true);
       window.removeEventListener("pointerup", handlePointerUp, true);
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      window.removeEventListener("keyup", handleKeyUp, true);
       window.removeEventListener("blur", handleBlur);
 
       if (mouseMoveRafId) {
@@ -685,4 +677,16 @@ export function Root(config: RootConfig) {
       onCalculatorClose={handleCalculatorClose}
     />
   );
+}
+
+function getMaxProjectionDistance(dir: ProjectionDirection, live: { top: number; left: number; width: number; height: number }): number {
+  const docWidth = document.documentElement.scrollWidth;
+  const docHeight = document.documentElement.scrollHeight;
+
+  switch (dir) {
+    case "top": return live.top;
+    case "bottom": return docHeight - (live.top + live.height);
+    case "left": return live.left;
+    case "right": return docWidth - (live.left + live.width);
+  }
 }

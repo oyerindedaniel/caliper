@@ -1,7 +1,7 @@
 <img src="apps/web/public/caliper_logo.svg" width="144" alt="Caliper Logo" style="margin-bottom: 24px;" />
 
-[![Unpkg Bundle Size](https://img.shields.io/bundlephobia/minzip/@oyerinde/caliper?style=for-the-badge&color=18A0FB&labelColor=1a1a1a)](https://bundlephobia.com/package/@oyerinde/caliper)
-[![NPM Version](https://img.shields.io/npm/v/@oyerinde/caliper?style=for-the-badge&color=AC2323&labelColor=1a1a1a)](https://www.npmjs.com/package/@oyerinde/caliper)
+[![Unpkg Bundle Size](https://img.shields.io/bundlephobia/minzip/@oyerinde/caliper?style=flat-square&color=black&labelColor=black)](https://bundlephobia.com/package/@oyerinde/caliper)
+[![NPM Version](https://img.shields.io/npm/v/@oyerinde/caliper?style=flat-square&color=black&labelColor=black)](https://www.npmjs.com/package/@oyerinde/caliper)
 
 **Essential tooling for detail-obsessed design engineers.**
 
@@ -82,7 +82,8 @@ init({
   commands: {
     activate: "Alt",       // Key to show overlay
     freeze: " ",           // Key to lock lines
-    ruler: "r"             // Key for guideline (Shift+r)
+    ruler: "r",            // Key for guideline (Shift+r)
+    selectionHoldDuration: 250 // Hold duration to select
   },
   animation: {
     lerpFactor: 0.2        // Smoothness (0-1)

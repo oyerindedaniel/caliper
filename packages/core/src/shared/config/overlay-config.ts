@@ -56,6 +56,8 @@ export interface CommandsConfig {
   projection?: ProjectionShortcuts;
   /** Key to trigger ruler lines - must be Shift + this key (default: r) */
   ruler?: string;
+  /** Duration in ms to hold the select key to trigger selection (default: 250) */
+  selectionHoldDuration?: number;
 }
 
 
@@ -92,6 +94,7 @@ export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
     right: "d",
   },
   ruler: "r",
+  selectionHoldDuration: 250,
 };
 
 export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {
