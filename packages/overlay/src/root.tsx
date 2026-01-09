@@ -22,6 +22,7 @@ import {
   type ProjectionDirection,
   type RulerSystem,
   type RulerState,
+  RESIZE_THROTTLE_MS,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -554,6 +555,70 @@ export function Root(config: RootConfig) {
         cancelAnimationFrame(viewportRafId);
         viewportRafId = null;
       }
+    });
+  });
+
+
+  createEffect(() => {
+    const primaryEl = selectionMetadata().element;
+    const currentResult = result();
+    const secondaryEl = currentResult?.secondaryElement ?? null;
+
+    if (!primaryEl && !secondaryEl) return;
+
+    let resizeTimer: number | null = null;
+    let lastRun = 0;
+    let pendingPrimaryRect: DOMRect | null = null;
+    let pendingSecondaryRect: DOMRect | null = null;
+
+    const runUpdates = () => {
+      lastRun = Date.now();
+      resizeTimer = null;
+      if (pendingPrimaryRect && selectionSystem) {
+        selectionSystem.updateRect(pendingPrimaryRect);
+        if (system) system.updatePrimaryRect(pendingPrimaryRect);
+        pendingPrimaryRect = null;
+      }
+      if (pendingSecondaryRect && system) {
+        system.updateSecondaryRect(pendingSecondaryRect);
+        pendingSecondaryRect = null;
+      }
+      scheduleUpdate();
+    };
+
+    const handleResize = (entries: ResizeObserverEntry[]) => {
+      for (const entry of entries) {
+        const rect = entry.target.getBoundingClientRect();
+        if (entry.target === primaryEl) {
+          pendingPrimaryRect = rect;
+        } else if (entry.target === secondaryEl) {
+          pendingSecondaryRect = rect;
+        }
+      }
+
+      const now = Date.now();
+      const remaining = RESIZE_THROTTLE_MS - (now - lastRun);
+
+      if (remaining <= 0) {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        requestAnimationFrame(runUpdates);
+      } else if (!resizeTimer) {
+        resizeTimer = window.setTimeout(() => requestAnimationFrame(runUpdates), remaining);
+      }
+    };
+
+    const observer = new ResizeObserver(handleResize);
+
+    if (primaryEl) {
+      observer.observe(primaryEl);
+    }
+    if (secondaryEl && secondaryEl !== primaryEl) {
+      observer.observe(secondaryEl);
+    }
+
+    onCleanup(() => {
+      observer.disconnect();
+      if (resizeTimer) clearTimeout(resizeTimer);
     });
   });
 

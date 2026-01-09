@@ -2,6 +2,7 @@ import { createReader } from "../../scheduling/reader.js";
 import { createFrequencyControlledReader } from "../../scheduling/frequency-control.js";
 import type { CursorContext } from "../../shared/types/index.js";
 import type { MeasurementResult } from "./measurement-result.js";
+import { createMeasurementLines } from "./measurement-result.js";
 import { createMeasurement } from "./create-measurement.js";
 import { createStateMachine, type MeasurementState } from "./state-machine.js";
 import {
@@ -27,6 +28,8 @@ export interface MeasurementSystem {
   getCurrentResult: () => MeasurementResult | null;
   getCalculator: () => CalculatorIntegration;
   onStateChange: (listener: MeasurementSystemListener) => () => void;
+  updatePrimaryRect: (rect: DOMRect) => void;
+  updateSecondaryRect: (rect: DOMRect) => void;
 }
 
 export function createMeasurementSystem(): MeasurementSystem {
@@ -134,6 +137,42 @@ export function createMeasurementSystem(): MeasurementSystem {
     };
   }
 
+  function updatePrimaryRect(rect: DOMRect) {
+    if (!currentResult) return;
+    const newPrimary = new DOMRect(
+      rect.left + window.scrollX,
+      rect.top + window.scrollY,
+      rect.width,
+      rect.height
+    );
+    currentResult = {
+      ...currentResult,
+      primary: newPrimary,
+      primaryWinX: window.scrollX,
+      primaryWinY: window.scrollY,
+      lines: createMeasurementLines(currentResult.context, newPrimary, currentResult.secondary),
+    };
+    notifyListeners();
+  }
+
+  function updateSecondaryRect(rect: DOMRect) {
+    if (!currentResult) return;
+    const newSecondary = new DOMRect(
+      rect.left + window.scrollX,
+      rect.top + window.scrollY,
+      rect.width,
+      rect.height
+    );
+    currentResult = {
+      ...currentResult,
+      secondary: newSecondary,
+      secondaryWinX: window.scrollX,
+      secondaryWinY: window.scrollY,
+      lines: createMeasurementLines(currentResult.context, currentResult.primary, newSecondary),
+    };
+    notifyListeners();
+  }
+
   return {
     measure,
     abort,
@@ -145,5 +184,7 @@ export function createMeasurementSystem(): MeasurementSystem {
     getCurrentResult,
     getCalculator,
     onStateChange,
+    updatePrimaryRect,
+    updateSecondaryRect,
   };
 }

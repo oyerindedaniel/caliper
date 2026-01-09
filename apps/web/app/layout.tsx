@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import Script from "next/script";
 import { BASE_URL } from "./constants";
+import { LogoTrail } from "./components/logo-trail-canvas";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -78,6 +79,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
           crossOrigin="anonymous"
         />
+        <LogoTrail />
         {children}
       </body>
     </html>
