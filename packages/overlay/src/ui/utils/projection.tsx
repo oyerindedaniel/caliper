@@ -111,7 +111,7 @@ function ProjectionLines(props: {
 
         const actualValue = Math.round(Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2));
         const labelWidthGuess = String(actualValue).length * 8 + 12; // Estimation: 8px per digit + 12px padding
-        const showLabel = actualValue >= labelWidthGuess * 3;
+        const showLabel = actualValue >= labelWidthGuess * 2;
 
         return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen, showLabel };
     });
