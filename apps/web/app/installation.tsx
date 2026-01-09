@@ -109,7 +109,7 @@ export function Root() {
   };
 
   return (
-    <>
+    <section className={styles.section}>
       <h2 className={styles.sectionHeader}>
         Installation
       </h2>
@@ -117,48 +117,42 @@ export function Root() {
         <button
           className={`${styles.tab} ${framework === "next" ? styles.activeTab : ""}`}
           onClick={() => setFramework("next")}
-          style={{ width: "auto" }}
         >
           Next.js
         </button>
         <button
           className={`${styles.tab} ${framework === "vite" ? styles.activeTab : ""}`}
           onClick={() => setFramework("vite")}
-          style={{ width: "auto" }}
         >
           Vite / HTML
         </button>
         <button
           className={`${styles.tab} ${framework === "astro" ? styles.activeTab : ""}`}
           onClick={() => setFramework("astro")}
-          style={{ width: "auto" }}
         >
           Astro
         </button>
         <button
           className={`${styles.tab} ${framework === "nuxt" ? styles.activeTab : ""}`}
           onClick={() => setFramework("nuxt")}
-          style={{ width: "auto" }}
         >
           Nuxt
         </button>
         <button
           className={`${styles.tab} ${framework === "vue" ? styles.activeTab : ""}`}
           onClick={() => setFramework("vue")}
-          style={{ width: "auto" }}
         >
           Vue
         </button>
         <button
           className={`${styles.tab} ${framework === "tanstack" ? styles.activeTab : ""}`}
           onClick={() => setFramework("tanstack")}
-          style={{ width: "auto" }}
         >
           TanStack Start
         </button>
       </div>
 
       <CodeBlock code={getCode()} language="tsx" />
-    </>
+    </section>
   );
 }

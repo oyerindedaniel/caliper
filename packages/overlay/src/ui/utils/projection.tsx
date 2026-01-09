@@ -133,7 +133,7 @@ function ProjectionLines(props: {
 
     return (
         <Show when={lineData() && !lineData()?.isHidden}>
-            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 1000000, "pointer-events": "none" }}>
+            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 1000000 }}>
                 <line
                     x1={lineData()!.x1}
                     y1={lineData()!.y1}

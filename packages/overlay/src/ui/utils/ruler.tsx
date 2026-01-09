@@ -310,25 +310,14 @@ export function RulerOverlay(props: RulerOverlayProps) {
         return result;
     });
 
-    const handleLayerClick = (e: MouseEvent) => {
-        const target = e.target as HTMLElement;
-        const bridgeNode = target.closest("[data-bridge-index]");
-        if (bridgeNode) {
-            const indexStr = bridgeNode.getAttribute("data-bridge-index");
-            if (indexStr !== null) {
-                const index = parseInt(indexStr, 10);
-                const bridge = bridges()[index];
-                if (bridge) {
-                    e.stopPropagation();
-                    props.onLineClick?.({
-                        type: "distance",
-                        value: bridge.value,
-                        start: { x: bridge.x1, y: bridge.y1 },
-                        end: { x: bridge.x2, y: bridge.y2 }
-                    }, bridge.value);
-                }
-            }
-        }
+    const handleClick = (bridge: { value: number, x1: number, y1: number, x2: number, y2: number }, e: MouseEvent) => {
+        e.stopPropagation();
+        props.onLineClick?.({
+            type: "distance",
+            value: bridge.value,
+            start: { x: bridge.x1, y: bridge.y1 },
+            end: { x: bridge.x2, y: bridge.y2 }
+        }, bridge.value);
     };
 
     return (
@@ -337,17 +326,16 @@ export function RulerOverlay(props: RulerOverlayProps) {
             data-caliper-ignore
             onPointerDown={handlePointerDown}
             onDblClick={handleDoubleClick}
-            onClick={handleLayerClick}
             onPointerOver={handlePointerOver}
             onPointerOut={handlePointerOut}
         >
-            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 999999, "pointer-events": "none", position: "fixed", top: 0, left: 0, width: "100%", height: "100%" }}>
+            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 999999 }}>
                 <For each={bridges()}>
                     {(bridge, index) => (
                         <g
                             data-caliper-ignore
-                            data-bridge-index={index()}
                             style={{ cursor: "pointer", "pointer-events": "auto" }}
+                            onClick={(e: MouseEvent) => handleClick(bridge, e)}
                         >
                             <line
                                 class={`${PREFIX}line-hit-target`}
@@ -378,11 +366,13 @@ export function RulerOverlay(props: RulerOverlayProps) {
                 {(bridge, index) => (
                     <div
                         data-caliper-ignore
-                        data-bridge-index={index()}
                         class={`${PREFIX}label ${PREFIX}ruler-bridge-label`}
                         style={{
+                            left: "0",
+                            top: "0",
                             transform: `translate3d(${bridge.labelX}px, ${bridge.labelY}px, 0) translate(-50%, -50%)`,
                         }}
+                        onClick={(e: MouseEvent) => handleClick(bridge, e)}
                     >
                         {Math.round(bridge.value * 100) / 100}
                     </div>
@@ -452,9 +442,6 @@ function RulerLineItem(props: {
                 data-caliper-ignore
                 class={`${PREFIX}ruler-line-visual`}
                 style={{
-                    position: "fixed",
-                    "background-color": "var(--caliper-ruler, var(--caliper-primary, rgba(24, 160, 251, 1)))",
-                    "z-index": 1000000,
                     ...lineStyle(),
                 }}
             />
@@ -464,11 +451,9 @@ function RulerLineItem(props: {
                     data-caliper-ignore
                     class={`${PREFIX}label ${PREFIX}ruler-label`}
                     style={{
-                        position: "fixed",
                         left: "0",
                         top: "0",
                         transform: `translate3d(${props.line.type === "vertical" ? props.line.position + 10 : 20}px, ${props.line.type === "vertical" ? 20 : props.line.position + 10}px, 0)`,
-                        "z-index": 1000002,
                         opacity: props.isSelected && !props.isHovered && !props.isDragging ? "0.7" : "1",
                     }}
                 >

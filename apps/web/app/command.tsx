@@ -32,8 +32,8 @@ export function CommandTable() {
     ];
 
     return (
-        <>
-            <h2 className={`${styles.sectionHeader} ${styles.commandsHeader}`}>
+        <section className={styles.section}>
+            <h2 className={`${styles.sectionHeader}`}>
                 Command Palette
             </h2>
             <table className={styles.commandTable}>
@@ -59,6 +59,6 @@ export function CommandTable() {
                     ))}
                 </tbody>
             </table>
-        </>
+        </section>
     );
 }

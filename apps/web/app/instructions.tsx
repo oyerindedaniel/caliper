@@ -5,7 +5,7 @@ export function Instructions() {
     const { getControlKey, getAltKey } = useOS();
 
     return (
-        <>
+        <section className={styles.section}>
             <h2 className={styles.sectionHeader}>How to Use</h2>
 
             <h3 className={styles.subHeader}>Core Measurement</h3>
@@ -71,6 +71,6 @@ export function Instructions() {
                     <strong>data-caliper-ignore</strong> — Add this attribute to any element you want Caliper to skip during measurement and snapping.
                 </li>
             </ul>
-        </>
+        </section>
     );
 }

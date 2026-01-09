@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, createEffect } from "solid-js";
+import { onMount, onCleanup, createSignal, createEffect, untrack } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
@@ -183,6 +183,7 @@ export function Root(config: RootConfig) {
       lastPointerPos = { x: e.clientX, y: e.clientY };
 
       if (isCommandActive(e)) {
+        e.preventDefault();
         pointerDownTime = Date.now();
         if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
         selectionTimeoutId = window.setTimeout(() => {
@@ -206,12 +207,20 @@ export function Root(config: RootConfig) {
       if (target.closest(`[data-caliper-ignore]`) || target.closest(`.${PREFIX}projection-input`)) {
         if (target.closest(`.${PREFIX}projection-input`)) {
           setActiveInputFocus("projection");
+        } else if (target.closest(`.${PREFIX}calculator`)) {
+          setActiveInputFocus("calculator");
         }
         pointerDownTime = 0;
         return;
       }
 
       pointerDownTime = 0;
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if (isCommandActive(e)) {
+        e.preventDefault();
+      }
     };
 
     let lastMouseEvent: MouseEvent | null = null;
@@ -397,6 +406,8 @@ export function Root(config: RootConfig) {
         if (dir && selectionMetadata().element) {
           e.preventDefault();
           e.stopImmediatePropagation();
+          setActiveInputFocus("projection");
+
           const currentElement = selectionMetadata().element;
           if (currentElement) {
             projectionSystem?.setElement(currentElement as HTMLElement);
@@ -430,7 +441,7 @@ export function Root(config: RootConfig) {
         // 3. Handle Projection Value Inputs (Numeric/Backspace)
         // Only if Projection is active and has focus priority (or calculator is closed).
         if (isProjActive) {
-          const isNumeric = /^\d$/.test(key);
+          const isNumeric = /^[0-9.]$/.test(key);
           const isBackspace = e.key === "Backspace";
           const hasPriority = activeInputFocus() === "projection" || !isCalcActive;
 
@@ -516,6 +527,7 @@ export function Root(config: RootConfig) {
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("keyup", handleKeyUp, { capture: true });
+    window.addEventListener("contextmenu", handleContextMenu, { capture: true });
     window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
@@ -524,6 +536,7 @@ export function Root(config: RootConfig) {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp, { capture: true });
+      window.removeEventListener("contextmenu", handleContextMenu, { capture: true });
       window.removeEventListener("blur", handleBlur);
 
       if (mouseMoveRafId) {
@@ -662,26 +675,37 @@ export function Root(config: RootConfig) {
     const currentResult = result();
 
     if (calcLine && currentResult && system) {
-      viewport().version;
+      const state = untrack(() => calculatorState());
 
-      const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
-      if (matchingLine) {
-        const liveValue = getLiveLineValue(matchingLine, currentResult);
-        const calc = system.getCalculator();
-        calc.syncValue(liveValue);
-        setCalculatorState(calc.getState());
+      if (state?.isActive) {
+        viewport().version;
+
+        const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
+        if (matchingLine) {
+          const liveValue = getLiveLineValue(matchingLine, currentResult);
+          const calc = system.getCalculator();
+          calc.syncValue(liveValue);
+          setCalculatorState(calc.getState());
+        }
       }
     }
   });
 
   const handleLineClick = (line: MeasurementLine, liveValue: number) => {
     if (system) {
+      setActiveCalculatorLine(null);
+
       const calc = system.getCalculator();
       calc.open(liveValue);
       setActiveInputFocus("calculator");
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
-      setActiveCalculatorLine(line);
+
+      // Only track the line if it's a measurement line (has startSync property)
+      // Projection/ruler lines are synthetic and shouldn't be tracked for live sync
+      if ("startSync" in line) {
+        setActiveCalculatorLine(line);
+      }
     }
   };
 

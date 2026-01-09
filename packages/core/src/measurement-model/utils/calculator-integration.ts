@@ -28,7 +28,7 @@ export function createCalculatorIntegration(): CalculatorIntegration {
   }
 
   function handleInput(key: string) {
-    if (/^[0-9]$/.test(key)) {
+    if (/^[0-9.]$/.test(key)) {
       calculator.dispatch({ type: "INPUT_DIGIT", digit: key });
     } else if (/^[+\-*/]$/.test(key)) {
       calculator.dispatch({

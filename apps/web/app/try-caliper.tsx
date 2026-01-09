@@ -7,7 +7,7 @@ export function TryCaliper() {
     const { getAltKey, getSelectKey } = useOS();
 
     return (
-        <section className={styles.trySection}>
+        <section className={`${styles.section} ${styles.trySection}`}>
             <div className={styles.tryHeader}>
                 <span className={styles.tryBadge}>Live Audit Playground</span>
                 <p className={styles.tryHint}>

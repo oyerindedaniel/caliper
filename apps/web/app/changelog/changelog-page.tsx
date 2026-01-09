@@ -30,8 +30,9 @@ export default function ChangelogPage() {
                     <Image
                         src="/caliper_logo.svg"
                         alt="Caliper logo"
-                        width={171.5}
+                        width={172}
                         height={50}
+                        style={{ height: 'auto' }}
                         priority
                         unoptimized
                     />

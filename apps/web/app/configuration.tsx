@@ -65,7 +65,7 @@ export function Configuration() {
     };
 
     return (
-        <>
+        <section className={styles.section}>
             <h2 className={styles.sectionHeader}>
                 Configuration
             </h2>
@@ -73,34 +73,30 @@ export function Configuration() {
                 <button
                     className={`${styles.tab} ${section === "overview" ? styles.activeTab : ""}`}
                     onClick={() => setSection("overview")}
-                    style={{ width: "auto" }}
                 >
                     Overview
                 </button>
                 <button
                     className={`${styles.tab} ${section === "theme" ? styles.activeTab : ""}`}
                     onClick={() => setSection("theme")}
-                    style={{ width: "auto" }}
                 >
                     Theme
                 </button>
                 <button
                     className={`${styles.tab} ${section === "commands" ? styles.activeTab : ""}`}
                     onClick={() => setSection("commands")}
-                    style={{ width: "auto" }}
                 >
                     Commands
                 </button>
                 <button
                     className={`${styles.tab} ${section === "animation" ? styles.activeTab : ""}`}
                     onClick={() => setSection("animation")}
-                    style={{ width: "auto" }}
                 >
                     Animation
                 </button>
             </div>
 
             <CodeBlock code={getCode()} language="typescript" />
-        </>
+        </section>
     );
 }

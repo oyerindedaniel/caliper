@@ -16,15 +16,18 @@ export default function HomePage() {
         <FocusProvider>
             <div className={styles.page}>
                 <main className={styles.main}>
-                    <Image
-                        src="/caliper_logo.svg"
-                        alt="Caliper logo"
-                        width={171.5}
-                        height={50}
-                        priority
-                        unoptimized
-                    />
-                    <p>Essential tooling for detail-obsessed design engineers. High-precision browser measurements, projections, and layout auditing.</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <Image
+                            src="/caliper_logo.svg"
+                            alt="Caliper logo"
+                            width={172}
+                            height={50}
+                            style={{ height: 'auto' }}
+                            priority
+                            unoptimized
+                        />
+                        <p>Essential tooling for detail-obsessed design engineers. High-precision browser measurements, projections, and layout auditing.</p>
+                    </div>
 
                     <Installation />
                     <TryCaliper />

@@ -12,7 +12,7 @@ import { DEFAULT_THEME, CALIPER_PREFIX } from "@caliper/core";
  * 2. Main Overlay Roots (999999)
  * 3. Measurement Labels (1000000)
  * 4. Selection Metadata Labels (1000001)
- * 5. Calculator (1000002) - Always on top for interaction
+ * 5. Calculator (1000005) - Always on top for interaction
  */
 
 export const OVERLAY_STYLES = `
@@ -164,7 +164,7 @@ export const OVERLAY_STYLES = `
   font-size: 12px;
   font-weight: 500;
   font-family: Inter, system-ui, -apple-system, sans-serif;
-  z-index: 1000002;
+  z-index: 1000005;
   box-shadow: 0 4px 12px var(--caliper-calc-shadow);
   display: flex;
   align-items: center;
@@ -285,6 +285,9 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}ruler-line-visual {
   transition: transform 0.1s ease-out;
   will-change: transform;
+  position: fixed;
+  background-color: var(--caliper-ruler, var(--caliper-primary, rgba(24, 160, 251, 1)));
+  z-index: 1000000;
 }
 
 .${CALIPER_PREFIX}ruler-label {
@@ -292,17 +295,17 @@ export const OVERLAY_STYLES = `
   border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   will-change: transform;
+  position: fixed;
+  z-index: 1000002;
 }
 
 .${CALIPER_PREFIX}ruler-bridge-label {
   position: fixed;
-  left: 0;
-  top: 0;
   background: var(--caliper-secondary);
   z-index: 1000003;
   color: white;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  border: 2px solid var(--caliper-primary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
 }
 `;
 
