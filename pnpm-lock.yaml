@@ -95,8 +95,8 @@ importers:
   apps/web:
     dependencies:
       '@oyerinde/caliper':
-        specifier: file:../../packages/caliper/oyerinde-caliper-0.1.0.tgz
-        version: file:packages/caliper/oyerinde-caliper-0.1.0.tgz
+        specifier: workspace:*
+        version: link:../../packages/caliper
       '@repo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -877,10 +877,6 @@ packages:
   '@nodelib/fs.walk@1.2.8':
     resolution: {integrity: sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg==}
     engines: {node: '>= 8'}
-
-  '@oyerinde/caliper@file:packages/caliper/oyerinde-caliper-0.1.0.tgz':
-    resolution: {integrity: sha512-lDTZ5sWiP/n+nBeSBqfK2cZ8KG4ZycH9zk2j9BE9XFRbfc02GVOCpdaXDOjMrCK3mJNjRccSKa0X8iLyTYNK4A==, tarball: file:packages/caliper/oyerinde-caliper-0.1.0.tgz}
-    version: 0.1.0
 
   '@rollup/rollup-android-arm-eabi@4.54.0':
     resolution: {integrity: sha512-OywsdRHrFvCdvsewAInDKCNyR3laPA2mc9bRYJ6LBp5IyvF3fvXbbNR0bSzHlZVFtn6E0xw2oZlyjg4rKCVcng==}
@@ -2865,8 +2861,6 @@ snapshots:
     dependencies:
       '@nodelib/fs.scandir': 2.1.5
       fastq: 1.19.1
-
-  '@oyerinde/caliper@file:packages/caliper/oyerinde-caliper-0.1.0.tgz': {}
 
   '@rollup/rollup-android-arm-eabi@4.54.0':
     optional: true
