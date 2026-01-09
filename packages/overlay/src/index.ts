@@ -54,9 +54,20 @@ export function createOverlay(
 
   const windowConfig = getConfig();
   const mergedConfig: OverlayConfig = {
-    theme: { ...config?.theme, ...windowConfig?.theme },
-    commands: { ...config?.commands, ...windowConfig?.commands },
-    animation: { ...config?.animation, ...windowConfig?.animation },
+    theme: { ...windowConfig?.theme, ...config?.theme },
+    commands: {
+      ...windowConfig?.commands,
+      ...config?.commands,
+      calculator: {
+        ...windowConfig?.commands?.calculator,
+        ...config?.commands?.calculator,
+      },
+      projection: {
+        ...windowConfig?.commands?.projection,
+        ...config?.commands?.projection,
+      },
+    },
+    animation: { ...windowConfig?.animation, ...config?.animation },
   };
 
   const commands = mergeCommands(mergedConfig.commands);
