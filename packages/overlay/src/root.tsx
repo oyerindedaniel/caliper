@@ -203,7 +203,6 @@ export function Root(config: RootConfig) {
 
       const target = e.target as HTMLElement;
 
-      // If clicking on our own interactive UI, don't do background logic
       if (target.closest(`[data-caliper-ignore]`) || target.closest(`.${PREFIX}projection-input`)) {
         if (target.closest(`.${PREFIX}projection-input`)) {
           setActiveInputFocus("projection");
@@ -587,6 +586,10 @@ export function Root(config: RootConfig) {
   const updateResizeObservations = (primaryEl: Element | null, secondaryEl: Element | null) => {
     if (!resizeObserver) return;
 
+    if (primaryEl === observedPrimary && secondaryEl === observedSecondary) {
+      return;
+    }
+
     if (observedPrimary && observedPrimary !== primaryEl) {
       resizeObserver.unobserve(observedPrimary);
       observedPrimary = null;
@@ -660,7 +663,8 @@ export function Root(config: RootConfig) {
   createEffect(() => {
     const primaryEl = selectionMetadata().element;
     const currentResult = result();
-    const secondaryEl = currentResult?.secondaryElement ?? null;
+
+    const secondaryEl = isFrozen() ? (currentResult?.secondaryElement ?? null) : null;
 
     if (!primaryEl && !secondaryEl) {
       updateResizeObservations(null, null);
@@ -719,9 +723,13 @@ export function Root(config: RootConfig) {
       }
 
       const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
+      const isActive = calcState.isActive;
+      setCalculatorState(isActive ? calcState : null);
       if (calcState.operation) {
         setActiveCalculatorLine(null);
+      }
+      if (!isActive && projectionState().direction !== null) {
+        setActiveInputFocus("projection");
       }
     }
   };
@@ -731,9 +739,13 @@ export function Root(config: RootConfig) {
       const calc = system.getCalculator();
       calc.handleBackspace();
       const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
-      if (!calcState.isActive) {
+      const isActive = calcState.isActive;
+      setCalculatorState(isActive ? calcState : null);
+      if (!isActive) {
         setActiveCalculatorLine(null);
+        if (projectionState().direction !== null) {
+          setActiveInputFocus("projection");
+        }
       }
     }
   };
@@ -743,8 +755,12 @@ export function Root(config: RootConfig) {
       const calc = system.getCalculator();
       calc.handleDelete();
       const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
+      const isActive = calcState.isActive;
+      setCalculatorState(isActive ? calcState : null);
       setActiveCalculatorLine(null);
+      if (!isActive && projectionState().direction !== null) {
+        setActiveInputFocus("projection");
+      }
     }
   };
 
@@ -753,8 +769,12 @@ export function Root(config: RootConfig) {
       const calc = system.getCalculator();
       calc.handleEnter();
       const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
+      const isActive = calcState.isActive;
+      setCalculatorState(isActive ? calcState : null);
       setActiveCalculatorLine(null);
+      if (!isActive && projectionState().direction !== null) {
+        setActiveInputFocus("projection");
+      }
     }
   };
 
@@ -764,6 +784,9 @@ export function Root(config: RootConfig) {
       calc.close();
       setCalculatorState(null);
       setActiveCalculatorLine(null);
+      if (projectionState().direction !== null) {
+        setActiveInputFocus("projection");
+      }
     }
   };
 

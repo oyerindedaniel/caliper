@@ -92,7 +92,6 @@ export function Overlay(props: OverlayProps) {
       <SelectionLabel
         metadata={props.selectionMetadata()}
         isAltPressed={props.isAltPressed()}
-        isFrozen={props.isFrozen()}
         viewport={props.viewport()}
       />
       <Show when={(props.isAltPressed() || props.isFrozen()) && resultData()}>

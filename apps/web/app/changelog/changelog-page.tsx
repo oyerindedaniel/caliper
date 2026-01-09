@@ -38,24 +38,18 @@ export default function ChangelogPage() {
                     />
                 </div>
 
-                <h1 className={styles.sectionHeader} style={{
-                    fontSize: '1.5rem',
-                    opacity: 1,
-                    textTransform: 'none',
-                    marginTop: '0',
-                    fontFamily: 'var(--font-geist-sans)'
-                }}>
+                <h1 className={styles.changelogTitle}>
                     Changelog
                 </h1>
-                <p className={styles.instructionItem} style={{ marginBottom: '24px' }}>
+                <p className={styles.instructionItem} style={{ marginBottom: "24px" }}>
                     All notable changes to this project will be documented in this file.
                 </p>
 
-                <h2 className={styles.subHeader} style={{ fontSize: '1.2rem', opacity: 1, textTransform: 'none', color: 'var(--caliper-primary, #18A0FB)' }}>
+                <h2 className={`${styles.subHeader} ${styles.subHeaderLarge}`}>
                     [0.1.0] — 2026-01-08
                 </h2>
 
-                <h3 className={styles.subHeader} style={{ fontSize: '0.9rem', marginTop: '16px' }}>
+                <h3 className={styles.subHeader}>
                     Added
                 </h3>
                 <ul className={styles.instructionList}>

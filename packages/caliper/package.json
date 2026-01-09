@@ -35,7 +35,8 @@
     "files": [
         "dist",
         "CHANGELOG.md",
-        "LICENSE"
+        "LICENSE",
+        "README.md"
     ],
     "scripts": {
         "prebuild": "node scripts/write-version.mjs",
@@ -44,6 +45,7 @@
         "lint": "eslint . --max-warnings 0",
         "check-types": "tsc --noEmit",
         "clean": "tsup --clean",
+        "pack": "pnpm build && pnpm pack",
         "release": "pnpm publish --access public"
     },
     "keywords": [

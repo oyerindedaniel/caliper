@@ -75,7 +75,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
                 }
 
                 if (state && state.direction && state.element === meta.element) {
-                    const value = parseInt(state.value) || 0;
+                    const value = parseFloat(state.value) || 0;
                     if (isV) {
                         if (state.direction === "left") points.push(liveX - value);
                         else if (state.direction === "right") points.push(liveX + live.width + value);
@@ -363,7 +363,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
             </svg>
 
             <For each={bridges()}>
-                {(bridge, index) => (
+                {(bridge) => (
                     <div
                         data-caliper-ignore
                         class={`${PREFIX}label ${PREFIX}ruler-bridge-label`}
@@ -386,6 +386,8 @@ export function RulerOverlay(props: RulerOverlayProps) {
                         isDragging={draggingId() === line.id}
                         isHovered={hoveredId() === line.id}
                         isSelected={selectedIds().has(line.id)}
+                        onLineClick={props.onLineClick}
+                        viewport={props.viewport}
                     />
                 )}
             </For>
@@ -398,6 +400,8 @@ function RulerLineItem(props: {
     isDragging: boolean;
     isHovered: boolean;
     isSelected: boolean;
+    onLineClick?: (line: MeasurementLine, liveValue: number) => void;
+    viewport: Accessor<{ width: number; height: number; scrollX: number; scrollY: number }>;
 }) {
     const lineStyle = createMemo(() => {
         const isV = props.line.type === "vertical";
@@ -455,6 +459,17 @@ function RulerLineItem(props: {
                         top: "0",
                         transform: `translate3d(${props.line.type === "vertical" ? props.line.position + 10 : 20}px, ${props.line.type === "vertical" ? 20 : props.line.position + 10}px, 0)`,
                         opacity: props.isSelected && !props.isHovered && !props.isDragging ? "0.7" : "1",
+                    }}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        const isV = props.line.type === "vertical";
+                        const vp = props.viewport();
+                        props.onLineClick?.({
+                            type: "distance",
+                            value: props.line.position,
+                            start: isV ? { x: props.line.position, y: 0 } : { x: 0, y: props.line.position },
+                            end: isV ? { x: props.line.position, y: vp.height } : { x: vp.width, y: props.line.position }
+                        }, props.line.position);
                     }}
                 >
                     {Math.round(props.line.position * 100) / 100}
