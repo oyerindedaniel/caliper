@@ -16,7 +16,6 @@ export default function HomePage() {
             <div className={styles.page}>
                 <main className={styles.main}>
                     <Image
-                        className="imgDark"
                         src="/caliper_logo.svg"
                         alt="Caliper logo"
                         width={171.5}

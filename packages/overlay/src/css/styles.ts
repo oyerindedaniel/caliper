@@ -76,6 +76,7 @@ export const OVERLAY_STYLES = `
   height: 100vh;
   pointer-events: none;
   z-index: 1000000;
+  touch-action: none;
 }
 
 .${CALIPER_PREFIX}alt-mode * {
@@ -135,6 +136,7 @@ export const OVERLAY_STYLES = `
   position: fixed;
   pointer-events: none;
   box-sizing: border-box;
+  touch-action: none;
 }
 
 .${CALIPER_PREFIX}boundary-box-selected {

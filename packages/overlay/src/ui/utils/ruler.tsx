@@ -180,12 +180,12 @@ export function RulerOverlay(props: RulerOverlayProps) {
             }
         };
 
-        window.addEventListener("pointerdown", handleGlobalClick);
-        window.addEventListener("keydown", handleKeyDown);
+        window.addEventListener("pointerdown", handleGlobalClick, { capture: true });
+        window.addEventListener("keydown", handleKeyDown, { capture: true });
 
         onCleanup(() => {
-            window.removeEventListener("pointerdown", handleGlobalClick);
-            window.removeEventListener("keydown", handleKeyDown);
+            window.removeEventListener("pointerdown", handleGlobalClick, { capture: true });
+            window.removeEventListener("keydown", handleKeyDown, { capture: true });
         });
     });
 
@@ -309,30 +309,45 @@ export function RulerOverlay(props: RulerOverlayProps) {
 
         return result;
     });
+
+    const handleLayerClick = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        const bridgeNode = target.closest("[data-bridge-index]");
+        if (bridgeNode) {
+            const indexStr = bridgeNode.getAttribute("data-bridge-index");
+            if (indexStr !== null) {
+                const index = parseInt(indexStr, 10);
+                const bridge = bridges()[index];
+                if (bridge) {
+                    e.stopPropagation();
+                    props.onLineClick?.({
+                        type: "distance",
+                        value: bridge.value,
+                        start: { x: bridge.x1, y: bridge.y1 },
+                        end: { x: bridge.x2, y: bridge.y2 }
+                    }, bridge.value);
+                }
+            }
+        }
+    };
+
     return (
         <div
             class={`${PREFIX}ruler-layer`}
             data-caliper-ignore
             onPointerDown={handlePointerDown}
             onDblClick={handleDoubleClick}
+            onClick={handleLayerClick}
             onPointerOver={handlePointerOver}
             onPointerOut={handlePointerOut}
         >
             <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 999999, "pointer-events": "none", position: "fixed", top: 0, left: 0, width: "100%", height: "100%" }}>
                 <For each={bridges()}>
-                    {(bridge) => (
+                    {(bridge, index) => (
                         <g
                             data-caliper-ignore
+                            data-bridge-index={index()}
                             style={{ cursor: "pointer", "pointer-events": "auto" }}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                props.onLineClick?.({
-                                    type: "distance",
-                                    value: bridge.value,
-                                    start: { x: bridge.x1, y: bridge.y1 },
-                                    end: { x: bridge.x2, y: bridge.y2 }
-                                }, bridge.value);
-                            }}
                         >
                             <line
                                 class={`${PREFIX}line-hit-target`}
@@ -360,19 +375,11 @@ export function RulerOverlay(props: RulerOverlayProps) {
             </svg>
 
             <For each={bridges()}>
-                {(bridge) => (
+                {(bridge, index) => (
                     <div
                         data-caliper-ignore
+                        data-bridge-index={index()}
                         class={`${PREFIX}label ${PREFIX}ruler-bridge-label`}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            props.onLineClick?.({
-                                type: "distance",
-                                value: bridge.value,
-                                start: { x: bridge.x1, y: bridge.y1 },
-                                end: { x: bridge.x2, y: bridge.y2 }
-                            }, bridge.value);
-                        }}
                         style={{
                             transform: `translate3d(${bridge.labelX}px, ${bridge.labelY}px, 0) translate(-50%, -50%)`,
                         }}

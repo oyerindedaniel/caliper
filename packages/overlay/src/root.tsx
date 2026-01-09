@@ -498,19 +498,19 @@ export function Root(config: RootConfig) {
       }
     };
 
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    window.addEventListener("pointerup", handlePointerUp, { capture: true });
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    window.addEventListener("keyup", handleKeyUp, { capture: true });
     window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      window.removeEventListener("pointerup", handlePointerUp, { capture: true });
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+      window.removeEventListener("keyup", handleKeyUp, { capture: true });
       window.removeEventListener("blur", handleBlur);
 
       if (mouseMoveRafId) {
@@ -542,13 +542,13 @@ export function Root(config: RootConfig) {
 
     if (active) {
       window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
-      window.addEventListener("resize", scheduleUpdate, { passive: true });
+      window.addEventListener("resize", scheduleUpdate, { passive: true, capture: true });
       syncViewport();
     }
 
     onCleanup(() => {
       window.removeEventListener("scroll", scheduleUpdate, { capture: true });
-      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate, { capture: true });
 
       if (viewportRafId) {
         cancelAnimationFrame(viewportRafId);

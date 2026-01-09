@@ -165,7 +165,7 @@ function ProjectionLines(props: {
                 }}
                 onClick={handleLineClick}
             >
-                {lineData()!.actualValue}px
+                {lineData()!.actualValue}
             </div>
         </Show>
     );
