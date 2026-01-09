@@ -56,7 +56,7 @@
     ],
     "scripts": {
         "prebuild": "node scripts/write-version.mjs",
-        "build": "pnpm run clean && pnpm run prebuild && tsup --env.NODE_ENV production",
+        "build": "pnpm run clean && pnpm run prebuild && cross-env NODE_ENV=production tsup",
         "build:watch": "tsup --watch",
         "lint": "eslint . --max-warnings 0",
         "check-types": "tsc --noEmit",
@@ -91,11 +91,11 @@
         "@repo/typescript-config": "workspace:*",
         "@types/node": "^22.15.3",
         "babel-preset-solid": "^1.9.10",
+        "cross-env": "^10.1.0",
         "esbuild-plugin-babel": "^0.2.3",
         "eslint": "^9.39.1",
+        "solid-js": "^1.9.10",
         "tsup": "^8.5.1",
-        "typescript": "5.9.3",
-        "solid-js": "^1.9.10"
-    },
-    "dependencies": {}
+        "typescript": "5.9.3"
+    }
 }
