@@ -648,6 +648,12 @@ export function Root(config: RootConfig) {
     const primaryEl = selectionMetadata().element;
     const currentResult = result();
     const secondaryEl = currentResult?.secondaryElement ?? null;
+
+    if (!primaryEl && !secondaryEl) {
+      updateResizeObservations(null, null);
+      return;
+    }
+
     updateResizeObservations(primaryEl, secondaryEl);
   });
 
