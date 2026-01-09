@@ -94,9 +94,6 @@ importers:
 
   apps/web:
     dependencies:
-      '@caliper/core':
-        specifier: workspace:*
-        version: link:../../packages/core
       '@oyerinde/caliper':
         specifier: file:../../packages/caliper/oyerinde-caliper-0.1.0.tgz
         version: file:packages/caliper/oyerinde-caliper-0.1.0.tgz
@@ -261,9 +258,18 @@ importers:
       '@types/node':
         specifier: ^22.15.3
         version: 22.15.3
+      babel-preset-solid:
+        specifier: ^1.9.10
+        version: 1.9.10(@babel/core@7.28.5)(solid-js@1.9.10)
+      esbuild-plugin-babel:
+        specifier: ^0.2.3
+        version: 0.2.3(@babel/core@7.28.5)
       eslint:
         specifier: ^9.39.1
         version: 9.39.1
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.4.31)(typescript@5.9.3)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -873,7 +879,7 @@ packages:
     engines: {node: '>= 8'}
 
   '@oyerinde/caliper@file:packages/caliper/oyerinde-caliper-0.1.0.tgz':
-    resolution: {integrity: sha512-mfKqnjbTa1Vi/HlaqRXfwD2agXQwbjwF7AkHXQX1kDT2A3MhB1HIsiJw5cuHqZcqWCLaSt+cghaHVZsdZopjhw==, tarball: file:packages/caliper/oyerinde-caliper-0.1.0.tgz}
+    resolution: {integrity: sha512-lDTZ5sWiP/n+nBeSBqfK2cZ8KG4ZycH9zk2j9BE9XFRbfc02GVOCpdaXDOjMrCK3mJNjRccSKa0X8iLyTYNK4A==, tarball: file:packages/caliper/oyerinde-caliper-0.1.0.tgz}
     version: 0.1.0
 
   '@rollup/rollup-android-arm-eabi@4.54.0':
