@@ -39,7 +39,7 @@ function ProjectionLines(props: {
         const vp = props.viewport();
         vp.version;
         const state = props.projectionState();
-        const value = parseInt(state.value) || 0;
+        const value = parseFloat(state.value) || 0;
         const metadata = props.metadata();
 
         const live = getLiveGeometry(
@@ -109,9 +109,11 @@ function ProjectionLines(props: {
                 break;
         }
 
-        const actualValue = Math.round(Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2));
+        const rawValue = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        const actualValue = Number.isInteger(rawValue) ? rawValue : Math.round(rawValue * 100) / 100;
+
         const labelWidthGuess = String(actualValue).length * 8 + 12; // Estimation: 8px per digit + 12px padding
-        const showLabel = actualValue >= labelWidthGuess * 2;
+        const showLabel = rawValue >= labelWidthGuess * 2;
 
         return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen, showLabel };
     });

@@ -46,19 +46,6 @@
   list-style-position: inside;
 }
 
-
-
-a.primary {
-  background: var(--foreground);
-  color: var(--background);
-  gap: 8px;
-}
-
-a.secondary {
-  border-color: var(--gray-alpha-200);
-  min-width: 180px;
-}
-
 button.secondary {
   appearance: none;
   border-radius: 128px;
@@ -101,15 +88,6 @@ button.secondary {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  a.primary:hover {
-    background: var(--button-primary-hover);
-    border-color: transparent;
-  }
-
-  a.secondary:hover {
-    background: var(--button-secondary-hover);
-    border-color: transparent;
-  }
 
   .footer a:hover,
   .footer a[href]:hover {
@@ -228,7 +206,7 @@ button.secondary {
     align-items: center;
     justify-content: center;
     gap: 16px;
-    font-size: 13px;
+    font-size: 14px;
     margin-top: 40px;
     width: 100%;
   }
@@ -291,7 +269,7 @@ button.secondary {
 
 .tabs {
   display: flex;
-  gap: 1rem;
+  gap: 16px;
   margin-bottom: 12px;
   border-bottom: 1px solid var(--gray-alpha-200);
 }
@@ -332,12 +310,12 @@ button.secondary {
 
 .section {
   width: 100%;
-  margin-top: 40px;
+  margin-top: 52px;
 }
 
 .sectionHeader {
   font-family: var(--font-geist-mono);
-  font-size: 0.8rem;
+  font-size: 13px;
   text-transform: uppercase;
   opacity: 0.5;
   letter-spacing: 0.05em;
@@ -346,9 +324,9 @@ button.secondary {
 
 .subHeader {
   font-family: var(--font-geist-mono);
-  font-size: 0.75rem;
+  font-size: 12px;
   margin-top: 24px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   text-transform: uppercase;
   font-weight: 700;
   color: var(--caliper-primary, #18A0FB);
@@ -363,6 +341,21 @@ button.secondary {
   margin-top: 0;
 }
 
+.subHeaderLarge {
+  font-size: 20px;
+  text-transform: none;
+  font-family: var(--font-geist-sans);
+}
+
+.changelogTitle {
+  font-family: var(--font-geist-sans);
+  font-size: 24px;
+  opacity: 1;
+  text-transform: none;
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
 .subHeader::before {
   content: "";
   display: inline-block;
@@ -375,7 +368,7 @@ button.secondary {
 .instructionList {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   margin: 0;
   padding: 0;
   list-style: none;
