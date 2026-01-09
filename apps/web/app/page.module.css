@@ -493,6 +493,11 @@ button.secondary {
   opacity: 0.8;
 }
 
+.copyButton:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
 .copyStatus {
   font-family: var(--font-geist-mono);
   font-size: 12px;
@@ -503,4 +508,133 @@ button.secondary {
 
 .copyStatusVisible {
   opacity: 1;
+}
+
+.copyCodeButton {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: var(--font-geist-mono);
+  cursor: pointer;
+  transition: all 0.2s;
+  opacity: 0.8;
+}
+
+.copyCodeButton:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.copyCodeButton:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+  opacity: 1;
+}
+
+.trySection {
+  margin-top: 32px;
+  width: 100%;
+  border: 1px dashed var(--gray-alpha-200);
+  border-radius: 12px;
+  padding: 24px;
+  background: rgba(var(--gray-rgb), 0.02);
+}
+
+.tryHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.tryBadge {
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--caliper-primary);
+  opacity: 0.8;
+}
+
+.tryHint {
+  font-size: 14px !important;
+  opacity: 0.6;
+}
+
+.tryHint strong {
+  color: var(--foreground);
+  background: var(--gray-alpha-100);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.playground {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.playgroundRow {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.playgroundBox {
+  background: var(--gray-alpha-100);
+  border: 1px solid var(--gray-alpha-200);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.playgroundBox:hover {
+  background: var(--gray-alpha-200);
+}
+
+.boxLabel {
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  opacity: 0.4;
+}
+
+.playgroundCircle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--gray-alpha-100);
+  border: 1px solid var(--gray-alpha-200);
+}
+
+.playgroundGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.playgroundGridItem {
+  height: 40px;
+  background: rgba(var(--gray-rgb), 0.01);
+  border: 1px solid var(--gray-alpha-100);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gray-alpha-200);
 }

@@ -43,5 +43,6 @@ export function useOS() {
         os,
         getControlKey: () => (isApple ? "⌘" : "Ctrl"),
         getSelectKey: () => (isApple ? "Command" : "Control"),
+        getAltKey: () => (isApple ? "Option" : "Alt"),
     };
 }

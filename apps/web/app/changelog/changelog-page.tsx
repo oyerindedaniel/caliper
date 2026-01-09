@@ -7,9 +7,9 @@ import { Footer } from "../footer";
 
 export default function ChangelogPage() {
     return (
-        <div className={styles.page}>
+        <div className={styles.page} data-caliper-ignore>
             <main className={styles.main}>
-                <div style={{ marginBottom: '32px' }} data-caliper-ignore>
+                <div style={{ marginBottom: '32px' }}>
                     <Link href="/" style={{
                         color: 'var(--gray-rgb)',
                         textDecoration: 'none',

@@ -110,8 +110,10 @@ function ProjectionLines(props: {
         }
 
         const actualValue = Math.round(Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2));
+        const labelWidthGuess = String(actualValue).length * 8 + 12; // Estimation: 8px per digit + 12px padding
+        const showLabel = actualValue >= labelWidthGuess * 3;
 
-        return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen };
+        return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen, showLabel };
     });
 
     const [isHovered, setIsHovered] = createSignal(false);
@@ -154,19 +156,21 @@ function ProjectionLines(props: {
                     stroke-width={isHovered() ? 2 : 1}
                 />
             </svg>
-            <div
-                class={`${PREFIX}label ${PREFIX}projection-label`}
-                style={{
-                    top: 0,
-                    left: 0,
-                    transform: `translate3d(${lineData()!.labelX}px, ${lineData()!.labelY}px, 0) translate(-50%, -50%)`,
-                    "pointer-events": "auto",
-                    cursor: "pointer"
-                }}
-                onClick={handleLineClick}
-            >
-                {lineData()!.actualValue}
-            </div>
+            <Show when={lineData()!.showLabel}>
+                <div
+                    class={`${PREFIX}label ${PREFIX}projection-label`}
+                    style={{
+                        top: 0,
+                        left: 0,
+                        transform: `translate3d(${lineData()!.labelX}px, ${lineData()!.labelY}px, 0) translate(-50%, -50%)`,
+                        "pointer-events": "auto",
+                        cursor: "pointer"
+                    }}
+                    onClick={handleLineClick}
+                >
+                    {lineData()!.actualValue}
+                </div>
+            </Show>
         </Show>
     );
 }

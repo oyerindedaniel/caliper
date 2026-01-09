@@ -7,6 +7,7 @@ import { Installation } from "./installation";
 import { Configuration } from "./configuration";
 import { Configurator } from "./configurator";
 import { Instructions } from "./instructions";
+import { TryCaliper } from "./try-caliper";
 import { Footer } from "./footer";
 import { FocusProvider } from "./context";
 
@@ -23,9 +24,10 @@ export default function HomePage() {
                         priority
                         unoptimized
                     />
-                    <p>Essential tooling for detail-obsessed design engineers.</p>
+                    <p data-caliper-ignore>Essential tooling for detail-obsessed design engineers. High-precision browser measurements, projections, and layout auditing.</p>
 
                     <Installation />
+                    <TryCaliper />
                     <Configuration />
                     <Instructions />
                     <CommandTable />

@@ -4,7 +4,6 @@ export const DEFAULT_READ_INTERVAL = 16; // ~60fps
 
 /** Event Suppression / Debouncing */
 export const SUPPRESSION_MAX_FRAMES = 8;
-
 export const RESIZE_THROTTLE_MS = 60;
 export const SUPPRESSION_DELAY = 30;
 

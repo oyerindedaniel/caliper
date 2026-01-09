@@ -169,6 +169,7 @@ export default function LogoTrailCanvas() {
 
     return (
         <canvas
+            data-caliper-ignore
             ref={canvasRef}
             style={{
                 position: "fixed",

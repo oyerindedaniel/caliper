@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import styles from "./page.module.css";
 import { useFocus } from "./context";
+import { useCopy } from "./hooks/use-copy";
 
 const ShortcutField = ({
     label,
@@ -51,6 +52,7 @@ const ShortcutField = ({
 };
 
 export function Configurator() {
+    const { copied, copy } = useCopy();
     const [commands, setCommands] = useState({
         activate: "Alt",
         freeze: " ",
@@ -68,9 +70,6 @@ export function Configurator() {
         projLeft: "a",
     });
 
-    const [copied, setCopied] = useState(false);
-
-    // Group-based validation logic
     const conflicts = useMemo(() => {
         const errorIds = new Set<string>();
         const normalize = (v: string) => v.toLowerCase();
@@ -152,9 +151,7 @@ export function Configurator() {
             }
         }, null, 2);
 
-        navigator.clipboard.writeText(json);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        copy(json);
     };
 
     const update = (key: string, value: string) => {
