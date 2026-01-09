@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import styles from "./page.module.css";
 import { useFocus } from "./context";
+import { useCopy } from "./hooks/use-copy";
 
 const ShortcutField = ({
     label,
@@ -51,6 +52,7 @@ const ShortcutField = ({
 };
 
 export function Configurator() {
+    const { copied, copy } = useCopy();
     const [commands, setCommands] = useState({
         activate: "Alt",
         freeze: " ",
@@ -68,9 +70,6 @@ export function Configurator() {
         projLeft: "a",
     });
 
-    const [copied, setCopied] = useState(false);
-
-    // Group-based validation logic
     const conflicts = useMemo(() => {
         const errorIds = new Set<string>();
         const normalize = (v: string) => v.toLowerCase();
@@ -152,9 +151,7 @@ export function Configurator() {
             }
         }, null, 2);
 
-        navigator.clipboard.writeText(json);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        copy(json);
     };
 
     const update = (key: string, value: string) => {
@@ -162,7 +159,7 @@ export function Configurator() {
     };
 
     return (
-        <>
+        <section className={styles.section}>
             <h2 className={styles.sectionHeader}>Shortcut Configurator</h2>
             <p className={styles.instructionItem} style={{ marginBottom: '12px', opacity: 0.6, fontSize: '13px' }}>
                 Customize your workflow. Keybindings are local to this generator.
@@ -172,7 +169,7 @@ export function Configurator() {
             </p>
 
             <div className={styles.subHeader}>Core Commands</div>
-            <div className={styles.configuratorGrid} suppressHydrationWarning>
+            <div className={styles.configuratorGrid}>
                 <ShortcutField label="Activate Overlay" value={commands.activate} id="activate" isDuplicate={conflicts.has("activate")} onUpdate={update} />
                 <ShortcutField label="Freeze System" value={commands.freeze} id="freeze" isDuplicate={conflicts.has("freeze")} onUpdate={update} />
                 <ShortcutField label="Deep Select" value={commands.select} id="select" isDuplicate={conflicts.has("select")} onUpdate={update} />
@@ -181,7 +178,7 @@ export function Configurator() {
             </div>
 
             <div className={styles.subHeader}>Calculator Triggers</div>
-            <div className={styles.configuratorGrid} suppressHydrationWarning>
+            <div className={styles.configuratorGrid}>
                 <ShortcutField label="Top Edge" value={commands.calcTop} id="calcTop" isDuplicate={conflicts.has("calcTop")} onUpdate={update} />
                 <ShortcutField label="Right Edge" value={commands.calcRight} id="calcRight" isDuplicate={conflicts.has("calcRight")} onUpdate={update} />
                 <ShortcutField label="Bottom Edge" value={commands.calcBottom} id="calcBottom" isDuplicate={conflicts.has("calcBottom")} onUpdate={update} />
@@ -190,7 +187,7 @@ export function Configurator() {
             </div>
 
             <div className={styles.subHeader}>Projection Alignment</div>
-            <div className={styles.configuratorGrid} suppressHydrationWarning>
+            <div className={styles.configuratorGrid}>
                 <ShortcutField label="Project Up" value={commands.projTop} id="projTop" isDuplicate={conflicts.has("projTop")} onUpdate={update} />
                 <ShortcutField label="Project Right" value={commands.projRight} id="projRight" isDuplicate={conflicts.has("projRight")} onUpdate={update} />
                 <ShortcutField label="Project Down" value={commands.projBottom} id="projBottom" isDuplicate={conflicts.has("projBottom")} onUpdate={update} />
@@ -199,7 +196,7 @@ export function Configurator() {
 
             <div className={styles.configAction}>
                 {hasErrors && (
-                    <p style={{ color: '#ef4444', fontSize: '12px', marginBottom: '8px', fontWeight: '500' }}>
+                    <p style={{ color: '#ef4444', fontSize: '12px', fontWeight: '500' }}>
                         ⚠️ Core commands must use unique keys. Check the highlighted fields.
                     </p>
                 )}
@@ -215,6 +212,6 @@ export function Configurator() {
                     Ready to paste! 📋
                 </span>
             </div>
-        </>
+        </section >
     );
 }

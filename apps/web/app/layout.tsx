@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 import Script from "next/script";
 import { BASE_URL } from "./constants";
+import { LogoTrail } from "./logo-trail-canvas";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -75,9 +76,10 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         <Script
           src={`/caliper.js?v=${Date.now()}`}
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
           crossOrigin="anonymous"
         />
+        <LogoTrail />
         {children}
       </body>
     </html>

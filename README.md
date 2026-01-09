@@ -107,7 +107,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 ### Measurements
 - **Cmd/Ctrl + Hold + Click** (250ms) — Select an element.
 - **Hover** — View relative distances to target.
-- **Alt** — Hold to reveal the overlay.
+- **Option/Alt** — Hold to reveal the overlay.
 - **Space** — Freeze the current state.
 
 ### Analysis tools
@@ -119,7 +119,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 ### Ruler Precision
 - **Arrow Keys** — Nudge selected ruler lines by 1px.
 - **Shift + Arrows** — Nudge by 10px.
-- **Alt + Arrows** — Nudge by 0.1px for sub-pixel auditing.
+- **Option/Alt + Arrows** — Nudge by 0.1px for sub-pixel auditing.
 - **Magnetic Snap** — Rulers automatically snap to active projection lines.
 - **Chained Measurement** — Link multiple parallel rulers with **Shift + Click** to reveal gaps.
 - **Auto-Focus** — Typing operators (**+ - * / .**) instantly switches focus to the calculator.

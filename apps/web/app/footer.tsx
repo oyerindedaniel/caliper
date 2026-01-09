@@ -27,6 +27,13 @@ export function Footer() {
                 Changelog
             </Link>
             <a
+                href="https://github.com/oyerindedaniel/caliper/issues"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                Report an issue
+            </a>
+            <a
                 href="https://danieloyerinde.com"
                 target="_blank"
                 rel="noopener noreferrer"
@@ -37,6 +44,7 @@ export function Footer() {
                     alt="Globe icon"
                     width={16}
                     height={16}
+                    style={{ height: 'auto' }}
                 />
                 Daniel Oyerinde →
             </a>

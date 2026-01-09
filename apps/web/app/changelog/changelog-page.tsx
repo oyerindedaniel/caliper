@@ -7,9 +7,9 @@ import { Footer } from "../footer";
 
 export default function ChangelogPage() {
     return (
-        <div className={styles.page}>
+        <div className={styles.page} data-caliper-ignore>
             <main className={styles.main}>
-                <div style={{ marginBottom: '32px' }} data-caliper-ignore>
+                <div style={{ marginBottom: '32px' }}>
                     <Link href="/" style={{
                         color: 'var(--gray-rgb)',
                         textDecoration: 'none',
@@ -28,11 +28,11 @@ export default function ChangelogPage() {
 
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px' }}>
                     <Image
-                        className="imgDark"
                         src="/caliper_logo.svg"
                         alt="Caliper logo"
-                        width={171.5}
+                        width={172}
                         height={50}
+                        style={{ height: 'auto' }}
                         priority
                         unoptimized
                     />
@@ -87,7 +87,7 @@ export default function ChangelogPage() {
                         - <strong>Two-Entry Distribution</strong>: Separate <code>index.js</code> for module-based usage and <code>index.global.js</code> for self-mounting script tags.
                     </li>
                     <li className={styles.instructionItem}>
-                        - <strong>Next.js Integration</strong>: Support for Next.js Script component with data-attribute configuration.
+                        - <strong>Universal Integration</strong>: Zero-config support for Next.js, Vite, or any HTML page via script tag.
                     </li>
                 </ul>
 

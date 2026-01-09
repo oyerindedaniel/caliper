@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, createMemo, For, Show } from "solid-js";
 import { type MeasurementLine, type LiveGeometry, getLivePoint, clampPointToGeometry } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
@@ -62,29 +62,27 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
       <g clip-path={hasClipping() ? `url(#${clipPathId})` : undefined}>
         <For each={props.lines}>
           {(line, index) => {
-            const startRaw = () => getLivePoint(
-              line.start,
-              line.startSync,
-              line,
-              props.data.primary.delta,
-              props.data.secondary.delta,
-              props.viewport.scrollX,
-              props.viewport.scrollY
-            );
+            const lineData = createMemo(() => {
 
-            const endRaw = () => getLivePoint(
-              line.end,
-              line.endSync,
-              line,
-              props.data.primary.delta,
-              props.data.secondary.delta,
-              props.viewport.scrollX,
-              props.viewport.scrollY
-            );
+              const sRaw = getLivePoint(
+                line.start,
+                line.startSync,
+                line,
+                props.data.primary.delta,
+                props.data.secondary.delta,
+                props.viewport.scrollX,
+                props.viewport.scrollY
+              );
 
-            const getFinalCoords = () => {
-              const sRaw = startRaw();
-              const eRaw = endRaw();
+              const eRaw = getLivePoint(
+                line.end,
+                line.endSync,
+                line,
+                props.data.primary.delta,
+                props.data.secondary.delta,
+                props.viewport.scrollX,
+                props.viewport.scrollY
+              );
 
               let start = sRaw;
               let end = eRaw;
@@ -104,8 +102,17 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
                 else start.y = end.y;
               }
 
-              return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
-            };
+              let liveValue = 0;
+              if (line.type === "top" || line.type === "bottom") {
+                liveValue = Math.abs(start.y - end.y);
+              } else if (line.type === "left" || line.type === "right") {
+                liveValue = Math.abs(start.x - end.x);
+              } else {
+                liveValue = Math.sqrt(Math.pow(start.x - end.x, 2) + Math.pow(start.y - end.y, 2));
+              }
+
+              return { x1: start.x, y1: start.y, x2: end.x, y2: end.y, liveValue };
+            });
 
             const isHovered = () => hoveredLine() === index();
 
@@ -113,33 +120,27 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
               <g
                 onMouseEnter={() => setHoveredLine(index())}
                 onMouseLeave={() => setHoveredLine(null)}
-                onClick={() => {
-                  const { x1, y1, x2, y2 } = getFinalCoords();
-                  let liveValue = 0;
-                  if (line.type === "top" || line.type === "bottom") {
-                    liveValue = Math.abs(y1 - y2);
-                  } else if (line.type === "left" || line.type === "right") {
-                    liveValue = Math.abs(x1 - x2);
-                  } else {
-                    liveValue = Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
-                  }
-                  props.onLineClick?.(line, liveValue);
+                data-caliper-ignore
+                onClick={(e: MouseEvent) => {
+                  e.stopPropagation();
+                  const data = lineData();
+                  props.onLineClick?.(line, data.liveValue);
                 }}
                 style={{ 'pointer-events': 'auto', cursor: 'pointer' }}
               >
                 <line
                   class={`${PREFIX}line-hit-target`}
-                  x1={getFinalCoords().x1}
-                  y1={getFinalCoords().y1}
-                  x2={getFinalCoords().x2}
-                  y2={getFinalCoords().y2}
+                  x1={lineData().x1}
+                  y1={lineData().y1}
+                  x2={lineData().x2}
+                  y2={lineData().y2}
                 />
                 <line
                   class={`${PREFIX}line ${PREFIX}line-clickable`}
-                  x1={getFinalCoords().x1}
-                  y1={getFinalCoords().y1}
-                  x2={getFinalCoords().x2}
-                  y2={getFinalCoords().y2}
+                  x1={lineData().x1}
+                  y1={lineData().y1}
+                  x2={lineData().x2}
+                  y2={lineData().y2}
                   stroke-width={isHovered() ? 2 : 1}
                 />
               </g>

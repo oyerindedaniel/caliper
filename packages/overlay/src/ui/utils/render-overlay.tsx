@@ -95,24 +95,23 @@ export function Overlay(props: OverlayProps) {
         isFrozen={props.isFrozen()}
         viewport={props.viewport()}
       />
-      <Show when={((props.isAltPressed() || props.isFrozen()) && resultData()) ? { res: props.result()!, data: resultData()! } : null}>
-        {(sync) => (
-          <Portal mount={document.body}>
-            <div class={`${PREFIX}overlay`}>
-              <MeasurementLinesWithCalculator
-                lines={sync().res.lines}
-                data={sync().data}
-                viewport={props.viewport()}
-                onLineClick={props.onLineClick}
-              />
-              <MeasurementLabels
-                lines={sync().res.lines}
-                data={sync().data}
-                viewport={props.viewport()}
-              />
-            </div>
-          </Portal>
-        )}
+      <Show when={(props.isAltPressed() || props.isFrozen()) && resultData()}>
+        <Portal mount={document.body}>
+          <div class={`${PREFIX}overlay`}>
+            <MeasurementLinesWithCalculator
+              lines={props.result()!.lines}
+              data={resultData()!}
+              viewport={props.viewport()}
+              onLineClick={props.onLineClick}
+            />
+            <MeasurementLabels
+              lines={props.result()!.lines}
+              data={resultData()!}
+              viewport={props.viewport()}
+              onLineClick={props.onLineClick}
+            />
+          </div>
+        </Portal>
       </Show>
       <Show when={
         props.calculatorState &&

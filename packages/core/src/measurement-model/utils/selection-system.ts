@@ -21,6 +21,7 @@ export interface SelectionSystem {
   getMetadata: () => SelectionMetadata;
   clear: () => void;
   onUpdate: (callback: (metadata: SelectionMetadata) => void) => () => void;
+  updateRect: (rect: DOMRect) => void;
 }
 
 export function createSelectionSystem(): SelectionSystem {
@@ -102,6 +103,19 @@ export function createSelectionSystem(): SelectionSystem {
     };
   }
 
+  function updateRect(rect: DOMRect) {
+    if (!selectedElement) return;
+    selectedRect = new DOMRect(
+      rect.left + window.scrollX,
+      rect.top + window.scrollY,
+      rect.width,
+      rect.height
+    );
+    initialWindowX = window.scrollX;
+    initialWindowY = window.scrollY;
+    notifyListeners();
+  }
+
   return {
     select,
     getSelected,
@@ -109,5 +123,6 @@ export function createSelectionSystem(): SelectionSystem {
     getMetadata,
     clear,
     onUpdate,
+    updateRect,
   };
 }

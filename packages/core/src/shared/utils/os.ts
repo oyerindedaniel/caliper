@@ -1,23 +1,48 @@
 const IS_BROWSER = typeof window !== "undefined";
 
-const getPlatform = () => {
-    if (!IS_BROWSER) return "";
+type OS = "macos" | "ios" | "windows" | "android" | "linux" | "other";
 
-    // Modern approach (User-Agent Client Hints API)
-    // @ts-ignore - userAgentData is not in all lib.dom.d.ts versions yet
-    if (navigator.userAgentData?.platform) {
-        // @ts-ignore
-        return navigator.userAgentData.platform;
+function detectOS(): OS {
+    if (!IS_BROWSER) return "other";
+
+    // @ts-ignore
+    const platform = navigator.userAgentData?.platform;
+    if (platform) {
+        switch (platform) {
+            case "macOS":
+                return "macos";
+            case "iOS":
+                return "ios";
+            case "Windows":
+                return "windows";
+            case "Android":
+                return "android";
+            case "Linux":
+                return "linux";
+        }
     }
 
-    // Fallback approach (userAgent scanning is more reliable than deprecated .platform)
-    return navigator.userAgent;
-};
+    const ua = navigator.userAgent;
 
-const IS_MAC = IS_BROWSER && /Mac|iPod|iPhone|iPad/.test(getPlatform());
+    if (/iPhone|iPad|iPod/.test(ua)) return "ios";
+    if (/Macintosh/.test(ua)) return "macos";
+    if (/Windows/.test(ua)) return "windows";
+    if (/Android/.test(ua)) return "android";
+    if (/Linux/.test(ua)) return "linux";
+
+    return "other";
+}
+
+const OS_NAME = detectOS();
+const IS_APPLE = OS_NAME === "macos" || OS_NAME === "ios";
 
 export const OS = {
     IS_BROWSER,
-    IS_MAC,
-    getControlKey: () => (IS_MAC ? "Meta" : "Control"),
+    NAME: OS_NAME,
+
+    IS_MAC: OS_NAME === "macos",
+    IS_IOS: OS_NAME === "ios",
+    IS_APPLE,
+
+    getControlKey: () => (IS_APPLE ? "Meta" : "Control"),
 };

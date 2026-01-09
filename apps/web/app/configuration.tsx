@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import styles from "./page.module.css";
 import { useOS } from "./hooks/use-os";
+import { CodeBlock } from "./components/code-block";
 
 type ConfigSection = "overview" | "theme" | "commands" | "animation";
 
@@ -66,7 +65,7 @@ export function Configuration() {
     };
 
     return (
-        <>
+        <section className={styles.section}>
             <h2 className={styles.sectionHeader}>
                 Configuration
             </h2>
@@ -74,56 +73,30 @@ export function Configuration() {
                 <button
                     className={`${styles.tab} ${section === "overview" ? styles.activeTab : ""}`}
                     onClick={() => setSection("overview")}
-                    style={{ width: "auto" }}
                 >
                     Overview
                 </button>
                 <button
                     className={`${styles.tab} ${section === "theme" ? styles.activeTab : ""}`}
                     onClick={() => setSection("theme")}
-                    style={{ width: "auto" }}
                 >
                     Theme
                 </button>
                 <button
                     className={`${styles.tab} ${section === "commands" ? styles.activeTab : ""}`}
                     onClick={() => setSection("commands")}
-                    style={{ width: "auto" }}
                 >
                     Commands
                 </button>
                 <button
                     className={`${styles.tab} ${section === "animation" ? styles.activeTab : ""}`}
                     onClick={() => setSection("animation")}
-                    style={{ width: "auto" }}
                 >
                     Animation
                 </button>
             </div>
 
-            <div className={styles.codeBlock}>
-                <SyntaxHighlighter
-                    language="typescript"
-                    style={vscDarkPlus}
-                    useInlineStyles={true}
-                    codeTagProps={{
-                        style: {
-                            background: "none",
-                            padding: 0,
-                        },
-                    }}
-                    customStyle={{
-                        margin: 0,
-                        borderRadius: "0 0 8px 8px",
-                        fontSize: "13px",
-                        fontFamily: "var(--font-geist-mono)",
-                        background: "transparent",
-                        padding: "20px",
-                    }}
-                >
-                    {getCode()}
-                </SyntaxHighlighter>
-            </div>
-        </>
+            <CodeBlock code={getCode()} language="typescript" />
+        </section>
     );
 }

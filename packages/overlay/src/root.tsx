@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, createEffect } from "solid-js";
+import { onMount, onCleanup, createSignal, createEffect, untrack } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
@@ -22,6 +22,7 @@ import {
   type ProjectionDirection,
   type RulerSystem,
   type RulerState,
+  RESIZE_THROTTLE_MS,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -70,6 +71,9 @@ export function Root(config: RootConfig) {
   const [isFrozen, setIsFrozen] = createSignal(false);
 
   let viewportRafId: number | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+  let observedPrimary: Element | null = null;
+  let observedSecondary: Element | null = null;
 
   const syncViewport = () => {
     setViewport((prev) => ({
@@ -107,9 +111,18 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      const currentResult = system.getCurrentResult();
-      setResult(currentResult);
-      setIsFrozen(system.getState() === "FROZEN");
+      const newState = system.getState();
+      const wasFrozen = isFrozen();
+      const nowFrozen = newState === "FROZEN";
+
+      if (wasFrozen !== nowFrozen) {
+        setIsFrozen(nowFrozen);
+      }
+
+      if (!nowFrozen || !wasFrozen) {
+        const currentResult = system.getCurrentResult();
+        setResult(currentResult);
+      }
     });
 
     // Initial sync
@@ -170,6 +183,7 @@ export function Root(config: RootConfig) {
       lastPointerPos = { x: e.clientX, y: e.clientY };
 
       if (isCommandActive(e)) {
+        e.preventDefault();
         pointerDownTime = Date.now();
         if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
         selectionTimeoutId = window.setTimeout(() => {
@@ -193,12 +207,20 @@ export function Root(config: RootConfig) {
       if (target.closest(`[data-caliper-ignore]`) || target.closest(`.${PREFIX}projection-input`)) {
         if (target.closest(`.${PREFIX}projection-input`)) {
           setActiveInputFocus("projection");
+        } else if (target.closest(`.${PREFIX}calculator`)) {
+          setActiveInputFocus("calculator");
         }
         pointerDownTime = 0;
         return;
       }
 
       pointerDownTime = 0;
+    };
+
+    const handleContextMenu = (e: MouseEvent) => {
+      if (isCommandActive(e)) {
+        e.preventDefault();
+      }
     };
 
     let lastMouseEvent: MouseEvent | null = null;
@@ -384,6 +406,8 @@ export function Root(config: RootConfig) {
         if (dir && selectionMetadata().element) {
           e.preventDefault();
           e.stopImmediatePropagation();
+          setActiveInputFocus("projection");
+
           const currentElement = selectionMetadata().element;
           if (currentElement) {
             projectionSystem?.setElement(currentElement as HTMLElement);
@@ -417,7 +441,7 @@ export function Root(config: RootConfig) {
         // 3. Handle Projection Value Inputs (Numeric/Backspace)
         // Only if Projection is active and has focus priority (or calculator is closed).
         if (isProjActive) {
-          const isNumeric = /^\d$/.test(key);
+          const isNumeric = /^[0-9.]$/.test(key);
           const isBackspace = e.key === "Backspace";
           const hasPriority = activeInputFocus() === "projection" || !isCalcActive;
 
@@ -498,19 +522,21 @@ export function Root(config: RootConfig) {
       }
     };
 
-    window.addEventListener("pointerdown", handlePointerDown, true);
-    window.addEventListener("pointerup", handlePointerUp, true);
+    window.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    window.addEventListener("pointerup", handlePointerUp, { capture: true });
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("keyup", handleKeyUp, true);
+    window.addEventListener("keydown", handleKeyDown, { capture: true });
+    window.addEventListener("keyup", handleKeyUp, { capture: true });
+    window.addEventListener("contextmenu", handleContextMenu, { capture: true });
     window.addEventListener("blur", handleBlur);
 
     onCleanup(() => {
-      window.removeEventListener("pointerdown", handlePointerDown, true);
-      window.removeEventListener("pointerup", handlePointerUp, true);
+      window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      window.removeEventListener("pointerup", handlePointerUp, { capture: true });
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("keyup", handleKeyUp, true);
+      window.removeEventListener("keydown", handleKeyDown, { capture: true });
+      window.removeEventListener("keyup", handleKeyUp, { capture: true });
+      window.removeEventListener("contextmenu", handleContextMenu, { capture: true });
       window.removeEventListener("blur", handleBlur);
 
       if (mouseMoveRafId) {
@@ -542,13 +568,13 @@ export function Root(config: RootConfig) {
 
     if (active) {
       window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
-      window.addEventListener("resize", scheduleUpdate, { passive: true });
+      window.addEventListener("resize", scheduleUpdate, { passive: true, capture: true });
       syncViewport();
     }
 
     onCleanup(() => {
       window.removeEventListener("scroll", scheduleUpdate, { capture: true });
-      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("resize", scheduleUpdate, { capture: true });
 
       if (viewportRafId) {
         cancelAnimationFrame(viewportRafId);
@@ -557,31 +583,129 @@ export function Root(config: RootConfig) {
     });
   });
 
+
+  const updateResizeObservations = (primaryEl: Element | null, secondaryEl: Element | null) => {
+    if (!resizeObserver) return;
+
+    if (observedPrimary && observedPrimary !== primaryEl) {
+      resizeObserver.unobserve(observedPrimary);
+      observedPrimary = null;
+    }
+    if (observedSecondary && observedSecondary !== secondaryEl && observedSecondary !== primaryEl) {
+      resizeObserver.unobserve(observedSecondary);
+      observedSecondary = null;
+    }
+
+    if (primaryEl && primaryEl !== observedPrimary) {
+      resizeObserver.observe(primaryEl);
+      observedPrimary = primaryEl;
+    }
+    if (secondaryEl && secondaryEl !== primaryEl && secondaryEl !== observedSecondary) {
+      resizeObserver.observe(secondaryEl);
+      observedSecondary = secondaryEl;
+    }
+  };
+
+  createEffect(() => {
+    let resizeTimer: number | null = null;
+    let lastRun = 0;
+    let pendingPrimaryRect: DOMRect | null = null;
+    let pendingSecondaryRect: DOMRect | null = null;
+
+    const runUpdates = () => {
+      lastRun = Date.now();
+      resizeTimer = null;
+      if (pendingPrimaryRect && selectionSystem) {
+        selectionSystem.updateRect(pendingPrimaryRect);
+        if (system) system.updatePrimaryRect(pendingPrimaryRect);
+        pendingPrimaryRect = null;
+      }
+      if (pendingSecondaryRect && system) {
+        system.updateSecondaryRect(pendingSecondaryRect);
+        pendingSecondaryRect = null;
+      }
+      scheduleUpdate();
+    };
+
+    resizeObserver = new ResizeObserver((entries: ResizeObserverEntry[]) => {
+      for (const entry of entries) {
+        const rect = entry.target.getBoundingClientRect();
+        if (entry.target === observedPrimary) {
+          pendingPrimaryRect = rect;
+        } else if (entry.target === observedSecondary) {
+          pendingSecondaryRect = rect;
+        }
+      }
+
+      const now = Date.now();
+      const remaining = RESIZE_THROTTLE_MS - (now - lastRun);
+
+      if (remaining <= 0) {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        requestAnimationFrame(runUpdates);
+      } else if (!resizeTimer) {
+        resizeTimer = window.setTimeout(() => requestAnimationFrame(runUpdates), remaining);
+      }
+    });
+
+    onCleanup(() => {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      observedPrimary = null;
+      observedSecondary = null;
+      if (resizeTimer) clearTimeout(resizeTimer);
+    });
+  });
+
+  createEffect(() => {
+    const primaryEl = selectionMetadata().element;
+    const currentResult = result();
+    const secondaryEl = currentResult?.secondaryElement ?? null;
+
+    if (!primaryEl && !secondaryEl) {
+      updateResizeObservations(null, null);
+      return;
+    }
+
+    updateResizeObservations(primaryEl, secondaryEl);
+  });
+
   createEffect(() => {
     const calcLine = activeCalculatorLine();
     const currentResult = result();
 
     if (calcLine && currentResult && system) {
-      viewport().version;
+      const state = untrack(() => calculatorState());
 
-      const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
-      if (matchingLine) {
-        const liveValue = getLiveLineValue(matchingLine, currentResult);
-        const calc = system.getCalculator();
-        calc.syncValue(liveValue);
-        setCalculatorState(calc.getState());
+      if (state?.isActive) {
+        viewport().version;
+
+        const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
+        if (matchingLine) {
+          const liveValue = getLiveLineValue(matchingLine, currentResult);
+          const calc = system.getCalculator();
+          calc.syncValue(liveValue);
+          setCalculatorState(calc.getState());
+        }
       }
     }
   });
 
   const handleLineClick = (line: MeasurementLine, liveValue: number) => {
     if (system) {
+      setActiveCalculatorLine(null);
+
       const calc = system.getCalculator();
       calc.open(liveValue);
       setActiveInputFocus("calculator");
       const calcState = calc.getState();
       setCalculatorState(calcState.isActive ? calcState : null);
-      setActiveCalculatorLine(line);
+
+      // Only track the line if it's a measurement line (has startSync property)
+      // Projection/ruler lines are synthetic and shouldn't be tracked for live sync
+      if ("startSync" in line) {
+        setActiveCalculatorLine(line);
+      }
     }
   };
 

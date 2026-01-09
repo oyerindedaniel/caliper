@@ -22,6 +22,7 @@ export function Calculator(props: CalculatorProps) {
     <Show when={props.state.isActive}>
       <div
         class={`${PREFIX}calculator ${props.isFocused ? `${PREFIX}calculator-focused` : ""}`}
+        data-caliper-ignore
         style={{
           top: "0",
           left: "0",

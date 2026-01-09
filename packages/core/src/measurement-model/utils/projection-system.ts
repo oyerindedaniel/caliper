@@ -39,10 +39,14 @@ export function createProjectionSystem(): ProjectionSystem {
             notify();
         },
         appendValue: (char, max) => {
-            // Only allow digits
-            if (/^\d$/.test(char)) {
+            if (/^[0-9.]$/.test(char)) {
+                const isDot = char === ".";
+                const alreadyHasDot = state.value.includes(".");
+
+                if (isDot && alreadyHasDot) return;
+
                 const newValueStr = state.value + char;
-                const newValueNum = parseInt(newValueStr) || 0;
+                const newValueNum = parseFloat(newValueStr) || 0;
 
                 if (max !== undefined && newValueNum > max) {
                     state.value = Math.floor(max).toString();
@@ -53,7 +57,7 @@ export function createProjectionSystem(): ProjectionSystem {
             }
         },
         capValue: (max) => {
-            const currentVal = parseInt(state.value) || 0;
+            const currentVal = parseFloat(state.value) || 0;
             if (currentVal > max) {
                 state.value = Math.floor(max).toString();
                 notify();

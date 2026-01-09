@@ -80,10 +80,24 @@ export function createCalculatorState(): {
 
       case "INPUT_DIGIT":
         if (!state.isActive || !state.operation) return state;
-        state = {
-          ...state,
-          inputValue: state.inputValue === "0" ? action.digit : state.inputValue + action.digit,
-        };
+
+        const isDot = action.digit === ".";
+        const alreadyHasDot = (state.inputValue || "").includes(".");
+
+        if (isDot && alreadyHasDot) return state;
+
+        if (state.result !== null) {
+          state = {
+            ...state,
+            inputValue: isDot ? "0." : action.digit,
+            result: null,
+          };
+        } else {
+          state = {
+            ...state,
+            inputValue: state.inputValue === "0" && !isDot ? action.digit : state.inputValue + action.digit,
+          };
+        }
         break;
 
       case "INPUT_OPERATION":

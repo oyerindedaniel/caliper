@@ -1,20 +1,48 @@
 import { useState, useEffect } from "react";
 
+type OS = "mac" | "ios" | "windows" | "other";
+
 export function useOS() {
-    const [isMac, setIsMac] = useState(false);
+    const [os, setOS] = useState<OS>("other");
 
     useEffect(() => {
-        const platform =
-            // @ts-ignore
-            navigator.userAgentData?.platform ||
-            navigator.userAgent;
+        if (typeof window === "undefined") return;
 
-        setIsMac(/Mac|iPod|iPhone|iPad/.test(platform));
+        // @ts-ignore
+        const platform = navigator.userAgentData?.platform;
+
+        if (platform === "macOS") {
+            setOS("mac");
+            return;
+        }
+
+        if (platform === "iOS") {
+            setOS("ios");
+            return;
+        }
+
+        if (platform === "Windows") {
+            setOS("windows");
+            return;
+        }
+
+        const ua = navigator.userAgent;
+
+        if (/iPhone|iPad|iPod/.test(ua)) {
+            setOS("ios");
+        } else if (/Macintosh/.test(ua)) {
+            setOS("mac");
+        } else if (/Windows/.test(ua)) {
+            setOS("windows");
+        }
     }, []);
 
+    const isApple = os === "mac" || os === "ios";
+
     return {
-        isMac,
-        getControlKey: () => (isMac ? "⌘" : "Ctrl"),
-        getSelectKey: () => (isMac ? "Command" : "Control"),
+        os,
+        getControlKey: () => (isApple ? "⌘" : "Ctrl"),
+        getSelectKey: () => (isApple ? "Command" : "Control"),
+        getAltKey: () => (isApple ? "Option" : "Alt"),
     };
 }

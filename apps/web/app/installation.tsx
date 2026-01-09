@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import styles from "./page.module.css";
+import { CodeBlock } from "./components/code-block";
 
 type Framework = "next" | "vite" | "astro" | "nuxt" | "vue" | "tanstack";
 
@@ -110,7 +109,7 @@ export function Root() {
   };
 
   return (
-    <>
+    <section className={styles.section}>
       <h2 className={styles.sectionHeader}>
         Installation
       </h2>
@@ -118,71 +117,42 @@ export function Root() {
         <button
           className={`${styles.tab} ${framework === "next" ? styles.activeTab : ""}`}
           onClick={() => setFramework("next")}
-          style={{ width: "auto" }}
         >
           Next.js
         </button>
         <button
           className={`${styles.tab} ${framework === "vite" ? styles.activeTab : ""}`}
           onClick={() => setFramework("vite")}
-          style={{ width: "auto" }}
         >
           Vite / HTML
         </button>
         <button
           className={`${styles.tab} ${framework === "astro" ? styles.activeTab : ""}`}
           onClick={() => setFramework("astro")}
-          style={{ width: "auto" }}
         >
           Astro
         </button>
         <button
           className={`${styles.tab} ${framework === "nuxt" ? styles.activeTab : ""}`}
           onClick={() => setFramework("nuxt")}
-          style={{ width: "auto" }}
         >
           Nuxt
         </button>
         <button
           className={`${styles.tab} ${framework === "vue" ? styles.activeTab : ""}`}
           onClick={() => setFramework("vue")}
-          style={{ width: "auto" }}
         >
           Vue
         </button>
         <button
           className={`${styles.tab} ${framework === "tanstack" ? styles.activeTab : ""}`}
           onClick={() => setFramework("tanstack")}
-          style={{ width: "auto" }}
         >
           TanStack Start
         </button>
       </div>
 
-      <div className={styles.codeBlock}>
-        <SyntaxHighlighter
-          language="tsx"
-          style={vscDarkPlus}
-          useInlineStyles={true}
-          codeTagProps={{
-            style: {
-              background: "none",
-              padding: 0,
-            },
-          }}
-          customStyle={{
-            margin: 0,
-            borderRadius: "0 0 8px 8px",
-            fontSize: "13px",
-            fontFamily: "var(--font-geist-mono)",
-            background: "transparent",
-            padding: "20px",
-            overflowX: "auto"
-          }}
-        >
-          {getCode()}
-        </SyntaxHighlighter>
-      </div>
-    </>
+      <CodeBlock code={getCode()} language="tsx" />
+    </section>
   );
 }

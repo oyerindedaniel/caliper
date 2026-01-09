@@ -110,8 +110,10 @@ function ProjectionLines(props: {
         }
 
         const actualValue = Math.round(Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2));
+        const labelWidthGuess = String(actualValue).length * 8 + 12; // Estimation: 8px per digit + 12px padding
+        const showLabel = actualValue >= labelWidthGuess * 2;
 
-        return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen };
+        return { x1, y1, x2, y2, labelX, labelY, actualValue, isHidden: live.isHidden || isOffScreen, showLabel };
     });
 
     const [isHovered, setIsHovered] = createSignal(false);
@@ -131,16 +133,16 @@ function ProjectionLines(props: {
 
     return (
         <Show when={lineData() && !lineData()?.isHidden}>
-            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 1000000, "pointer-events": "none" }}>
+            <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 1000000 }}>
                 <line
                     x1={lineData()!.x1}
                     y1={lineData()!.y1}
                     x2={lineData()!.x2}
                     y2={lineData()!.y2}
                     class={`${PREFIX}line-hit-target`}
+                    data-caliper-ignore
                     stroke="transparent"
                     stroke-width="15"
-                    style={{ "pointer-events": "auto", cursor: "pointer" }}
                     onClick={handleLineClick}
                     onMouseEnter={() => setIsHovered(true)}
                     onMouseLeave={() => setIsHovered(false)}
@@ -154,19 +156,20 @@ function ProjectionLines(props: {
                     stroke-width={isHovered() ? 2 : 1}
                 />
             </svg>
-            <div
-                class={`${PREFIX}label ${PREFIX}projection-label`}
-                style={{
-                    top: 0,
-                    left: 0,
-                    transform: `translate3d(${lineData()!.labelX}px, ${lineData()!.labelY}px, 0) translate(-50%, -50%)`,
-                    "pointer-events": "auto",
-                    cursor: "pointer"
-                }}
-                onClick={handleLineClick}
-            >
-                {lineData()!.actualValue}px
-            </div>
+            <Show when={lineData()!.showLabel}>
+                <div
+                    class={`${PREFIX}label ${PREFIX}projection-label`}
+                    data-caliper-ignore
+                    style={{
+                        top: 0,
+                        left: 0,
+                        transform: `translate3d(${lineData()!.labelX}px, ${lineData()!.labelY}px, 0) translate(-50%, -50%)`,
+                    }}
+                    onClick={handleLineClick}
+                >
+                    {lineData()!.actualValue}
+                </div>
+            </Show>
         </Show>
     );
 }
@@ -215,6 +218,7 @@ function ProjectionInput(props: {
     return (
         <div
             class={`${PREFIX}projection-input ${props.isFocused ? `${PREFIX}projection-input-focused` : ""}`}
+            data-caliper-ignore
             style={style()}
         >
             <span class={`${PREFIX}projection-direction-tag`}>
