@@ -66,7 +66,7 @@ export default defineNuxtConfig({
 <script type="module">
   // In Vue 3 + Vite, you can import directly in index.html
   // and use import.meta.env.DEV to guard it.
-  import { init } from "https://unpkg.com/@aspect/caliper/dist/index.js";
+  import { init } from "https://unpkg.com/@oyerinde/caliper/dist/index.js";
   
   if (import.meta.env.DEV) {
     init();
