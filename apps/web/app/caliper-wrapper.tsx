@@ -2,28 +2,21 @@
 
 import { useEffect } from "react";
 import { init } from "@oyerinde/caliper";
+import { useConfig } from "./config-context";
 
 export function CaliperWrapper() {
-    useEffect(() => {
-        const caliper = init({
-            theme: {
-                primary: "#ff00ff",
-                secondary: "#00ffff",
-            },
-            commands: {
-                activate: "Alt",
-                calculator: {
-                    top: "u",
-                }
-            }
-        });
+    const { getCaliperConfig } = useConfig();
+    const config = getCaliperConfig();
+    const configHash = JSON.stringify(config);
 
-        console.log("Caliper initialized from package", caliper);
+    useEffect(() => {
+        const caliper = init(config);
 
         return () => {
             caliper.dispose();
         };
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [configHash]);
 
     return null;
 }

@@ -2,31 +2,34 @@ import styles from "./page.module.css";
 import { useFocus } from "./context";
 import { useOS } from "./hooks/use-os";
 
+import { useConfig, type CommandConfig } from "./config-context";
+
 interface CommandItem {
     key: string;
     command: string;
-    configId?: string;
+    configId?: keyof CommandConfig;
 }
 
 export function CommandTable() {
     const { focusInput } = useFocus();
     const { getControlKey } = useOS();
+    const { commands: config } = useConfig();
 
     const commands: CommandItem[] = [
-        { key: "Activate", command: "Alt", configId: "activate" },
-        { key: "Freeze/Unfreeze", command: "Space", configId: "freeze" },
+        { key: "Activate", command: config.activate, configId: "activate" },
+        { key: "Freeze/Unfreeze", command: config.freeze === " " ? "Space" : config.freeze, configId: "freeze" },
         { key: "Select Element", command: `${getControlKey()} + Hold + Click`, configId: "select" },
-        { key: "Clear Selection", command: "Escape", configId: "clear" },
-        { key: "Calculator: Top", command: "t", configId: "calcTop" },
-        { key: "Calculator: Right", command: "r", configId: "calcRight" },
-        { key: "Calculator: Bottom", command: "b", configId: "calcBottom" },
-        { key: "Calculator: Left", command: "l", configId: "calcLeft" },
-        { key: "Calculator: Distance", command: "d", configId: "calcDist" },
-        { key: "Projection: Top", command: "w", configId: "projTop" },
-        { key: "Projection: Left", command: "a", configId: "projLeft" },
-        { key: "Projection: Bottom", command: "s", configId: "projBottom" },
-        { key: "Projection: Right", command: "d", configId: "projRight" },
-        { key: "Viewport Ruler", command: "Shift + r", configId: "ruler" },
+        { key: "Clear Selection", command: config.clear, configId: "clear" },
+        { key: "Calculator: Top", command: config.calcTop, configId: "calcTop" },
+        { key: "Calculator: Right", command: config.calcRight, configId: "calcRight" },
+        { key: "Calculator: Bottom", command: config.calcBottom, configId: "calcBottom" },
+        { key: "Calculator: Left", command: config.calcLeft, configId: "calcLeft" },
+        { key: "Calculator: Distance", command: config.calcDist, configId: "calcDist" },
+        { key: "Projection: Top", command: config.projTop, configId: "projTop" },
+        { key: "Projection: Left", command: config.projLeft, configId: "projLeft" },
+        { key: "Projection: Bottom", command: config.projBottom, configId: "projBottom" },
+        { key: "Projection: Right", command: config.projRight, configId: "projRight" },
+        { key: "Viewport Ruler", command: `Shift + ${config.ruler.replace("Shift + ", "")}`, configId: "ruler" },
         { key: "Chain Rulers", command: "Shift + Click" },
         { key: "Nudge Ruler", command: "Arrow Keys" },
     ];
