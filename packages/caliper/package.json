@@ -63,7 +63,8 @@
     "check-types": "tsc --noEmit",
     "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\"",
     "pack:prod": "pnpm run build && pnpm pack",
-    "pkg:release": "pnpm run build && pnpm publish --access public"
+    "pkg:release": "pnpm run build && pnpm publish --access public",
+    "release": "pnpm publish --access public"
   },
   "keywords": [
     "caliper",
