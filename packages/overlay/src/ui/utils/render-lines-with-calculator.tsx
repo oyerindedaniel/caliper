@@ -1,5 +1,10 @@
 import { createSignal, createMemo, For, Show } from "solid-js";
-import { type MeasurementLine, type LiveGeometry, getLivePoint, clampPointToGeometry } from "@caliper/core";
+import {
+  type MeasurementLine,
+  type LiveGeometry,
+  getLivePoint,
+  clampPointToGeometry,
+} from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface SyncData {
@@ -32,7 +37,9 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
   const [hoveredLine, setHoveredLine] = createSignal<number | null>(null);
 
   const hasClipping = () => isFinite(props.data.common.minX);
-  const clipPathId = createSignal(`caliper-lines-clip-${Math.random().toString(36).substring(2, 9)}`)[0]();
+  const clipPathId = createSignal(
+    `caliper-lines-clip-${Math.random().toString(36).substring(2, 9)}`
+  )[0]();
 
   const vCommon = () => ({
     minX: props.data.common.minX - props.viewport.scrollX,
@@ -42,10 +49,7 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
   });
 
   return (
-    <svg
-      class={`${PREFIX}viewport-fixed`}
-      style={{ 'z-index': 999999 }}
-    >
+    <svg class={`${PREFIX}viewport-fixed`} style={{ "z-index": 999999 }}>
       <Show when={hasClipping()}>
         <defs>
           <clipPath id={clipPathId}>
@@ -63,7 +67,6 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
         <For each={props.lines}>
           {(line, index) => {
             const lineData = createMemo(() => {
-
               const sRaw = getLivePoint(
                 line.start,
                 line.startSync,
@@ -88,8 +91,18 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
               let end = eRaw;
 
               if (!props.data.isSameContext) {
-                start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
-                const eRawClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+                start = clampPointToGeometry(
+                  sRaw,
+                  line.startSync === "secondary"
+                    ? props.data.secondary.geo
+                    : props.data.primary.geo,
+                  props.viewport
+                );
+                const eRawClamped = clampPointToGeometry(
+                  eRaw,
+                  line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo,
+                  props.viewport
+                );
                 end = { ...eRawClamped };
               }
 
@@ -126,7 +139,7 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
                   const data = lineData();
                   props.onLineClick?.(line, data.liveValue);
                 }}
-                style={{ 'pointer-events': 'auto', cursor: 'pointer' }}
+                style={{ "pointer-events": "auto", cursor: "pointer" }}
               >
                 <line
                   class={`${PREFIX}line-hit-target`}

@@ -21,7 +21,6 @@ export function createStateMachine(): StateMachine {
   }
 
   function transitionTo(newState: MeasurementState): boolean {
-
     const validTransitions: Record<MeasurementState, MeasurementState[]> = {
       IDLE: ["ARMED", "FROZEN"],
       ARMED: ["MEASURING", "FROZEN", "IDLE"],
@@ -63,4 +62,3 @@ export function createStateMachine(): StateMachine {
     isFrozen,
   };
 }
-

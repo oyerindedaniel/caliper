@@ -6,7 +6,7 @@ import { getConfig } from "@caliper/core";
  * This file handles automatic setup for global script tag users.
  */
 if (typeof window !== "undefined") {
-    const windowConfig = getConfig();
+  const windowConfig = getConfig();
 
-    createOverlay(windowConfig);
+  createOverlay(windowConfig);
 }

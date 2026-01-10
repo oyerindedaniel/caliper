@@ -99,20 +99,24 @@ export function Root() {
 
   const getCode = () => {
     switch (framework) {
-      case "next": return nextCode;
-      case "astro": return astroCode;
-      case "nuxt": return nuxtCode;
-      case "vue": return vueCode;
-      case "tanstack": return tanstackCode;
-      default: return viteCode;
+      case "next":
+        return nextCode;
+      case "astro":
+        return astroCode;
+      case "nuxt":
+        return nuxtCode;
+      case "vue":
+        return vueCode;
+      case "tanstack":
+        return tanstackCode;
+      default:
+        return viteCode;
     }
   };
 
   return (
     <section className={styles.section}>
-      <h2 className={styles.sectionHeader}>
-        Installation
-      </h2>
+      <h2 className={styles.sectionHeader}>Installation</h2>
       <div className={styles.tabs} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
         <button
           className={`${styles.tab} ${framework === "next" ? styles.activeTab : ""}`}

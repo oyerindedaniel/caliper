@@ -1,5 +1,10 @@
 import { For, Show, createMemo } from "solid-js";
-import { type MeasurementLine, type LiveGeometry, getLivePoint, clampPointToGeometry } from "@caliper/core";
+import {
+  type MeasurementLine,
+  type LiveGeometry,
+  getLivePoint,
+  clampPointToGeometry,
+} from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface SyncData {
@@ -32,7 +37,7 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
   const margin = 16;
 
   return (
-    <div class={`${PREFIX}viewport-fixed`} style={{ 'z-index': 1000000 }}>
+    <div class={`${PREFIX}viewport-fixed`} style={{ "z-index": 1000000 }}>
       <For each={props.lines}>
         {(line) => {
           const position = createMemo(() => {
@@ -74,8 +79,16 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
             let end = eRaw;
 
             if (!props.data.isSameContext) {
-              start = clampPointToGeometry(sRaw, line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
-              const eClamped = clampPointToGeometry(eRaw, line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo, props.viewport);
+              start = clampPointToGeometry(
+                sRaw,
+                line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo,
+                props.viewport
+              );
+              const eClamped = clampPointToGeometry(
+                eRaw,
+                line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo,
+                props.viewport
+              );
               end = { ...eClamped };
             }
 
@@ -99,22 +112,26 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
             const common = props.data.common;
             const hasCommon = isFinite(common.minX);
 
-            const cMinX = hasCommon ? Math.max(vpMinX, common.minX - props.viewport.scrollX) : vpMinX;
-            const cMaxX = hasCommon ? Math.min(vpMaxX, common.maxX - props.viewport.scrollX) : vpMaxX;
-            const cMinY = hasCommon ? Math.max(vpMinY, common.minY - props.viewport.scrollY) : vpMinY;
-            const cMaxY = hasCommon ? Math.min(vpMaxY, common.maxY - props.viewport.scrollY) : vpMaxY;
+            const cMinX = hasCommon
+              ? Math.max(vpMinX, common.minX - props.viewport.scrollX)
+              : vpMinX;
+            const cMaxX = hasCommon
+              ? Math.min(vpMaxX, common.maxX - props.viewport.scrollX)
+              : vpMaxX;
+            const cMinY = hasCommon
+              ? Math.max(vpMinY, common.minY - props.viewport.scrollY)
+              : vpMinY;
+            const cMaxY = hasCommon
+              ? Math.min(vpMaxY, common.maxY - props.viewport.scrollY)
+              : vpMaxY;
 
             const lineMinX = Math.min(start.x, end.x);
             const lineMaxX = Math.max(start.x, end.x);
             const lineMinY = Math.min(start.y, end.y);
             const lineMaxY = Math.max(start.y, end.y);
 
-            const isFullyHidden = (
-              lineMaxY < cMinY ||
-              lineMinY > cMaxY ||
-              lineMaxX < cMinX ||
-              lineMinX > cMaxX
-            );
+            const isFullyHidden =
+              lineMaxY < cMinY || lineMinY > cMaxY || lineMaxX < cMinX || lineMinX > cMaxX;
 
             if (isFullyHidden) return { x: 0, y: 0, isHidden: true, value: 0 };
 
@@ -129,10 +146,12 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
             let targetX = naturalX;
             let targetY = naturalY;
 
-            if (Math.abs(start.x - end.x) < 1) { // Vertical
+            if (Math.abs(start.x - end.x) < 1) {
+              // Vertical
               targetY = centerY;
               targetX = Math.max(cMinX + margin, Math.min(cMaxX - margin, targetX));
-            } else if (Math.abs(start.y - end.y) < 1) { // Horizontal
+            } else if (Math.abs(start.y - end.y) < 1) {
+              // Horizontal
               targetX = centerX;
               targetY = Math.max(cMinY + margin, Math.min(cMaxY - margin, targetY));
             } else {

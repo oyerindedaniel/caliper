@@ -6,14 +6,13 @@ import { isEligible } from "../../element-picking/utils/filter-visible.js";
  * HIT-TESTING CONTRACT
  * ============================================================================
  * Hit testing is paint-order based (via document.elementFromPoint).
- * 
+ *
  * To ensure correct behavior:
  * - Overlay and editor UI layers MUST be non-interactive
  *   (pointer-events: none) OR filtered via isEligible
  * - Use data-caliper-ignore attribute to exclude elements
  * ============================================================================
  */
-
 
 /**
  * Hysteresis configuration
@@ -34,10 +33,12 @@ function isCaliperNode(node: Node | null): boolean {
 export function getElementAtPoint(x: number, y: number): Element | null {
   const nodes = document.elementsFromPoint(x, y);
 
-  return nodes.find((node) => {
-    if (isCaliperNode(node)) return false;
-    return isEligible(node);
-  }) || null;
+  return (
+    nodes.find((node) => {
+      if (isCaliperNode(node)) return false;
+      return isEligible(node);
+    }) || null
+  );
 }
 
 /**
@@ -118,10 +119,11 @@ export function resolveAmbiguousContext(
     const distance = getDistanceToEdge(cursorX, cursorY, rect);
 
     if (distance <= HYSTERESIS_THRESHOLD) {
-      // Sibling/Child context is more specific than Parent. 
-      // If we are moving FROM a parent TO a sibling/child, we should switch 
+      // Sibling/Child context is more specific than Parent.
+      // If we are moving FROM a parent TO a sibling/child, we should switch
       // immediately regardless of hysteresis to feel responsive and avoid "sticky" parents.
-      const isSwitchingToSpecific = (winnerContext === "sibling" || winnerContext === "child") && previousContext === "parent";
+      const isSwitchingToSpecific =
+        (winnerContext === "sibling" || winnerContext === "child") && previousContext === "parent";
 
       if (!isSwitchingToSpecific) {
         return { context: previousContext, element: previousElement };
@@ -140,12 +142,6 @@ export function detectContext(
   cursorX: number,
   cursorY: number
 ): CursorContext {
-  const result = resolveAmbiguousContext(
-    selectedElement,
-    cursorX,
-    cursorY,
-    null,
-    null
-  );
+  const result = resolveAmbiguousContext(selectedElement, cursorX, cursorY, null, null);
   return result?.context ?? null;
 }

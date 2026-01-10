@@ -3,15 +3,8 @@ export {
   createFrequencyControlledReader,
   type FrequencyControlledReader,
 } from "./scheduling/frequency-control.js";
-export {
-  createSuppressionDelegate,
-  type SuppressionOptions,
-} from "./scheduling/suppression.js";
-export {
-  isVisible,
-  hasSize,
-  isEligible,
-} from "./element-picking/utils/filter-visible.js";
+export { createSuppressionDelegate, type SuppressionOptions } from "./scheduling/suppression.js";
+export { isVisible, hasSize, isEligible } from "./element-picking/utils/filter-visible.js";
 export {
   detectContext,
   resolveAmbiguousContext,
@@ -52,10 +45,7 @@ export {
   createProjectionSystem,
   type ProjectionSystem,
 } from "./measurement-model/utils/projection-system.js";
-export {
-  createRulerSystem,
-  type RulerSystem,
-} from "./ruler-model/utils/ruler-system.js";
+export { createRulerSystem, type RulerSystem } from "./ruler-model/utils/ruler-system.js";
 export type {
   CursorContext,
   SyncSource,

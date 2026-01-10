@@ -3,7 +3,7 @@ import {
   type ScrollState,
   type PositionMode,
   type StickyConfig,
-  getTotalScrollDelta
+  getTotalScrollDelta,
 } from "../../geometry/utils/scroll-aware.js";
 
 /**
@@ -75,10 +75,7 @@ export function createMeasurementLines(
 /**
  * Calculate distance between two elements using Top/Bottom faces
  */
-function calculateSiblingDistance(
-  primary: DOMRect,
-  sibling: DOMRect
-): MeasurementLine {
+function calculateSiblingDistance(primary: DOMRect, sibling: DOMRect): MeasurementLine {
   const overlapXStart = Math.max(primary.left, sibling.left);
   const overlapXEnd = Math.min(primary.right, sibling.right);
   const hasOverlapX = overlapXEnd > overlapXStart;
@@ -102,7 +99,7 @@ function calculateSiblingDistance(
       value: Math.min(distBtoT, distTtoB),
       start: { x: centerX, y: startY },
       end: { x: centerX, y: endY },
-      ...syncBase
+      ...syncBase,
     };
   }
 
@@ -119,7 +116,7 @@ function calculateSiblingDistance(
       value: Math.min(distRtoL, distLtoR),
       start: { x: startX, y: centerY },
       end: { x: endX, y: centerY },
-      ...syncBase
+      ...syncBase,
     };
   }
 
@@ -157,7 +154,7 @@ function calculateSiblingDistance(
     value: Math.sqrt(minD2),
     start: { x: pFace.x, y: pFace.y },
     end: { x: sFace.x, y: sFace.y },
-    ...syncBase
+    ...syncBase,
   };
 }
 
@@ -178,7 +175,7 @@ function calculatePaddingLines(
         start: { x: container.left, y: primary.top + primary.height / 2 },
         end: { x: primary.left, y: primary.top + primary.height / 2 },
         startSync: "secondary",
-        endSync: "primary"
+        endSync: "primary",
       },
       {
         type: "top",
@@ -186,7 +183,7 @@ function calculatePaddingLines(
         start: { x: primary.left + primary.width / 2, y: container.top },
         end: { x: primary.left + primary.width / 2, y: primary.top },
         startSync: "secondary",
-        endSync: "primary"
+        endSync: "primary",
       },
       {
         type: "right",
@@ -194,7 +191,7 @@ function calculatePaddingLines(
         start: { x: primary.right, y: primary.top + primary.height / 2 },
         end: { x: container.right, y: primary.top + primary.height / 2 },
         startSync: "primary",
-        endSync: "secondary"
+        endSync: "secondary",
       },
       {
         type: "bottom",
@@ -202,7 +199,7 @@ function calculatePaddingLines(
         start: { x: primary.left + primary.width / 2, y: primary.bottom },
         end: { x: primary.left + primary.width / 2, y: container.bottom },
         startSync: "primary",
-        endSync: "secondary"
+        endSync: "secondary",
       },
     ];
   } else {
@@ -214,7 +211,7 @@ function calculatePaddingLines(
         start: { x: primary.left, y: container.top + container.height / 2 },
         end: { x: container.left, y: container.top + container.height / 2 },
         startSync: "primary",
-        endSync: "secondary"
+        endSync: "secondary",
       },
       {
         type: "top",
@@ -222,7 +219,7 @@ function calculatePaddingLines(
         start: { x: container.left + container.width / 2, y: primary.top },
         end: { x: container.left + container.width / 2, y: container.top },
         startSync: "primary",
-        endSync: "secondary"
+        endSync: "secondary",
       },
       {
         type: "right",
@@ -230,7 +227,7 @@ function calculatePaddingLines(
         start: { x: container.right, y: container.top + container.height / 2 },
         end: { x: primary.right, y: container.top + container.height / 2 },
         startSync: "secondary",
-        endSync: "primary"
+        endSync: "primary",
       },
       {
         type: "bottom",
@@ -238,7 +235,7 @@ function calculatePaddingLines(
         start: { x: container.left + container.width / 2, y: container.bottom },
         end: { x: container.left + container.width / 2, y: primary.bottom },
         startSync: "secondary",
-        endSync: "primary"
+        endSync: "primary",
       },
     ];
   }
@@ -268,10 +265,7 @@ export function getLivePoint(
 /**
  * Pure math helper to calculate the live distance of a line.
  */
-export function getLiveLineValue(
-  line: MeasurementLine,
-  result: MeasurementResult | null
-): number {
+export function getLiveLineValue(line: MeasurementLine, result: MeasurementResult | null): number {
   if (!result) {
     return line.value;
   }
@@ -292,21 +286,9 @@ export function getLiveLineValue(
     result.secondaryWinY
   );
 
-  const startPoint = getLivePoint(
-    line.start,
-    line.startSync,
-    line,
-    primaryDelta,
-    secondaryDelta
-  );
+  const startPoint = getLivePoint(line.start, line.startSync, line, primaryDelta, secondaryDelta);
 
-  const endPoint = getLivePoint(
-    line.end,
-    line.endSync,
-    line,
-    primaryDelta,
-    secondaryDelta
-  );
+  const endPoint = getLivePoint(line.end, line.endSync, line, primaryDelta, secondaryDelta);
 
   const dx = Math.abs(startPoint.x - endPoint.x);
   const dy = Math.abs(startPoint.y - endPoint.y);
@@ -320,4 +302,3 @@ export function getLiveLineValue(
 
   return Math.sqrt(dx * dx + dy * dy);
 }
-

@@ -95,7 +95,8 @@ export function createCalculatorState(): {
         } else {
           state = {
             ...state,
-            inputValue: state.inputValue === "0" && !isDot ? action.digit : state.inputValue + action.digit,
+            inputValue:
+              state.inputValue === "0" && !isDot ? action.digit : state.inputValue + action.digit,
           };
         }
         break;
@@ -123,7 +124,7 @@ export function createCalculatorState(): {
             ...state,
             operation: action.operation,
             inputValue: "",
-            result: null
+            result: null,
           };
         }
         break;

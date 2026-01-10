@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import Script from "next/script";
+import { Analytics } from "@vercel/analytics/react";
 import { BASE_URL } from "./constants";
 import { LogoTrail } from "./logo-trail-canvas";
 import { CaliperWrapper } from "./caliper-wrapper";
@@ -63,7 +64,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport = {
-  width: 'device-width',
+  width: "device-width",
   initialScale: 1,
   maximumScale: 1,
 };
@@ -76,15 +77,18 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
-        {process.env.NODE_ENV === "development" && <Script
-          src="https://unpkg.com/react-scan/dist/auto.global.js"
-          strategy="beforeInteractive"
-        />}
+        {process.env.NODE_ENV === "development" && (
+          <Script
+            src="https://unpkg.com/react-scan/dist/auto.global.js"
+            strategy="beforeInteractive"
+          />
+        )}
         <ConfigProvider>
           <CaliperWrapper />
           <LogoTrail />
           {children}
         </ConfigProvider>
+        <Analytics />
       </body>
     </html>
   );

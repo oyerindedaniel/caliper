@@ -1,8 +1,8 @@
 import { SUPPRESSION_MAX_FRAMES, SUPPRESSION_DELAY } from "../shared/constants/index.js";
 
 export interface SuppressionOptions {
-    maxFrames?: number;
-    delay?: number;
+  maxFrames?: number;
+  delay?: number;
 }
 
 /**
@@ -11,41 +11,41 @@ export interface SuppressionOptions {
  * events jump between parent/child elements too quickly.
  */
 export function createSuppressionDelegate<T extends any[]>(
-    action: (...args: T) => void,
-    options: SuppressionOptions = {}
+  action: (...args: T) => void,
+  options: SuppressionOptions = {}
 ) {
-    const maxFrames = options.maxFrames ?? SUPPRESSION_MAX_FRAMES;
-    const delay = options.delay ?? SUPPRESSION_DELAY;
+  const maxFrames = options.maxFrames ?? SUPPRESSION_MAX_FRAMES;
+  const delay = options.delay ?? SUPPRESSION_DELAY;
 
-    let suppressionFrames = 0;
-    let trailingTimer: ReturnType<typeof setTimeout> | null = null;
+  let suppressionFrames = 0;
+  let trailingTimer: ReturnType<typeof setTimeout> | null = null;
 
-    return {
-        execute(shouldSuppress: boolean, ...args: T) {
-            if (trailingTimer) {
-                clearTimeout(trailingTimer);
-                trailingTimer = null;
-            }
+  return {
+    execute(shouldSuppress: boolean, ...args: T) {
+      if (trailingTimer) {
+        clearTimeout(trailingTimer);
+        trailingTimer = null;
+      }
 
-            if (shouldSuppress && suppressionFrames < maxFrames) {
-                suppressionFrames++;
-                trailingTimer = setTimeout(() => {
-                    suppressionFrames = 0;
-                    action(...args);
-                    trailingTimer = null;
-                }, delay);
-            } else {
-                suppressionFrames = 0;
-                action(...args);
-            }
-        },
+      if (shouldSuppress && suppressionFrames < maxFrames) {
+        suppressionFrames++;
+        trailingTimer = setTimeout(() => {
+          suppressionFrames = 0;
+          action(...args);
+          trailingTimer = null;
+        }, delay);
+      } else {
+        suppressionFrames = 0;
+        action(...args);
+      }
+    },
 
-        cancel() {
-            if (trailingTimer) {
-                clearTimeout(trailingTimer);
-                trailingTimer = null;
-            }
-            suppressionFrames = 0;
-        },
-    };
+    cancel() {
+      if (trailingTimer) {
+        clearTimeout(trailingTimer);
+        trailingTimer = null;
+      }
+      suppressionFrames = 0;
+    },
+  };
 }

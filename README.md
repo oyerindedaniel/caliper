@@ -16,7 +16,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 - **Selection System**: Lock elements for side-by-side comparison (Cmd/Ctrl + Click).
 - **Edge Projections**: Check alignment across the entire viewport using relative projections (W/A/S/D).
 - **Viewport Rulers**: Draggable guidelines with magnetic snapping and chained distance measurements (Shift + R).
-- **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/D).
+- **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/G).
 - **Full Customization**: Fully configurable shortcuts and theme colors.
 
 ---

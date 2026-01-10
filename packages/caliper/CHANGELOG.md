@@ -2,9 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.0] - 2026-01-08
+## [0.1.0] - 2026-01-10
 
 ### Added
+
 - **Core Measurement System**: High-precision boundary detection and distance calculation between DOM elements.
 - **Interactive Overlay**: Real-time measurement lines and labels with smooth animations.
 - **Selection System**: Ability to focus and lock elements for side-by-side comparison.

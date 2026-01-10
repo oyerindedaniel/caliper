@@ -20,25 +20,25 @@ const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 const version = packageJson.version || "0.0.0";
 
 const versionInfo = {
-    version: version,
-    timestamp: new Date().toISOString(),
+  version: version,
+  timestamp: new Date().toISOString(),
 };
 
 const distDir = join(packageDir, "dist");
 const webPublicDir = join(rootDir, "apps/web/public");
 
 try {
-    mkdirSync(distDir, { recursive: true });
-    writeFileSync(join(distDir, "version.json"), JSON.stringify(versionInfo, null, 2), "utf-8");
+  mkdirSync(distDir, { recursive: true });
+  writeFileSync(join(distDir, "version.json"), JSON.stringify(versionInfo, null, 2), "utf-8");
 
-    mkdirSync(webPublicDir, { recursive: true });
-    const versionFilePath = join(webPublicDir, "version.json");
-    writeFileSync(versionFilePath, JSON.stringify(versionInfo, null, 2), "utf-8");
+  mkdirSync(webPublicDir, { recursive: true });
+  const versionFilePath = join(webPublicDir, "version.json");
+  writeFileSync(versionFilePath, JSON.stringify(versionInfo, null, 2), "utf-8");
 
-    console.log(`✓ Version metadata synchronized:`);
-    console.log(`  Version: ${version}`);
-    console.log(`  Deployed to: ${versionFilePath}`);
+  console.log(`✓ Version metadata synchronized:`);
+  console.log(`  Version: ${version}`);
+  console.log(`  Deployed to: ${versionFilePath}`);
 } catch (error) {
-    console.error("Error writing version metadata:", error);
-    process.exit(1);
+  console.error("Error writing version metadata:", error);
+  process.exit(1);
 }

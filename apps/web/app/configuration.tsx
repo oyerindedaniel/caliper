@@ -6,16 +6,16 @@ import { CodeBlock } from "./components/code-block";
 type ConfigSection = "overview" | "theme" | "commands" | "animation";
 
 export function Configuration() {
-    const [section, setSection] = useState<ConfigSection>("overview");
-    const { getSelectKey } = useOS();
+  const [section, setSection] = useState<ConfigSection>("overview");
+  const { getSelectKey } = useOS();
 
-    const overviewCode = `export interface OverlayConfig {
+  const overviewCode = `export interface OverlayConfig {
   theme?: ThemeConfig;
   commands?: CommandsConfig;
   animation?: AnimationConfig;
 }`;
 
-    const themeCode = `export interface ThemeConfig {
+  const themeCode = `export interface ThemeConfig {
   primary?: string;         // Primary action color
   secondary?: string;       // Secondary highlight color
   calcBg?: string;          // Calculator background
@@ -26,7 +26,7 @@ export function Configuration() {
   ruler?: string;           // Viewport ruler color
 }`;
 
-    const commandsCode = `export interface CommandsConfig {
+  const commandsCode = `export interface CommandsConfig {
   activate?: string;   // Toggle measuring (default: Alt)
   freeze?: string;     // Freeze current lines (default: Space)
   select?: string;     // Deep select element (default: Hold + ${getSelectKey()})
@@ -50,53 +50,55 @@ export function Configuration() {
   };
 }`;
 
-    const animationCode = `export interface AnimationConfig {
+  const animationCode = `export interface AnimationConfig {
   enabled?: boolean;    // Toggle smooth lerp (default: true)
   lerpFactor?: number;  // Smoothness 0-1 (default: 0.25)
 }`;
 
-    const getCode = () => {
-        switch (section) {
-            case "theme": return themeCode;
-            case "commands": return commandsCode;
-            case "animation": return animationCode;
-            default: return overviewCode;
-        }
-    };
+  const getCode = () => {
+    switch (section) {
+      case "theme":
+        return themeCode;
+      case "commands":
+        return commandsCode;
+      case "animation":
+        return animationCode;
+      default:
+        return overviewCode;
+    }
+  };
 
-    return (
-        <section className={styles.section}>
-            <h2 className={styles.sectionHeader}>
-                Configuration
-            </h2>
-            <div className={styles.tabs} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                <button
-                    className={`${styles.tab} ${section === "overview" ? styles.activeTab : ""}`}
-                    onClick={() => setSection("overview")}
-                >
-                    Overview
-                </button>
-                <button
-                    className={`${styles.tab} ${section === "theme" ? styles.activeTab : ""}`}
-                    onClick={() => setSection("theme")}
-                >
-                    Theme
-                </button>
-                <button
-                    className={`${styles.tab} ${section === "commands" ? styles.activeTab : ""}`}
-                    onClick={() => setSection("commands")}
-                >
-                    Commands
-                </button>
-                <button
-                    className={`${styles.tab} ${section === "animation" ? styles.activeTab : ""}`}
-                    onClick={() => setSection("animation")}
-                >
-                    Animation
-                </button>
-            </div>
+  return (
+    <section className={styles.section}>
+      <h2 className={styles.sectionHeader}>Configuration</h2>
+      <div className={styles.tabs} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+        <button
+          className={`${styles.tab} ${section === "overview" ? styles.activeTab : ""}`}
+          onClick={() => setSection("overview")}
+        >
+          Overview
+        </button>
+        <button
+          className={`${styles.tab} ${section === "theme" ? styles.activeTab : ""}`}
+          onClick={() => setSection("theme")}
+        >
+          Theme
+        </button>
+        <button
+          className={`${styles.tab} ${section === "commands" ? styles.activeTab : ""}`}
+          onClick={() => setSection("commands")}
+        >
+          Commands
+        </button>
+        <button
+          className={`${styles.tab} ${section === "animation" ? styles.activeTab : ""}`}
+          onClick={() => setSection("animation")}
+        >
+          Animation
+        </button>
+      </div>
 
-            <CodeBlock code={getCode()} language="typescript" />
-        </section>
-    );
+      <CodeBlock code={getCode()} language="typescript" />
+    </section>
+  );
 }

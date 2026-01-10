@@ -1,12 +1,7 @@
 import type { CursorContext } from "../../shared/types/index.js";
 import { resolveAmbiguousContext } from "../../cursor-context/utils/priority-rules.js";
-import {
-  createMeasurementLines,
-  type MeasurementResult,
-} from "./measurement-result.js";
-import {
-  deduceGeometry,
-} from "../../geometry/utils/scroll-aware.js";
+import { createMeasurementLines, type MeasurementResult } from "./measurement-result.js";
+import { deduceGeometry } from "../../geometry/utils/scroll-aware.js";
 
 /**
  * Create a measurement result from element and cursor position
@@ -18,7 +13,6 @@ export function createMeasurement(
   previousContext: CursorContext | null = null,
   previousElement: Element | null = null
 ): { element: Element; result: MeasurementResult } | null {
-
   const result = resolveAmbiguousContext(
     selectedElement,
     cursorX,
@@ -41,11 +35,7 @@ export function createMeasurement(
   const primary = primaryGeom.rect;
   const secondary = secondaryGeom.rect;
 
-  const lines = createMeasurementLines(
-    context,
-    primary,
-    secondary
-  );
+  const lines = createMeasurementLines(context, primary, secondary);
 
   return {
     element: secondaryElement,

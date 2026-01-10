@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
-    "format": "prettier --write .",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "@radix-ui/react-popover": "^1.1.15",
     "@repo/ui": "workspace:*",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "@vercel/analytics": "^1.6.1",
     "next": "16.1.0",
     "react": "^19.2.0",
     "react-colorful": "^5.6.1",
@@ -32,12 +33,5 @@
     "eslint": "^9.39.1",
     "prettier": "^3.7.4",
     "typescript": "5.9.3"
-  },
-  "prettier": {
-    "semi": true,
-    "singleQuote": false,
-    "tabWidth": 2,
-    "trailingComma": "es5",
-    "printWidth": 100
   }
 }

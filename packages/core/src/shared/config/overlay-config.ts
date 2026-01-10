@@ -60,8 +60,6 @@ export interface CommandsConfig {
   selectionHoldDuration?: number;
 }
 
-
-
 export interface AnimationConfig {
   /** Enable smooth lerp animation for boundary box hover (default: true) */
   enabled?: boolean;
@@ -85,7 +83,7 @@ export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
     right: "r",
     bottom: "b",
     left: "l",
-    distance: "d",
+    distance: "g",
   },
   projection: {
     top: "w",

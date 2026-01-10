@@ -3,10 +3,7 @@
  * Supports: +, -, *, /, parentheses
  * Example: "24px + 8px" -> 32
  */
-export function calculate(
-  expression: string,
-  baseValue: number
-): number | null {
+export function calculate(expression: string, baseValue: number): number | null {
   try {
     // Remove "px" units and whitespace
     const cleaned = expression.replace(/px/gi, "").replace(/\s/g, "");

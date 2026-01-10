@@ -55,10 +55,18 @@ export function Root(config: RootConfig) {
   });
 
   const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
-  const [projectionState, setProjectionState] = createSignal<ProjectionState>({ direction: null, value: "", element: null });
-  const [activeCalculatorLine, setActiveCalculatorLine] = createSignal<MeasurementLine | null>(null);
+  const [projectionState, setProjectionState] = createSignal<ProjectionState>({
+    direction: null,
+    value: "",
+    element: null,
+  });
+  const [activeCalculatorLine, setActiveCalculatorLine] = createSignal<MeasurementLine | null>(
+    null
+  );
   const [isSelectKeyDown, setIsSelectKeyDown] = createSignal(false);
-  const [activeInputFocus, setActiveInputFocus] = createSignal<"calculator" | "projection">("calculator");
+  const [activeInputFocus, setActiveInputFocus] = createSignal<"calculator" | "projection">(
+    "calculator"
+  );
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
@@ -107,22 +115,9 @@ export function Root(config: RootConfig) {
     });
 
     const unsubscribe = system.onStateChange(() => {
-      if (!system) {
-        return;
-      }
-
-      const newState = system.getState();
-      const wasFrozen = isFrozen();
-      const nowFrozen = newState === "FROZEN";
-
-      if (wasFrozen !== nowFrozen) {
-        setIsFrozen(nowFrozen);
-      }
-
-      if (!nowFrozen || !wasFrozen) {
-        const currentResult = system.getCurrentResult();
-        setResult(currentResult);
-      }
+      if (!system) return;
+      setResult(system.getCurrentResult());
+      setIsFrozen(system.getState() === "FROZEN");
     });
 
     // Initial sync
@@ -133,7 +128,6 @@ export function Root(config: RootConfig) {
       setSelectionMetadata(metadata);
     });
 
-    let pointerDownTime = 0;
     let selectionTimeoutId: number | null = null;
     let lastPointerPos = { x: 0, y: 0 };
 
@@ -184,14 +178,13 @@ export function Root(config: RootConfig) {
 
       if (isCommandActive(e)) {
         e.preventDefault();
-        pointerDownTime = Date.now();
         if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
         selectionTimeoutId = window.setTimeout(() => {
           performSelection(lastPointerPos.x, lastPointerPos.y);
           selectionTimeoutId = null;
         }, commands.selectionHoldDuration);
       } else {
-        pointerDownTime = 0;
+        if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
       }
     };
 
@@ -209,11 +202,7 @@ export function Root(config: RootConfig) {
         } else if (target.closest(`.${PREFIX}calculator`)) {
           setActiveInputFocus("calculator");
         }
-        pointerDownTime = 0;
-        return;
       }
-
-      pointerDownTime = 0;
     };
 
     const handleContextMenu = (e: MouseEvent) => {
@@ -363,7 +352,8 @@ export function Root(config: RootConfig) {
 
         // 1. Handle Active Calculator Inputs (Numbers, Operators, etc)
         // High priority if focused OR if projection is not even active
-        const shouldCalcGetNumbers = isCalcActive && (activeInputFocus() === "calculator" || !isProjActive);
+        const shouldCalcGetNumbers =
+          isCalcActive && (activeInputFocus() === "calculator" || !isProjActive);
 
         if (isCalcActive && (shouldCalcGetNumbers || !/^\d$/.test(e.key))) {
           const isNumeric = /^[0-9]$/.test(e.key);
@@ -374,7 +364,15 @@ export function Root(config: RootConfig) {
           const isEnter = e.key === "Enter";
           const isEscape = e.key === "Escape";
 
-          if (isNumeric || isOperator || isDecimal || isBackspace || isDelete || isEnter || isEscape) {
+          if (
+            isNumeric ||
+            isOperator ||
+            isDecimal ||
+            isBackspace ||
+            isDelete ||
+            isEnter ||
+            isEscape
+          ) {
             // Only eat numbers if we have priority
             if ((isNumeric || isBackspace || isDecimal) && !shouldCalcGetNumbers) {
               // fall through to projection
@@ -393,7 +391,6 @@ export function Root(config: RootConfig) {
         }
 
         // 2. Handle Projection Directions (WASD)
-        // These keys take precedence over Measurement line triggers (like 'd' for distance).
         const dirMap: Record<string, ProjectionDirection> = {
           [projection.top]: "top",
           [projection.left]: "left",
@@ -413,7 +410,6 @@ export function Root(config: RootConfig) {
           }
           projectionSystem?.setDirection(dir);
 
-          // Lock the measurement when we start projecting
           if (system) {
             system.freeze();
           }
@@ -450,7 +446,14 @@ export function Root(config: RootConfig) {
             const currentDir = projectionState().direction;
             if (isNumeric && currentDir) {
               const metadata = selectionMetadata();
-              const live = getLiveGeometry(metadata.rect, metadata.scrollHierarchy, metadata.position, metadata.stickyConfig, metadata.initialWindowX, metadata.initialWindowY);
+              const live = getLiveGeometry(
+                metadata.rect,
+                metadata.scrollHierarchy,
+                metadata.position,
+                metadata.stickyConfig,
+                metadata.initialWindowX,
+                metadata.initialWindowY
+              );
 
               let max: number | undefined;
               if (live) {
@@ -567,21 +570,18 @@ export function Root(config: RootConfig) {
 
     if (active) {
       window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
-      window.addEventListener("resize", scheduleUpdate, { passive: true, capture: true });
       syncViewport();
+
+      onCleanup(() => {
+        window.removeEventListener("scroll", scheduleUpdate, { capture: true });
+
+        if (viewportRafId) {
+          cancelAnimationFrame(viewportRafId);
+          viewportRafId = null;
+        }
+      });
     }
-
-    onCleanup(() => {
-      window.removeEventListener("scroll", scheduleUpdate, { capture: true });
-      window.removeEventListener("resize", scheduleUpdate, { capture: true });
-
-      if (viewportRafId) {
-        cancelAnimationFrame(viewportRafId);
-        viewportRafId = null;
-      }
-    });
   });
-
 
   const updateResizeObservations = (primaryEl: Element | null, secondaryEl: Element | null) => {
     if (!resizeObserver) return;
@@ -612,32 +612,43 @@ export function Root(config: RootConfig) {
   createEffect(() => {
     let resizeTimer: number | null = null;
     let lastRun = 0;
-    let pendingPrimaryRect: DOMRect | null = null;
-    let pendingSecondaryRect: DOMRect | null = null;
+    let sentinelResized = false;
+    let primaryChanged = false;
+    let secondaryChanged = false;
 
     const runUpdates = () => {
-      lastRun = Date.now();
-      resizeTimer = null;
-      if (pendingPrimaryRect && selectionSystem) {
-        selectionSystem.updateRect(pendingPrimaryRect);
-        if (system) system.updatePrimaryRect(pendingPrimaryRect);
-        pendingPrimaryRect = null;
+      if (sentinelResized || primaryChanged) {
+        if (observedPrimary) {
+          const rect = observedPrimary.getBoundingClientRect();
+          selectionSystem?.updateRect(rect);
+          if (system) system.updatePrimaryRect(rect);
+        }
       }
-      if (pendingSecondaryRect && system) {
-        system.updateSecondaryRect(pendingSecondaryRect);
-        pendingSecondaryRect = null;
+      if (sentinelResized || secondaryChanged) {
+        if (observedSecondary) {
+          const rect = observedSecondary.getBoundingClientRect();
+          system?.updateSecondaryRect(rect);
+        }
       }
-      scheduleUpdate();
+
+      sentinelResized = false;
+      primaryChanged = false;
+      secondaryChanged = false;
     };
 
     resizeObserver = new ResizeObserver((entries: ResizeObserverEntry[]) => {
       for (const entry of entries) {
-        const rect = entry.target.getBoundingClientRect();
-        if (entry.target === observedPrimary) {
-          pendingPrimaryRect = rect;
+        if (entry.target === document.documentElement) {
+          sentinelResized = true;
+        } else if (entry.target === observedPrimary) {
+          primaryChanged = true;
         } else if (entry.target === observedSecondary) {
-          pendingSecondaryRect = rect;
+          secondaryChanged = true;
         }
+      }
+
+      if (sentinelResized) {
+        scheduleUpdate();
       }
 
       const now = Date.now();
@@ -645,11 +656,18 @@ export function Root(config: RootConfig) {
 
       if (remaining <= 0) {
         if (resizeTimer) clearTimeout(resizeTimer);
-        requestAnimationFrame(runUpdates);
+        lastRun = now;
+        runUpdates();
       } else if (!resizeTimer) {
-        resizeTimer = window.setTimeout(() => requestAnimationFrame(runUpdates), remaining);
+        resizeTimer = window.setTimeout(() => {
+          lastRun = Date.now();
+          resizeTimer = null;
+          runUpdates();
+        }, remaining);
       }
     });
+
+    resizeObserver.observe(document.documentElement);
 
     onCleanup(() => {
       resizeObserver?.disconnect();
@@ -663,7 +681,6 @@ export function Root(config: RootConfig) {
   createEffect(() => {
     const primaryEl = selectionMetadata().element;
     const currentResult = result();
-
     const secondaryEl = isFrozen() ? (currentResult?.secondaryElement ?? null) : null;
 
     if (!primaryEl && !secondaryEl) {
@@ -826,14 +843,21 @@ export function Root(config: RootConfig) {
   );
 }
 
-function getMaxProjectionDistance(dir: ProjectionDirection, live: { top: number; left: number; width: number; height: number }): number {
+function getMaxProjectionDistance(
+  dir: ProjectionDirection,
+  live: { top: number; left: number; width: number; height: number }
+): number {
   const docWidth = document.documentElement.scrollWidth;
   const docHeight = document.documentElement.scrollHeight;
 
   switch (dir) {
-    case "top": return live.top;
-    case "bottom": return docHeight - (live.top + live.height);
-    case "left": return live.left;
-    case "right": return docWidth - (live.left + live.width);
+    case "top":
+      return live.top;
+    case "bottom":
+      return docHeight - (live.top + live.height);
+    case "left":
+      return live.left;
+    case "right":
+      return docWidth - (live.left + live.width);
   }
 }

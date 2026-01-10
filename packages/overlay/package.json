@@ -12,6 +12,7 @@
   "scripts": {
     "build": "tsup",
     "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
@@ -19,6 +20,7 @@
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
     "eslint": "^9.39.1",
+    "prettier": "^3.7.4",
     "typescript": "5.9.3",
     "tsup": "^8.5.1",
     "babel-preset-solid": "^1.9.10",

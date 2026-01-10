@@ -1,17 +1,8 @@
 /**
  * Check if a point is inside a rectangle
  */
-export function pointInRect(
-  x: number,
-  y: number,
-  rect: DOMRect
-): boolean {
-  return (
-    x >= rect.left &&
-    x <= rect.right &&
-    y >= rect.top &&
-    y <= rect.bottom
-  );
+export function pointInRect(x: number, y: number, rect: DOMRect): boolean {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 }
 
 /**
@@ -41,10 +32,7 @@ export function rectContains(rect1: DOMRect, rect2: DOMRect): boolean {
 /**
  * Get the intersection rectangle of two rects
  */
-export function rectIntersection(
-  rect1: DOMRect,
-  rect2: DOMRect
-): DOMRect | null {
+export function rectIntersection(rect1: DOMRect, rect2: DOMRect): DOMRect | null {
   const left = Math.max(rect1.left, rect2.left);
   const top = Math.max(rect1.top, rect2.top);
   const right = Math.min(rect1.right, rect2.right);
@@ -56,4 +44,3 @@ export function rectIntersection(
 
   return new DOMRect(left, top, right - left, bottom - top);
 }
-

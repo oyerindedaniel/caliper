@@ -15,15 +15,11 @@ export function shortestDistance(rect1: DOMRect, rect2: DOMRect): number {
 
   // Calculate horizontal distance
   const horizontalDist =
-    rect1.right < rect2.left
-      ? rect2.left - rect1.right
-      : rect1.left - rect2.right;
+    rect1.right < rect2.left ? rect2.left - rect1.right : rect1.left - rect2.right;
 
   // Calculate vertical distance
   const verticalDist =
-    rect1.bottom < rect2.top
-      ? rect2.top - rect1.bottom
-      : rect1.top - rect2.bottom;
+    rect1.bottom < rect2.top ? rect2.top - rect1.bottom : rect1.top - rect2.bottom;
 
   // If rectangles are separated horizontally
   if (rect1.right < rect2.left || rect1.left > rect2.right) {
@@ -83,4 +79,3 @@ export function getShortestEdgeDistance(
 
   return { edge, distance: minDistance };
 }
-
