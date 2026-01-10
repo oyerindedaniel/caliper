@@ -135,8 +135,16 @@ function ProjectionLines(props: {
     const rawValue = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
     const actualValue = Number.isInteger(rawValue) ? rawValue : Math.round(rawValue * 100) / 100;
 
-    const labelWidthGuess = String(actualValue).length * 8 + 12; // Estimation: 8px per digit + 12px padding
-    const showLabel = rawValue >= labelWidthGuess * 2;
+    const displayValue = state.value || String(actualValue);
+    const labelWidthGuess = displayValue.length * 8 + 12;
+    const labelHeightGuess = 20;
+
+    const isHorizontal = state.direction === "left" || state.direction === "right";
+    const visibleLineLength = isHorizontal
+      ? Math.abs(visibleX1 - visibleX2)
+      : Math.abs(visibleY1 - visibleY2);
+    const labelSize = isHorizontal ? labelWidthGuess : labelHeightGuess;
+    const showLabel = visibleLineLength >= labelSize * 1.5;
 
     return {
       x1,

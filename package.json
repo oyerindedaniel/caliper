@@ -11,7 +11,8 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "test": "echo \"Tests coming soon\"",
     "version:write": "node scripts/write-version.mjs",
-    "build:caliper": "turbo run build --filter=@oyerinde/caliper..."
+    "bb": "turbo run build --filter=@oyerinde/caliper...",
+    "release": "pnpm bb && pnpm --filter @oyerinde/caliper run pkg:release"
   },
   "devDependencies": {
     "prettier": "^3.7.4",
