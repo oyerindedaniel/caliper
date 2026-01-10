@@ -6,24 +6,24 @@
  */
 
 export interface OverlayInstance {
-    mount: () => void;
-    dispose: () => void;
-    mounted: boolean;
+  mount: () => void;
+  dispose: () => void;
+  mounted: boolean;
 }
 
 export interface OverlayConfig {
-    theme?: Record<string, string>;
-    commands?: Record<string, unknown>;
-    animation?: Record<string, unknown>;
+  theme?: Record<string, string>;
+  commands?: Record<string, unknown>;
+  animation?: Record<string, unknown>;
 }
 
 const noopInstance: OverlayInstance = {
-    mount: () => { },
-    dispose: () => { },
-    mounted: false,
+  mount: () => {},
+  dispose: () => {},
+  mounted: false,
 };
 
 export const init = (): OverlayInstance => noopInstance;
-export const setConfig = (_config: OverlayConfig): void => { };
+export const setConfig = (_config: OverlayConfig): void => {};
 export const getConfig = (): OverlayConfig => ({});
 export const VERSION = "[SSR]";

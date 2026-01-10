@@ -9,35 +9,38 @@ import { Configurator } from "./configurator";
 import { Instructions } from "./instructions";
 import { TryCaliper } from "./try-caliper";
 import { Footer } from "./footer";
-import { FocusProvider } from "./context";
+import { FocusProvider } from "./focus-context";
 
 export default function HomePage() {
-    return (
-        <FocusProvider>
-            <div className={styles.page}>
-                <main className={styles.main}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        <Image
-                            src="/caliper_logo.svg"
-                            alt="Caliper logo"
-                            width={172}
-                            height={50}
-                            style={{ height: 'auto' }}
-                            priority
-                            unoptimized
-                        />
-                        <p>Essential tooling for detail-obsessed design engineers. High-precision browser measurements, projections, and layout auditing.</p>
-                    </div>
+  return (
+    <FocusProvider>
+      <div className={styles.page}>
+        <main className={styles.main}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <Image
+              src="/caliper_logo.svg"
+              alt="Caliper logo"
+              width={172}
+              height={50}
+              style={{ height: "auto" }}
+              priority
+              unoptimized
+            />
+            <p>
+              Essential tooling for detail-obsessed design engineers. High-precision browser
+              measurements, projections, and layout auditing.
+            </p>
+          </div>
 
-                    <Installation />
-                    <TryCaliper />
-                    <Configuration />
-                    <Instructions />
-                    <CommandTable />
-                    <Configurator />
-                </main>
-                <Footer />
-            </div>
-        </FocusProvider>
-    );
+          <Installation />
+          <TryCaliper />
+          <Configuration />
+          <Instructions />
+          <CommandTable />
+          <Configurator />
+        </main>
+        <Footer />
+      </div>
+    </FocusProvider>
+  );
 }

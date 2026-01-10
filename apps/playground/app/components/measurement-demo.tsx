@@ -19,8 +19,8 @@ export function MeasurementDemo() {
     >
       <h2 style={{ marginBottom: "20px" }}>Interactive Measurement Demo</h2>
       <p style={{ marginBottom: "30px", color: "#666" }}>
-        Hold ALT key and move your cursor to see measurements. Click to select
-        an element. Press SPACE to freeze measurements.
+        Hold ALT key and move your cursor to see measurements. Click to select an element. Press
+        SPACE to freeze measurements.
       </p>
 
       {/* Demo elements */}

@@ -8,10 +8,7 @@ import {
   getConfig,
   showVersionInfo,
 } from "@caliper/core";
-import {
-  injectStyles,
-  removeStyles,
-} from "./style-injector/utils/inject-styles.js";
+import { injectStyles, removeStyles } from "./style-injector/utils/inject-styles.js";
 
 const IS_BROWSER = typeof window !== "undefined";
 
@@ -31,13 +28,11 @@ declare global {
 
 let activeInstance: OverlayInstance | null = null;
 
-export function createOverlay(
-  config?: OverlayConfig,
-): OverlayInstance {
+export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => { },
-      dispose: () => { },
+      mount: () => {},
+      dispose: () => {},
       mounted: false,
     };
   }
@@ -96,10 +91,7 @@ export function createOverlay(
       overlayContainer.id = "caliper-overlay-root";
       target.appendChild(overlayContainer);
 
-      const disposeRender = render(
-        () => Root({ commands, animation }),
-        overlayContainer
-      );
+      const disposeRender = render(() => Root({ commands, animation }), overlayContainer);
 
       cleanup = () => {
         disposeRender();
@@ -118,7 +110,6 @@ export function createOverlay(
       }
     },
   };
-
 
   activeInstance = instance;
   window.__CALIPER__ = instance;

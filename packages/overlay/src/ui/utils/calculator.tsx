@@ -49,15 +49,12 @@ export function Calculator(props: CalculatorProps) {
         </Show>
 
         <Show when={props.state.inputValue || props.state.operation}>
-          <span class={`${PREFIX}calculator-input`}>
-            {props.state.inputValue || "0"}
-          </span>
+          <span class={`${PREFIX}calculator-input`}>{props.state.inputValue || "0"}</span>
         </Show>
 
         <Show when={props.state.result !== null}>
           <span class={`${PREFIX}calculator-result`}>
-            ={" "}
-            {props.state.result !== null ? formatValue(props.state.result) : ""}
+            = {props.state.result !== null ? formatValue(props.state.result) : ""}
           </span>
         </Show>
       </div>

@@ -1,101 +1,104 @@
 {
-    "name": "@oyerinde/caliper",
-    "version": "0.1.0",
-    "description": "High-precision browser measurements, projections, and layout auditing",
-    "type": "module",
-    "main": "dist/index.js",
-    "module": "dist/index.js",
-    "types": "dist/index.d.ts",
-    "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
-    "homepage": "https://github.com/oyerindedaniel/caliper#readme",
-    "repository": {
-        "type": "git",
-        "url": "git+https://github.com/oyerindedaniel/caliper.git",
-        "directory": "packages/caliper"
-    },
-    "bugs": {
-        "url": "https://github.com/oyerindedaniel/caliper/issues"
-    },
-    "exports": {
-        ".": {
-            "browser": {
-                "import": {
-                    "types": "./dist/index.d.ts",
-                    "default": "./dist/index.js"
-                },
-                "require": {
-                    "types": "./dist/index.d.cts",
-                    "default": "./dist/index.cjs"
-                }
-            },
-            "node": {
-                "import": "./dist/index.server.js",
-                "require": "./dist/index.server.cjs"
-            },
-            "default": {
-                "import": {
-                    "types": "./dist/index.d.ts",
-                    "default": "./dist/index.js"
-                },
-                "require": {
-                    "types": "./dist/index.d.cts",
-                    "default": "./dist/index.cjs"
-                }
-            }
+  "name": "@oyerinde/caliper",
+  "version": "0.1.0",
+  "description": "High-precision browser measurements, projections, and layout auditing",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
+  "homepage": "https://github.com/oyerindedaniel/caliper#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oyerindedaniel/caliper.git",
+    "directory": "packages/caliper"
+  },
+  "bugs": {
+    "url": "https://github.com/oyerindedaniel/caliper/issues"
+  },
+  "exports": {
+    ".": {
+      "browser": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
         },
-        "./iife": {
-            "types": "./dist/index.d.ts",
-            "default": "./dist/index.global.js"
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
         }
+      },
+      "node": {
+        "import": "./dist/index.server.js",
+        "require": "./dist/index.server.cjs"
+      },
+      "default": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      }
     },
-    "files": [
-        "dist",
-        "CHANGELOG.md",
-        "LICENSE",
-        "README.md"
-    ],
-    "scripts": {
-        "prebuild": "node scripts/write-version.mjs",
-        "build": "pnpm run clean && pnpm run prebuild && cross-env NODE_ENV=production tsup",
-        "build:watch": "tsup --watch",
-        "lint": "eslint . --max-warnings 0",
-        "check-types": "tsc --noEmit",
-        "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\"",
-        "pack:prod": "pnpm run build && pnpm pack",
-        "release": "pnpm publish --access public"
-    },
-    "keywords": [
-        "caliper",
-        "measurement",
-        "overlay",
-        "devtools",
-        "design-tool",
-        "pixel-perfect",
-        "react",
-        "vue",
-        "solid",
-        "svelte",
-        "nextjs",
-        "nuxt",
-        "astro",
-        "tanstack-start",
-        "browser-tools"
-    ],
-    "license": "MIT",
-    "devDependencies": {
-        "@babel/core": "^7.24.0",
-        "@babel/preset-typescript": "^7.28.5",
-        "@caliper/core": "workspace:*",
-        "@caliper/overlay": "workspace:*",
-        "@repo/eslint-config": "workspace:*",
-        "@repo/typescript-config": "workspace:*",
-        "@types/node": "^22.15.3",
-        "babel-preset-solid": "^1.9.10",
-        "cross-env": "^10.1.0",
-        "esbuild-plugin-babel": "^0.2.3",
-        "eslint": "^9.39.1",
-        "solid-js": "^1.9.10",
-        "tsup": "^8.5.1",
-        "typescript": "5.9.3"
+    "./iife": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.global.js"
     }
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/write-version.mjs",
+    "build": "pnpm run clean && pnpm run prebuild && cross-env NODE_ENV=production tsup",
+    "build:watch": "tsup --watch",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "check-types": "tsc --noEmit",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\"",
+    "pack:prod": "pnpm run build && pnpm pack",
+    "pkg:release": "pnpm run build && pnpm publish --access public",
+    "release": "pnpm publish --access public"
+  },
+  "keywords": [
+    "caliper",
+    "measurement",
+    "overlay",
+    "devtools",
+    "design-tool",
+    "pixel-perfect",
+    "react",
+    "vue",
+    "solid",
+    "svelte",
+    "nextjs",
+    "nuxt",
+    "astro",
+    "tanstack-start",
+    "browser-tools"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-typescript": "^7.28.5",
+    "@caliper/core": "workspace:*",
+    "@caliper/overlay": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "babel-preset-solid": "^1.9.10",
+    "cross-env": "^10.1.0",
+    "esbuild-plugin-babel": "^0.2.3",
+    "eslint": "^9.39.1",
+    "prettier": "^3.7.4",
+    "solid-js": "^1.9.10",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3"
+  }
 }

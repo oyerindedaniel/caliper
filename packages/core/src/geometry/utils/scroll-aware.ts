@@ -86,7 +86,6 @@ export function getScrollHierarchy(element: Element): ScrollState[] {
   return hierarchy;
 }
 
-
 /**
  * Internal logic for capped sticky position
  */
@@ -152,12 +151,12 @@ export function getTotalScrollDelta(
   initWinX = 0,
   initWinY = 0
 ) {
-  // It stays in viewport, so document coords must shift 
+  // It stays in viewport, so document coords must shift
   // opposite to the window to result in a stable viewport transform.
   if (position === "fixed") {
     return {
       deltaX: initWinX - window.scrollX,
-      deltaY: initWinY - window.scrollY
+      deltaY: initWinY - window.scrollY,
     };
   }
 
@@ -197,8 +196,22 @@ export function getTotalScrollDelta(
 
   // Handle Window Sticky (when hierarchy is empty)
   if (hierarchy.length === 0 && position === "sticky" && sticky) {
-    deltaX = calculateStickyDelta(window.scrollX, initWinX, sticky.naturalLeft, sticky.left, window.innerWidth, sticky.elementWidth);
-    deltaY = calculateStickyDelta(window.scrollY, initWinY, sticky.naturalTop, sticky.top, window.innerHeight, sticky.elementHeight);
+    deltaX = calculateStickyDelta(
+      window.scrollX,
+      initWinX,
+      sticky.naturalLeft,
+      sticky.left,
+      window.innerWidth,
+      sticky.elementWidth
+    );
+    deltaY = calculateStickyDelta(
+      window.scrollY,
+      initWinY,
+      sticky.naturalTop,
+      sticky.top,
+      window.innerHeight,
+      sticky.elementHeight
+    );
   }
 
   return { deltaX, deltaY };
@@ -299,7 +312,10 @@ export function getCommonVisibilityWindow(
     const clipB = clipT + s.element.clientHeight;
 
     if (minX === -Infinity) {
-      minX = clipL; maxX = clipR; minY = clipT; maxY = clipB;
+      minX = clipL;
+      maxX = clipR;
+      minY = clipT;
+      maxY = clipB;
     } else {
       minX = Math.max(minX, clipL);
       maxX = Math.min(maxX, clipR);
@@ -357,8 +373,10 @@ export function getLiveGeometry(
     const clipT = cLiveTop + s.element.clientTop;
 
     if (vMinX === -Infinity) {
-      vMinX = clipL; vMaxX = clipL + s.element.clientWidth;
-      vMinY = clipT; vMaxY = clipT + s.element.clientHeight;
+      vMinX = clipL;
+      vMaxX = clipL + s.element.clientWidth;
+      vMinY = clipT;
+      vMaxY = clipT + s.element.clientHeight;
     } else {
       vMinX = Math.max(vMinX, clipL);
       vMaxX = Math.min(vMaxX, clipL + s.element.clientWidth);
@@ -372,12 +390,9 @@ export function getLiveGeometry(
   const width = stableRect.width;
   const height = stableRect.height;
 
-  const isHidden = (vMinX !== -Infinity) && (
-    top + height < vMinY ||
-    top > vMaxY ||
-    left + width < vMinX ||
-    left > vMaxX
-  );
+  const isHidden =
+    vMinX !== -Infinity &&
+    (top + height < vMinY || top > vMaxY || left + width < vMinX || left > vMaxX);
 
   const t = Math.max(0, vMinY - top);
   const l = Math.max(0, vMinX - left);
@@ -389,12 +404,12 @@ export function getLiveGeometry(
     top,
     width,
     height,
-    clipPath: (vMinX === -Infinity) ? "none" : `inset(${t}px ${r}px ${b}px ${l}px)`,
+    clipPath: vMinX === -Infinity ? "none" : `inset(${t}px ${r}px ${b}px ${l}px)`,
     isHidden,
     visibleMinX: vMinX,
     visibleMaxX: vMaxX,
     visibleMinY: vMinY,
-    visibleMaxY: vMaxY
+    visibleMaxY: vMaxY,
   };
 }
 
@@ -407,7 +422,10 @@ function parseStickyOffset(val: string): number | null {
 /**
  * Finds effectively inherited positioning mode (fixed/sticky) from ancestors.
  */
-function getInheritedPositionMode(element: Element): { mode: PositionMode; anchor: HTMLElement | null } {
+function getInheritedPositionMode(element: Element): {
+  mode: PositionMode;
+  anchor: HTMLElement | null;
+} {
   let curr: Element | null = element;
   while (curr && curr !== document.body) {
     if (!(curr instanceof HTMLElement)) {
@@ -499,7 +517,7 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     position,
     stickyConfig,
     initialWindowX,
-    initialWindowY
+    initialWindowY,
   };
 }
 
@@ -515,8 +533,13 @@ export function clampPointToGeometry(
   if (!geo) return pt;
 
   return {
-    x: Math.max(geo.visibleMinX - viewport.scrollX, Math.min(pt.x, geo.visibleMaxX - viewport.scrollX)),
-    y: Math.max(geo.visibleMinY - viewport.scrollY, Math.min(pt.y, geo.visibleMaxY - viewport.scrollY)),
+    x: Math.max(
+      geo.visibleMinX - viewport.scrollX,
+      Math.min(pt.x, geo.visibleMaxX - viewport.scrollX)
+    ),
+    y: Math.max(
+      geo.visibleMinY - viewport.scrollY,
+      Math.min(pt.y, geo.visibleMaxY - viewport.scrollY)
+    ),
   };
 }
-

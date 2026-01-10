@@ -1,17 +1,12 @@
 import type { Reader } from "./reader.js";
-import {
-  MAX_FRAME_TIMES,
-  DEFAULT_READ_INTERVAL,
-} from "../shared/constants/index.js";
+import { MAX_FRAME_TIMES, DEFAULT_READ_INTERVAL } from "../shared/constants/index.js";
 
 export interface FrequencyControlledReader extends Reader {
   adaptToFrameRate: (fps: number) => void;
   recordFrameTime: (timestamp: number) => void;
 }
 
-export function createFrequencyControlledReader(
-  baseReader: Reader
-): FrequencyControlledReader {
+export function createFrequencyControlledReader(baseReader: Reader): FrequencyControlledReader {
   let lastReadTime = 0;
   let readInterval = DEFAULT_READ_INTERVAL;
   const frameTimes: number[] = [];

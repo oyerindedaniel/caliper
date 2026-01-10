@@ -1,4 +1,9 @@
-import { deduceGeometry, type ScrollState, type PositionMode, type StickyConfig } from "../../geometry/utils/scroll-aware.js";
+import {
+  deduceGeometry,
+  type ScrollState,
+  type PositionMode,
+  type StickyConfig,
+} from "../../geometry/utils/scroll-aware.js";
 
 /**
  * Selection system for tracking selected elements

@@ -15,10 +15,7 @@ export type { MeasurementState };
 type MeasurementSystemListener = () => void;
 
 export interface MeasurementSystem {
-  measure: (
-    selectedElement: Element,
-    cursor: { x: number; y: number }
-  ) => void;
+  measure: (selectedElement: Element, cursor: { x: number; y: number }) => void;
   abort: () => void;
   stop: () => void;
   freeze: () => void;
@@ -47,10 +44,7 @@ export function createMeasurementSystem(): MeasurementSystem {
     listeners.forEach((listener) => listener());
   }
 
-  function measure(
-    selectedElement: Element,
-    cursor: { x: number; y: number }
-  ): void {
+  function measure(selectedElement: Element, cursor: { x: number; y: number }): void {
     stateMachine.transitionTo("ARMED");
 
     reader.scheduleRead(() => {
@@ -106,8 +100,8 @@ export function createMeasurementSystem(): MeasurementSystem {
     reader.cancel();
     if (stateMachine.getState() === "MEASURING") {
       stateMachine.transitionTo("IDLE");
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   function cleanup() {

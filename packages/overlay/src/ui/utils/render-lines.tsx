@@ -19,15 +19,7 @@ export function MeasurementLines(props: MeasurementLinesProps) {
           const start = snapPoint(line.start);
           const end = snapPoint(line.end);
 
-          return (
-            <line
-              class={`${PREFIX}line`}
-              x1={start.x}
-              y1={start.y}
-              x2={end.x}
-              y2={end.y}
-            />
-          );
+          return <line class={`${PREFIX}line`} x1={start.x} y1={start.y} x2={end.x} y2={end.y} />;
         }}
       </For>
     </svg>

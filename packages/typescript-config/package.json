@@ -3,6 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "license": "MIT",
+  "scripts": {
+    "lint": "echo \"No files to lint\"",
+    "format": "prettier --write \"**/*.{json,md}\""
+  },
+  "devDependencies": {
+    "prettier": "^3.7.4"
+  },
   "publishConfig": {
     "access": "public"
   }

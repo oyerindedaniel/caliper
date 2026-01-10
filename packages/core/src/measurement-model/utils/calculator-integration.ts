@@ -79,9 +79,6 @@ export function createCalculatorIntegration(): CalculatorIntegration {
 /**
  * Open calculator from measurement line
  */
-export function openCalculatorFromLine(
-  calculator: CalculatorIntegration,
-  line: MeasurementLine
-) {
+export function openCalculatorFromLine(calculator: CalculatorIntegration, line: MeasurementLine) {
   calculator.open(line.value);
 }

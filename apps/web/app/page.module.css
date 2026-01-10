@@ -53,7 +53,7 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 24px;
+  gap: 28px;
   width: 100%;
 }
 
@@ -68,7 +68,6 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
@@ -94,7 +93,9 @@
   fill: transparent;
   stroke: #ffd700;
   stroke-width: 1.5px;
-  transition: fill 0.2s, transform 0.2s;
+  transition:
+    fill 0.2s,
+    transform 0.2s;
 }
 
 .githubLink:hover .starIcon {
@@ -309,7 +310,7 @@
   margin-bottom: 18px;
   text-transform: uppercase;
   font-weight: 700;
-  color: var(--caliper-primary, #18A0FB);
+  color: var(--caliper-primary, #18a0fb);
   opacity: 1;
   letter-spacing: 0.1em;
   display: flex;
@@ -407,11 +408,11 @@
 }
 
 .configAction {
-  margin-top: 24px;
+  margin-top: 32px;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
+  gap: 12px;
   width: 100%;
 }
 
@@ -427,7 +428,9 @@
   font-weight: 500;
   font-size: 14px;
   cursor: pointer;
-  transition: background 0.2s, opacity 0.2s;
+  transition:
+    background 0.2s,
+    opacity 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;

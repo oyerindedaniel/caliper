@@ -6,13 +6,13 @@
     "dev": "turbo run dev",
     "dev:playground": "turbo run dev --filter=playground",
     "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "format": "turbo run format",
     "check-types": "turbo run check-types",
     "clean": "turbo run clean && rm -rf node_modules",
     "test": "echo \"Tests coming soon\"",
-    "caliper:build": "turbo run build --filter=@aspect/caliper",
     "version:write": "node scripts/write-version.mjs",
-    "caliper:validate-web": "turbo run build --filter=@oyerinde/caliper... && pnpm --filter @oyerinde/caliper run pack:prod && turbo run build --filter=web"
+    "bb": "turbo run build --filter=@oyerinde/caliper...",
+    "release": "pnpm bb && pnpm --filter @oyerinde/caliper run release"
   },
   "devDependencies": {
     "prettier": "^3.7.4",

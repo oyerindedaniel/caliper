@@ -1,10 +1,6 @@
 import { Show, createMemo } from "solid-js";
 import { Portal } from "solid-js/web";
-import {
-  getLiveGeometry,
-  getTotalScrollDelta,
-  getCommonVisibilityWindow,
-} from "@caliper/core";
+import { getLiveGeometry, getTotalScrollDelta, getCommonVisibilityWindow } from "@caliper/core";
 import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.jsx";
 import { MeasurementLabels } from "./render-labels.jsx";
 import { Calculator } from "./calculator.jsx";
@@ -44,7 +40,7 @@ export function Overlay(props: OverlayProps) {
           res.primarySticky,
           res.primaryWinX,
           res.primaryWinY
-        )
+        ),
       },
       secondary: {
         geo: getLiveGeometry(
@@ -61,7 +57,7 @@ export function Overlay(props: OverlayProps) {
           res.secondarySticky,
           res.secondaryWinX,
           res.secondaryWinY
-        )
+        ),
       },
       common: getCommonVisibilityWindow(
         res.primaryHierarchy,
@@ -73,9 +69,11 @@ export function Overlay(props: OverlayProps) {
         (res.primaryPosition === res.secondaryPosition &&
           res.primaryHierarchy.length === res.secondaryHierarchy.length &&
           res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element)) ||
-        (res.primaryHierarchy.length > 0 && res.primaryHierarchy[0]?.element === res.secondaryElement) ||
-        (res.secondaryHierarchy.length > 0 && res.secondaryHierarchy[0]?.element === props.selectionMetadata().element)
-      )
+        (res.primaryHierarchy.length > 0 &&
+          res.primaryHierarchy[0]?.element === res.secondaryElement) ||
+        (res.secondaryHierarchy.length > 0 &&
+          res.secondaryHierarchy[0]?.element === props.selectionMetadata().element)
+      ),
     };
   });
 
@@ -112,24 +110,23 @@ export function Overlay(props: OverlayProps) {
           </div>
         </Portal>
       </Show>
-      <Show when={
-        props.calculatorState &&
-        props.calculatorState() !== null
-      }>
+      <Show when={props.calculatorState && props.calculatorState() !== null}>
         <Portal mount={document.body}>
           <Calculator
             state={props.calculatorState!()!}
-            onClose={props.onCalculatorClose || (() => { })}
+            onClose={props.onCalculatorClose || (() => {})}
             position={{ x: props.cursor().x, y: props.cursor().y }}
             isFocused={props.activeFocus?.() === "calculator"}
           />
         </Portal>
       </Show>
-      <Show when={
-        props.projectionState &&
-        props.projectionState()?.direction !== null &&
-        props.projectionState()?.element === props.selectionMetadata().element
-      }>
+      <Show
+        when={
+          props.projectionState &&
+          props.projectionState()?.direction !== null &&
+          props.projectionState()?.element === props.selectionMetadata().element
+        }
+      >
         <Portal mount={document.body}>
           <ProjectionOverlay
             projectionState={props.projectionState!}
@@ -148,8 +145,8 @@ export function Overlay(props: OverlayProps) {
             projectionState={props.projectionState}
             metadata={props.selectionMetadata}
             result={props.result}
-            onUpdate={props.onRulerUpdate || (() => { })}
-            onRemove={props.onRulerRemove || (() => { })}
+            onUpdate={props.onRulerUpdate || (() => {})}
+            onRemove={props.onRulerRemove || (() => {})}
             onLineClick={props.onLineClick}
           />
         </Portal>

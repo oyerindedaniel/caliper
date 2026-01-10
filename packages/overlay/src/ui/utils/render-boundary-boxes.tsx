@@ -43,11 +43,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   let lastElement: Element | null = null;
   let rafId: number | null = null;
 
-  const isRectSame = (
-    a: AnimatedRect | null,
-    b: AnimatedRect | null,
-    threshold = 0.1
-  ) => {
+  const isRectSame = (a: AnimatedRect | null, b: AnimatedRect | null, threshold = 0.1) => {
     if (!a || !b) return false;
     return (
       Math.abs(a.left - b.left) < threshold &&
@@ -76,7 +72,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
       left: next.left,
       top: next.top,
       width: next.width,
-      height: next.height
+      height: next.height,
     };
   };
 
@@ -112,7 +108,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
         liveSelectionTarget,
         liveSecondaryTarget,
         () => props.animation.lerpFactor,
-        () => props.metadata.element
+        () => props.metadata.element,
       ],
       ([selection, secondary, factor, element]) => {
         if (!selection) {
@@ -186,7 +182,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
                 width: `${current().width}px`,
                 height: `${current().height}px`,
                 transform: `translate3d(${current().left - props.viewport.scrollX}px, ${current().top - props.viewport.scrollY}px, 0)`,
-                "clip-path": current().clipPath
+                "clip-path": current().clipPath,
               }}
             />
           </Portal>
@@ -203,7 +199,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
                 width: `${current().width}px`,
                 height: `${current().height}px`,
                 transform: `translate3d(${current().left - props.viewport.scrollX}px, ${current().top - props.viewport.scrollY}px, 0)`,
-                "clip-path": current().clipPath
+                "clip-path": current().clipPath,
               }}
             />
           </Portal>

@@ -3,7 +3,7 @@ import type {
   ThemeConfig,
   AnimationConfig,
   CommandsConfig,
-  DeepRequired
+  DeepRequired,
 } from "./overlay-config.js";
 import { DEFAULT_COMMANDS, DEFAULT_ANIMATION } from "./overlay-config.js";
 
@@ -19,28 +19,18 @@ export function applyTheme(theme?: ThemeConfig) {
   const root = document.documentElement;
 
   if (theme.primary) root.style.setProperty("--caliper-primary", theme.primary);
-  if (theme.secondary)
-    root.style.setProperty("--caliper-secondary", theme.secondary);
+  if (theme.secondary) root.style.setProperty("--caliper-secondary", theme.secondary);
   if (theme.calcBg) root.style.setProperty("--caliper-calc-bg", theme.calcBg);
-  if (theme.calcShadow)
-    root.style.setProperty("--caliper-calc-shadow", theme.calcShadow);
+  if (theme.calcShadow) root.style.setProperty("--caliper-calc-shadow", theme.calcShadow);
   if (theme.calcOpHighlight)
-    root.style.setProperty(
-      "--caliper-calc-op-highlight",
-      theme.calcOpHighlight
-    );
-  if (theme.calcText)
-    root.style.setProperty("--caliper-calc-text", theme.calcText);
+    root.style.setProperty("--caliper-calc-op-highlight", theme.calcOpHighlight);
+  if (theme.calcText) root.style.setProperty("--caliper-calc-text", theme.calcText);
   if (theme.text) root.style.setProperty("--caliper-text", theme.text);
-  if (theme.projection)
-    root.style.setProperty("--caliper-projection", theme.projection);
-  if (theme.ruler)
-    root.style.setProperty("--caliper-ruler", theme.ruler);
+  if (theme.projection) root.style.setProperty("--caliper-projection", theme.projection);
+  if (theme.ruler) root.style.setProperty("--caliper-ruler", theme.ruler);
 }
 
-export function mergeCommands(
-  userCommands?: CommandsConfig
-): DeepRequired<CommandsConfig> {
+export function mergeCommands(userCommands?: CommandsConfig): DeepRequired<CommandsConfig> {
   return {
     activate: userCommands?.activate ?? DEFAULT_COMMANDS.activate,
     freeze: userCommands?.freeze ?? DEFAULT_COMMANDS.freeze,
@@ -49,16 +39,14 @@ export function mergeCommands(
     calculator: {
       top: userCommands?.calculator?.top ?? DEFAULT_COMMANDS.calculator.top,
       right: userCommands?.calculator?.right ?? DEFAULT_COMMANDS.calculator.right,
-      bottom:
-        userCommands?.calculator?.bottom ?? DEFAULT_COMMANDS.calculator.bottom,
+      bottom: userCommands?.calculator?.bottom ?? DEFAULT_COMMANDS.calculator.bottom,
       left: userCommands?.calculator?.left ?? DEFAULT_COMMANDS.calculator.left,
       distance: userCommands?.calculator?.distance ?? DEFAULT_COMMANDS.calculator.distance,
     },
     projection: {
       top: userCommands?.projection?.top ?? DEFAULT_COMMANDS.projection.top,
       left: userCommands?.projection?.left ?? DEFAULT_COMMANDS.projection.left,
-      bottom:
-        userCommands?.projection?.bottom ?? DEFAULT_COMMANDS.projection.bottom,
+      bottom: userCommands?.projection?.bottom ?? DEFAULT_COMMANDS.projection.bottom,
       right: userCommands?.projection?.right ?? DEFAULT_COMMANDS.projection.right,
     },
     ruler: userCommands?.ruler ?? DEFAULT_COMMANDS.ruler,
@@ -69,15 +57,10 @@ export function mergeCommands(
   };
 }
 
-export function mergeAnimation(
-  userAnimation?: AnimationConfig
-): DeepRequired<AnimationConfig> {
+export function mergeAnimation(userAnimation?: AnimationConfig): DeepRequired<AnimationConfig> {
   return {
     enabled: userAnimation?.enabled ?? DEFAULT_ANIMATION.enabled,
-    lerpFactor: parseNumber(
-      userAnimation?.lerpFactor,
-      DEFAULT_ANIMATION.lerpFactor
-    ),
+    lerpFactor: parseNumber(userAnimation?.lerpFactor, DEFAULT_ANIMATION.lerpFactor),
   };
 }
 
@@ -91,9 +74,13 @@ export function getConfig(): OverlayConfig {
   if (typeof window !== "undefined") {
     const windowConfig = window.__CALIPER_CONFIG__ ?? {};
 
-    const currentScript = typeof document !== "undefined" ? (document.currentScript as HTMLScriptElement) : null;
-    const dataConfig = currentScript?.getAttribute("data-config") ||
-      (typeof document !== "undefined" ? document.querySelector("script[data-config]")?.getAttribute("data-config") : null);
+    const currentScript =
+      typeof document !== "undefined" ? (document.currentScript as HTMLScriptElement) : null;
+    const dataConfig =
+      currentScript?.getAttribute("data-config") ||
+      (typeof document !== "undefined"
+        ? document.querySelector("script[data-config]")?.getAttribute("data-config")
+        : null);
 
     if (dataConfig) {
       try {
