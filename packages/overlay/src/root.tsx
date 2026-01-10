@@ -107,6 +107,14 @@ export function Root(config: RootConfig) {
 
     const unsubscribeProjection = projectionSystem.onUpdate((state) => {
       setProjectionState(state);
+      if (state.direction === null) {
+        if (calculatorState()?.isActive) {
+          setActiveInputFocus("calculator");
+        }
+        if (system?.getState() === "FROZEN") {
+          system?.unfreeze(false);
+        }
+      }
     });
 
     rulerSystem = createRulerSystem();
