@@ -11,7 +11,8 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "test": "echo \"Tests coming soon\"",
     "caliper:build": "turbo run build --filter=@aspect/caliper",
-    "version:write": "node scripts/write-version.mjs"
+    "version:write": "node scripts/write-version.mjs",
+    "caliper:validate-web": "turbo run build --filter=@oyerinde/caliper... && pnpm --filter @oyerinde/caliper run pack:prod && turbo run build --filter=web"
   },
   "devDependencies": {
     "prettier": "^3.7.4",

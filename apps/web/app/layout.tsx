@@ -4,6 +4,8 @@ import "./globals.css";
 import Script from "next/script";
 import { BASE_URL } from "./constants";
 import { LogoTrail } from "./logo-trail-canvas";
+import { CaliperWrapper } from "./caliper-wrapper";
+import { ConfigProvider } from "./config-context";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -75,16 +77,14 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         {process.env.NODE_ENV === "development" && <Script
-          src={`/caliper.js?v=${Date.now()}`}
-          strategy="afterInteractive"
-          crossOrigin="anonymous"
-        />}
-        {process.env.NODE_ENV === "development" && <Script
           src="https://unpkg.com/react-scan/dist/auto.global.js"
           strategy="beforeInteractive"
         />}
-        <LogoTrail />
-        {children}
+        <ConfigProvider>
+          <CaliperWrapper />
+          <LogoTrail />
+          {children}
+        </ConfigProvider>
       </body>
     </html>
   );

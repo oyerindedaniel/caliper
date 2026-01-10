@@ -13,8 +13,7 @@
 export { createOverlay as init } from "@caliper/overlay";
 
 export type {
-    OverlayInstance,
-    OverlayProps,
+    OverlayInstance
 } from "@caliper/overlay";
 
 export { setConfig, getConfig } from "@caliper/core";

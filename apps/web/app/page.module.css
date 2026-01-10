@@ -46,26 +46,6 @@
   list-style-position: inside;
 }
 
-button.secondary {
-  appearance: none;
-  border-radius: 128px;
-  height: 48px;
-  padding: 0 20px;
-  font-family: var(--font-geist-sans);
-  border: 1px solid transparent;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  line-height: 20px;
-  font-weight: 500;
-  background: transparent;
-  border-color: var(--gray-alpha-200);
-  min-width: 180px;
-}
-
 .footer {
   font-family: var(--font-geist-sans);
   grid-row-start: 3;
@@ -603,4 +583,74 @@ button.secondary {
   height: 4px;
   border-radius: 50%;
   background: var(--gray-alpha-200);
+}
+
+.colorInput {
+  margin-left: 12px;
+  flex: 1;
+  text-transform: uppercase;
+}
+
+.btnBase {
+  appearance: none;
+  font-family: var(--font-geist-sans);
+  font-weight: 500;
+  font-size: 14px;
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 128px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.btnPrimary {
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.btnPrimary:hover:not(:disabled) {
+  background: var(--button-primary-hover);
+  transform: translateY(-1px);
+}
+
+.btnSecondary {
+  background: transparent;
+  border-color: var(--gray-alpha-200);
+  color: var(--gray-rgb);
+}
+
+.btnSecondary:hover:not(:disabled) {
+  background: var(--gray-alpha-100);
+  border-color: var(--gray-alpha-100);
+  transform: translateY(-1px);
+}
+
+.btnBase:active:not(:disabled) {
+  transform: scale(0.98);
+  opacity: 0.8;
+}
+
+.btnBase:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.statusMessage {
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  color: var(--caliper-primary);
+  opacity: 0;
+  transform: translateX(-10px);
+  transition: all 0.3s ease;
+  pointer-events: none;
+}
+
+.statusVisible {
+  opacity: 0.8;
+  transform: translateX(0);
 }

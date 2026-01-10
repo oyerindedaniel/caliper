@@ -1,0 +1,4 @@
+dist
+*.tgz
+.turbo
+node_modules

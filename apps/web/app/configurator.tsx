@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import styles from "./page.module.css";
 import { useFocus } from "./context";
 import { useCopy } from "./hooks/use-copy";
+import { useConfig, type CommandConfig } from "./config-context";
+import { ColorPicker } from "./components/color-picker";
 
 const ShortcutField = ({
     label,
@@ -12,9 +14,9 @@ const ShortcutField = ({
 }: {
     label: string;
     value: string;
-    id: string;
+    id: keyof CommandConfig;
     isDuplicate: boolean;
-    onUpdate: (id: string, value: string) => void;
+    onUpdate: (id: keyof CommandConfig, value: string) => void;
 }) => {
     const { registerInput } = useFocus();
 
@@ -53,22 +55,8 @@ const ShortcutField = ({
 
 export function Configurator() {
     const { copied, copy } = useCopy();
-    const [commands, setCommands] = useState({
-        activate: "Alt",
-        freeze: " ",
-        select: "Control",
-        clear: "Escape",
-        ruler: "r",
-        calcTop: "t",
-        calcRight: "r",
-        calcBottom: "b",
-        calcLeft: "l",
-        calcDist: "d",
-        projTop: "w",
-        projRight: "d",
-        projBottom: "s",
-        projLeft: "a",
-    });
+    const [tried, setTried] = useState(false);
+    const { commands, updateCommand, theme, updateTheme, resetConfig } = useConfig();
 
     const conflicts = useMemo(() => {
         const errorIds = new Set<string>();
@@ -154,8 +142,16 @@ export function Configurator() {
         copy(json);
     };
 
-    const update = (key: string, value: string) => {
-        setCommands(prev => ({ ...prev, [key]: value }));
+    const handleTryItOut = () => {
+        setTried(true);
+        setTimeout(() => {
+            setTried(false)
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }, 1500);
+    };
+
+    const update = (key: keyof CommandConfig, value: string) => {
+        updateCommand(key, value);
     };
 
     return (
@@ -194,24 +190,58 @@ export function Configurator() {
                 <ShortcutField label="Project Left" value={commands.projLeft} id="projLeft" isDuplicate={conflicts.has("projLeft")} onUpdate={update} />
             </div>
 
-            <div className={styles.configAction}>
-                {hasErrors && (
-                    <p style={{ color: '#ef4444', fontSize: '12px', fontWeight: '500' }}>
-                        ⚠️ Core commands must use unique keys. Check the highlighted fields.
-                    </p>
-                )}
-                <button
-                    className={styles.copyButton}
-                    onClick={handleCopy}
-                    disabled={hasErrors}
-                    style={hasErrors ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
-                >
-                    {hasErrors ? "Resolve Overlapping Shortcuts" : "Copy Custom Commands JSON"}
-                </button>
-                <span className={`${styles.copyStatus} ${copied ? styles.copyStatusVisible : ""}`}>
-                    Ready to paste! 📋
-                </span>
+            <div className={styles.subHeader}>Color Configuration</div>
+            <div className={styles.configuratorGrid}>
+                <ColorPicker label="Primary" color={theme.primary} onChange={(v) => updateTheme("primary", v)} />
+                <ColorPicker label="Secondary" color={theme.secondary} onChange={(v) => updateTheme("secondary", v)} />
+                <ColorPicker label="Text" color={theme.text} onChange={(v) => updateTheme("text", v)} />
+                <ColorPicker label="Calc Background" color={theme.calcBg} onChange={(v) => updateTheme("calcBg", v)} />
+                <ColorPicker label="Calc Text" color={theme.calcText} onChange={(v) => updateTheme("calcText", v)} />
+                <ColorPicker label="Calc Highlight" color={theme.calcOpHighlight} onChange={(v) => updateTheme("calcOpHighlight", v)} />
+                <ColorPicker label="Projection" color={theme.projection} onChange={(v) => updateTheme("projection", v)} />
+                <ColorPicker label="Ruler" color={theme.ruler} onChange={(v) => updateTheme("ruler", v)} />
             </div>
+
+            <div className={styles.configAction} style={{ alignItems: 'center', textAlign: 'center' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', justifyContent: 'center' }}>
+                    <button
+                        className={`${styles.btnBase} ${styles.btnPrimary}`}
+                        onClick={handleCopy}
+                        disabled={hasErrors}
+                    >
+                        {hasErrors ? "Fix Conflicts" : "Copy Config"}
+                    </button>
+
+                    <button
+                        className={`${styles.btnBase} ${styles.btnSecondary}`}
+                        onClick={resetConfig}
+                    >
+                        Reset Defaults
+                    </button>
+
+                    <button
+                        className={`${styles.btnBase} ${styles.btnSecondary}`}
+                        onClick={handleTryItOut}
+                    >
+                        Try It Out
+                    </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '16px', marginTop: '12px', minHeight: '20px' }}>
+                    <span className={`${styles.statusMessage} ${copied ? styles.statusVisible : ""}`}>
+                        Copied! 📋
+                    </span>
+                    <span className={`${styles.statusMessage} ${tried ? styles.statusVisible : ""}`}>
+                        {commands.activate} to inspect! ⚡
+                    </span>
+                </div>
+            </div>
+
+            {hasErrors && (
+                <p style={{ color: '#ef4444', fontSize: '12px', fontWeight: '500', marginTop: '12px' }}>
+                    ⚠️ Core commands must use unique keys. Check the highlighted fields.
+                </p>
+            )}
         </section >
     );
 }

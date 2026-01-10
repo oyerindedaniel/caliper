@@ -7,6 +7,12 @@ import type {
 } from "./overlay-config.js";
 import { DEFAULT_COMMANDS, DEFAULT_ANIMATION } from "./overlay-config.js";
 
+function parseNumber(value: any, defaultValue: number): number {
+  if (value === undefined || value === null || value === "") return defaultValue;
+  const num = Number(value);
+  return isFinite(num) && !isNaN(num) ? num : defaultValue;
+}
+
 export function applyTheme(theme?: ThemeConfig) {
   if (!theme) return;
 
@@ -56,9 +62,10 @@ export function mergeCommands(
       right: userCommands?.projection?.right ?? DEFAULT_COMMANDS.projection.right,
     },
     ruler: userCommands?.ruler ?? DEFAULT_COMMANDS.ruler,
-    selectionHoldDuration: userCommands?.selectionHoldDuration
-      ? Number(userCommands.selectionHoldDuration)
-      : DEFAULT_COMMANDS.selectionHoldDuration,
+    selectionHoldDuration: parseNumber(
+      userCommands?.selectionHoldDuration,
+      DEFAULT_COMMANDS.selectionHoldDuration
+    ),
   };
 }
 
@@ -67,9 +74,10 @@ export function mergeAnimation(
 ): DeepRequired<AnimationConfig> {
   return {
     enabled: userAnimation?.enabled ?? DEFAULT_ANIMATION.enabled,
-    lerpFactor: userAnimation?.lerpFactor !== undefined
-      ? Number(userAnimation.lerpFactor)
-      : DEFAULT_ANIMATION.lerpFactor,
+    lerpFactor: parseNumber(
+      userAnimation?.lerpFactor,
+      DEFAULT_ANIMATION.lerpFactor
+    ),
   };
 }
 
@@ -83,9 +91,9 @@ export function getConfig(): OverlayConfig {
   if (typeof window !== "undefined") {
     const windowConfig = window.__CALIPER_CONFIG__ ?? {};
 
-    const currentScript = document.currentScript as HTMLScriptElement;
+    const currentScript = typeof document !== "undefined" ? (document.currentScript as HTMLScriptElement) : null;
     const dataConfig = currentScript?.getAttribute("data-config") ||
-      document.querySelector("script[data-config]")?.getAttribute("data-config");
+      (typeof document !== "undefined" ? document.querySelector("script[data-config]")?.getAttribute("data-config") : null);
 
     if (dataConfig) {
       try {
