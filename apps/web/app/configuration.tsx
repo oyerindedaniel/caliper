@@ -39,7 +39,7 @@ export function Configuration() {
     right?: string;    // Measure from right edge (default: r)
     bottom?: string;   // Measure from bottom edge (default: b)
     left?: string;     // Measure from left edge (default: l)
-    distance?: string; // Measure side-to-side (default: d)
+    distance?: string; // Measure side-to-side (default: g)
   };
   
   projection?: {
