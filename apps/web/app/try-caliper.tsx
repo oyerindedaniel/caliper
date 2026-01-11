@@ -11,9 +11,9 @@ export function TryCaliper() {
       <div className={styles.tryHeader}>
         <span className={styles.tryBadge}>Live Audit Playground</span>
         <p className={styles.tryHint}>
-          Select an element (<strong>{getControlKey()} + Hold + Click</strong>), then hold{" "}
+          Select an element (<strong>{getControlKey()} + Click + Hold</strong>), then hold{" "}
           <strong>{getAltKey()}</strong> and hover to measure. Press <strong>Space</strong> to
-          freeze, then click any label to use the calculator.
+          freeze, then click on the measurement red label to use the calculator.
         </p>
       </div>
 
