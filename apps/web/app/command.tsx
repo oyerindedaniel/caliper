@@ -22,7 +22,7 @@ export function CommandTable() {
       command: config.freeze === " " ? "Space" : config.freeze,
       configId: "freeze",
     },
-    { key: "Select Element", command: `${getControlKey()} + Hold + Click`, configId: "select" },
+    { key: "Select Element", command: `${getControlKey()} + Click + Hold`, configId: "select" },
     { key: "Clear Selection", command: config.clear, configId: "clear" },
     { key: "Calculator: Top", command: config.calcTop, configId: "calcTop" },
     { key: "Calculator: Right", command: config.calcRight, configId: "calcRight" },

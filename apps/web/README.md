@@ -25,14 +25,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 
 Caliper is designed to be side-effect-free in production and easy to integrate into any modern stack.
 
-### Method 1: NPM (Recommended)
-
-```bash
-pnpm install @oyerinde/caliper
-```
-
-**Next.js (App Router)**
-
+### 1. Next.js (App Router)
 ```tsx
 // app/layout.tsx
 import Script from "next/script";
@@ -44,7 +37,7 @@ export default function RootLayout({ children }) {
         {process.env.NODE_ENV === "development" && (
           <Script
             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-            data-config={JSON.stringify({ theme: { primary: "#18A0FB" } })}
+            data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
             strategy="afterInteractive"
           />
         )}
@@ -55,14 +48,101 @@ export default function RootLayout({ children }) {
 }
 ```
 
-### Method 2: Script Tag (Zero Config)
-
+### 2. Vite
 ```html
-<!-- Automatically mounts in development -->
-<script
-  src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-  data-config='{"theme": {"primary": "#18A0FB"}}'
-></script>
+<!-- index.html -->
+<script type="module">
+if (import.meta.env.DEV) {
+  // Run npm i @oyerinde/caliper then
+  import("@oyerinde/caliper").then(({ init }) => {
+    init({ theme: { primary: '#AC2323' } });
+  });
+}
+</script>
+```
+
+### 3. HTML (Plain)
+```html
+<!-- index.html -->
+<script type="module">
+  const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+
+  if (isDev) {
+    import("https://unpkg.com/@oyerinde/caliper/dist/index.js").then(({ init }) => {
+      init({ theme: { primary: "#AC2323" } });
+    });
+  }
+</script>
+```
+
+### 4. Astro
+```html
+<!-- src/components/Caliper.astro -->
+<script type="module" is:inline>
+  if (import.meta.env.DEV) {
+    // Run npm i @oyerinde/caliper then
+    import('@oyerinde/caliper').then(({ init }) => {
+      init();
+    });
+  }
+</script>
+```
+
+### 5. Nuxt
+```ts
+// nuxt.config.ts
+export default defineNuxtConfig({
+  app: {
+    head: {
+      script: [
+        {
+          src: 'https://unpkg.com/@oyerinde/caliper/dist/index.global.js',
+          'data-config': JSON.stringify({ theme: { primary: '#AC2323' } }),
+          defer: true
+        }
+      ]
+    }
+  }
+});
+```
+
+### 6. Vue
+```html
+<!-- index.html -->
+<script type="module">
+  if (import.meta.env.DEV) {
+    // Run npm i @oyerinde/caliper then
+    import("@oyerinde/caliper").then(({ init }) => {
+      init({ theme: { primary: '#AC2323' } });
+    });
+  }
+</script>
+```
+
+### 7. TanStack Start
+```tsx
+// root.tsx
+import { Meta, Scripts } from '@tanstack/react-router';
+
+export function Root() {
+  return (
+    <html lang="en">
+      <head>
+        <Meta />
+        {process.env.NODE_ENV === 'development' && (
+          <script
+            src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+            data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
+            async
+          />
+        )}
+      </head>
+      <body>
+        <Scripts />
+      </body>
+    </html>
+  );
+}
 ```
 
 ---
@@ -108,7 +188,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 
 ### Measurements
 
-- **Cmd/Ctrl + Hold + Click** (250ms) — Select an element.
+- **Cmd/Ctrl + Click + Hold** (250ms) — Select an element.
 - **Hover** — View relative distances to target.
 - **Option/Alt** — Hold to reveal the overlay.
 - **Space** — Freeze the current state.
