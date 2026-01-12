@@ -50,7 +50,6 @@ const ShortcutField = ({
     };
 
     if (value in keyMap) return keyMap[value];
-    if (value.length === 1) return value.toUpperCase();
     return value;
   }, [value, isRecording]);
 
@@ -101,7 +100,7 @@ export function Configurator() {
 
   const conflicts = useMemo(() => {
     const errorIds = new Set<string>();
-    const normalize = (v: string) => v.toLowerCase();
+    const normalize = (v: string) => v;
 
     const allKeys = Object.keys(commands);
 
