@@ -1,6 +1,7 @@
+import { Metadata } from "next";
 import HomePage from "./home-page";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Home",
 };
 

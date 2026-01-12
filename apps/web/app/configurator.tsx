@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import styles from "./page.module.css";
 import { useFocus } from "./focus-context";
 import { useCopy } from "./hooks/use-copy";
+import { useKeyCapture } from "./hooks/use-key-capture";
 import { useConfig, type CommandConfig } from "./config-context";
 import { ColorPicker } from "./components/color-picker";
 
@@ -19,40 +20,74 @@ const ShortcutField = ({
   onUpdate: (id: keyof CommandConfig, value: string) => void;
 }) => {
   const { registerInput } = useFocus();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const { isRecording, startRecording, stopRecording, handleKeyDown } = useKeyCapture(
+    (key) => {
+      onUpdate(id, key);
+      inputRef.current?.blur();
+    },
+    () => {
+      inputRef.current?.blur();
+    }
+  );
+
+  const displayValue = useMemo(() => {
+    if (isRecording) return "Recording...";
+
+    // Mapping for common keys
+    const keyMap: Record<string, string> = {
+      " ": "Space",
+      "Meta": "Cmd",
+      "Control": "Ctrl",
+      "AltGraph": "Alt",
+      "ArrowUp": "Up Arrow",
+      "ArrowDown": "Down Arrow",
+      "ArrowLeft": "Left Arrow",
+      "ArrowRight": "Right Arrow",
+      "Enter": "Return",
+      "Escape": "Esc",
+    };
+
+    if (value in keyMap) return keyMap[value];
+    return value;
+  }, [value, isRecording]);
 
   return (
     <div className={styles.configControl}>
       <label className={styles.configLabel}>{label}</label>
       <div style={{ position: "relative", width: "100%" }}>
         <input
-          ref={(el) => registerInput(id, el)}
+          ref={(el) => {
+            registerInput(id, el);
+            (inputRef as any).current = el;
+          }}
           type="text"
-          className={`${styles.configInput} ${isDuplicate ? styles.inputError : ""}`}
+          readOnly
+          className={`${styles.configInput} ${isDuplicate ? styles.inputError : ""} ${isRecording ? styles.configInputRecording : ""}`}
           style={{
             ...(isDuplicate ? { borderColor: "#ef4444", color: "#ef4444" } : {}),
             width: "100%",
+            cursor: "pointer",
+            caretColor: "transparent",
           }}
-          value={value === " " ? "Space" : value}
-          onChange={(e) => onUpdate(id, e.target.value === "Space" ? " " : e.target.value)}
-          placeholder="Key"
+          value={displayValue}
+          onFocus={startRecording}
+          onBlur={stopRecording}
+          onKeyDown={handleKeyDown}
+          placeholder="Click to configure"
         />
         {isDuplicate && (
           <span
             title="Duplicate check: All shortcuts must be globally unique (excluding Ruler)."
-            style={{
-              position: "absolute",
-              right: "8px",
-              top: "50%",
-              transform: "translateY(-50%)",
-              fontSize: "10px",
-              color: "#ef4444",
-              fontWeight: "bold",
-              cursor: "help",
-            }}
+            className={styles.duplicateIndicator}
           >
             !
           </span>
         )}
+        <div className={styles.recordIndicator}>
+          {isRecording ? "Listening..." : "Click to edit"}
+        </div>
       </div>
     </div>
   );
@@ -65,7 +100,7 @@ export function Configurator() {
 
   const conflicts = useMemo(() => {
     const errorIds = new Set<string>();
-    const normalize = (v: string) => v.toLowerCase();
+    const normalize = (v: string) => v;
 
     const allKeys = Object.keys(commands);
 

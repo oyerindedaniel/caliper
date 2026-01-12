@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import { createContext, useContext, useState, ReactNode, useEffect, useLayoutEffect } from "react";
 import { type OverlayConfig } from "@oyerinde/caliper";
 import { DEFAULT_COMMANDS, DEFAULT_THEME as CORE_THEME } from "@caliper/core";
 import { STORAGE_KEY } from "./constants";
@@ -89,7 +89,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const [config, setConfigState] = useState<AppConfig>(INITIAL_CONFIG);
   const [appliedConfig, setAppliedConfig] = useState<AppConfig>(INITIAL_CONFIG);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {

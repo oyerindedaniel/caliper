@@ -1,6 +1,7 @@
+import { Metadata } from "next";
 import ChangelogPage from "./changelog-page";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Changelog",
 };
 
