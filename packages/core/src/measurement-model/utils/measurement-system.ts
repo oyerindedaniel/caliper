@@ -62,6 +62,19 @@ export function createMeasurementSystem(): MeasurementSystem {
 
       if (measurement) {
         const { result, element } = measurement;
+
+        if (!stateMachine.isMeasuring() && !stateMachine.isArmed()) {
+          return;
+        }
+
+        if (
+          stateMachine.isMeasuring() &&
+          element === previousElement &&
+          result.context === previousContext
+        ) {
+          return;
+        }
+
         currentResult = result;
         previousContext = result.context;
         previousElement = element;
@@ -74,6 +87,7 @@ export function createMeasurementSystem(): MeasurementSystem {
   function freeze() {
     const state = stateMachine.getState();
     if (state === "MEASURING" || state === "IDLE" || state === "ARMED") {
+      reader.cancel();
       stateMachine.transitionTo("FROZEN");
       notifyListeners();
     }

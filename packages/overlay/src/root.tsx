@@ -12,6 +12,7 @@ import {
   type SelectionMetadata,
   type CommandsConfig,
   type AnimationConfig,
+  isEditable,
   getTopElementAtPoint,
   getLiveLineValue,
   getLiveGeometry,
@@ -75,7 +76,7 @@ export function Root(config: RootConfig) {
 
   const [rulerState, setRulerState] = createSignal<RulerState>({ lines: [] });
 
-  const [isAltPressed, setIsAltPressed] = createSignal(false);
+  const [isActivatePressed, setIsActivatePressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
 
   let viewportRafId: number | null = null;
@@ -114,6 +115,8 @@ export function Root(config: RootConfig) {
         if (system?.getState() === "FROZEN") {
           system?.unfreeze(false);
         }
+      } else {
+        setActiveInputFocus("projection");
       }
     });
 
@@ -181,6 +184,10 @@ export function Root(config: RootConfig) {
       return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
     };
 
+    const isActivateActive = (e: KeyboardEvent): boolean => {
+      return e.key === commands.activate || (commands.activate === "Alt" && (e.key === "Alt" || e.key === "AltGraph"));
+    };
+
     const handlePointerDown = (e: PointerEvent) => {
       lastPointerPos = { x: e.clientX, y: e.clientY };
 
@@ -224,6 +231,9 @@ export function Root(config: RootConfig) {
     let lastHoveredElement: Element | null = null;
 
     const selectionDelegate = createSuppressionDelegate((el: Element) => {
+      if (selectionSystem?.getSelected() !== el) {
+        system?.abort();
+      }
       lastHoveredElement = el;
       selectionSystem?.select(el);
     });
@@ -248,7 +258,7 @@ export function Root(config: RootConfig) {
       setCursor(cursorPoint);
 
       const selectedElement = selectionSystem.getSelected();
-      const isAlt = isAltPressed();
+      const isAlt = isActivatePressed();
       const state = system?.getState();
 
       if (selectedElement) {
@@ -282,8 +292,14 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === commands.clear) {
-        setIsAltPressed(false);
+      if (e.key === commands.clear && !isEditable(e.target as Element)) {
+        const hasActiveState = !!selectionMetadata().element || !!result() || !!calculatorState() || !!rulerState().lines.length;
+
+        if (hasActiveState) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+        setIsActivatePressed(false);
         setCalculatorState(null);
         setActiveCalculatorLine(null);
 
@@ -312,11 +328,11 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      if (e.key === commands.select) {
+      if (e.key === commands.select && !isEditable(e.target as Element)) {
         setIsSelectKeyDown(true);
       }
 
-      if (e.key.toLowerCase() === commands.ruler && e.shiftKey && rulerSystem) {
+      if (e.key === commands.ruler && e.shiftKey && rulerSystem && !isEditable(e.target as Element)) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));
@@ -325,12 +341,13 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
+      if (isActivateActive(e)) {
+        if (selectionMetadata().element) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
 
-      if (isAltKey) {
-        e.preventDefault();
-
-        if (!isAltPressed()) {
+        if (!isActivatePressed()) {
           if (system) {
             system.abort();
             setResult(null);
@@ -341,19 +358,21 @@ export function Root(config: RootConfig) {
           }
         }
 
-        setIsAltPressed(true);
-      } else if (e.key === commands.freeze && e.target === document.body && system) {
+        setIsActivatePressed(true);
+      } else if (e.key === commands.freeze && !isEditable(e.target as Element) && system) {
         const state = system.getState();
 
         if (state === "FROZEN") {
           e.preventDefault();
-          system.unfreeze(isAltPressed());
+          e.stopImmediatePropagation();
+          system.unfreeze(isActivatePressed());
         } else if (selectionMetadata().element) {
           e.preventDefault();
+          e.stopImmediatePropagation();
           system.freeze();
         }
       } else {
-        const key = e.key.toLowerCase();
+        const key = e.key;
         const { calculator, projection } = commands;
         const isCalcActive = !!calculatorState();
         const isProjActive = projectionState().direction !== null;
@@ -407,7 +426,7 @@ export function Root(config: RootConfig) {
         };
         const dir = dirMap[key];
 
-        if (dir && selectionMetadata().element) {
+        if (dir && selectionMetadata().element && !isEditable(e.target as Element)) {
           e.preventDefault();
           e.stopImmediatePropagation();
           setActiveInputFocus("projection");
@@ -488,11 +507,12 @@ export function Root(config: RootConfig) {
 
           const targetType = typeMap[key];
           if (targetType) {
-            e.preventDefault();
             const currentLines = result()?.lines || [];
             const targetLine = currentLines.find((l) => l.type === targetType);
 
             if (targetLine) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
               const liveValue = getLiveLineValue(targetLine, result());
               handleLineClick(targetLine, liveValue);
             }
@@ -506,13 +526,11 @@ export function Root(config: RootConfig) {
         setIsSelectKeyDown(false);
       }
 
-      const isAltKey = e.key === "Alt" || e.key === "AltGraph" || e.key === commands.activate;
-
-      if (isAltKey) {
+      if (isActivateActive(e)) {
         e.preventDefault();
 
-        if (isAltPressed()) {
-          setIsAltPressed(false);
+        if (isActivatePressed()) {
+          setIsActivatePressed(false);
 
           if (system) {
             system.stop();
@@ -522,8 +540,8 @@ export function Root(config: RootConfig) {
     };
 
     const handleBlur = () => {
-      if (isAltPressed()) {
-        setIsAltPressed(false);
+      if (isActivatePressed()) {
+        setIsActivatePressed(false);
 
         if (system) {
           system.stop();
@@ -835,7 +853,7 @@ export function Root(config: RootConfig) {
       result={result}
       cursor={cursor}
       selectionMetadata={selectionMetadata}
-      isAltPressed={isAltPressed}
+      isActivatePressed={isActivatePressed}
       isFrozen={isFrozen}
       animation={animation}
       viewport={viewport}

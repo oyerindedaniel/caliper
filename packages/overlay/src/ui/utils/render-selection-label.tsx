@@ -5,7 +5,7 @@ import { PREFIX } from "../../css/styles.js";
 
 interface SelectionLabelProps {
   metadata: SelectionMetadata;
-  isAltPressed: boolean;
+  isActivatePressed: boolean;
   viewport: {
     scrollX: number;
     scrollY: number;
@@ -81,7 +81,7 @@ export function SelectionLabel(props: SelectionLabelProps) {
               left: 0,
               top: 0,
               transform: `translate3d(${data().x - props.viewport.scrollX}px, ${data().y - props.viewport.scrollY}px, 0) translate(-50%, 0)`,
-              opacity: props.isAltPressed ? 0 : 1,
+              opacity: props.isActivatePressed ? 0 : 1,
             }}
           >
             {data().width} × {data().height}

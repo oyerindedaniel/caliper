@@ -14,7 +14,7 @@ export interface OverlayProps {
   result: Accessor<MeasurementResult | null>;
   cursor: Accessor<{ x: number; y: number }>;
   selectionMetadata: Accessor<SelectionMetadata>;
-  isAltPressed: Accessor<boolean>;
+  isActivatePressed: Accessor<boolean>;
   isFrozen: Accessor<boolean>;
   animation: DeepRequired<AnimationConfig>;
   viewport: Accessor<{

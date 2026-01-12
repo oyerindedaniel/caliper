@@ -45,12 +45,14 @@ export function getElementAtPoint(x: number, y: number): Element | null {
  * Find the topmost eligible element at a point (standard selection)
  */
 export function getTopElementAtPoint(x: number, y: number): Element | null {
-  const node = document.elementFromPoint(x, y);
-  if (!node) return null;
+  const nodes = document.elementsFromPoint(x, y);
 
-  if (isCaliperNode(node) || !isEligible(node)) return null;
-
-  return node;
+  return (
+    nodes.find((node) => {
+      if (isCaliperNode(node)) return false;
+      return isEligible(node);
+    }) || null
+  );
 }
 
 /**

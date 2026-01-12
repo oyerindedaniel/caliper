@@ -4,7 +4,7 @@ export {
   type FrequencyControlledReader,
 } from "./scheduling/frequency-control.js";
 export { createSuppressionDelegate, type SuppressionOptions } from "./scheduling/suppression.js";
-export { isVisible, hasSize, isEligible } from "./element-picking/utils/filter-visible.js";
+export { isVisible, hasSize, isEligible, isEditable } from "./element-picking/utils/filter-visible.js";
 export {
   detectContext,
   resolveAmbiguousContext,

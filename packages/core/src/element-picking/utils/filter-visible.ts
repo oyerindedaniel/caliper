@@ -41,6 +41,23 @@ export function hasSize(element: Element): boolean {
 }
 
 /**
+ * Check if an element is a form input or editable area
+ */
+export function isEditable(element: Element | null): boolean {
+  if (!element || !(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = element.tagName;
+  return (
+    tagName === "INPUT" ||
+    tagName === "TEXTAREA" ||
+    tagName === "SELECT" ||
+    element.isContentEditable
+  );
+}
+
+/**
  * Check if element is eligible for measurement
  * Combines visibility and size checks
  */
