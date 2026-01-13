@@ -4,15 +4,13 @@ export {
   type FrequencyControlledReader,
 } from "./scheduling/frequency-control.js";
 export { createSuppressionDelegate, type SuppressionOptions } from "./scheduling/suppression.js";
-export { isVisible, hasSize, isEligible } from "./element-picking/utils/filter-visible.js";
+export { isVisible, hasSize, isEligible, isEditable } from "./element-picking/utils/filter-visible.js";
 export {
   detectContext,
   resolveAmbiguousContext,
   getElementAtPoint,
   getTopElementAtPoint,
 } from "./cursor-context/utils/priority-rules.js";
-export * from "./geometry/utils/rect-math.js";
-export * from "./geometry/utils/distances.js";
 export * from "./geometry/utils/scroll-aware.js";
 export {
   type MeasurementResult,
@@ -30,7 +28,6 @@ export {
   type SelectionSystem,
   type SelectionMetadata,
 } from "./measurement-model/utils/selection-system.js";
-export * from "./calculator-model/utils/calculator.js";
 export {
   createCalculatorState,
   type CalculatorState,
@@ -61,6 +58,7 @@ export {
   applyTheme,
   mergeCommands,
   mergeAnimation,
+  mergeTheme,
   getConfig,
   setConfig,
 } from "./shared/config/config-utils.js";

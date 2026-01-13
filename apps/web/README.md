@@ -1,4 +1,4 @@
-<img src="apps/web/public/caliper_logo.svg" width="144" alt="Caliper Logo" style="margin-bottom: 24px;" />
+<img src="public/caliper_logo.svg" width="144" alt="Caliper Logo" style="margin-bottom: 24px;" />
 
 [![Unpkg Bundle Size](https://img.shields.io/bundlephobia/minzip/@oyerinde/caliper?style=flat-square&color=black&labelColor=black)](https://bundlephobia.com/package/@oyerinde/caliper)
 [![NPM Version](https://img.shields.io/npm/v/@oyerinde/caliper?style=flat-square&color=black&labelColor=black)](https://www.npmjs.com/package/@oyerinde/caliper)

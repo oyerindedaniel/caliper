@@ -46,10 +46,7 @@ export function getElementAtPoint(x: number, y: number): Element | null {
  */
 export function getTopElementAtPoint(x: number, y: number): Element | null {
   const node = document.elementFromPoint(x, y);
-  if (!node) return null;
-
-  if (isCaliperNode(node) || !isEligible(node)) return null;
-
+  if (!node || isCaliperNode(node) || !isEligible(node)) return null;
   return node;
 }
 

@@ -19,21 +19,13 @@ export const OVERLAY_STYLES = `
 :root {
   interpolate-size: allow-keywords;
   --caliper-primary: ${DEFAULT_THEME.primary};
-  --caliper-primary-90: ${DEFAULT_THEME.primary.replace("1)", "0.9)")};
-  --caliper-primary-95: ${DEFAULT_THEME.primary.replace("1)", "0.95)")};
-  --caliper-primary-50: ${DEFAULT_THEME.primary.replace("1)", "0.5)")};
-  --caliper-primary-05: ${DEFAULT_THEME.primary.replace("1)", "0.05)")};
   --caliper-secondary: ${DEFAULT_THEME.secondary};
-  --caliper-secondary-50: ${DEFAULT_THEME.secondary.replace("1)", "0.5)")};
-  --caliper-secondary-05: ${DEFAULT_THEME.secondary.replace("1)", "0.05)")};
   --caliper-calc-bg: ${DEFAULT_THEME.calcBg};
   --caliper-calc-shadow: ${DEFAULT_THEME.calcShadow};
   --caliper-calc-op-highlight: ${DEFAULT_THEME.calcOpHighlight};
   --caliper-calc-text: ${DEFAULT_THEME.calcText};
   --caliper-text: ${DEFAULT_THEME.text};
   --caliper-projection: ${DEFAULT_THEME.projection};
-  --caliper-projection-90: ${DEFAULT_THEME.projection.replace("1)", "0.9)")};
-  --caliper-projection-light: ${DEFAULT_THEME.projection.replace("1)", "0.2)")};
   --caliper-ruler: ${DEFAULT_THEME.ruler};
 }
 

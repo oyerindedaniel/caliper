@@ -45,6 +45,8 @@ export function RulerOverlay(props: RulerOverlayProps) {
   const [hoveredId, setHoveredId] = createSignal<string | null>(null);
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set<string>());
 
+  const [rulerOrigins, setRulerOrigins] = createSignal<Map<string, { width: number; height: number }>>(new Map());
+
   createEffect(() => {
     const lines = props.state().lines;
     const currentIds = selectedIds();
@@ -60,6 +62,50 @@ export function RulerOverlay(props: RulerOverlayProps) {
       setSelectedIds(validIds);
     }
   });
+
+  createEffect(() => {
+    const lines = props.state().lines;
+    const vp = props.viewport();
+    const origins = rulerOrigins();
+    let updated = false;
+    const newOrigins = new Map(origins);
+
+    lines.forEach((line) => {
+      if (!newOrigins.has(line.id)) {
+        newOrigins.set(line.id, { width: vp.width, height: vp.height });
+        updated = true;
+      }
+    });
+
+    const lineIds = new Set(lines.map((l) => l.id));
+    newOrigins.forEach((_, id) => {
+      if (!lineIds.has(id)) {
+        newOrigins.delete(id);
+        updated = true;
+      }
+    });
+
+    if (updated) {
+      setRulerOrigins(newOrigins);
+    }
+  });
+
+  const getProportionalPosition = (line: RulerLine): number => {
+    const vp = props.viewport();
+    const origin = rulerOrigins().get(line.id);
+
+    if (!origin) {
+      return line.position;
+    }
+
+    const isV = line.type === "vertical";
+    const originDim = isV ? origin.width : origin.height;
+    const currentDim = isV ? vp.width : vp.height;
+
+    if (originDim === 0) return line.position;
+    const ratio = line.position / originDim;
+    return ratio * currentDim;
+  };
 
   const getSnapPoints = (isV: boolean) => {
     const points: number[] = [];
@@ -174,8 +220,14 @@ export function RulerOverlay(props: RulerOverlayProps) {
       activeLines.forEach((line) => {
         const isLineV = line.type === "vertical";
         const max = (isLineV ? vp.width : vp.height) - 1;
-        let newPos = Math.max(0, Math.min(line.position + delta, max));
+        const currentPos = getProportionalPosition(line);
+        let newPos = Math.max(0, Math.min(currentPos + delta, max));
         newPos = applySnap(newPos, isLineV);
+        setRulerOrigins((prev) => {
+          const next = new Map(prev);
+          next.set(line.id, { width: vp.width, height: vp.height });
+          return next;
+        });
         props.onUpdate(line.id, newPos);
       });
     }
@@ -218,6 +270,18 @@ export function RulerOverlay(props: RulerOverlayProps) {
     e.stopPropagation();
     setDraggingId(id);
     target.setPointerCapture(e.pointerId);
+
+    const vp = props.viewport();
+    const line = props.state().lines.find((l) => l.id === id);
+    if (line) {
+      const currentPos = getProportionalPosition(line);
+      setRulerOrigins((prev) => {
+        const next = new Map(prev);
+        next.set(id, { width: vp.width, height: vp.height });
+        return next;
+      });
+      props.onUpdate(id, currentPos);
+    }
 
     if (e.shiftKey) {
       setSelectedIds((prev) => {
@@ -283,12 +347,15 @@ export function RulerOverlay(props: RulerOverlayProps) {
     if (ids.size < 2) return [];
 
     const lines = props.state().lines.filter((l) => ids.has(l.id));
-    const vLines = lines
+
+    const vLinesWithPos = lines
       .filter((l) => l.type === "vertical")
-      .sort((a, b) => a.position - b.position);
-    const hLines = lines
+      .map((l) => ({ line: l, pos: getProportionalPosition(l) }))
+      .sort((a, b) => a.pos - b.pos);
+    const hLinesWithPos = lines
       .filter((l) => l.type === "horizontal")
-      .sort((a, b) => a.position - b.position);
+      .map((l) => ({ line: l, pos: getProportionalPosition(l) }))
+      .sort((a, b) => a.pos - b.pos);
 
     const result: Array<{
       x1: number;
@@ -303,38 +370,38 @@ export function RulerOverlay(props: RulerOverlayProps) {
 
     const vp = props.viewport();
 
-    for (let i = 0; i < vLines.length - 1; i++) {
-      const l1 = vLines[i]!;
-      const l2 = vLines[i + 1]!;
-      const val = l2.position - l1.position;
+    for (let i = 0; i < vLinesWithPos.length - 1; i++) {
+      const l1 = vLinesWithPos[i]!;
+      const l2 = vLinesWithPos[i + 1]!;
+      const val = l2.pos - l1.pos;
       if (val > 0) {
         result.push({
-          x1: l1.position,
+          x1: l1.pos,
           y1: vp.height / 2 + 100, // Move default bridge line off center for better visibility
-          x2: l2.position,
+          x2: l2.pos,
           y2: vp.height / 2 + 100,
           value: val,
           type: "vertical",
-          labelX: l1.position + val / 2,
+          labelX: l1.pos + val / 2,
           labelY: vp.height / 2 + 85,
         });
       }
     }
 
-    for (let i = 0; i < hLines.length - 1; i++) {
-      const l1 = hLines[i]!;
-      const l2 = hLines[i + 1]!;
-      const val = l2.position - l1.position;
+    for (let i = 0; i < hLinesWithPos.length - 1; i++) {
+      const l1 = hLinesWithPos[i]!;
+      const l2 = hLinesWithPos[i + 1]!;
+      const val = l2.pos - l1.pos;
       if (val > 0) {
         result.push({
           x1: vp.width / 2 + 100,
-          y1: l1.position,
+          y1: l1.pos,
           x2: vp.width / 2 + 100,
-          y2: l2.position,
+          y2: l2.pos,
           value: val,
           type: "horizontal",
           labelX: vp.width / 2 + 115,
-          labelY: l1.position + val / 2,
+          labelY: l1.pos + val / 2,
         });
       }
     }
@@ -421,6 +488,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
         {(line) => (
           <RulerLineItem
             line={line}
+            pixelPosition={getProportionalPosition(line)}
             isDragging={draggingId() === line.id}
             isHovered={hoveredId() === line.id}
             isSelected={selectedIds().has(line.id)}
@@ -435,6 +503,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
 
 function RulerLineItem(props: {
   line: RulerLine;
+  pixelPosition: number;
   isDragging: boolean;
   isHovered: boolean;
   isSelected: boolean;
@@ -448,7 +517,7 @@ function RulerLineItem(props: {
 }) {
   const lineStyle = createMemo(() => {
     const isV = props.line.type === "vertical";
-    const pos = props.line.position;
+    const pos = props.pixelPosition;
     const isActive = props.isDragging || props.isHovered || props.isSelected;
     return {
       left: "0",
@@ -478,7 +547,7 @@ function RulerLineItem(props: {
           top: "0",
           width: props.line.type === "vertical" ? hitSize() : "100%",
           height: props.line.type === "vertical" ? "100%" : hitSize(),
-          transform: `translate3d(${props.line.type === "vertical" ? props.line.position - hitOffset() : 0}px, ${props.line.type === "vertical" ? 0 : props.line.position - hitOffset()}px, 0)`,
+          transform: `translate3d(${props.line.type === "vertical" ? props.pixelPosition - hitOffset() : 0}px, ${props.line.type === "vertical" ? 0 : props.pixelPosition - hitOffset()}px, 0)`,
           cursor: props.line.type === "vertical" ? "col-resize" : "row-resize",
           "pointer-events": "auto",
           "z-index": 1000001,
@@ -500,27 +569,28 @@ function RulerLineItem(props: {
           style={{
             left: "0",
             top: "0",
-            transform: `translate3d(${props.line.type === "vertical" ? props.line.position + 10 : 20}px, ${props.line.type === "vertical" ? 20 : props.line.position + 10}px, 0)`,
+            transform: `translate3d(${props.line.type === "vertical" ? props.pixelPosition + 10 : 20}px, ${props.line.type === "vertical" ? 20 : props.pixelPosition + 10}px, 0)`,
             opacity: props.isSelected && !props.isHovered && !props.isDragging ? "0.7" : "1",
           }}
           onClick={(e) => {
             e.stopPropagation();
             const isV = props.line.type === "vertical";
             const vp = props.viewport();
+            const pos = props.pixelPosition;
             props.onLineClick?.(
               {
                 type: "distance",
-                value: props.line.position,
-                start: isV ? { x: props.line.position, y: 0 } : { x: 0, y: props.line.position },
+                value: pos,
+                start: isV ? { x: pos, y: 0 } : { x: 0, y: pos },
                 end: isV
-                  ? { x: props.line.position, y: vp.height }
-                  : { x: vp.width, y: props.line.position },
+                  ? { x: pos, y: vp.height }
+                  : { x: vp.width, y: pos },
               },
-              props.line.position
+              pos
             );
           }}
         >
-          {Math.round(props.line.position * 100) / 100}
+          {Math.round(props.pixelPosition * 100) / 100}
         </div>
       </Show>
     </>

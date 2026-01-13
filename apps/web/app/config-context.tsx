@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useEffect, useLayoutEffect } from "react";
+import { createContext, useContext, useState, ReactNode, useLayoutEffect } from "react";
 import { type OverlayConfig } from "@oyerinde/caliper";
 import { DEFAULT_COMMANDS, DEFAULT_THEME as CORE_THEME } from "@caliper/core";
 import { STORAGE_KEY } from "./constants";

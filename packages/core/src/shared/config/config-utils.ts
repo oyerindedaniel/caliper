@@ -5,7 +5,7 @@ import type {
   CommandsConfig,
   DeepRequired,
 } from "./overlay-config.js";
-import { DEFAULT_COMMANDS, DEFAULT_ANIMATION } from "./overlay-config.js";
+import { DEFAULT_COMMANDS, DEFAULT_ANIMATION, DEFAULT_THEME } from "./overlay-config.js";
 
 function parseNumber(value: any, defaultValue: number): number {
   if (value === undefined || value === null || value === "") return defaultValue;
@@ -13,20 +13,55 @@ function parseNumber(value: any, defaultValue: number): number {
   return isFinite(num) && !isNaN(num) ? num : defaultValue;
 }
 
+/**
+ * Helper to inject opacity into both Hex and RGBA colors
+ */
+function withOpacity(color: string, opacity: number): string {
+  if (color.startsWith("#")) {
+    let hex = color.slice(1);
+    if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  }
+  if (color.startsWith("rgba")) {
+    return color.replace(/[\d.]+\)$/g, `${opacity})`);
+  }
+  if (color.startsWith("rgb")) {
+    return color.replace(")", `, ${opacity})`).replace("rgb", "rgba");
+  }
+  return color;
+}
+
 export function applyTheme(theme?: ThemeConfig) {
   if (!theme) return;
 
   const root = document.documentElement;
 
-  if (theme.primary) root.style.setProperty("--caliper-primary", theme.primary);
-  if (theme.secondary) root.style.setProperty("--caliper-secondary", theme.secondary);
+  if (theme.primary) {
+    root.style.setProperty("--caliper-primary", theme.primary);
+    root.style.setProperty("--caliper-primary-90", withOpacity(theme.primary, 0.9));
+    root.style.setProperty("--caliper-primary-95", withOpacity(theme.primary, 0.95));
+    root.style.setProperty("--caliper-primary-50", withOpacity(theme.primary, 0.5));
+    root.style.setProperty("--caliper-primary-05", withOpacity(theme.primary, 0.05));
+  }
+  if (theme.secondary) {
+    root.style.setProperty("--caliper-secondary", theme.secondary);
+    root.style.setProperty("--caliper-secondary-50", withOpacity(theme.secondary, 0.5));
+    root.style.setProperty("--caliper-secondary-05", withOpacity(theme.secondary, 0.05));
+  }
   if (theme.calcBg) root.style.setProperty("--caliper-calc-bg", theme.calcBg);
   if (theme.calcShadow) root.style.setProperty("--caliper-calc-shadow", theme.calcShadow);
   if (theme.calcOpHighlight)
     root.style.setProperty("--caliper-calc-op-highlight", theme.calcOpHighlight);
   if (theme.calcText) root.style.setProperty("--caliper-calc-text", theme.calcText);
   if (theme.text) root.style.setProperty("--caliper-text", theme.text);
-  if (theme.projection) root.style.setProperty("--caliper-projection", theme.projection);
+  if (theme.projection) {
+    root.style.setProperty("--caliper-projection", theme.projection);
+    root.style.setProperty("--caliper-projection-90", withOpacity(theme.projection, 0.9));
+    root.style.setProperty("--caliper-projection-light", withOpacity(theme.projection, 0.2));
+  }
   if (theme.ruler) root.style.setProperty("--caliper-ruler", theme.ruler);
 }
 
@@ -61,6 +96,20 @@ export function mergeAnimation(userAnimation?: AnimationConfig): DeepRequired<An
   return {
     enabled: userAnimation?.enabled ?? DEFAULT_ANIMATION.enabled,
     lerpFactor: parseNumber(userAnimation?.lerpFactor, DEFAULT_ANIMATION.lerpFactor),
+  };
+}
+
+export function mergeTheme(userTheme?: ThemeConfig): DeepRequired<ThemeConfig> {
+  return {
+    primary: userTheme?.primary ?? DEFAULT_THEME.primary,
+    secondary: userTheme?.secondary ?? DEFAULT_THEME.secondary,
+    calcBg: userTheme?.calcBg ?? DEFAULT_THEME.calcBg,
+    calcShadow: userTheme?.calcShadow ?? DEFAULT_THEME.calcShadow,
+    calcOpHighlight: userTheme?.calcOpHighlight ?? DEFAULT_THEME.calcOpHighlight,
+    calcText: userTheme?.calcText ?? DEFAULT_THEME.calcText,
+    text: userTheme?.text ?? DEFAULT_THEME.text,
+    projection: userTheme?.projection ?? DEFAULT_THEME.projection,
+    ruler: userTheme?.ruler ?? DEFAULT_THEME.ruler,
   };
 }
 

@@ -14,7 +14,7 @@ import { PREFIX } from "../../css/styles.js";
 interface BoundaryBoxesProps {
   metadata: SelectionMetadata;
   result: MeasurementResult | null;
-  isAltPressed: boolean;
+  isActivatePressed: boolean;
   isFrozen: boolean;
   animation: DeepRequired<AnimationConfig>;
   viewport: {
@@ -91,7 +91,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
   const liveSecondaryTarget = createMemo(() => {
     props.viewport.version;
     const res = props.result;
-    if (!(props.isAltPressed || props.isFrozen) || !res) return null;
+    if (!(props.isActivatePressed || props.isFrozen) || !res) return null;
     return getLiveGeometry(
       res.secondary,
       res.secondaryHierarchy,

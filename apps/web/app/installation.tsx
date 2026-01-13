@@ -109,7 +109,18 @@ export function Root() {
   );
 }`;
 
-  const getLanguage = () => "tsx";
+  const getLanguage = () => {
+    switch (framework) {
+      case "astro":
+      case "vue":
+      case "nuxt":
+      case "vite":
+      case "html":
+        return "ts";
+      default:
+        return "tsx";
+    }
+  };
 
   const getCode = () => {
     switch (framework) {

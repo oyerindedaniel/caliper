@@ -7,7 +7,7 @@ const CALIPER_LOGO_SVG = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTcyIiBoZWln
 
 async function fetchLatestVersion(): Promise<VersionInfo | null> {
   try {
-    const endpoint = `https://unpkg.com/@oyerinde/caliper@latest/package.json`;
+    const endpoint = `https://unpkg.com/@oyerinde/caliper@latest/dist/version.json`;
     const response = await fetch(endpoint, {
       method: "GET",
       cache: "no-store",

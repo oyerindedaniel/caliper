@@ -8,10 +8,20 @@ export interface Reader {
   cancel: () => void;
 }
 
+interface TaskController extends AbortController {
+  setPriority(priority: string): void;
+  readonly signal: TaskSignal;
+}
+
+interface TaskSignal extends AbortSignal {
+  readonly priority: string;
+  onprioritychange: ((this: TaskSignal, ev: Event) => any) | null;
+}
+
 export function createReader(): Reader {
   let rafId: number | null = null;
   let idleId: number | null = null;
-  let schedulerSignal: AbortSignal | null = null;
+  let taskController: TaskController | null = null;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   function detectBestStrategy(): ReadStrategy {
@@ -41,21 +51,21 @@ export function createReader(): Reader {
       return;
     }
 
-    const controller = new TaskController({
+    taskController = new TaskController({
       priority: urgent ? "user-visible" : "background",
     });
-
-    schedulerSignal = controller.signal;
 
     Scheduler.postTask(
       () => {
         callback();
       },
       {
-        signal: controller.signal,
+        signal: taskController?.signal,
         priority: urgent ? "user-visible" : "background",
       }
-    );
+    ).catch(() => {
+      // Ignore abort errors
+    });
   }
 
   function scheduleWithIdle(callback: () => void, urgent: boolean) {
@@ -125,10 +135,9 @@ export function createReader(): Reader {
       cancelIdleCallback(idleId);
       idleId = null;
     }
-    if (schedulerSignal) {
-      // Note: We don't abort the signal here to avoid complex controller management.
-      // Simply nulling it out is enough for the "latest wins" logic as scheduleRead will cancel the next one.
-      schedulerSignal = null;
+    if (taskController) {
+      taskController.abort();
+      taskController = null;
     }
     if (timeoutId !== null) {
       clearTimeout(timeoutId);

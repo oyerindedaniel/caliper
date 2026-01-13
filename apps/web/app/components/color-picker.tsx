@@ -10,7 +10,25 @@ interface ColorPickerProps {
   label: string;
 }
 
+/**
+ * Helper to convert various color formats to hex for the picker
+ */
+const toHex = (color: string): string => {
+  if (color.startsWith("#")) return color;
+  if (color.startsWith("rgba") || color.startsWith("rgb")) {
+    const values = color.match(/\d+(\.\d+)?/g);
+    if (!values || values.length < 3) return "#18A0FB";
+    const r = parseInt(values[0]!);
+    const g = parseInt(values[1]!);
+    const b = parseInt(values[2]!);
+    return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1).toUpperCase();
+  }
+  return "#18A0FB";
+};
+
 export const ColorPicker = ({ color, onChange, label }: ColorPickerProps) => {
+  const hexValue = toHex(color);
+
   return (
     <div className={styles.configControl}>
       <label className={styles.configLabel}>{label}</label>
@@ -44,7 +62,7 @@ export const ColorPicker = ({ color, onChange, label }: ColorPickerProps) => {
                 border: "1px solid #333",
               }}
             >
-              <HexColorPicker color={color} onChange={onChange} />
+              <HexColorPicker color={hexValue} onChange={onChange} />
             </Popover.Content>
           </Popover.Portal>
         </Popover.Root>
@@ -52,7 +70,7 @@ export const ColorPicker = ({ color, onChange, label }: ColorPickerProps) => {
         <input
           type="text"
           className={`${styles.configInput} ${styles.colorInput}`}
-          value={color}
+          value={hexValue}
           onChange={(e) => onChange(e.target.value)}
         />
       </div>
