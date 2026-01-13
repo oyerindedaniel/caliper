@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-01-13
+
+### Improved
+
+- Shortcuts now function while editable elements are focused.
+
 ## [0.1.2] - 2026-01-13
 
 ### Fixed
