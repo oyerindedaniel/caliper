@@ -720,7 +720,6 @@ export function Root(config: RootConfig) {
 
       if (!hasActualResize) return;
 
-      console.log("[Caliper] resize observed");
       for (const entry of entries) {
         if (entry.target === document.documentElement) {
           sentinelResized = true;

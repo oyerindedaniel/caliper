@@ -1,6 +1,6 @@
 {
   "name": "@oyerinde/caliper",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "High-precision browser measurements, projections, and layout auditing",
   "type": "module",
   "main": "dist/index.js",
