@@ -319,7 +319,11 @@
   gap: 8px;
 }
 
-.subHeader:first-of-type {
+.subHeader+.subHeader {
+  margin-top: 0;
+}
+
+.sectionHeader+.subHeader {
   margin-top: 0;
 }
 

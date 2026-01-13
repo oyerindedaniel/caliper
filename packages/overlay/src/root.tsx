@@ -12,7 +12,6 @@ import {
   type SelectionMetadata,
   type CommandsConfig,
   type AnimationConfig,
-  isEditable,
   getTopElementAtPoint,
   getLiveLineValue,
   getLiveGeometry,
@@ -324,7 +323,7 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === commands.clear && !isEditable(e.target as Element)) {
+      if (e.key === commands.clear) {
         if (!isActive()) return;
 
         e.preventDefault();
@@ -355,11 +354,11 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      if (e.key === commands.select && !isEditable(e.target as Element)) {
+      if (e.key === commands.select) {
         setIsSelectKeyDown(true);
       }
 
-      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem && !isEditable(e.target as Element)) {
+      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));
@@ -385,7 +384,7 @@ export function Root(config: RootConfig) {
         }
 
         setIsActivatePressed(true);
-      } else if (e.key === commands.freeze && !isEditable(e.target as Element) && system) {
+      } else if (e.key === commands.freeze && system) {
         const state = system.getState();
 
         if (state === "FROZEN") {
@@ -452,7 +451,7 @@ export function Root(config: RootConfig) {
         };
         const dir = dirMap[key];
 
-        if (dir && selectionMetadata().element && !isEditable(e.target as Element)) {
+        if (dir && selectionMetadata().element) {
           e.preventDefault();
           e.stopImmediatePropagation();
           setActiveInputFocus("projection");

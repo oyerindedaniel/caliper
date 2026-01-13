@@ -49,6 +49,12 @@ export default function ChangelogPage() {
           All notable changes to this project will be documented in this file.
         </p>
 
+        <h2 className={`${styles.subHeader} ${styles.subHeaderLarge}`}>[0.1.3] — 2026-01-13</h2>
+        <h3 className={styles.subHeader}>Improved</h3>
+        <ul className={styles.instructionList}>
+          <li className={styles.instructionItem}>- Shortcuts now function while editable elements are focused.</li>
+        </ul>
+
         <h2 className={`${styles.subHeader} ${styles.subHeaderLarge}`}>[0.1.2] — 2026-01-13</h2>
         <h3 className={styles.subHeader}>Fixed</h3>
         <ul className={styles.instructionList}>
