@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, createEffect, untrack } from "solid-js";
+import { onMount, onCleanup, createSignal, createEffect, untrack, createMemo } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
@@ -79,10 +79,46 @@ export function Root(config: RootConfig) {
   const [isActivatePressed, setIsActivatePressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
 
+  const ignoredElements = new WeakSet<Element>();
+
   let viewportRafId: number | null = null;
   let resizeObserver: ResizeObserver | null = null;
+  let observedRoot = false;
   let observedPrimary: Element | null = null;
   let observedSecondary: Element | null = null;
+
+  const resetCalculatorUI = () => {
+    setCalculatorState(null);
+    setActiveCalculatorLine(null);
+    if (projectionState().direction !== null) {
+      setActiveInputFocus("projection");
+    }
+  };
+
+  const syncCalculatorUI = (state: CalculatorState) => {
+    if (!state.isActive) {
+      resetCalculatorUI();
+      return;
+    }
+
+    setCalculatorState(state);
+
+    // If an operation is in progress (e.g. user typed +),
+    // we stop highlighting the specific measurement line the calculator was opened from
+    if (state.operation) {
+      setActiveCalculatorLine(null);
+    }
+
+  };
+
+  const isActive = createMemo(() => {
+    return (
+      !!selectionMetadata().element ||
+      !!result() ||
+      rulerState().lines.length > 0 ||
+      projectionState().direction !== null
+    );
+  });
 
   const syncViewport = () => {
     setViewport((prev) => ({
@@ -96,6 +132,8 @@ export function Root(config: RootConfig) {
   };
 
   const scheduleUpdate = () => {
+    if (!isActive()) return;
+
     if (!viewportRafId) {
       viewportRafId = requestAnimationFrame(syncViewport);
     }
@@ -131,10 +169,6 @@ export function Root(config: RootConfig) {
       setIsFrozen(system.getState() === "FROZEN");
     });
 
-    // Initial sync
-    const currentResult = system.getCurrentResult();
-    setResult(currentResult);
-
     const unsubscribeUpdate = selectionSystem.onUpdate((metadata) => {
       setSelectionMetadata(metadata);
     });
@@ -145,18 +179,16 @@ export function Root(config: RootConfig) {
     const performSelection = (x: number, y: number) => {
       const element = getTopElementAtPoint(x, y);
       if (element && selectionSystem) {
-        setResult(null);
-        setCalculatorState(null);
-        setActiveInputFocus("calculator");
+        if (system) {
+          system.abort();
+        }
 
         if (projectionSystem) {
           projectionSystem.clear();
         }
 
-        if (system) {
-          system.abort();
-          system.getCalculator().close();
-        }
+        resetCalculatorUI();
+        setActiveInputFocus("calculator");
 
         lastHoveredElement = null;
         selectionDelegate.cancel();
@@ -293,21 +325,16 @@ export function Root(config: RootConfig) {
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === commands.clear && !isEditable(e.target as Element)) {
-        const hasActiveState = !!selectionMetadata().element || !!result() || !!calculatorState() || !!rulerState().lines.length;
+        if (!isActive()) return;
 
-        if (hasActiveState) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
         setIsActivatePressed(false);
-        setCalculatorState(null);
-        setActiveCalculatorLine(null);
+        resetCalculatorUI();
 
-        if (selectionSystem) {
-          lastHoveredElement = null;
-          selectionDelegate.cancel();
-          measureDelegate.cancel();
-          selectionSystem.clear();
+        if (system) {
+          system.abort();
         }
 
         if (projectionSystem) {
@@ -318,11 +345,11 @@ export function Root(config: RootConfig) {
           rulerSystem.clear();
         }
 
-        if (system) {
-          system.abort();
-          const calc = system.getCalculator();
-          calc.close();
-          setResult(null);
+        if (selectionSystem) {
+          lastHoveredElement = null;
+          selectionDelegate.cancel();
+          measureDelegate.cancel();
+          selectionSystem.clear();
         }
 
         return;
@@ -332,7 +359,7 @@ export function Root(config: RootConfig) {
         setIsSelectKeyDown(true);
       }
 
-      if (e.key === commands.ruler && e.shiftKey && rulerSystem && !isEditable(e.target as Element)) {
+      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem && !isEditable(e.target as Element)) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));
@@ -347,15 +374,14 @@ export function Root(config: RootConfig) {
           e.stopImmediatePropagation();
         }
 
-        if (!isActivatePressed()) {
+        if (!isActivatePressed() && isActive()) {
           if (system) {
             system.abort();
-            setResult(null);
-            handleCalculatorClose();
           }
           if (projectionSystem) {
             projectionSystem.clear();
           }
+          resetCalculatorUI();
         }
 
         setIsActivatePressed(true);
@@ -532,7 +558,7 @@ export function Root(config: RootConfig) {
         if (isActivatePressed()) {
           setIsActivatePressed(false);
 
-          if (system) {
+          if (system && isActive()) {
             system.stop();
           }
         }
@@ -543,11 +569,17 @@ export function Root(config: RootConfig) {
       if (isActivatePressed()) {
         setIsActivatePressed(false);
 
-        if (system) {
+        if (system && isActive()) {
           system.stop();
-          setResult(null);
         }
       }
+    };
+
+    const handleFocus = () => {
+      if (!isActive()) return;
+      scheduleUpdate();
+
+      window.focus();
     };
 
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
@@ -557,6 +589,7 @@ export function Root(config: RootConfig) {
     window.addEventListener("keyup", handleKeyUp, { capture: true });
     window.addEventListener("contextmenu", handleContextMenu, { capture: true });
     window.addEventListener("blur", handleBlur);
+    window.addEventListener("focus", handleFocus);
 
     onCleanup(() => {
       window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
@@ -566,6 +599,7 @@ export function Root(config: RootConfig) {
       window.removeEventListener("keyup", handleKeyUp, { capture: true });
       window.removeEventListener("contextmenu", handleContextMenu, { capture: true });
       window.removeEventListener("blur", handleBlur);
+      window.removeEventListener("focus", handleFocus);
 
       if (mouseMoveRafId) {
         cancelAnimationFrame(mouseMoveRafId);
@@ -579,7 +613,9 @@ export function Root(config: RootConfig) {
       unsubscribeProjection();
       unsubscribeRuler();
 
-      handleCleanup();
+      if (system) {
+        system.cleanup();
+      }
 
       if (projectionSystem) {
         projectionSystem = null;
@@ -592,9 +628,7 @@ export function Root(config: RootConfig) {
   });
 
   createEffect(() => {
-    const active = !!selectionMetadata().element || !!result();
-
-    if (active) {
+    if (isActive()) {
       window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
       syncViewport();
 
@@ -609,8 +643,16 @@ export function Root(config: RootConfig) {
     }
   });
 
-  const updateResizeObservations = (primaryEl: Element | null, secondaryEl: Element | null) => {
+  const updateResizeObservations = (active: boolean, primaryEl: Element | null, secondaryEl: Element | null) => {
     if (!resizeObserver) return;
+
+    if (active && !observedRoot) {
+      resizeObserver.observe(document.documentElement);
+      observedRoot = true;
+    } else if (!active && observedRoot) {
+      resizeObserver.unobserve(document.documentElement);
+      observedRoot = false;
+    }
 
     if (primaryEl === observedPrimary && secondaryEl === observedSecondary) {
       return;
@@ -626,10 +668,12 @@ export function Root(config: RootConfig) {
     }
 
     if (primaryEl && primaryEl !== observedPrimary) {
+      ignoredElements.add(primaryEl);
       resizeObserver.observe(primaryEl);
       observedPrimary = primaryEl;
     }
     if (secondaryEl && secondaryEl !== primaryEl && secondaryEl !== observedSecondary) {
+      ignoredElements.add(secondaryEl);
       resizeObserver.observe(secondaryEl);
       observedSecondary = secondaryEl;
     }
@@ -663,6 +707,20 @@ export function Root(config: RootConfig) {
     };
 
     resizeObserver = new ResizeObserver((entries: ResizeObserverEntry[]) => {
+      if (!isActive()) return;
+
+      let hasActualResize = false;
+      for (const entry of entries) {
+        if (ignoredElements.has(entry.target)) {
+          ignoredElements.delete(entry.target);
+          continue;
+        }
+        hasActualResize = true;
+      }
+
+      if (!hasActualResize) return;
+
+      console.log("[Caliper] resize observed");
       for (const entry of entries) {
         if (entry.target === document.documentElement) {
           sentinelResized = true;
@@ -693,8 +751,6 @@ export function Root(config: RootConfig) {
       }
     });
 
-    resizeObserver.observe(document.documentElement);
-
     onCleanup(() => {
       resizeObserver?.disconnect();
       resizeObserver = null;
@@ -705,16 +761,17 @@ export function Root(config: RootConfig) {
   });
 
   createEffect(() => {
+    const active = isActive();
     const primaryEl = selectionMetadata().element;
     const currentResult = result();
     const secondaryEl = isFrozen() ? (currentResult?.secondaryElement ?? null) : null;
 
-    if (!primaryEl && !secondaryEl) {
-      updateResizeObservations(null, null);
+    if (!active) {
+      updateResizeObservations(false, null, null);
       return;
     }
 
-    updateResizeObservations(primaryEl, secondaryEl);
+    updateResizeObservations(true, primaryEl, secondaryEl);
   });
 
   createEffect(() => {
@@ -738,15 +795,13 @@ export function Root(config: RootConfig) {
     }
   });
 
+
   const handleLineClick = (line: MeasurementLine, liveValue: number) => {
     if (system) {
-      setActiveCalculatorLine(null);
-
       const calc = system.getCalculator();
       calc.open(liveValue);
       setActiveInputFocus("calculator");
-      const calcState = calc.getState();
-      setCalculatorState(calcState.isActive ? calcState : null);
+      syncCalculatorUI(calc.getState());
 
       // Only track the line if it's a measurement line (has startSync property)
       // Projection/ruler lines are synthetic and shouldn't be tracked for live sync
@@ -765,15 +820,7 @@ export function Root(config: RootConfig) {
         setActiveInputFocus("calculator");
       }
 
-      const calcState = calc.getState();
-      const isActive = calcState.isActive;
-      setCalculatorState(isActive ? calcState : null);
-      if (calcState.operation) {
-        setActiveCalculatorLine(null);
-      }
-      if (!isActive && projectionState().direction !== null) {
-        setActiveInputFocus("projection");
-      }
+      syncCalculatorUI(calc.getState());
     }
   };
 
@@ -781,15 +828,7 @@ export function Root(config: RootConfig) {
     if (system) {
       const calc = system.getCalculator();
       calc.handleBackspace();
-      const calcState = calc.getState();
-      const isActive = calcState.isActive;
-      setCalculatorState(isActive ? calcState : null);
-      if (!isActive) {
-        setActiveCalculatorLine(null);
-        if (projectionState().direction !== null) {
-          setActiveInputFocus("projection");
-        }
-      }
+      syncCalculatorUI(calc.getState());
     }
   };
 
@@ -797,13 +836,7 @@ export function Root(config: RootConfig) {
     if (system) {
       const calc = system.getCalculator();
       calc.handleDelete();
-      const calcState = calc.getState();
-      const isActive = calcState.isActive;
-      setCalculatorState(isActive ? calcState : null);
-      setActiveCalculatorLine(null);
-      if (!isActive && projectionState().direction !== null) {
-        setActiveInputFocus("projection");
-      }
+      syncCalculatorUI(calc.getState());
     }
   };
 
@@ -811,13 +844,7 @@ export function Root(config: RootConfig) {
     if (system) {
       const calc = system.getCalculator();
       calc.handleEnter();
-      const calcState = calc.getState();
-      const isActive = calcState.isActive;
-      setCalculatorState(isActive ? calcState : null);
-      setActiveCalculatorLine(null);
-      if (!isActive && projectionState().direction !== null) {
-        setActiveInputFocus("projection");
-      }
+      syncCalculatorUI(calc.getState());
     }
   };
 
@@ -825,11 +852,7 @@ export function Root(config: RootConfig) {
     if (system) {
       const calc = system.getCalculator();
       calc.close();
-      setCalculatorState(null);
-      setActiveCalculatorLine(null);
-      if (projectionState().direction !== null) {
-        setActiveInputFocus("projection");
-      }
+      resetCalculatorUI();
     }
   };
 
@@ -841,12 +864,6 @@ export function Root(config: RootConfig) {
     rulerSystem?.removeLine(id);
   };
 
-  const handleCleanup = () => {
-    if (system) system.cleanup();
-    if (selectionSystem) selectionSystem.clear();
-    if (projectionSystem) projectionSystem.clear();
-    if (rulerSystem) rulerSystem.clear();
-  };
 
   return (
     <Overlay

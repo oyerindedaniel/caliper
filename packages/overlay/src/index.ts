@@ -5,6 +5,7 @@ import {
   applyTheme,
   mergeCommands,
   mergeAnimation,
+  mergeTheme,
   getConfig,
   showVersionInfo,
 } from "@caliper/core";
@@ -31,8 +32,8 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => {},
-      dispose: () => {},
+      mount: () => { },
+      dispose: () => { },
       mounted: false,
     };
   }
@@ -67,6 +68,7 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
 
   const commands = mergeCommands(mergedConfig.commands);
   const animation = mergeAnimation(mergedConfig.animation);
+  const theme = mergeTheme(mergedConfig.theme);
 
   let cleanup: (() => void) | null = null;
 
@@ -80,9 +82,7 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
         return;
       }
 
-      if (mergedConfig.theme) {
-        applyTheme(mergedConfig.theme);
-      }
+      applyTheme(theme);
 
       const target = container || document.body;
       injectStyles();

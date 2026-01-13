@@ -226,7 +226,7 @@ export function Configurator() {
         />
         <ShortcutField
           label="Ruler (Shift+)"
-          value={commands.ruler}
+          value={commands.ruler.toLowerCase()}
           id="ruler"
           isDuplicate={conflicts.has("ruler")}
           onUpdate={update}

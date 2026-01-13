@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-01-13
+
+### Fixed
+
+- Rulers now maintain their proportional position when the browser window is resized.
+- Fixed an issue where the `Alt` key could still trigger activation even when the activate command was reconfigured.
+- Improved measurement value formatting and display consistency.
+- Fixed theme configuration to support both Hex and RGBA formats (previously limited to specific RGBA structures).
+
+### Improved
+
+- Optimized performance by adding `isActive` guards to reactive cycles and keyboard event handlers.
+- Reduced resource overhead by disabling `ResizeObserver` and scroll listeners when the tool is inactive.
+
 ## [0.1.0] - 2026-01-10
 
 ### Added

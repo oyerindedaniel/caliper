@@ -101,8 +101,8 @@ export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {
   calcBg: "rgba(30, 30, 30, 0.95)",
   calcShadow: "rgba(0, 0, 0, 0.25)",
   calcOpHighlight: "rgba(24, 160, 251, 0.3)",
-  calcText: "white",
-  text: "white",
+  calcText: "rgba(255, 255, 255, 1)",
+  text: "rgba(255, 255, 255, 1)",
   projection: "rgba(155, 81, 224, 1)",
   ruler: "rgba(24, 160, 251, 1)",
 };

@@ -49,6 +49,36 @@ export default function ChangelogPage() {
           All notable changes to this project will be documented in this file.
         </p>
 
+        <h2 className={`${styles.subHeader} ${styles.subHeaderLarge}`}>[0.1.1] — 2026-01-13</h2>
+
+        <h3 className={styles.subHeader}>Fixed</h3>
+        <ul className={styles.instructionList}>
+          <li className={styles.instructionItem}>
+            - Rulers now maintain their proportional position when the browser window is resized.
+          </li>
+          <li className={styles.instructionItem}>
+            - Fixed an issue where the <code>Alt</code> key could still trigger activation even
+            when the activate command was reconfigured.
+          </li>
+          <li className={styles.instructionItem}>- Improved measurement value formatting and display consistency.</li>
+          <li className={styles.instructionItem}>
+            - Fixed theme configuration to support both Hex and RGBA formats (previously limited to
+            specific RGBA structures).
+          </li>
+        </ul>
+
+        <h3 className={styles.subHeader}>Improved</h3>
+        <ul className={styles.instructionList}>
+          <li className={styles.instructionItem}>
+            - Optimized performance by adding <code>isActive</code> guards to reactive cycles and
+            keyboard event handlers.
+          </li>
+          <li className={styles.instructionItem}>
+            - Reduced resource overhead by disabling <code>ResizeObserver</code> and scroll
+            listeners when the tool is inactive.
+          </li>
+        </ul>
+
         <h2 className={`${styles.subHeader} ${styles.subHeaderLarge}`}>[0.1.0] — 2026-01-10</h2>
 
         <h3 className={styles.subHeader}>Added</h3>
