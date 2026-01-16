@@ -23,7 +23,7 @@ export function createProjectionSystem(): ProjectionSystem {
   const listeners = new Set<ProjectionListener>();
 
   const notify = () => {
-    listeners.forEach((l) => l({ ...state }));
+    listeners.forEach((listener) => listener({ ...state }));
   };
 
   return {

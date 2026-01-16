@@ -224,6 +224,7 @@ export function Root(config: RootConfig) {
 
       if (isCommandActive(e)) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
         selectionTimeoutId = window.setTimeout(() => {
           performSelection(lastPointerPos.x, lastPointerPos.y);
@@ -231,6 +232,13 @@ export function Root(config: RootConfig) {
         }, commands.selectionHoldDuration);
       } else {
         if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
+      }
+    };
+
+    const handleClick = (e: MouseEvent) => {
+      if (isCommandActive(e)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
       }
     };
 
@@ -533,7 +541,7 @@ export function Root(config: RootConfig) {
           const targetType = typeMap[key];
           if (targetType) {
             const currentLines = result()?.lines || [];
-            const targetLine = currentLines.find((l) => l.type === targetType);
+            const targetLine = currentLines.find((line) => line.type === targetType);
 
             if (targetLine) {
               e.preventDefault();
@@ -583,6 +591,7 @@ export function Root(config: RootConfig) {
 
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
     window.addEventListener("pointerup", handlePointerUp, { capture: true });
+    window.addEventListener("click", handleClick, { capture: true });
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("keyup", handleKeyUp, { capture: true });
@@ -593,6 +602,7 @@ export function Root(config: RootConfig) {
     onCleanup(() => {
       window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp, { capture: true });
+      window.removeEventListener("click", handleClick, { capture: true });
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp, { capture: true });
@@ -782,7 +792,7 @@ export function Root(config: RootConfig) {
       if (state?.isActive) {
         viewport().version;
 
-        const matchingLine = currentResult.lines.find((l) => l.type === calcLine.type);
+        const matchingLine = currentResult.lines.find((line) => line.type === calcLine.type);
         if (matchingLine) {
           const liveValue = getLiveLineValue(matchingLine, currentResult);
           const calc = system.getCalculator();

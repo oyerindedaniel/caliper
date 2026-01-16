@@ -64,7 +64,7 @@ export function Instructions() {
         </li>
         <li className={styles.instructionItem}>
           <strong>Deselect/Remove</strong> — Click empty space to deselect; press{" "}
-          <strong>Delete/Backspace</strong> or <strong>Double-Click</strong> to remove.
+          <strong>Delete/Backspace</strong> to remove.
         </li>
         <li className={styles.instructionItem}>
           <strong>Input Priority</strong> — Typing operators (<strong>+ - * / .</strong>)
