@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-01-16
+
+### Fixed
+
+- Fixed selection triggering underlying element click events (buttons, links, etc.).
+
+### Removed
+
+- Removed double-click to remove rulers (use Delete/Backspace instead).
+
 ## [0.1.3] - 2026-01-13
 
 ### Improved

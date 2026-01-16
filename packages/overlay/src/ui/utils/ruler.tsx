@@ -53,7 +53,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
     const validIds = new Set<string>();
 
     currentIds.forEach((id) => {
-      if (lines.find((l) => l.id === id)) {
+      if (lines.find((line) => line.id === id)) {
         validIds.add(id);
       }
     });
@@ -77,7 +77,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
       }
     });
 
-    const lineIds = new Set(lines.map((l) => l.id));
+    const lineIds = new Set(lines.map((line) => line.id));
     newOrigins.forEach((_, id) => {
       if (!lineIds.has(id)) {
         newOrigins.delete(id);
@@ -194,7 +194,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
     }
 
     const lines = props.state().lines;
-    const activeLines = lines.filter((l) => activeIds.has(l.id));
+    const activeLines = lines.filter((line) => activeIds.has(line.id));
     if (activeLines.length === 0) return;
 
     let step = 1;
@@ -272,7 +272,7 @@ export function RulerOverlay(props: RulerOverlayProps) {
     target.setPointerCapture(e.pointerId);
 
     const vp = props.viewport();
-    const line = props.state().lines.find((l) => l.id === id);
+    const line = props.state().lines.find((line) => line.id === id);
     if (line) {
       const currentPos = getProportionalPosition(line);
       setRulerOrigins((prev) => {
@@ -318,19 +318,6 @@ export function RulerOverlay(props: RulerOverlayProps) {
     window.addEventListener("pointerup", onPointerUp);
   };
 
-  const handleDoubleClick = (e: MouseEvent) => {
-    const target = e.target as HTMLElement;
-    const id = target.getAttribute("data-ruler-id");
-    if (id) {
-      props.onRemove(id);
-      setSelectedIds((prev) => {
-        const next = new Set<string>(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  };
-
   const handlePointerOver = (e: PointerEvent) => {
     const target = e.target as HTMLElement;
     const id = target.getAttribute("data-ruler-id");
@@ -346,15 +333,15 @@ export function RulerOverlay(props: RulerOverlayProps) {
     const ids = selectedIds();
     if (ids.size < 2) return [];
 
-    const lines = props.state().lines.filter((l) => ids.has(l.id));
+    const lines = props.state().lines.filter((line) => ids.has(line.id));
 
     const vLinesWithPos = lines
-      .filter((l) => l.type === "vertical")
-      .map((l) => ({ line: l, pos: getProportionalPosition(l) }))
+      .filter((line) => line.type === "vertical")
+      .map((line) => ({ line: line, pos: getProportionalPosition(line) }))
       .sort((a, b) => a.pos - b.pos);
     const hLinesWithPos = lines
-      .filter((l) => l.type === "horizontal")
-      .map((l) => ({ line: l, pos: getProportionalPosition(l) }))
+      .filter((line) => line.type === "horizontal")
+      .map((line) => ({ line: line, pos: getProportionalPosition(line) }))
       .sort((a, b) => a.pos - b.pos);
 
     const result: Array<{
@@ -430,7 +417,6 @@ export function RulerOverlay(props: RulerOverlayProps) {
       class={`${PREFIX}ruler-layer`}
       data-caliper-ignore
       onPointerDown={handlePointerDown}
-      onDblClick={handleDoubleClick}
       onPointerOver={handlePointerOver}
       onPointerOut={handlePointerOut}
     >

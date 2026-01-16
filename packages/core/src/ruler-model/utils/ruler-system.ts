@@ -13,7 +13,7 @@ export interface RulerSystem {
 }
 
 /**
- * Manages the "Ruler" system - fixed viewport guidelines.
+ * Manages the "Ruler" system.
  */
 export function createRulerSystem(): RulerSystem {
   let state: RulerState = {
@@ -23,8 +23,7 @@ export function createRulerSystem(): RulerSystem {
   const listeners = new Set<RulerListener>();
 
   const notify = () => {
-    // Return a fresh copy of lines to ensure reactivity observes the array change
-    listeners.forEach((l) => l({ lines: [...state.lines] }));
+    listeners.forEach((listener) => listener({ lines: [...state.lines] }));
   };
 
   return {
@@ -48,14 +47,14 @@ export function createRulerSystem(): RulerSystem {
       return vLine.id;
     },
     updateLine: (id, position) => {
-      const index = state.lines.findIndex((l) => l.id === id);
+      const index = state.lines.findIndex((line) => line.id === id);
       if (index !== -1 && state.lines[index]) {
         state.lines[index] = { ...state.lines[index]!, position };
         notify();
       }
     },
     removeLine: (id) => {
-      state.lines = state.lines.filter((l) => l.id !== id);
+      state.lines = state.lines.filter((line) => line.id !== id);
       notify();
     },
     clear: () => {
