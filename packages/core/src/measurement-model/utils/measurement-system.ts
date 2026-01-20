@@ -9,6 +9,11 @@ import {
   createCalculatorIntegration,
   type CalculatorIntegration,
 } from "./calculator-integration.js";
+import {
+  createProjectionSystem,
+  type ProjectionSystem,
+} from "./projection-system.js";
+import { createRulerSystem, type RulerSystem } from "../../ruler-model/utils/ruler-system.js";
 
 export type { MeasurementState };
 
@@ -24,6 +29,8 @@ export interface MeasurementSystem {
   getState: () => MeasurementState;
   getCurrentResult: () => MeasurementResult | null;
   getCalculator: () => CalculatorIntegration;
+  getProjection: () => ProjectionSystem;
+  getRuler: () => RulerSystem;
   onStateChange: (listener: MeasurementSystemListener) => () => void;
   updatePrimaryRect: (rect: DOMRect) => void;
   updateSecondaryRect: (rect: DOMRect) => void;
@@ -34,6 +41,8 @@ export function createMeasurementSystem(): MeasurementSystem {
   const reader = createFrequencyControlledReader(baseReader);
   const stateMachine = createStateMachine();
   const calculator = createCalculatorIntegration();
+  const projection = createProjectionSystem();
+  const ruler = createRulerSystem();
   const listeners = new Set<MeasurementSystemListener>();
 
   let currentResult: MeasurementResult | null = null;
@@ -104,6 +113,8 @@ export function createMeasurementSystem(): MeasurementSystem {
     reader.cancel();
     stateMachine.transitionTo("IDLE");
     calculator.close();
+    projection.clear();
+    ruler.clear();
     currentResult = null;
     previousContext = null;
     previousElement = null;
@@ -136,6 +147,14 @@ export function createMeasurementSystem(): MeasurementSystem {
 
   function getCalculator(): CalculatorIntegration {
     return calculator;
+  }
+
+  function getProjection(): ProjectionSystem {
+    return projection;
+  }
+
+  function getRuler(): RulerSystem {
+    return ruler;
   }
 
   function onStateChange(listener: MeasurementSystemListener) {
@@ -191,6 +210,8 @@ export function createMeasurementSystem(): MeasurementSystem {
     getState,
     getCurrentResult,
     getCalculator,
+    getProjection,
+    getRuler,
     onStateChange,
     updatePrimaryRect,
     updateSecondaryRect,

@@ -60,7 +60,7 @@ const ShortcutField = ({
         <input
           ref={(el) => {
             registerInput(id, el);
-            (inputRef as any).current = el;
+            inputRef.current = el;
           }}
           type="text"
           readOnly

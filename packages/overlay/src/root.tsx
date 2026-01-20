@@ -3,7 +3,6 @@ import {
   createMeasurementSystem,
   createSelectionSystem,
   createSuppressionDelegate,
-  createProjectionSystem,
   type MeasurementSystem,
   type SelectionSystem,
   type MeasurementResult,
@@ -15,7 +14,6 @@ import {
   getTopElementAtPoint,
   getLiveLineValue,
   getLiveGeometry,
-  createRulerSystem,
   type MeasurementLine,
   type DeepRequired,
   type ProjectionSystem,
@@ -141,7 +139,8 @@ export function Root(config: RootConfig) {
   onMount(() => {
     selectionSystem = createSelectionSystem();
     system = createMeasurementSystem();
-    projectionSystem = createProjectionSystem();
+    projectionSystem = system.getProjection();
+    rulerSystem = system.getRuler();
 
     const unsubscribeProjection = projectionSystem.onUpdate((state) => {
       setProjectionState(state);
@@ -157,7 +156,6 @@ export function Root(config: RootConfig) {
       }
     });
 
-    rulerSystem = createRulerSystem();
     const unsubscribeRuler = rulerSystem.onUpdate((state) => {
       setRulerState(state);
     });
@@ -180,10 +178,6 @@ export function Root(config: RootConfig) {
       if (element && selectionSystem) {
         if (system) {
           system.abort();
-        }
-
-        if (projectionSystem) {
-          projectionSystem.clear();
         }
 
         resetCalculatorUI();
@@ -344,14 +338,6 @@ export function Root(config: RootConfig) {
           system.abort();
         }
 
-        if (projectionSystem) {
-          projectionSystem.clear();
-        }
-
-        if (rulerSystem) {
-          rulerSystem.clear();
-        }
-
         if (selectionSystem) {
           lastHoveredElement = null;
           selectionDelegate.cancel();
@@ -384,9 +370,6 @@ export function Root(config: RootConfig) {
         if (!isActivatePressed() && isActive()) {
           if (system) {
             system.abort();
-          }
-          if (projectionSystem) {
-            projectionSystem.clear();
           }
           resetCalculatorUI();
         }

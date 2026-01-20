@@ -1,7 +1,6 @@
 import styles from "./page.module.css";
 import { useFocus } from "./focus-context";
 import { useOS } from "./hooks/use-os";
-
 import { useConfig, type CommandConfig } from "./config-context";
 
 interface CommandItem {

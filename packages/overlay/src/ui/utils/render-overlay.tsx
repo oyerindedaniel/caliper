@@ -31,7 +31,7 @@ export function Overlay(props: OverlayProps) {
     );
     if (!primaryGeo) return null;
 
-    return {
+    const base = {
       primary: {
         geo: primaryGeo,
         delta: getTotalScrollDelta(
@@ -65,15 +65,22 @@ export function Overlay(props: OverlayProps) {
         props.selectionMetadata().element!,
         res.secondaryElement!
       ),
-      isSameContext: !!(
-        (res.primaryPosition === res.secondaryPosition &&
-          res.primaryHierarchy.length === res.secondaryHierarchy.length &&
-          res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element)) ||
-        (res.primaryHierarchy.length > 0 &&
-          res.primaryHierarchy[0]?.element === res.secondaryElement) ||
-        (res.secondaryHierarchy.length > 0 &&
-          res.secondaryHierarchy[0]?.element === props.selectionMetadata().element)
-      ),
+    };
+
+    const hasSameStack =
+      res.primaryPosition === res.secondaryPosition &&
+      res.primaryHierarchy.length === res.secondaryHierarchy.length &&
+      res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element);
+
+    const isDirectParentChild =
+      (res.primaryHierarchy.length > 0 &&
+        res.primaryHierarchy[0]?.element === res.secondaryElement) ||
+      (res.secondaryHierarchy.length > 0 &&
+        res.secondaryHierarchy[0]?.element === props.selectionMetadata().element);
+
+    return {
+      ...base,
+      isSameContext: hasSameStack || isDirectParentChild,
     };
   });
 
