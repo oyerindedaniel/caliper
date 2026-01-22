@@ -1,0 +1,73 @@
+{
+  "name": "@oyerinde/caliper-bridge",
+  "version": "0.1.0",
+  "description": "Agentic bridge for Caliper - enables AI agents to perform high-precision UI auditing",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "browser": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      },
+      "node": {
+        "import": "./dist/index.server.js",
+        "require": "./dist/index.server.cjs"
+      },
+      "default": {
+        "import": {
+          "types": "./dist/index.d.ts",
+          "default": "./dist/index.js"
+        },
+        "require": {
+          "types": "./dist/index.d.cts",
+          "default": "./dist/index.cjs"
+        }
+      }
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "pnpm run clean && cross-env NODE_ENV=production tsup",
+    "build:watch": "tsup --watch",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "keywords": [
+    "caliper",
+    "agentic",
+    "ai-agent",
+    "browser-automation",
+    "ui-testing",
+    "layout-auditing"
+  ],
+  "license": "MIT",
+  "dependencies": {},
+  "peerDependencies": {
+    "@oyerinde/caliper": ">=0.1.4"
+  },
+  "devDependencies": {
+    "@oyerinde/caliper": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^24.10.9",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.1",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,3 @@
+
+export const DEFAULT_BRIDGE_PORT = 9876;
+export const BRIDGE_REQUEST_TIMEOUT_MS = 15000;

@@ -1,6 +1,6 @@
 {
   "name": "@oyerinde/caliper",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "High-precision browser measurements, projections, and layout auditing",
   "type": "module",
   "main": "dist/index.cjs",
@@ -46,6 +46,11 @@
     "./iife": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.global.js"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "require": "./dist/core.cjs"
     }
   },
   "files": [
@@ -91,7 +96,7 @@
     "@caliper/overlay": "workspace:*",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@types/node": "^22.15.3",
+    "@types/node": "^24.10.9",
     "babel-preset-solid": "^1.9.10",
     "cross-env": "^10.1.0",
     "esbuild-plugin-babel": "^0.2.3",

@@ -26,21 +26,40 @@ export function createMeasurement(
   }
 
   const { context, element: secondaryElement } = result;
+  return createMeasurementBetween(selectedElement, secondaryElement, context);
+}
 
-  if (secondaryElement === selectedElement) return null;
+/**
+ * Create a measurement result between two specific elements with a defined context.
+ * If no context is provided, it will be automatically detected (parent/child/sibling).
+ */
+export function createMeasurementBetween(
+  primaryElement: Element,
+  secondaryElement: Element,
+  context?: CursorContext
+): { element: Element; result: MeasurementResult } | null {
+  if (secondaryElement === primaryElement) return null;
 
-  const primaryGeom = deduceGeometry(selectedElement);
+  const resolvedContext =
+    context ??
+    (primaryElement.contains(secondaryElement)
+      ? "child"
+      : secondaryElement.contains(primaryElement)
+        ? "parent"
+        : "sibling");
+
+  const primaryGeom = deduceGeometry(primaryElement);
   const secondaryGeom = deduceGeometry(secondaryElement);
 
   const primary = primaryGeom.rect;
   const secondary = secondaryGeom.rect;
 
-  const lines = createMeasurementLines(context, primary, secondary);
+  const lines = createMeasurementLines(resolvedContext, primary, secondary);
 
   return {
     element: secondaryElement,
     result: {
-      context,
+      context: resolvedContext,
       lines,
       primary,
       secondary,

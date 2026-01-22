@@ -1,6 +1,6 @@
 import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
-import type { OverlayConfig } from "@caliper/core";
+import type { OverlayConfig, MeasurementSystem, SelectionSystem } from "@caliper/core";
 import {
   applyTheme,
   mergeCommands,
@@ -15,9 +15,17 @@ const IS_BROWSER = typeof window !== "undefined";
 
 declare const process: { env: { VERSION: string } };
 
+export interface Systems {
+  measurementSystem: MeasurementSystem;
+  selectionSystem: SelectionSystem;
+  onViewportChange: (listener: () => void) => () => void;
+}
+
 export interface OverlayInstance {
   mount: (container?: HTMLElement) => void;
   dispose: () => void;
+  getSystems: () => Systems | null;
+  waitForSystems: () => Promise<Systems>;
   mounted: boolean;
 }
 
@@ -34,6 +42,8 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
     return {
       mount: () => { },
       dispose: () => { },
+      getSystems: () => null,
+      waitForSystems: () => new Promise(() => { }),
       mounted: false,
     };
   }
@@ -71,6 +81,13 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
   const theme = mergeTheme(mergedConfig.theme);
 
   let cleanup: (() => void) | null = null;
+  let systems: Systems | null = null;
+
+  const pendingSystemsResolvers: ((s: Systems) => void)[] = [];
+  const waitForSystems = (): Promise<Systems> => {
+    if (systems) return Promise.resolve(systems);
+    return new Promise((resolve) => pendingSystemsResolvers.push(resolve));
+  };
 
   const instance: OverlayInstance = {
     mounted: false,
@@ -91,13 +108,27 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
       overlayContainer.id = "caliper-overlay-root";
       target.appendChild(overlayContainer);
 
-      const disposeRender = render(() => Root({ commands, animation }), overlayContainer);
+      const disposeRender = render(
+        () =>
+          Root({
+            commands,
+            animation,
+            onSystemsReady: (readySystems) => {
+              systems = readySystems;
+              const currentResolvers = [...pendingSystemsResolvers];
+              pendingSystemsResolvers.length = 0;
+              currentResolvers.forEach((resolve) => resolve(readySystems));
+            },
+          }),
+        overlayContainer
+      );
 
       cleanup = () => {
         disposeRender();
         overlayContainer.remove();
         removeStyles();
         instance.mounted = false;
+        systems = null;
         if (activeInstance === instance) activeInstance = null;
       };
 
@@ -109,6 +140,8 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
         cleanup = null;
       }
     },
+    getSystems: () => systems,
+    waitForSystems,
   };
 
   activeInstance = instance;

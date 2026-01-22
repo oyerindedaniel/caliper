@@ -38,15 +38,15 @@ const ShortcutField = ({
     // Mapping for common keys
     const keyMap: Record<string, string> = {
       " ": "Space",
-      "Meta": "Cmd",
-      "Control": "Ctrl",
-      "AltGraph": "Alt",
-      "ArrowUp": "Up Arrow",
-      "ArrowDown": "Down Arrow",
-      "ArrowLeft": "Left Arrow",
-      "ArrowRight": "Right Arrow",
-      "Enter": "Return",
-      "Escape": "Esc",
+      Meta: "Cmd",
+      Control: "Ctrl",
+      AltGraph: "Alt",
+      ArrowUp: "Up Arrow",
+      ArrowDown: "Down Arrow",
+      ArrowLeft: "Left Arrow",
+      ArrowRight: "Right Arrow",
+      Enter: "Return",
+      Escape: "Esc",
     };
 
     if (value in keyMap) return keyMap[value];

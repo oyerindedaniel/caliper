@@ -10,12 +10,15 @@ import { Instructions } from "./instructions";
 import { TryCaliper } from "./try-caliper";
 import { Footer } from "./footer";
 import { FocusProvider } from "./focus-context";
+import { Nav } from "./components/nav";
 
 export default function HomePage() {
   return (
     <FocusProvider>
       <div className={styles.page}>
         <main className={styles.main}>
+          <Nav />
+
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <Image
               src="/caliper_logo.svg"

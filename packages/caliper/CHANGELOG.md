@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2026-01-22
+
+### Added
+
+- **AI Bridge Support**: Full compatibility with `@oyerinde/caliper-bridge` and `@oyerinde/caliper-mcp`.
+- **Agentic Infrastructure**: Exposes a new `waitForSystems()` API to allow deep integration for AI-powered auditing tools.
+- **Improved Semantic Export**: Enhanced support for exporting viewport geometry and "significant" elements to AI agents.
+
 ## [0.1.4] - 2026-01-16
 
 ### Fixed

@@ -19,7 +19,11 @@ function parseNumber(value: any, defaultValue: number): number {
 function withOpacity(color: string, opacity: number): string {
   if (color.startsWith("#")) {
     let hex = color.slice(1);
-    if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+    if (hex.length === 3)
+      hex = hex
+        .split("")
+        .map((c) => c + c)
+        .join("");
     const r = parseInt(hex.slice(0, 2), 16);
     const g = parseInt(hex.slice(2, 4), 16);
     const b = parseInt(hex.slice(4, 6), 16);

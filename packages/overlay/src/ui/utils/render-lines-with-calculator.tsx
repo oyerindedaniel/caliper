@@ -4,6 +4,7 @@ import {
   type LiveGeometry,
   getLivePoint,
   clampPointToGeometry,
+  generateId,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
@@ -37,9 +38,7 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
   const [hoveredLine, setHoveredLine] = createSignal<number | null>(null);
 
   const hasClipping = () => isFinite(props.data.common.minX);
-  const clipPathId = createSignal(
-    `caliper-lines-clip-${Math.random().toString(36).substring(2, 9)}`
-  )[0]();
+  const clipPathId = createSignal(generateId("lines-clip"))[0]();
 
   const vCommon = () => ({
     minX: props.data.common.minX - props.viewport.scrollX,

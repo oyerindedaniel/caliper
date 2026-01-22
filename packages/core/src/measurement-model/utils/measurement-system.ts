@@ -9,10 +9,7 @@ import {
   createCalculatorIntegration,
   type CalculatorIntegration,
 } from "./calculator-integration.js";
-import {
-  createProjectionSystem,
-  type ProjectionSystem,
-} from "./projection-system.js";
+import { createProjectionSystem, type ProjectionSystem } from "./projection-system.js";
 import { createRulerSystem, type RulerSystem } from "../../ruler-model/utils/ruler-system.js";
 
 export type { MeasurementState };
@@ -34,6 +31,7 @@ export interface MeasurementSystem {
   onStateChange: (listener: MeasurementSystemListener) => () => void;
   updatePrimaryRect: (rect: DOMRect) => void;
   updateSecondaryRect: (rect: DOMRect) => void;
+  applyResult: (result: MeasurementResult) => void;
 }
 
 export function createMeasurementSystem(): MeasurementSystem {
@@ -200,6 +198,12 @@ export function createMeasurementSystem(): MeasurementSystem {
     notifyListeners();
   }
 
+  function applyResult(result: MeasurementResult) {
+    currentResult = result;
+    stateMachine.transitionTo("MEASURING");
+    notifyListeners();
+  }
+
   return {
     measure,
     abort,
@@ -215,5 +219,6 @@ export function createMeasurementSystem(): MeasurementSystem {
     onStateChange,
     updatePrimaryRect,
     updateSecondaryRect,
+    applyResult,
   };
 }

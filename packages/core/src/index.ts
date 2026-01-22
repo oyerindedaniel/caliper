@@ -4,7 +4,12 @@ export {
   type FrequencyControlledReader,
 } from "./scheduling/frequency-control.js";
 export { createSuppressionDelegate, type SuppressionOptions } from "./scheduling/suppression.js";
-export { isVisible, hasSize, isEligible, isEditable } from "./element-picking/utils/filter-visible.js";
+export {
+  isVisible,
+  hasSize,
+  isEligible,
+  isEditable,
+} from "./element-picking/utils/filter-visible.js";
 export {
   detectContext,
   resolveAmbiguousContext,
@@ -19,6 +24,10 @@ export {
   getLiveLineValue,
   getLivePoint,
 } from "./measurement-model/utils/measurement-result.js";
+export {
+  createMeasurement,
+  createMeasurementBetween,
+} from "./measurement-model/utils/create-measurement.js";
 export {
   createMeasurementSystem,
   type MeasurementSystem,
@@ -64,4 +73,5 @@ export {
 } from "./shared/config/config-utils.js";
 export { showVersionInfo } from "./shared/utils/version-check.js";
 export { lerp, lerpRect } from "./shared/utils/math.js";
-export { diagnosticLogger, formatElement, formatRect } from "./shared/utils/logger.js";
+export { generateId } from "./shared/utils/id.js";
+export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";

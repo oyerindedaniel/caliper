@@ -74,7 +74,10 @@ export default defineConfig((options) => {
     },
     {
       ...DEFAULT_OPTIONS,
-      entry: ["./src/index.ts"],
+      entry: {
+        index: "./src/index.ts",
+        core: "../core/src/index.ts",
+      },
       format: ["cjs", "esm"],
       platform: "browser",
       splitting: true,

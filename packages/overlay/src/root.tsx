@@ -28,6 +28,11 @@ import { PREFIX } from "./css/styles.js";
 interface RootConfig {
   commands: DeepRequired<CommandsConfig>;
   animation: DeepRequired<AnimationConfig>;
+  onSystemsReady?: (systems: {
+    measurementSystem: MeasurementSystem;
+    selectionSystem: SelectionSystem;
+    onViewportChange: (listener: () => void) => () => void;
+  }) => void;
 }
 
 export function Root(config: RootConfig) {
@@ -75,6 +80,12 @@ export function Root(config: RootConfig) {
 
   const [isActivatePressed, setIsActivatePressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
+  const viewportListeners = new Set<() => void>();
+
+  const onViewportChange = (listener: () => void) => {
+    viewportListeners.add(listener);
+    return () => viewportListeners.delete(listener);
+  };
 
   const ignoredElements = new WeakSet<Element>();
 
@@ -105,7 +116,6 @@ export function Root(config: RootConfig) {
     if (state.operation) {
       setActiveCalculatorLine(null);
     }
-
   };
 
   const isActive = createMemo(() => {
@@ -126,6 +136,7 @@ export function Root(config: RootConfig) {
       version: (prev.version || 0) + 1,
     }));
     viewportRafId = null;
+    viewportListeners.forEach((listener) => listener());
   };
 
   const scheduleUpdate = () => {
@@ -141,6 +152,14 @@ export function Root(config: RootConfig) {
     system = createMeasurementSystem();
     projectionSystem = system.getProjection();
     rulerSystem = system.getRuler();
+
+    if (config.onSystemsReady) {
+      config.onSystemsReady({
+        measurementSystem: system,
+        selectionSystem,
+        onViewportChange,
+      });
+    }
 
     const unsubscribeProjection = projectionSystem.onUpdate((state) => {
       setProjectionState(state);
@@ -210,7 +229,10 @@ export function Root(config: RootConfig) {
     };
 
     const isActivateActive = (e: KeyboardEvent): boolean => {
-      return e.key === commands.activate || (commands.activate === "Alt" && (e.key === "Alt" || e.key === "AltGraph"));
+      return (
+        e.key === commands.activate ||
+        (commands.activate === "Alt" && (e.key === "Alt" || e.key === "AltGraph"))
+      );
     };
 
     const handlePointerDown = (e: PointerEvent) => {
@@ -635,7 +657,11 @@ export function Root(config: RootConfig) {
     }
   });
 
-  const updateResizeObservations = (active: boolean, primaryEl: Element | null, secondaryEl: Element | null) => {
+  const updateResizeObservations = (
+    active: boolean,
+    primaryEl: Element | null,
+    secondaryEl: Element | null
+  ) => {
     if (!resizeObserver) return;
 
     if (active && !observedRoot) {
@@ -786,7 +812,6 @@ export function Root(config: RootConfig) {
     }
   });
 
-
   const handleLineClick = (line: MeasurementLine, liveValue: number) => {
     if (system) {
       const calc = system.getCalculator();
@@ -854,7 +879,6 @@ export function Root(config: RootConfig) {
   const handleRulerRemove = (id: string) => {
     rulerSystem?.removeLine(id);
   };
-
 
   return (
     <Overlay

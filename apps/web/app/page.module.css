@@ -722,3 +722,38 @@
   opacity: 0.8;
   transform: translateX(0);
 }
+
+.navTop {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--gray-alpha-200);
+  padding-bottom: 12px;
+}
+
+.navLink {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-geist-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--gray-rgb);
+  opacity: 0.5;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.navLink:hover {
+  opacity: 1;
+}
+
+.newBadge {
+  background: var(--caliper-primary, #18a0fb);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+}

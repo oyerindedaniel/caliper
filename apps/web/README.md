@@ -26,6 +26,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 Caliper is designed to be side-effect-free in production and easy to integrate into any modern stack.
 
 ### 1. Next.js (App Router)
+
 ```tsx
 // app/layout.tsx
 import Script from "next/script";
@@ -37,7 +38,7 @@ export default function RootLayout({ children }) {
         {process.env.NODE_ENV === "development" && (
           <Script
             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-            data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
+            data-config={JSON.stringify({ theme: { primary: "#AC2323" } })}
             strategy="afterInteractive"
           />
         )}
@@ -49,19 +50,21 @@ export default function RootLayout({ children }) {
 ```
 
 ### 2. Vite
+
 ```html
 <!-- index.html -->
 <script type="module">
-if (import.meta.env.DEV) {
-  // Run npm i @oyerinde/caliper then
-  import("@oyerinde/caliper").then(({ init }) => {
-    init({ theme: { primary: '#AC2323' } });
-  });
-}
+  if (import.meta.env.DEV) {
+    // Run npm i @oyerinde/caliper then
+    import("@oyerinde/caliper").then(({ init }) => {
+      init({ theme: { primary: "#AC2323" } });
+    });
+  }
 </script>
 ```
 
 ### 3. HTML (Plain)
+
 ```html
 <!-- index.html -->
 <script type="module">
@@ -76,12 +79,13 @@ if (import.meta.env.DEV) {
 ```
 
 ### 4. Astro
+
 ```html
 <!-- src/components/Caliper.astro -->
 <script type="module" is:inline>
   if (import.meta.env.DEV) {
     // Run npm i @oyerinde/caliper then
-    import('@oyerinde/caliper').then(({ init }) => {
+    import("@oyerinde/caliper").then(({ init }) => {
       init();
     });
   }
@@ -89,6 +93,7 @@ if (import.meta.env.DEV) {
 ```
 
 ### 5. Nuxt
+
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
@@ -96,43 +101,45 @@ export default defineNuxtConfig({
     head: {
       script: [
         {
-          src: 'https://unpkg.com/@oyerinde/caliper/dist/index.global.js',
-          'data-config': JSON.stringify({ theme: { primary: '#AC2323' } }),
-          defer: true
-        }
-      ]
-    }
-  }
+          src: "https://unpkg.com/@oyerinde/caliper/dist/index.global.js",
+          "data-config": JSON.stringify({ theme: { primary: "#AC2323" } }),
+          defer: true,
+        },
+      ],
+    },
+  },
 });
 ```
 
 ### 6. Vue
+
 ```html
 <!-- index.html -->
 <script type="module">
   if (import.meta.env.DEV) {
     // Run npm i @oyerinde/caliper then
     import("@oyerinde/caliper").then(({ init }) => {
-      init({ theme: { primary: '#AC2323' } });
+      init({ theme: { primary: "#AC2323" } });
     });
   }
 </script>
 ```
 
 ### 7. TanStack Start
+
 ```tsx
 // root.tsx
-import { Meta, Scripts } from '@tanstack/react-router';
+import { Meta, Scripts } from "@tanstack/react-router";
 
 export function Root() {
   return (
     <html lang="en">
       <head>
         <Meta />
-        {process.env.NODE_ENV === 'development' && (
+        {process.env.NODE_ENV === "development" && (
           <script
             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-            data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
+            data-config={JSON.stringify({ theme: { primary: "#AC2323" } })}
             async
           />
         )}
