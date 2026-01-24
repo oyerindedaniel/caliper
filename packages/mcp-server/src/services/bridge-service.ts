@@ -85,37 +85,64 @@ export class BridgeService {
     logger.info(`WebSocket Relay initialized on port ${this.wss.options.port}`);
   }
 
-  async call<T = CaliperActionResult>(method: CaliperMethod, params: Record<string, unknown>): Promise<T> {
+  async call<T = CaliperActionResult>(
+    method: CaliperMethod,
+    params: Record<string, unknown>,
+    retries: number = 2
+  ): Promise<T> {
     const tab = tabManager.getActiveTab();
     if (!tab) {
-      throw new Error("No active browser tab connected to Caliper Bridge");
+      throw new Error("No active browser tab connected to Caliper Bridge. Ensure the browser is open with Caliper enabled.");
     }
 
-    const callId = generateId("mcp-call");
+    const callWithTimeout = async (attempt: number): Promise<T> => {
+      const callId = generateId("mcp-call");
 
-    return new Promise<T>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pendingCalls.delete(callId);
-        reject(new Error(`Bridge request timed out for method: ${method}`));
-      }, BRIDGE_REQUEST_TIMEOUT_MS);
+      return new Promise<T>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          this.pendingCalls.delete(callId);
+          const errorMsg = attempt < retries
+            ? `Bridge request timed out for method: ${method}. Retrying... (Attempt ${attempt + 1}/${retries + 1})`
+            : `Bridge request timed out for method: ${method}. The bridge is connected, but the operation took too long.`;
+          reject(new Error(errorMsg));
+        }, BRIDGE_REQUEST_TIMEOUT_MS);
 
-      this.pendingCalls.set(callId, (res) => {
-        clearTimeout(timeout);
-        if ("error" in res && !("success" in res)) {
-          reject(new Error(res.error));
-        } else {
-          resolve(res as T);
-        }
+        this.pendingCalls.set(callId, (res) => {
+          clearTimeout(timeout);
+          if ("error" in res && !("success" in res)) {
+            reject(new Error(res.error));
+          } else {
+            resolve(res as T);
+          }
+        });
+
+        tab.ws.send(
+          JSON.stringify({
+            id: callId,
+            method,
+            params,
+          })
+        );
       });
+    };
 
-      tab.ws.send(
-        JSON.stringify({
-          id: callId,
-          method,
-          params,
-        })
-      );
-    });
+    let lastError: Error | null = null;
+    for (let i = 0; i <= retries; i++) {
+      try {
+        return await callWithTimeout(i);
+      } catch (err) {
+        lastError = err as Error;
+        if (!lastError.message.includes("timed out")) {
+          throw lastError;
+        }
+        if (i < retries) {
+          logger.warn(lastError.message);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+    }
+
+    throw lastError || new Error(`Failed bridge call: ${method}`);
   }
 
   async stop() {

@@ -28,21 +28,25 @@ export interface ElementGeometry {
     classList?: string[];
 }
 
+export interface BridgeSelectionMetadata extends Omit<SelectionMetadata, "element"> { }
+
+export type BridgeMeasurementResult = Omit<MeasurementResult, "secondaryElement">;
+
 export interface CaliperAgentState {
     viewport: ViewportState;
     pageGeometry: Record<string, ElementGeometry>;
-    activeSelection: SelectionMetadata | null;
-    lastMeasurement: MeasurementResult | null;
+    activeSelection: BridgeSelectionMetadata | null;
+    lastMeasurement: BridgeMeasurementResult | null;
     lastActionResult: CaliperActionResult | null;
     lastUpdated: number;
 }
 
 export type CaliperActionResult =
-    | { success: true; intent: "CALIPER_SELECT"; selector: string; selection: SelectionMetadata; timestamp: number }
-    | { success: true; intent: "CALIPER_MEASURE"; selector: string; measurement: MeasurementResult; timestamp: number }
+    | { success: true; method: "CALIPER_SELECT"; selector: string; selection: BridgeSelectionMetadata; timestamp: number }
+    | { success: true; method: "CALIPER_MEASURE"; selector: string; measurement: BridgeMeasurementResult; timestamp: number }
     | {
         success: true;
-        intent: "CALIPER_INSPECT";
+        method: "CALIPER_INSPECT";
         selector: string;
         distances: { top: number; right: number; bottom: number; left: number; horizontal: number; vertical: number };
         computedStyles: {
@@ -55,14 +59,14 @@ export type CaliperActionResult =
             marginTop: number;
             marginBottom: number;
         };
-        selection: SelectionMetadata;
+        selection: BridgeSelectionMetadata;
         timestamp: number;
     }
-    | { success: true; intent: "CALIPER_FREEZE"; timestamp: number }
-    | { success: true; intent: "CALIPER_CLEAR"; timestamp: number }
+    | { success: true; method: "CALIPER_FREEZE"; timestamp: number }
+    | { success: true; method: "CALIPER_CLEAR"; timestamp: number }
     | {
         success: true;
-        intent: "CALIPER_WALK_DOM";
+        method: "CALIPER_WALK_DOM";
         selector: string;
         domContext: {
             element: any;
@@ -71,7 +75,7 @@ export type CaliperActionResult =
         };
         timestamp: number
     }
-    | { success: false; intent: CaliperIntentType; selector?: string; error: string; timestamp: number };
+    | { success: false; method: CaliperIntentType; selector?: string; error: string; timestamp: number };
 
 export type CaliperIntentType =
     | "CALIPER_SELECT"
@@ -100,12 +104,12 @@ export interface CaliperWalkDomPayload {
 }
 
 export type CaliperIntent =
-    | { type: "CALIPER_SELECT"; payload: CaliperSelectPayload }
-    | { type: "CALIPER_MEASURE"; payload: CaliperMeasurePayload }
-    | { type: "CALIPER_INSPECT"; payload: CaliperInspectPayload }
-    | { type: "CALIPER_FREEZE"; payload: {} }
-    | { type: "CALIPER_CLEAR"; payload: {} }
-    | { type: "CALIPER_WALK_DOM"; payload: CaliperWalkDomPayload };
+    | { method: "CALIPER_SELECT"; params: CaliperSelectPayload }
+    | { method: "CALIPER_MEASURE"; params: CaliperMeasurePayload }
+    | { method: "CALIPER_INSPECT"; params: CaliperInspectPayload }
+    | { method: "CALIPER_FREEZE"; params: {} }
+    | { method: "CALIPER_CLEAR"; params: {} }
+    | { method: "CALIPER_WALK_DOM"; params: CaliperWalkDomPayload };
 
 export interface AgentBridgeConfig {
     enabled?: boolean;
@@ -146,11 +150,14 @@ export interface ToolResponseMessage {
     error?: string;
 }
 
-export interface ToolCallMessage {
-    id: string;
-    method: string;
-    params: Record<string, unknown>;
-}
+export type ToolCallMessage =
+    | { id: string; method: "CALIPER_GET_STATE"; params: {} }
+    | { id: string; method: "CALIPER_SELECT"; params: CaliperSelectPayload }
+    | { id: string; method: "CALIPER_MEASURE"; params: CaliperMeasurePayload }
+    | { id: string; method: "CALIPER_INSPECT"; params: CaliperInspectPayload }
+    | { id: string; method: "CALIPER_FREEZE"; params: {} }
+    | { id: string; method: "CALIPER_CLEAR"; params: {} }
+    | { id: string; method: "CALIPER_WALK_DOM"; params: CaliperWalkDomPayload };
 
 export type BridgeMessage =
     | RegisterTabMessage
@@ -160,7 +167,6 @@ export type BridgeMessage =
 
 declare global {
     interface Window {
-        __CALIPER_STATE__?: CaliperAgentState;
         dispatchCaliperIntent?: (intent: CaliperIntent) => Promise<CaliperActionResult>;
     }
 }

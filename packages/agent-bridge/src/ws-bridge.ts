@@ -2,7 +2,6 @@ import type {
   CaliperActionResult,
   CaliperIntent,
   CaliperAgentState,
-  CaliperIntentType,
   ToolCallMessage,
 } from "./types.js";
 import { createLogger } from "@oyerinde/caliper/core";
@@ -51,9 +50,9 @@ export function createWSBridge(options: BridgeOptions) {
       socket.onmessage = async (event) => {
         try {
           const message = JSON.parse(event.data) as ToolCallMessage;
-          const { id, method, params } = message;
+          const { id } = message;
 
-          if (method === "CALIPER_GET_STATE") {
+          if (message.method === "CALIPER_GET_STATE") {
             const state = onGetState();
             socket.send(
               JSON.stringify({
@@ -65,12 +64,7 @@ export function createWSBridge(options: BridgeOptions) {
             return;
           }
 
-          const intent: CaliperIntent = {
-            type: method as CaliperIntentType,
-            payload: params,
-          };
-
-          const result = await onIntent(intent);
+          const result = await onIntent(message);
 
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(

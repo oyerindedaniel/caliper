@@ -35,7 +35,7 @@ caliper.waitForSystems().then((systems) => {
 
 ### 2. Passive State Observation
 
-The bridge automatically maintains a global state object at `window.__CALIPER_STATE__`. It scans the DOM for "significant" elements and assigns them persistent **Caliper IDs** (e.g., `caliper-8kx2j`).
+The bridge automatically maintains an internal cache of the page state. It scans the DOM for "significant" elements and assigns them persistent **Caliper IDs** (e.g., `caliper-8kx2j`).
 
 AI agents use these IDs as stable selectors to performing measurements without the risk of fragile CSS selector path hallucinations.
 
@@ -45,12 +45,12 @@ For manual testing or custom integrations, you can dispatch intents directly fro
 
 ```javascript
 // Clear all active measurements and guides
-await dispatchCaliperIntent({ type: 'CALIPER_CLEAR' });
+await dispatchCaliperIntent({ method: 'CALIPER_CLEAR', params: {} });
 
 // Select an element programmatically
 await dispatchCaliperIntent({ 
-  type: 'CALIPER_SELECT', 
-  payload: { selector: '#logo' } 
+  method: 'CALIPER_SELECT', 
+  params: { selector: '#logo' } 
 });
 ```
 

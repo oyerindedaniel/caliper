@@ -1,4 +1,5 @@
 import { createMeasurementBetween, deduceGeometry } from "@oyerinde/caliper/core";
+import { sanitizeSelection, sanitizeMeasurement } from "./utils.js";
 import type {
   CaliperIntent,
   CaliperActionResult,
@@ -8,8 +9,9 @@ import type {
   CaliperWalkDomPayload,
   CaliperCoreSystems,
 } from "./types.js";
+import type { CaliperStateStore } from "./state-store.js";
 
-export function createIntentHandler(systems: CaliperCoreSystems) {
+export function createIntentHandler(systems: CaliperCoreSystems, stateStore: CaliperStateStore) {
   const { measurementSystem, selectionSystem } = systems;
 
   function resolveElement(selector: string): HTMLElement | null {
@@ -19,17 +21,30 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
     return document.querySelector(selector) as HTMLElement;
   }
 
-  function handleSelect(payload: CaliperSelectPayload): Promise<CaliperActionResult> {
+  function handleSelect(params: CaliperSelectPayload): Promise<CaliperActionResult> {
     return new Promise((resolve) => {
-      const { selector } = payload;
+      const { selector } = params;
       const element = resolveElement(selector);
 
       if (!element) {
         resolve({
           success: false,
-          intent: "CALIPER_SELECT",
+          method: "CALIPER_SELECT",
           selector,
           error: `Element not found: ${selector}`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
+      const currentSelected = selectionSystem.getSelected();
+      if (currentSelected === element) {
+        const metadata = selectionSystem.getMetadata();
+        resolve({
+          success: true,
+          method: "CALIPER_SELECT",
+          selector,
+          selection: sanitizeSelection(metadata)!,
           timestamp: Date.now(),
         });
         return;
@@ -39,9 +54,9 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
         unsubscribe();
         resolve({
           success: true,
-          intent: "CALIPER_SELECT",
+          method: "CALIPER_SELECT",
           selector,
-          selection: metadata,
+          selection: sanitizeSelection(metadata)!,
           timestamp: Date.now(),
         });
       });
@@ -50,59 +65,57 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
     });
   }
 
-  function handleMeasure(payload: CaliperMeasurePayload): Promise<CaliperActionResult> {
+  function handleMeasure(params: CaliperMeasurePayload): Promise<CaliperActionResult> {
     return new Promise((resolve) => {
-      const { primarySelector, secondarySelector } = payload;
+      const { primarySelector, secondarySelector } = params;
       const primaryElement = resolveElement(primarySelector);
       const secondaryElement = resolveElement(secondarySelector);
 
       if (!primaryElement || !secondaryElement) {
         resolve({
           success: false,
-          intent: "CALIPER_MEASURE",
+          method: "CALIPER_MEASURE",
           error: `Elements not found: ${!primaryElement ? primarySelector : ""} ${!secondaryElement ? secondarySelector : ""}`.trim(),
           timestamp: Date.now(),
         });
         return;
       }
 
-      const unsubSelect = selectionSystem.onUpdate(() => {
-        unsubSelect();
-        const measurement = createMeasurementBetween(primaryElement, secondaryElement);
+      const measurement = createMeasurementBetween(primaryElement, secondaryElement);
 
-        if (!measurement) {
-          resolve({
-            success: false,
-            intent: "CALIPER_MEASURE",
-            error: "Failed to create measurement",
-            timestamp: Date.now(),
-          });
-          return;
-        }
-
-        measurementSystem.applyResult(measurement.result);
-
+      if (!measurement) {
         resolve({
-          success: true,
-          intent: "CALIPER_MEASURE",
-          selector: primarySelector,
-          measurement: measurement.result,
+          success: false,
+          method: "CALIPER_MEASURE",
+          error: "Failed to create measurement",
           timestamp: Date.now(),
         });
-      });
+        return;
+      }
 
       selectionSystem.select(primaryElement);
+      
+      measurementSystem.applyResult(measurement.result);
+      measurementSystem.freeze();
+
+      resolve({
+        success: true,
+        method: "CALIPER_MEASURE",
+        selector: primarySelector,
+        measurement: sanitizeMeasurement(measurement.result)!,
+        timestamp: Date.now(),
+      });
     });
   }
 
-  function handleInspect(payload: CaliperInspectPayload): CaliperActionResult {
-    const { selector } = payload;
+  function handleInspect(params: CaliperInspectPayload): CaliperActionResult {
+    const { selector } = params;
     const element = resolveElement(selector);
 
     if (!element) {
       return {
         success: false,
-        intent: "CALIPER_INSPECT",
+        method: "CALIPER_INSPECT",
         selector,
         error: `Element not found: ${selector}`,
         timestamp: Date.now(),
@@ -115,7 +128,7 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
 
     return {
       success: true,
-      intent: "CALIPER_INSPECT",
+      method: "CALIPER_INSPECT",
       selector,
       distances: {
         top: rect.top,
@@ -135,7 +148,7 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
         marginTop: parseFloat(computedStyle.marginTop) || 0,
         marginBottom: parseFloat(computedStyle.marginBottom) || 0,
       },
-      selection: {
+      selection: sanitizeSelection({
         element,
         rect: geometry.rect,
         scrollHierarchy: geometry.scrollHierarchy,
@@ -143,19 +156,19 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
         stickyConfig: geometry.stickyConfig,
         initialWindowX: geometry.initialWindowX,
         initialWindowY: geometry.initialWindowY,
-      },
+      })!,
       timestamp: Date.now(),
     };
   }
 
-  function handleWalkDom(payload: CaliperWalkDomPayload): CaliperActionResult {
-    const { selector } = payload;
+  function handleWalkDom(params: CaliperWalkDomPayload): CaliperActionResult {
+    const { selector } = params;
     const element = resolveElement(selector);
 
     if (!element) {
       return {
         success: false,
-        intent: "CALIPER_WALK_DOM",
+        method: "CALIPER_WALK_DOM",
         selector,
         error: `Element not found: ${selector}`,
         timestamp: Date.now(),
@@ -175,7 +188,7 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
 
     return {
       success: true,
-      intent: "CALIPER_WALK_DOM",
+      method: "CALIPER_WALK_DOM",
       selector,
       domContext: {
         element: getElSummary(element),
@@ -187,43 +200,49 @@ export function createIntentHandler(systems: CaliperCoreSystems) {
   }
 
   async function dispatch(intent: CaliperIntent): Promise<CaliperActionResult> {
+    stateStore.setAgentLock(true);
+
     let result: CaliperActionResult;
 
-    switch (intent.type) {
-      case "CALIPER_SELECT":
-        result = await handleSelect(intent.payload);
-        break;
-      case "CALIPER_MEASURE":
-        result = await handleMeasure(intent.payload);
-        break;
-      case "CALIPER_INSPECT":
-        result = handleInspect(intent.payload);
-        break;
-      case "CALIPER_WALK_DOM":
-        result = handleWalkDom(intent.payload);
-        break;
-      case "CALIPER_FREEZE":
-        measurementSystem.freeze();
-        result = {
-          success: true,
-          intent: "CALIPER_FREEZE",
-          timestamp: Date.now(),
-        };
-        break;
-      case "CALIPER_CLEAR":
-        measurementSystem.abort();
-        selectionSystem.clear();
-        result = {
-          success: true,
-          intent: "CALIPER_CLEAR",
-          timestamp: Date.now(),
-        };
-        break;
-    }
+    try {
+      switch (intent.method) {
+        case "CALIPER_SELECT":
+          result = await handleSelect(intent.params);
+          break;
+        case "CALIPER_MEASURE":
+          result = await handleMeasure(intent.params);
+          break;
+        case "CALIPER_INSPECT":
+          result = handleInspect(intent.params);
+          break;
+        case "CALIPER_WALK_DOM":
+          result = handleWalkDom(intent.params);
+          break;
+        case "CALIPER_FREEZE":
+          measurementSystem.freeze();
+          result = {
+            success: true,
+            method: "CALIPER_FREEZE",
+            timestamp: Date.now(),
+          };
+          break;
+        case "CALIPER_CLEAR":
+          measurementSystem.abort();
+          selectionSystem.clear();
+          result = {
+            success: true,
+            method: "CALIPER_CLEAR",
+            timestamp: Date.now(),
+          };
+          break;
+      }
 
-    if (window.__CALIPER_STATE__) {
-      window.__CALIPER_STATE__.lastActionResult = result;
-      window.__CALIPER_STATE__.lastUpdated = Date.now();
+      stateStore.updateState({
+        lastActionResult: result,
+        lastUpdated: Date.now(),
+      });
+    } finally {
+      stateStore.setAgentLock(false);
     }
 
     return result;

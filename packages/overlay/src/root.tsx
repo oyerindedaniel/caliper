@@ -82,6 +82,8 @@ export function Root(config: RootConfig) {
   const [isActivatePressed, setIsActivatePressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
   const [isCopied, setIsCopied] = createSignal(false);
+  const [isAgentActive, setIsAgentActive] = createSignal(false);
+
   let copyTimeoutId: number | null = null;
   const viewportListeners = new Set<() => void>();
 
@@ -200,10 +202,17 @@ export function Root(config: RootConfig) {
       setSelectionMetadata(metadata);
     });
 
+    const handleAgentLockChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ locked: boolean }>;
+      setIsAgentActive(customEvent.detail.locked);
+    };
+
     let selectionTimeoutId: number | null = null;
     let lastPointerPos = { x: 0, y: 0 };
 
     const performSelection = (x: number, y: number) => {
+      if (isAgentActive()) return;
+
       const element = getTopElementAtPoint(x, y);
       if (element && selectionSystem) {
         if (system) {
@@ -248,6 +257,8 @@ export function Root(config: RootConfig) {
     };
 
     const handlePointerDown = (e: PointerEvent) => {
+      if (isAgentActive()) return;
+
       lastPointerPos = { x: e.clientX, y: e.clientY };
 
       if (isCommandActive(e)) {
@@ -264,6 +275,8 @@ export function Root(config: RootConfig) {
     };
 
     const handleClick = (e: MouseEvent) => {
+      if (isAgentActive()) return;
+
       if (isCommandActive(e)) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -323,6 +336,8 @@ export function Root(config: RootConfig) {
     };
 
     const handleContextMenu = (e: MouseEvent) => {
+      if (isAgentActive()) return;
+
       const selectedElement = selectionMetadata().element;
 
       if (selectedElement) {
@@ -374,6 +389,11 @@ export function Root(config: RootConfig) {
         return;
       }
 
+      if (isAgentActive()) {
+        mouseMoveRafId = null;
+        return;
+      }
+
       const e = lastMouseEvent;
       const cursorPoint = { x: e.clientX, y: e.clientY };
       setCursor(cursorPoint);
@@ -413,6 +433,8 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isAgentActive() && e.key !== commands.clear) return;
+
       if (e.key === commands.clear) {
         if (!isActive()) return;
 
@@ -441,7 +463,7 @@ export function Root(config: RootConfig) {
         setIsSelectKeyDown(true);
       }
 
-      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem) {
+      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem && !isAgentActive()) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));
@@ -661,6 +683,7 @@ export function Root(config: RootConfig) {
       window.focus();
     };
 
+    window.addEventListener("caliper:agent-lock-change", handleAgentLockChange);
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
     window.addEventListener("pointerup", handlePointerUp, { capture: true });
     window.addEventListener("click", handleClick, { capture: true });
@@ -672,6 +695,7 @@ export function Root(config: RootConfig) {
     window.addEventListener("focus", handleFocus);
 
     onCleanup(() => {
+      window.removeEventListener("caliper:agent-lock-change", handleAgentLockChange);
       window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp, { capture: true });
       window.removeEventListener("click", handleClick, { capture: true });

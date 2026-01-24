@@ -6,6 +6,8 @@ import type {
 } from "./types.js";
 import { generateId, isVisible } from "@oyerinde/caliper/core";
 import { DEFAULT_DEBOUNCE_MS } from "./constants.js";
+import { sanitizeSelection, sanitizeMeasurement } from "./utils.js";
+import { CaliperStateStore } from "./state-store.js";
 
 const SEMANTIC_TAGS = ["main", "section", "article", "nav", "header", "footer", "aside"];
 
@@ -13,10 +15,6 @@ function isSemanticLandmark(element: Element): boolean {
     return SEMANTIC_TAGS.includes(element.tagName.toLowerCase());
 }
 
-/**
- * Get a truncated text content for element identification.
- * Limited to 60 chars to ensure it's useful for search without being unwieldy.
- */
 function getTextContent(element: Element): string | undefined {
     let directText = "";
     for (const child of element.childNodes) {
@@ -25,7 +23,7 @@ function getTextContent(element: Element): string | undefined {
         }
     }
     const trimmed = directText.trim();
-    if (!trimmed || trimmed.length > 60) return undefined;
+    if (!trimmed || trimmed.length > 50) return undefined;
     return trimmed;
 }
 
@@ -46,7 +44,11 @@ function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentI
     };
 }
 
-export function createStateExporter(config: AgentBridgeConfig, systems: CaliperCoreSystems) {
+export function createStateExporter(
+    config: AgentBridgeConfig,
+    systems: CaliperCoreSystems,
+    stateStore: CaliperStateStore
+) {
     const { measurementSystem, selectionSystem, onViewportChange } = systems;
     const debounceMs = config.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
@@ -102,13 +104,13 @@ export function createStateExporter(config: AgentBridgeConfig, systems: CaliperC
         const state: CaliperAgentState = {
             viewport,
             pageGeometry,
-            activeSelection: selectionSystem.getMetadata(),
-            lastMeasurement: measurementSystem.getCurrentResult(),
-            lastActionResult: window.__CALIPER_STATE__?.lastActionResult ?? null,
+            activeSelection: sanitizeSelection(selectionSystem.getMetadata()),
+            lastMeasurement: sanitizeMeasurement(measurementSystem.getCurrentResult()),
+            lastActionResult: stateStore.getState()?.lastActionResult ?? null,
             lastUpdated: Date.now(),
         };
 
-        window.__CALIPER_STATE__ = state;
+        stateStore.setState(state);
 
         if (config.onStateChange) {
             config.onStateChange(state);
@@ -116,17 +118,15 @@ export function createStateExporter(config: AgentBridgeConfig, systems: CaliperC
     }
 
     function updateMetadataOnly(): void {
-        if (!window.__CALIPER_STATE__) return;
-
-        window.__CALIPER_STATE__ = {
-            ...window.__CALIPER_STATE__,
-            activeSelection: selectionSystem.getMetadata(),
-            lastMeasurement: measurementSystem.getCurrentResult(),
+        stateStore.updateState({
+            activeSelection: sanitizeSelection(selectionSystem.getMetadata()),
+            lastMeasurement: sanitizeMeasurement(measurementSystem.getCurrentResult()),
             lastUpdated: Date.now(),
-        };
+        });
 
-        if (config.onStateChange) {
-            config.onStateChange(window.__CALIPER_STATE__);
+        const currentState = stateStore.getState();
+        if (currentState && config.onStateChange) {
+            config.onStateChange(currentState);
         }
     }
 
@@ -186,8 +186,6 @@ export function createStateExporter(config: AgentBridgeConfig, systems: CaliperC
             unsubscribeSelection();
             unsubscribeSelection = null;
         }
-
-        delete window.__CALIPER_STATE__;
     }
 
     function forceUpdate(): void {
