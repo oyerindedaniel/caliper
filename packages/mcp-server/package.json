@@ -13,12 +13,13 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --shims",
-    "dev": "tsup src/index.ts --format esm --watch --dts --shims",
+    "build": "pnpm run clean && cross-env NODE_ENV=production tsup",
+    "build:watch": "tsup --watch",
     "start": "node dist/index.js",
     "check-types": "tsc --noEmit",
     "lint": "eslint . --max-warnings 0",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\""
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.25.3",
@@ -26,8 +27,10 @@
     "zod": "4.3.5"
   },
   "devDependencies": {
+    "@oyerinde/caliper-schema": "workspace:*",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
+    "cross-env": "^10.1.0",
     "eslint": "^9.39.1",
     "prettier": "^3.7.4",
     "@types/node": "^24.10.9",

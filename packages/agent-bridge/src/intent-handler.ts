@@ -7,8 +7,8 @@ import type {
   CaliperMeasurePayload,
   CaliperInspectPayload,
   CaliperWalkDomPayload,
-  CaliperCoreSystems,
-} from "./types.js";
+} from "@oyerinde/caliper-schema";
+import type { CaliperCoreSystems } from "./types.js";
 import type { CaliperStateStore } from "./state-store.js";
 
 export function createIntentHandler(systems: CaliperCoreSystems, stateStore: CaliperStateStore) {
@@ -98,11 +98,22 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       measurementSystem.applyResult(measurement.result);
       measurementSystem.freeze();
 
+      const sanitized = sanitizeMeasurement(measurement.result);
+      if (!sanitized) {
+        resolve({
+          success: false,
+          method: "CALIPER_MEASURE",
+          error: "Failed to sanitize measurement result",
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
       resolve({
         success: true,
         method: "CALIPER_MEASURE",
         selector: primarySelector,
-        measurement: sanitizeMeasurement(measurement.result)!,
+        measurement: sanitized,
         timestamp: Date.now(),
       });
     });
@@ -235,12 +246,22 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
             timestamp: Date.now(),
           };
           break;
+        default:
+          const _exhaustive: never = intent;
+          throw new Error(`Unknown intent method: ${(_exhaustive as CaliperIntent).method}`);
       }
 
       stateStore.updateState({
         lastActionResult: result,
         lastUpdated: Date.now(),
       });
+    } catch (error) {
+      result = {
+        success: false,
+        method: intent.method,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      };
     } finally {
       stateStore.setAgentLock(false);
     }

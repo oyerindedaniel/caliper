@@ -1,4 +1,4 @@
-import type { CaliperAgentState } from "./types.js";
+import type { CaliperAgentState } from "@oyerinde/caliper-schema";
 
 const AGENT_LOCK_EVENT = "caliper:agent-lock-change";
 

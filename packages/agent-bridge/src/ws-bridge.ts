@@ -3,7 +3,7 @@ import type {
   CaliperIntent,
   CaliperAgentState,
   ToolCallMessage,
-} from "./types.js";
+} from "@oyerinde/caliper-schema";
 import { createLogger } from "@oyerinde/caliper/core";
 
 import { DEFAULT_WS_URL, BRIDGE_TAB_ID_KEY } from "./constants.js";
@@ -48,19 +48,22 @@ export function createWSBridge(options: BridgeOptions) {
       };
 
       socket.onmessage = async (event) => {
+        let messageId: string | undefined;
         try {
           const message = JSON.parse(event.data) as ToolCallMessage;
-          const { id } = message;
+          messageId = message.id;
 
           if (message.method === "CALIPER_GET_STATE") {
             const state = onGetState();
-            socket.send(
-              JSON.stringify({
-                type: "TOOL_RESPONSE",
-                id,
-                result: state,
-              })
-            );
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.send(
+                JSON.stringify({
+                  type: "TOOL_RESPONSE",
+                  id: messageId,
+                  result: state,
+                })
+              );
+            }
             return;
           }
 
@@ -70,13 +73,22 @@ export function createWSBridge(options: BridgeOptions) {
             socket.send(
               JSON.stringify({
                 type: "TOOL_RESPONSE",
-                id,
+                id: messageId,
                 result,
               })
             );
           }
         } catch (e) {
           logger.error("Failed to handle MCP message:", e);
+          if (messageId && socket.readyState === WebSocket.OPEN) {
+            socket.send(
+              JSON.stringify({
+                type: "TOOL_RESPONSE",
+                id: messageId,
+                error: e instanceof Error ? e.message : String(e),
+              })
+            );
+          }
         }
       };
 

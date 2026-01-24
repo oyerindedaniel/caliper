@@ -5,7 +5,7 @@ import type {
     AuditResult,
     Delta,
     CSSRecommendation,
-} from "../schemas/audit.js";
+} from "@oyerinde/caliper-schema";
 
 const DEFAULT_TOLERANCE = 1; // 1px tolerance for sub-pixel rendering differences
 

@@ -22,10 +22,12 @@
  */
 
 import type {
-    AgentBridgeConfig,
     CaliperIntent,
     CaliperActionResult,
     CaliperAgentState,
+} from "@oyerinde/caliper-schema";
+import type {
+    AgentBridgeConfig,
     CaliperCoreSystems,
 } from "./types.js";
 import { createStateExporter } from "./state-exporter.js";

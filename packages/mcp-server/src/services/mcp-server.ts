@@ -2,8 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { bridgeService } from "./bridge-service.js";
-import { CaliperAgentState } from "../schemas/bridge.js";
-import { AuditNodeInputSchema, BrowserElementProps } from "../schemas/audit.js";
+import { CaliperAgentState, AuditNodeInputSchema, BrowserElementProps } from "@oyerinde/caliper-schema";
 import { auditDesignVsBrowser } from "./audit-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -189,7 +188,7 @@ Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`
         try {
           const inspectResult = await bridgeService.call("CALIPER_INSPECT", { selector });
 
-          if (!inspectResult.success || inspectResult.intent !== "CALIPER_INSPECT") {
+          if (!inspectResult.success || inspectResult.method !== "CALIPER_INSPECT") {
             return {
               content: [{ type: "text", text: `Error: Could not inspect element "${selector}". ${(inspectResult as any).error || "Element not found."}` }],
               isError: true,

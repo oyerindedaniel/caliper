@@ -5,7 +5,9 @@ export default defineConfig({
   format: ["esm", "cjs"],
   dts: true,
   clean: true,
-  shims: true,
+  splitting: false,
+  sourcemap: false,
   external: [],
-  noExternal: ["@oyerinde/caliper-schema"],
+  treeshake: true,
+  target: "es2022",
 });

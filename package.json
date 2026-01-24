@@ -12,7 +12,7 @@
     "test": "echo \"Tests coming soon\"",
     "version:write": "node scripts/write-version.mjs",
     "build:caliper": "turbo run build --filter=@oyerinde/caliper...",
-    "bb": "turbo run build --filter=@caliper/core --filter=@caliper/overlay --filter=@oyerinde/caliper --filter=@oyerinde/caliper-mcp --filter=@oyerinde/caliper-bridge",
+    "bb": "turbo run build --filter=@caliper/core --filter=@caliper/overlay --filter=@oyerinde/caliper --filter=@oyerinde/caliper-mcp --filter=@oyerinde/caliper-bridge --filter=@oyerinde/caliper-schema",
     "release": "pnpm build:caliper && pnpm --filter @oyerinde/caliper run release"
   },
   "devDependencies": {

@@ -11,6 +11,7 @@ export default defineConfig([
     clean: true,
     outDir: "dist",
     external: ["@oyerinde/caliper"],
+    noExternal: ["@oyerinde/caliper-schema"],
     platform: "browser",
     target: "es2022",
   },

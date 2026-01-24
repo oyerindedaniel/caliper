@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
-import { BridgeMessageSchema, CaliperActionResult, CaliperMethod, CaliperAgentState } from "../schemas/bridge.js";
+import { BridgeMessageSchema, CaliperActionResult, CaliperMethod, CaliperAgentState } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { generateId } from "../utils/id.js";
@@ -67,6 +67,8 @@ export class BridgeService {
                   resolve({ error: message.error || "Unknown bridge error" });
                 }
                 this.pendingCalls.delete(message.id);
+              } else {
+                logger.warn(`No pending call found for TOOL_RESPONSE id: ${message.id}`);
               }
               break;
           }

@@ -1,5 +1,7 @@
 import type {
     CaliperAgentState,
+} from "@oyerinde/caliper-schema";
+import type {
     ElementGeometry,
     AgentBridgeConfig,
     CaliperCoreSystems,
