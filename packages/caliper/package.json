@@ -43,10 +43,6 @@
         }
       }
     },
-    "./iife": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.global.js"
-    },
     "./core": {
       "types": "./dist/core.d.ts",
       "import": "./dist/core.js",

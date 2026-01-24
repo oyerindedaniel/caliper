@@ -69,6 +69,8 @@ export function createWSBridge(options: BridgeOptions) {
 
           const result = await onIntent(message);
 
+          console.log("result", result);
+
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(
               JSON.stringify({

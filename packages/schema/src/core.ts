@@ -18,30 +18,53 @@ export const ScrollStateSchema = z.object({
 });
 
 export const MeasurementLineSchema = z.object({
-    type: z.string(),
+    type: z.enum(["left", "top", "right", "bottom", "distance"]),
     value: z.number(),
-    label: z.string(),
     start: z.object({ x: z.number(), y: z.number() }),
     end: z.object({ x: z.number(), y: z.number() }),
+    startSync: z.enum(["primary", "secondary"]).optional(),
+    endSync: z.enum(["primary", "secondary"]).optional(),
+});
+
+export const StickyConfigSchema = z.object({
+    top: z.number().nullable(),
+    bottom: z.number().nullable(),
+    left: z.number().nullable(),
+    right: z.number().nullable(),
+    naturalTop: z.number(),
+    naturalLeft: z.number(),
+    containerWidth: z.number(),
+    containerHeight: z.number(),
+    elementWidth: z.number(),
+    elementHeight: z.number(),
 });
 
 export const MeasurementResultSchema = z
     .object({
-        context: z.enum(["parent", "child", "sibling"]),
+        context: z.enum(["parent", "child", "sibling"]).nullable(),
         lines: z.array(MeasurementLineSchema),
         primary: RectSchema,
         secondary: RectSchema.nullable(),
         timestamp: z.number(),
         primaryHierarchy: z.array(ScrollStateSchema),
         secondaryHierarchy: z.array(ScrollStateSchema),
+        primaryPosition: z.enum(["static", "relative", "absolute", "fixed", "sticky"]),
+        secondaryPosition: z.enum(["static", "relative", "absolute", "fixed", "sticky"]),
+        primaryWinX: z.number(),
+        primaryWinY: z.number(),
+        secondaryWinX: z.number(),
+        secondaryWinY: z.number(),
+        primarySticky: StickyConfigSchema.optional(),
+        secondarySticky: StickyConfigSchema.optional(),
     })
     .loose();
 
 export const SelectionMetadataSchema = z
     .object({
-        element: z.unknown().optional(),
         rect: RectSchema.nullable(),
-        position: z.string(),
+        scrollHierarchy: z.array(ScrollStateSchema),
+        position: z.enum(["static", "relative", "absolute", "fixed", "sticky"]),
+        stickyConfig: StickyConfigSchema.optional(),
         initialWindowX: z.number(),
         initialWindowY: z.number(),
     })
