@@ -1,42 +1,25 @@
 /**
  * Scroll-Aware Geometry Engine
  */
+import type {
+  ScrollState as BaseScrollState,
+  PositionMode as BasePositionMode,
+  StickyConfig as BaseStickyConfig,
+  SelectionMetadata as BaseSelectionMetadata,
+} from "@oyerinde/caliper-schema";
 
-export interface ScrollState {
+export interface ScrollState extends Omit<BaseScrollState, "containerRect"> {
   element: HTMLElement;
-  initialScrollTop: number;
-  initialScrollLeft: number;
   containerRect: DOMRect; // In document coordinates
 }
 
-/**
- * Valid CSS position values that affect geometry sync
- */
-export type PositionMode = "static" | "relative" | "absolute" | "fixed" | "sticky";
+export type PositionMode = BasePositionMode;
 
-/**
- * Metadata for position: sticky elements
- */
-export interface StickyConfig {
-  top: number | null;
-  bottom: number | null;
-  left: number | null;
-  right: number | null;
-  naturalTop: number;
-  naturalLeft: number;
-  containerWidth: number;
-  containerHeight: number;
-  elementWidth: number;
-  elementHeight: number;
-}
+export type StickyConfig = BaseStickyConfig;
 
-export interface DeducedGeometry {
+export interface DeducedGeometry extends Omit<BaseSelectionMetadata, "scrollHierarchy" | "rect"> {
   rect: DOMRect;
   scrollHierarchy: ScrollState[];
-  position: PositionMode;
-  stickyConfig?: StickyConfig;
-  initialWindowX: number;
-  initialWindowY: number;
 }
 
 export interface LiveGeometry {

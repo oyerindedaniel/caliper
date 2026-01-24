@@ -16,6 +16,8 @@ const version = process.env.NODE_ENV === "production" ? getPackageVersion() : "[
 console.log("Version: ", version);
 
 const banner = `/**
+ * @name @oyerinde/caliper
+ * @author Daniel Oyerinde
  * @license MIT
  *
  * Caliper - Browser Measurement Tool

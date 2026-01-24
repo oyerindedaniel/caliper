@@ -1,4 +1,6 @@
-export type CursorContext = "parent" | "sibling" | "child" | null;
+import type { CursorContext as SchemaContext } from "@oyerinde/caliper-schema";
+
+export type CursorContext = SchemaContext | null;
 export type SyncSource = "primary" | "secondary";
 
 export type ProjectionDirection = "top" | "right" | "bottom" | "left";

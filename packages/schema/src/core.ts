@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export const PositionModeSchema = z.enum(["static", "relative", "absolute", "fixed", "sticky"]);
+
+export const CursorContextSchema = z.enum(["parent", "child", "sibling"]);
+
 export const RectSchema = z.object({
     top: z.number(),
     right: z.number(),
@@ -39,39 +43,38 @@ export const StickyConfigSchema = z.object({
     elementHeight: z.number(),
 });
 
-export const MeasurementResultSchema = z
-    .object({
-        context: z.enum(["parent", "child", "sibling"]).nullable(),
-        lines: z.array(MeasurementLineSchema),
-        primary: RectSchema,
-        secondary: RectSchema.nullable(),
-        timestamp: z.number(),
-        primaryHierarchy: z.array(ScrollStateSchema),
-        secondaryHierarchy: z.array(ScrollStateSchema),
-        primaryPosition: z.enum(["static", "relative", "absolute", "fixed", "sticky"]),
-        secondaryPosition: z.enum(["static", "relative", "absolute", "fixed", "sticky"]),
-        primaryWinX: z.number(),
-        primaryWinY: z.number(),
-        secondaryWinX: z.number(),
-        secondaryWinY: z.number(),
-        primarySticky: StickyConfigSchema.optional(),
-        secondarySticky: StickyConfigSchema.optional(),
-    })
-    .loose();
+export const MeasurementResultSchema = z.object({
+    context: CursorContextSchema.nullable(),
+    lines: z.array(MeasurementLineSchema),
+    primary: RectSchema,
+    secondary: RectSchema.nullable(),
+    timestamp: z.number(),
+    primaryHierarchy: z.array(ScrollStateSchema),
+    secondaryHierarchy: z.array(ScrollStateSchema),
+    primaryPosition: PositionModeSchema,
+    secondaryPosition: PositionModeSchema,
+    primaryWinX: z.number(),
+    primaryWinY: z.number(),
+    secondaryWinX: z.number(),
+    secondaryWinY: z.number(),
+    primarySticky: StickyConfigSchema.optional(),
+    secondarySticky: StickyConfigSchema.optional(),
+});
 
-export const SelectionMetadataSchema = z
-    .object({
-        rect: RectSchema.nullable(),
-        scrollHierarchy: z.array(ScrollStateSchema),
-        position: z.enum(["static", "relative", "absolute", "fixed", "sticky"]),
-        stickyConfig: StickyConfigSchema.optional(),
-        initialWindowX: z.number(),
-        initialWindowY: z.number(),
-    })
-    .loose();
+export const SelectionMetadataSchema = z.object({
+    rect: RectSchema.nullable(),
+    scrollHierarchy: z.array(ScrollStateSchema),
+    position: PositionModeSchema,
+    stickyConfig: StickyConfigSchema.optional(),
+    initialWindowX: z.number(),
+    initialWindowY: z.number(),
+});
 
 export type Rect = z.infer<typeof RectSchema>;
+export type PositionMode = z.infer<typeof PositionModeSchema>;
+export type CursorContext = z.infer<typeof CursorContextSchema>;
 export type ScrollState = z.infer<typeof ScrollStateSchema>;
+export type StickyConfig = z.infer<typeof StickyConfigSchema>;
 export type MeasurementLine = z.infer<typeof MeasurementLineSchema>;
 export type MeasurementResult = z.infer<typeof MeasurementResultSchema>;
 export type SelectionMetadata = z.infer<typeof SelectionMetadataSchema>;

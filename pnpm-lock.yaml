@@ -206,6 +206,9 @@ importers:
       '@caliper/overlay':
         specifier: workspace:*
         version: link:../overlay
+      '@oyerinde/caliper-schema':
+        specifier: workspace:*
+        version: link:../schema
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
@@ -242,6 +245,9 @@ importers:
 
   packages/core:
     devDependencies:
+      '@oyerinde/caliper-schema':
+        specifier: workspace:*
+        version: link:../schema
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config

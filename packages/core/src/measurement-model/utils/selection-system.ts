@@ -1,3 +1,4 @@
+import type { SelectionMetadata as BaseSelectionMetadata } from "@oyerinde/caliper-schema";
 import {
   deduceGeometry,
   type ScrollState,
@@ -9,14 +10,10 @@ import {
  * Selection system for tracking selected elements
  */
 
-export interface SelectionMetadata {
+export interface SelectionMetadata extends Omit<BaseSelectionMetadata, "rect" | "scrollHierarchy"> {
   element: Element | null;
   rect: DOMRect | null;
   scrollHierarchy: ScrollState[];
-  position: PositionMode;
-  stickyConfig?: StickyConfig;
-  initialWindowX: number;
-  initialWindowY: number;
 }
 
 export interface SelectionSystem {

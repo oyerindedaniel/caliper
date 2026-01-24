@@ -56,7 +56,6 @@
     "layout-auditing"
   ],
   "license": "MIT",
-  "dependencies": {},
   "peerDependencies": {
     "@oyerinde/caliper": ">=0.1.4"
   },
