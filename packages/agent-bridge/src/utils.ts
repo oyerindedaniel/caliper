@@ -1,5 +1,5 @@
-import { type SelectionMetadata, type MeasurementResult } from "@oyerinde/caliper/core";
-import { type SelectionMetadata as BridgeSelectionMetadata, type MeasurementResult as BridgeMeasurementResult, type Rect, type ScrollState } from "@oyerinde/caliper-schema";
+import type { SelectionMetadata, MeasurementResult } from "@oyerinde/caliper/core";
+import type { SelectionMetadata as BridgeSelectionMetadata, MeasurementResult as BridgeMeasurementResult, ScrollState } from "@oyerinde/caliper-schema";
 
 export function sanitizeSelection(
     metadata: SelectionMetadata | null | undefined
@@ -52,7 +52,7 @@ export function sanitizeMeasurement(
 ): BridgeMeasurementResult | null {
     if (!result) return null;
     const { secondaryElement, primary, secondary, primaryHierarchy, secondaryHierarchy, primarySticky, secondarySticky, context, ...rest } = result;
-    
+
     return {
         ...rest,
         context,

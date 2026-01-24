@@ -63,7 +63,7 @@ export function createMeasurementBetween(
       lines,
       primary,
       secondary,
-      timestamp: performance.now(),
+      timestamp: Date.now(),
       primaryHierarchy: primaryGeom.scrollHierarchy,
       secondaryHierarchy: secondaryGeom.scrollHierarchy,
       secondaryElement,

@@ -4,6 +4,7 @@ import { BridgeMessageSchema, CaliperActionResult, CaliperMethod, CaliperAgentSt
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { generateId } from "../utils/id.js";
+import { BridgeTimeoutError, BridgeValidationError } from "../utils/errors.js";
 import { DEFAULT_BRIDGE_PORT, BRIDGE_REQUEST_TIMEOUT_MS } from "../shared/constants.js";
 
 const logger = createLogger("mcp-bridge");
@@ -35,6 +36,14 @@ export class BridgeService {
 
           if (!result.success) {
             logger.error("Invalid WS message format:", z.treeifyError(result.error));
+
+            if (rawMessage.id && typeof rawMessage.id === "string") {
+              const resolve = this.pendingCalls.get(rawMessage.id);
+              if (resolve) {
+                resolve({ error: new BridgeValidationError().message });
+                this.pendingCalls.delete(rawMessage.id);
+              }
+            }
             return;
           }
 
@@ -103,16 +112,17 @@ export class BridgeService {
       return new Promise<T>((resolve, reject) => {
         const timeout = setTimeout(() => {
           this.pendingCalls.delete(callId);
-          const errorMsg = attempt < retries
-            ? `Bridge request timed out for method: ${method}. Retrying... (Attempt ${attempt + 1}/${retries + 1})`
-            : `Bridge request timed out for method: ${method}. The bridge is connected, but the operation took too long.`;
-          reject(new Error(errorMsg));
+          reject(new BridgeTimeoutError(method, attempt, retries));
         }, BRIDGE_REQUEST_TIMEOUT_MS);
 
         this.pendingCalls.set(callId, (res) => {
           clearTimeout(timeout);
           if ("error" in res && !("success" in res)) {
-            reject(new Error(res.error));
+            if (res.error === new BridgeValidationError().message) {
+              reject(new BridgeValidationError());
+            } else {
+              reject(new Error(res.error));
+            }
           } else {
             resolve(res as T);
           }
@@ -134,9 +144,12 @@ export class BridgeService {
         return await callWithTimeout(i);
       } catch (err) {
         lastError = err as Error;
-        if (!lastError.message.includes("timed out")) {
+        const isRetryable = lastError instanceof BridgeTimeoutError || lastError instanceof BridgeValidationError;
+
+        if (!isRetryable) {
           throw lastError;
         }
+
         if (i < retries) {
           logger.warn(lastError.message);
           await new Promise(r => setTimeout(r, 1000));

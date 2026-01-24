@@ -32,7 +32,7 @@ export const CaliperMethodSchema = z.enum([
 
 export type CaliperMethod = z.infer<typeof CaliperMethodSchema>;
 
-export const CaliperActionResultSchema = z.discriminatedUnion("method", [
+export const CaliperActionResultSchema = z.union([
     z.object({ success: z.literal(true), method: z.literal("CALIPER_SELECT"), selector: z.string(), selection: SelectionMetadataSchema, timestamp: z.number() }),
     z.object({ success: z.literal(true), method: z.literal("CALIPER_MEASURE"), selector: z.string(), measurement: MeasurementResultSchema, timestamp: z.number() }),
     z.object({

@@ -13,8 +13,6 @@ const getPackageVersion = (): string => {
 
 const version = process.env.NODE_ENV === "production" ? getPackageVersion() : "[DEV]";
 
-console.log("Version: ", version);
-
 const banner = `/**
  * @name @oyerinde/caliper
  * @author Daniel Oyerinde

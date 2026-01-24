@@ -43,7 +43,7 @@ export const StickyConfigSchema = z.object({
     elementHeight: z.number(),
 });
 
-export const MeasurementResultSchema = z.object({
+const measurementResultBase = z.object({
     context: CursorContextSchema.nullable(),
     lines: z.array(MeasurementLineSchema),
     primary: RectSchema,
@@ -61,7 +61,9 @@ export const MeasurementResultSchema = z.object({
     secondarySticky: StickyConfigSchema.optional(),
 });
 
-export const SelectionMetadataSchema = z.object({
+export const MeasurementResultSchema = measurementResultBase;
+
+const selectionMetadataBase = z.object({
     rect: RectSchema.nullable(),
     scrollHierarchy: z.array(ScrollStateSchema),
     position: PositionModeSchema,
@@ -70,11 +72,13 @@ export const SelectionMetadataSchema = z.object({
     initialWindowY: z.number(),
 });
 
+export const SelectionMetadataSchema = selectionMetadataBase;
+
 export type Rect = z.infer<typeof RectSchema>;
 export type PositionMode = z.infer<typeof PositionModeSchema>;
 export type CursorContext = z.infer<typeof CursorContextSchema>;
 export type ScrollState = z.infer<typeof ScrollStateSchema>;
 export type StickyConfig = z.infer<typeof StickyConfigSchema>;
 export type MeasurementLine = z.infer<typeof MeasurementLineSchema>;
-export type MeasurementResult = z.infer<typeof MeasurementResultSchema>;
-export type SelectionMetadata = z.infer<typeof SelectionMetadataSchema>;
+export type MeasurementResult = z.infer<typeof measurementResultBase>;
+export type SelectionMetadata = z.infer<typeof selectionMetadataBase>;
