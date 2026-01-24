@@ -18,7 +18,7 @@ Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (
 ### 1. In your Web Application
 Ensure you have `@oyerinde/caliper-bridge` initialized in your application (see [Bridge README](../agent-bridge/README.md)).
 
-### 2. Configure your Editor (Cursor / Claude Code)
+### 2. Configure your Editor (Cursor / Claude Code / Antigravity)
 
 By default, the server runs on port **9876**. If you need to use a different port (e.g., if 9876 is occupied), you can pass the `-p` or `--port` flag.
 
@@ -47,6 +47,20 @@ Add to your Claude configuration:
 
 ```bash
 claude mcp add @oyerinde/caliper-mcp -- npx -y @oyerinde/caliper-mcp --port 9876
+```
+
+#### Antigravity
+Antigravity uses a configuration file named `mcp_config.json`. Add the caliper server to your config:
+
+```json
+{
+  "mcpServers": {
+    "caliper": {
+      "command": "npx",
+      "args": ["-y", "@oyerinde/caliper-mcp", "--port", "9876"]
+    }
+  }
+}
 ```
 
 ### 3. CLI Configuration ⚙️
