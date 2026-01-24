@@ -33,23 +33,13 @@ caliper.waitForSystems().then((systems) => {
 });
 ```
 
-### 2. Add Security Gate 🔒
-
-For security, the bridge stays inactive unless explicitly allowed via a data attribute in your HTML. Add this to your root `html` or `body` tag:
-
-```html
-<html data-caliper-enable-agent="true">
-  <!-- ... -->
-</html>
-```
-
-### 3. Passive State Observation
+### 2. Passive State Observation
 
 The bridge automatically maintains a global state object at `window.__CALIPER_STATE__`. It scans the DOM for "significant" elements and assigns them persistent **Caliper IDs** (e.g., `caliper-8kx2j`).
 
 AI agents use these IDs as stable selectors to performing measurements without the risk of fragile CSS selector path hallucinations.
 
-### 4. Programmatic Control (Manual Dispatch) ⌨️
+### 3. Programmatic Control (Manual Dispatch) ⌨️
 
 For manual testing or custom integrations, you can dispatch intents directly from the browser console or your application scripts using `dispatchCaliperIntent`:
 
@@ -68,10 +58,9 @@ await dispatchCaliperIntent({
 
 | Option | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
-| `enabled` | `boolean` | Yes | Must be `true` to activate |
+| `enabled` | `boolean` | No | Set to `true` to activate the bridge (default: `false`) |
 | `systems` | `CaliperCoreSystems` | Yes | Local core systems obtained from `caliper.waitForSystems()` |
 | `wsUrl` | `string` | No | Custom WebSocket URL for the MCP relay (default: `ws://localhost:9876`) |
-| `securityAttribute` | `string` | No | HTML attribute to check (default: `data-caliper-enable-agent`) |
 | `debounceMs` | `number` | No | Passive state update interval (default: `200ms`) |
 | `minElementSize` | `number` | No | Minimum element size for tracking (default: `24px`) |
 

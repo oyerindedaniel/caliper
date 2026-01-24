@@ -5,47 +5,32 @@ import type {
     CaliperCoreSystems,
 } from "./types.js";
 import { generateId, isVisible } from "@oyerinde/caliper/core";
-import { DEFAULT_MIN_ELEMENT_SIZE, DEFAULT_DEBOUNCE_MS } from "./constants.js";
+import { DEFAULT_DEBOUNCE_MS } from "./constants.js";
 
 const SEMANTIC_TAGS = ["main", "section", "article", "nav", "header", "footer", "aside"];
 
-function isSignificantElement(element: Element, minSize: number): boolean {
-    if (!isVisible(element)) {
-        return false;
-    }
-
-    const hasId = !!element.id;
-    const hasClass = element.classList.length > 0;
-    const isSemantic = SEMANTIC_TAGS.includes(element.tagName.toLowerCase());
-
-    if (!hasId && !hasClass && !isSemantic) {
-        return false;
-    }
-
-    const rect = element.getBoundingClientRect();
-    if (rect.width < minSize || rect.height < minSize) {
-        return false;
-    }
-
-    return true;
+function isSemanticLandmark(element: Element): boolean {
+    return SEMANTIC_TAGS.includes(element.tagName.toLowerCase());
 }
 
-function isInViewport(rect: DOMRect, viewport: { width: number; height: number }): boolean {
-    return (
-        rect.bottom > 0 && rect.right > 0 && rect.top < viewport.height && rect.left < viewport.width
-    );
-}
-
+/**
+ * Get a truncated text content for element identification.
+ * Limited to 60 chars to ensure it's useful for search without being unwieldy.
+ */
 function getTextContent(element: Element): string | undefined {
-    const text = element.textContent?.trim();
-    if (!text || text.length > 100) return undefined;
-    return text;
+    let directText = "";
+    for (const child of element.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+            directText += child.textContent || "";
+        }
+    }
+    const trimmed = directText.trim();
+    if (!trimmed || trimmed.length > 60) return undefined;
+    return trimmed;
 }
 
 function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentId" | "selector"> {
     const rect = element.getBoundingClientRect();
-    const style = window.getComputedStyle(element);
-    const zIndex = parseInt(style.zIndex, 10) || 0;
 
     return {
         top: rect.top,
@@ -54,7 +39,6 @@ function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentI
         height: rect.height,
         absoluteX: rect.left + window.scrollX,
         absoluteY: rect.top + window.scrollY,
-        zIndex,
         tagName: element.tagName.toLowerCase(),
         textContent: getTextContent(element),
         id: element.id || undefined,
@@ -64,7 +48,6 @@ function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentI
 
 export function createStateExporter(config: AgentBridgeConfig, systems: CaliperCoreSystems) {
     const { measurementSystem, selectionSystem, onViewportChange } = systems;
-    const minSize = config.minElementSize ?? DEFAULT_MIN_ELEMENT_SIZE;
     const debounceMs = config.debounceMs ?? DEFAULT_DEBOUNCE_MS;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -86,21 +69,15 @@ export function createStateExporter(config: AgentBridgeConfig, systems: CaliperC
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
             acceptNode: (node) => {
                 const el = node as Element;
-
                 if (!isVisible(el)) {
-                    return NodeFilter.FILTER_REJECT;
-                }
-
-                if (!isSignificantElement(el, minSize)) {
                     return NodeFilter.FILTER_SKIP;
                 }
 
-                const rect = el.getBoundingClientRect();
-                if (!isInViewport(rect, viewport)) {
-                    return NodeFilter.FILTER_REJECT;
+                if (isSemanticLandmark(el)) {
+                    return NodeFilter.FILTER_ACCEPT;
                 }
 
-                return NodeFilter.FILTER_ACCEPT;
+                return NodeFilter.FILTER_SKIP;
             },
         });
 

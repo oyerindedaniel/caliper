@@ -159,7 +159,7 @@ export const AuditNodeInputSchema = z.object({
     /** Caliper ID or CSS selector of the element to audit */
     selector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector of the element"),
     /** Design properties from Figma MCP */
-    designProps: FigmaDesignPropsSchema.describe("Design properties from Figma MCP (get_node response)"),
+    designProps: FigmaDesignPropsSchema.describe("Design properties from Figma MCP"),
     /** Audit strategy to apply */
     strategy: AuditStrategySchema.describe("A = Container-First, B = Padding-Locked, C = Ratio-Based"),
     /** Pixel tolerance for considering a match acceptable (default: 1) */

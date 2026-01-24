@@ -6,6 +6,7 @@ import { PREFIX } from "../../css/styles.js";
 interface SelectionLabelProps {
   metadata: SelectionMetadata;
   isActivatePressed: boolean;
+  isCopied: boolean;
   viewport: {
     scrollX: number;
     scrollY: number;
@@ -16,7 +17,7 @@ interface SelectionLabelProps {
 }
 
 /**
- * Render dimensions label beneath the selected element, aware of container boundaries
+ * Render dimensions label for the selected element.
  */
 export function SelectionLabel(props: SelectionLabelProps) {
   const margin = 16;
@@ -55,7 +56,6 @@ export function SelectionLabel(props: SelectionLabelProps) {
     let snapX = (visibleLeft + visibleRight) / 2;
     let snapY = geo.top + geo.height + 8;
 
-    // Snapping: Float at bottom of effective visible area if clipped
     if (snapY > effectiveMaxY - margin - 24) {
       if (geo.top < effectiveMaxY - margin) {
         snapY = effectiveMaxY - margin - 24;
@@ -76,7 +76,7 @@ export function SelectionLabel(props: SelectionLabelProps) {
       {(data) => (
         <Portal mount={document.body}>
           <div
-            class={`${PREFIX}selection-label`}
+            class={`${PREFIX}selection-label ${props.isCopied ? `${PREFIX}selection-label-success` : ""}`}
             style={{
               left: 0,
               top: 0,
@@ -84,7 +84,18 @@ export function SelectionLabel(props: SelectionLabelProps) {
               opacity: props.isActivatePressed ? 0 : 1,
             }}
           >
-            {data().width} × {data().height}
+            <Show
+              when={props.isCopied}
+              fallback={
+                <span class={`${PREFIX}selection-label-content`}>
+                  {data().width} × {data().height}
+                </span>
+              }
+            >
+              <span class={`${PREFIX}selection-label-content`}>
+                Copied!
+              </span>
+            </Show>
           </div>
         </Portal>
       )}

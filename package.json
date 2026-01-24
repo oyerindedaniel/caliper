@@ -11,9 +11,9 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "test": "echo \"Tests coming soon\"",
     "version:write": "node scripts/write-version.mjs",
-    "bb": "turbo run build --filter=@oyerinde/caliper...",
+    "build:caliper": "turbo run build --filter=@oyerinde/caliper...",
     "build:packages": "turbo run build --filter=@caliper/core --filter=@caliper/overlay --filter=@oyerinde/caliper --filter=@oyerinde/caliper-mcp --filter=@oyerinde/caliper-bridge",
-    "release": "pnpm bb && pnpm --filter @oyerinde/caliper run release"
+    "release": "pnpm build:caliper && pnpm --filter @oyerinde/caliper run release"
   },
   "devDependencies": {
     "prettier": "^3.7.4",

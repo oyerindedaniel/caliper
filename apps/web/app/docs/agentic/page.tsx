@@ -7,11 +7,17 @@ import { CodeBlock } from "../../components/code-block";
 export default function AgenticDocsPage() {
     const bridgeInstallCode = `npm install @oyerinde/caliper-bridge`;
 
-    const bridgeInitCode = `import { initCaliperBridge } from "@oyerinde/caliper-bridge";
+    const bridgeInitCode = `import { init } from "@oyerinde/caliper";
+import { initAgentBridge } from "@oyerinde/caliper-bridge";
 
-// Initialize in your client-side entry point
-initCaliperBridge({
-  securityAttribute: "data-caliper-enable-agent" 
+const caliper = init();
+
+// Wait for systems to be ready before initializing the bridge
+caliper.waitForSystems().then((systems) => {
+  initAgentBridge({
+    enabled: true,
+    systems
+  });
 });`;
 
     const mcpInstallCode = `npx -y @oyerinde/caliper-mcp --port 9876`;
@@ -33,15 +39,9 @@ initCaliperBridge({
 
                 <h3 className={styles.subHeader} style={{ marginTop: "32px" }}>Initialization</h3>
                 <p style={{ marginBottom: "16px", opacity: 0.8 }}>
-                    Add this to your root layout or entry point:
+                    Add this to your root layout or entry point. By default, the bridge is inactive unless `enabled: true` is passed.
                 </p>
                 <CodeBlock code={bridgeInitCode} language="tsx" />
-
-                <h3 className={styles.subHeader} style={{ marginTop: "32px" }}>Security Gate 🔒</h3>
-                <p style={{ marginBottom: "16px", opacity: 0.8 }}>
-                    The bridge stays inactive unless explicitly allowed via a data attribute. Add this to your root <code>&lt;html&gt;</code> tag:
-                </p>
-                <CodeBlock code={`<html data-caliper-enable-agent="true">`} language="html" />
             </DocSection>
 
             <DocSection title="MCP Server">
@@ -105,8 +105,8 @@ initCaliperBridge({
                                 <td>Mathematical consistency check for grids/lists.</td>
                             </tr>
                             <tr>
-                                <td><code>caliper-audit</code></td>
-                                <td>Comprehensive general UI alignment polish.</td>
+                                <td><code>caliper-audit-harness</code></td>
+                                <td>Mandatory context-gathering loop to ensure stable code edits.</td>
                             </tr>
                         </tbody>
                     </table>

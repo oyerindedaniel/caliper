@@ -27,29 +27,54 @@ export const CaliperMethodSchema = z.enum([
     "CALIPER_CLEAR",
     "CALIPER_GET_STATE",
     "CALIPER_AUDIT_NODE",
+    "CALIPER_WALK_DOM",
 ]);
 
 export type CaliperMethod = z.infer<typeof CaliperMethodSchema>;
 
-export const CaliperActionResultSchema = z.object({
-    success: z.boolean(),
-    intent: CaliperMethodSchema,
-    selector: z.string().optional(),
-    measurement: MeasurementResultSchema.optional(),
-    selection: SelectionMetadataSchema.optional(),
-    distances: z
-        .object({
+export const CaliperActionResultSchema = z.discriminatedUnion("intent", [
+    z.object({ success: z.literal(true), intent: z.literal("CALIPER_SELECT"), selector: z.string(), selection: SelectionMetadataSchema, timestamp: z.number() }),
+    z.object({ success: z.literal(true), intent: z.literal("CALIPER_MEASURE"), selector: z.string(), measurement: MeasurementResultSchema, timestamp: z.number() }),
+    z.object({
+        success: z.literal(true),
+        intent: z.literal("CALIPER_INSPECT"),
+        selector: z.string(),
+        distances: z.object({
             top: z.number(),
             right: z.number(),
             bottom: z.number(),
             left: z.number(),
             horizontal: z.number(),
             vertical: z.number(),
-        })
-        .optional(),
-    error: z.string().optional(),
-    timestamp: z.number(),
-});
+        }),
+        computedStyles: z.object({
+            paddingLeft: z.number(),
+            paddingRight: z.number(),
+            paddingTop: z.number(),
+            paddingBottom: z.number(),
+            marginLeft: z.number(),
+            marginRight: z.number(),
+            marginTop: z.number(),
+            marginBottom: z.number(),
+        }),
+        selection: SelectionMetadataSchema,
+        timestamp: z.number()
+    }),
+    z.object({ success: z.literal(true), intent: z.literal("CALIPER_FREEZE"), timestamp: z.number() }),
+    z.object({ success: z.literal(true), intent: z.literal("CALIPER_CLEAR"), timestamp: z.number() }),
+    z.object({
+        success: z.literal(true),
+        intent: z.literal("CALIPER_WALK_DOM"),
+        selector: z.string(),
+        domContext: z.object({
+            element: z.any(),
+            parent: z.any().nullable(),
+            children: z.array(z.any())
+        }),
+        timestamp: z.number()
+    }),
+    z.object({ success: z.literal(false), intent: CaliperMethodSchema, selector: z.string().optional(), error: z.string(), timestamp: z.number() }),
+]);
 
 export const CaliperAgentStateSchema = z.object({
     viewport: ViewportSchema,

@@ -21,6 +21,7 @@ import {
   type RulerSystem,
   type RulerState,
   RESIZE_THROTTLE_MS,
+  generateId,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -80,6 +81,8 @@ export function Root(config: RootConfig) {
 
   const [isActivatePressed, setIsActivatePressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
+  const [isCopied, setIsCopied] = createSignal(false);
+  let copyTimeoutId: number | null = null;
   const viewportListeners = new Set<() => void>();
 
   const onViewportChange = (listener: () => void) => {
@@ -94,6 +97,14 @@ export function Root(config: RootConfig) {
   let observedRoot = false;
   let observedPrimary: Element | null = null;
   let observedSecondary: Element | null = null;
+
+  const resetCopyFeedback = () => {
+    if (copyTimeoutId) {
+      window.clearTimeout(copyTimeoutId);
+      copyTimeoutId = null;
+    }
+    setIsCopied(false);
+  };
 
   const resetCalculatorUI = () => {
     setCalculatorState(null);
@@ -200,6 +211,7 @@ export function Root(config: RootConfig) {
         }
 
         resetCalculatorUI();
+        resetCopyFeedback();
         setActiveInputFocus("calculator");
 
         lastHoveredElement = null;
@@ -274,8 +286,61 @@ export function Root(config: RootConfig) {
         }
       }
     };
+    const MAX_TEXT_LENGTH = 40;
+
+    const getGrepText = (element: Element): string | null => {
+      let directText = "";
+      for (const child of element.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          directText += child.textContent || "";
+        }
+      }
+      const trimmed = directText.trim().replace(/\s+/g, " ");
+      if (!trimmed) return null;
+      return trimmed.slice(0, MAX_TEXT_LENGTH);
+    };
+
+    const buildSelectorInfo = (element: Element): string => {
+      const tagName = element.tagName.toLowerCase();
+
+      let agentId = element.getAttribute("data-caliper-agent-id");
+      if (!agentId) {
+        agentId = generateId("caliper");
+        element.setAttribute("data-caliper-agent-id", agentId);
+      }
+
+      const id = (element as HTMLElement).id;
+      const text = getGrepText(element);
+
+      const clipboardData: Record<string, string> = {
+        selector: agentId,
+        tag: tagName,
+      };
+      if (id) clipboardData.id = id;
+      if (text) clipboardData.text = text;
+
+      return JSON.stringify(clipboardData);
+    };
 
     const handleContextMenu = (e: MouseEvent) => {
+      const selectedElement = selectionMetadata().element;
+
+      if (selectedElement) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        const selectorInfo = buildSelectorInfo(selectedElement);
+        navigator.clipboard.writeText(selectorInfo).then(() => {
+          if (copyTimeoutId) clearTimeout(copyTimeoutId);
+          setIsCopied(true);
+          copyTimeoutId = window.setTimeout(() => {
+            setIsCopied(false);
+            copyTimeoutId = null;
+          }, 1500);
+        }).catch(() => { });
+        return;
+      }
+
       if (isCommandActive(e)) {
         e.preventDefault();
       }
@@ -288,6 +353,7 @@ export function Root(config: RootConfig) {
     const selectionDelegate = createSuppressionDelegate((el: Element) => {
       if (selectionSystem?.getSelected() !== el) {
         system?.abort();
+        resetCopyFeedback();
       }
       lastHoveredElement = el;
       selectionSystem?.select(el);
@@ -355,6 +421,7 @@ export function Root(config: RootConfig) {
 
         setIsActivatePressed(false);
         resetCalculatorUI();
+        resetCopyFeedback();
 
         if (system) {
           system.abort();
@@ -893,6 +960,7 @@ export function Root(config: RootConfig) {
       projectionState={projectionState}
       rulerState={rulerState}
       activeFocus={activeInputFocus}
+      isCopied={isCopied}
       onLineClick={handleLineClick}
       onRulerUpdate={handleRulerUpdate}
       onRulerRemove={handleRulerRemove}

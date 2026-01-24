@@ -196,6 +196,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 ### Measurements
 
 - **Cmd/Ctrl + Click + Hold** (250ms) — Select an element.
+- **Right-Click** — Copy element metadata (selector, ID, text) when selected.
 - **Hover** — View relative distances to target.
 - **Option/Alt** — Hold to reveal the overlay.
 - **Space** — Freeze the current state.

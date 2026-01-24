@@ -32,7 +32,7 @@ import { createStateExporter } from "./state-exporter.js";
 import { createIntentHandler } from "./intent-handler.js";
 import { createWSBridge } from "./ws-bridge.js";
 import { createLogger } from "@oyerinde/caliper/core";
-import { DEFAULT_WS_URL, DEFAULT_SECURITY_ATTRIBUTE } from "./constants.js";
+import { DEFAULT_WS_URL } from "./constants.js";
 
 const logger = createLogger("agent-bridge");
 
@@ -41,20 +41,6 @@ export * from "./types.js";
 let stateExporter: ReturnType<typeof createStateExporter> | null = null;
 let intentHandler: ReturnType<typeof createIntentHandler> | null = null;
 let isInitialized = false;
-
-function checkSecurityGate(attribute: string): boolean {
-    const htmlAttr = document.documentElement.getAttribute(attribute);
-    if (htmlAttr === "true" || htmlAttr === "") {
-        return true;
-    }
-
-    const bodyAttr = document.body?.getAttribute(attribute);
-    if (bodyAttr === "true" || bodyAttr === "") {
-        return true;
-    }
-
-    return false;
-}
 
 export interface InitAgentBridgeOptions extends AgentBridgeConfig {
     systems: CaliperCoreSystems;
@@ -77,7 +63,9 @@ export function initAgentBridge(options: InitAgentBridgeOptions): () => void {
         return () => { };
     }
 
-    if (!options.enabled) {
+    const { enabled = false } = options;
+
+    if (!enabled) {
         logger.info("Bridge is disabled via config.");
         clearGlobals();
         return () => { };
@@ -86,15 +74,6 @@ export function initAgentBridge(options: InitAgentBridgeOptions): () => void {
     if (!options.systems?.measurementSystem || !options.systems?.selectionSystem) {
         logger.error(
             "Missing required systems. Provide measurementSystem and selectionSystem from @caliper/core."
-        );
-        clearGlobals();
-        return () => { };
-    }
-
-    const securityAttribute = options.securityAttribute ?? DEFAULT_SECURITY_ATTRIBUTE;
-    if (!checkSecurityGate(securityAttribute)) {
-        logger.warn(
-            `Security gate failed. Add '${securityAttribute}="true"' to <html> or <body> to enable the agent bridge.`
         );
         clearGlobals();
         return () => { };
