@@ -10,10 +10,11 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "pnpm run clean && tsup",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\""
   },
   "devDependencies": {
     "@repo/eslint-config": "workspace:*",
@@ -24,10 +25,9 @@
     "typescript": "5.9.3",
     "tsup": "^8.5.1",
     "babel-preset-solid": "^1.9.10",
-    "esbuild-plugin-babel": "^0.2.3"
-  },
-  "dependencies": {
+    "esbuild-plugin-babel": "^0.2.3",
     "@caliper/core": "workspace:*",
+    "@oyerinde/caliper-schema": "workspace:*",
     "solid-js": "^1.9.10"
   }
 }

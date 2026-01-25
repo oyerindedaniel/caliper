@@ -88,10 +88,11 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_measure(primary, secondary)`: Perform high-precision distance calculation between two elements.
 - `caliper_get_state`: Get the current passive state of Caliper (viewport + significant elements).
 - `caliper_clear`: Reset all active measurements and guides in the UI.
-- `caliper_audit_node(selector, designProps, strategy, tolerance?)`: Audit a live element against Figma design properties.
 - `caliper_grep(query, tag?)`: Search the codebase for elements using text, IDs, or tags.
 - `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
 - `caliper_parse_selector(jsonString)`: Parse rich selector data copied from the Caliper UI.
+- `caliper_walk_and_measure(selector, maxDepth?)`: Comprehensive recursive DOM walk with style and gap extraction.
+- `caliper_reconcile(caliperTree, figmaPrimary, ...)`: Reconcile a measured tree against Figma design data.
 
 ## Figma MCP Integration 🎨
 
@@ -111,8 +112,8 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 
 | Prompt | Description |
 | :--- | :--- |
-| `caliper-spacing-check` | Detailed consistency check for repeating components. |
-| `caliper-figma-audit` | Structured workflow for Figma-to-Code auditing. |
+| `caliper-selector-audit` | Comprehensive element audit (styles, spacing, hierarchy). |
+| `caliper-figma-reconcile` | Deep reconciliation workflow between Figma and Code. |
 | `caliper-audit-harness` | Mandatory context-gathering loop to ensure stable code edits. |
 
 ## Resources 📚

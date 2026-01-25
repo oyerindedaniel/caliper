@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { bridgeService } from "./bridge-service.js";
-import { CaliperAgentState, AuditNodeInputSchema, BrowserElementProps } from "@oyerinde/caliper-schema";
-import { auditDesignVsBrowser } from "./audit-service.js";
+import { CaliperAgentState, CaliperNodeSchema, FigmaFrameContextSchema } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
+import { reconcilerService } from "./reconciler-service.js";
 import { createLogger } from "../utils/logger.js";
 import { caliperGrep } from "../utils/grep.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
@@ -109,8 +109,8 @@ export class CaliperMcpServer {
       {
         description: "Perform a high-precision measurement between two elements. Use Caliper IDs (caliper-xxxx) obtained from caliper_get_state for best results.",
         inputSchema: z.object({
-          primarySelector: z.string().describe("Caliper ID or CSS selector for the primary element"),
-          secondarySelector: z.string().describe("Caliper ID or CSS selector for the target element"),
+          primarySelector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector for the primary element"),
+          secondarySelector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector for the target element"),
         }),
       },
       async ({ primarySelector, secondarySelector }) => {
@@ -168,70 +168,6 @@ export class CaliperMcpServer {
     );
 
     this.server.registerTool(
-      "caliper_audit_node",
-      {
-        description: `[REQUIRES FIGMA MCP] Audit a browser element against Figma design properties. 
-Use this ONLY when the user explicitly mentions "Figma" or when Figma MCP tools (get_metadata, get_variable_defs) have been called.
-For general element inspection without Figma, use caliper_inspect instead.
-
-Compares live implementation to design intent using one of three strategies:
-- Strategy A (Container-First): Design frame is max boundary, element centers and shrinks on smaller viewports.
-- Strategy B (Padding-Locked): Edge spacing is fixed, content fills available space.
-- Strategy C (Ratio-Based): Element maintains proportional width relative to viewport.
-
-NOTE: If the design has nested frames (Desktop Frame → Centered Container → Content), pass the INNER container's dimensions as frameWidth, not the outer frame.
-
-Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`,
-        inputSchema: AuditNodeInputSchema,
-      },
-      async ({ selector, designProps, strategy, tolerance }) => {
-        try {
-          const inspectResult = await bridgeService.call("CALIPER_INSPECT", { selector });
-
-          if (!inspectResult.success || inspectResult.method !== "CALIPER_INSPECT") {
-            return {
-              content: [{ type: "text", text: `Error: Could not inspect element "${selector}". ${(inspectResult as any).error || "Element not found."}` }],
-              isError: true,
-            };
-          }
-
-          const result = inspectResult;
-
-          const state = await bridgeService.call<CaliperAgentState>("CALIPER_GET_STATE", {});
-
-          const browserProps: BrowserElementProps = {
-            viewportWidth: state.viewport.width,
-            viewportHeight: state.viewport.height,
-            left: result.distances.left,
-            top: result.distances.top,
-            width: result.distances.horizontal,
-            height: result.distances.vertical,
-            paddingLeft: result.computedStyles.paddingLeft,
-            paddingRight: result.computedStyles.paddingRight,
-            paddingTop: result.computedStyles.paddingTop,
-            paddingBottom: result.computedStyles.paddingBottom,
-            marginLeft: result.computedStyles.marginLeft,
-            marginRight: result.computedStyles.marginRight,
-          };
-
-          const auditResult = auditDesignVsBrowser(
-            designProps,
-            browserProps,
-            strategy,
-            tolerance ?? 1
-          );
-
-          return { content: [{ type: "text", text: JSON.stringify(auditResult, null, 2) }] };
-        } catch (error) {
-          return {
-            content: [{ type: "text", text: `Error auditing element: ${error instanceof Error ? error.message : String(error)}` }],
-            isError: true,
-          };
-        }
-      }
-    );
-
-    this.server.registerTool(
       "caliper_grep",
       {
         description: "Optimized project search to find where a specific element or text is defined in the source code. Uses keywords from caliper_inspect or selection copy.",
@@ -251,7 +187,7 @@ Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`
       {
         description: "Get the semantic context of an element by traversing its parents and children. Useful for understanding component hierarchy.",
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID or CSS selector"),
+          selector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector of the element"),
         }),
       },
       async ({ selector }) => {
@@ -267,6 +203,7 @@ Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`
       }
     );
 
+
     this.server.registerTool(
       "caliper_parse_selector",
       {
@@ -281,15 +218,18 @@ Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`
           const strategy: string[] = [];
 
           if (info.id) strategy.push(`Search for id="${info.id}"`);
+          if (info.classes && info.classes.length > 0) strategy.push(`Search for class(es): .${info.classes.join(".")}`);
           if (info.text) strategy.push(`Search for exact text: "${info.text}"`);
           if (info.tag) strategy.push(`Filter results by <${info.tag}> tag`);
+
+          const keywords = [info.id, ...(info.classes || []), info.text].filter(Boolean);
 
           return {
             content: [{
               type: "text",
               text: JSON.stringify({
                 parsed: info,
-                recommendedKeywords: [info.id, info.text].filter(Boolean),
+                recommendedKeywords: Array.from(new Set(keywords)),
                 strategy: strategy.join(" -> ")
               }, null, 2)
             }]
@@ -297,6 +237,87 @@ Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`
         } catch (e) {
           return {
             content: [{ type: "text", text: "Invalid selector info JSON" }],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_walk_and_measure",
+      {
+        description: `Walk the DOM tree starting from a selector and capture precise measurements.
+
+This is the HARNESS tool for comprehensive audits. It:
+- Walks the DOM tree using BFS (breadth-first) 
+- Captures computed styles for each node (padding, margin, gap, typography, colors)
+- Measures gaps between siblings and distance to parent edges
+- Returns a full tree structure ready for reconciliation with Figma
+
+Use this BEFORE making any code changes to gather complete context.
+
+The output includes:
+- root: The full measured tree (recursive CaliperNode structure)
+- nodeCount: Total nodes captured
+- maxDepthReached: Deepest level reached
+- walkDurationMs: Time taken to complete the walk`,
+        inputSchema: z.object({
+          selector: z.string().describe("Caliper ID or CSS selector of the root element to walk"),
+          maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
+        }),
+      },
+      async ({ selector, maxDepth }) => {
+        try {
+          const result = await bridgeService.call("CALIPER_WALK_AND_MEASURE", {
+            selector,
+            maxDepth: maxDepth ?? 5
+          });
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: `Walk and Measure failed: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_reconcile",
+      {
+        description: `Perform high-precision reconciliation between Figma design intent and live implementation.
+
+This tool:
+1. Takes a measured Caliper tree (from caliper_walk_and_measure)
+2. Takes Figma metadata (from Figma MCP get_metadata)
+3. Pairs nodes based on ID, Text, and Structure
+4. Applies A/B/C strategy audit logic
+5. Generates consolidated base and responsive CSS fixes
+
+Inputs:
+- caliperTree: The measured tree from caliper_walk_and_measure
+- figmaPrimary: Primary Figma frame context
+- figmaSecondary: Optional tablet/mobile Figma frame context
+- strategy: Reconciliation strategy (A=Container, B=Padding, C=Ratio)`,
+        inputSchema: z.object({
+          caliperTree: CaliperNodeSchema.describe("The root CaliperNode from walkResult"),
+          figmaPrimary: FigmaFrameContextSchema.describe("FigmaFrameContext of the primary design"),
+          figmaSecondary: FigmaFrameContextSchema.optional().describe("FigmaFrameContext of the secondary design"),
+          strategy: z.enum(["A", "B", "C"]).default("A"),
+        }),
+      },
+      async ({ caliperTree, figmaPrimary, figmaSecondary, strategy }) => {
+        try {
+          const report = reconcilerService.reconcile(
+            caliperTree,
+            figmaPrimary,
+            figmaSecondary,
+            strategy
+          );
+          return { content: [{ type: "text", text: JSON.stringify(report, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: `Reconciliation failed: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
           };
         }
@@ -349,52 +370,29 @@ Returns deltas and CSS recommendations to achieve pixel-perfect implementation.`
 
   private registerPrompts() {
     this.server.registerPrompt(
-      "caliper-spacing-check",
+      "caliper-selector-audit",
       {
-        description: "Analyze spacing and margin consistency between elements.",
+        description: "Perform a comprehensive audit of a specific selector, analyzing spacing, typography, colors, and layout consistency.",
         argsSchema: {
-          component: z.string().describe("The name or selector of the component to audit"),
+          selector: z.string().describe("The Caliper Selector (Agent ID) or CSS selector to audit"),
         },
       },
-      async ({ component }) => ({
+      async ({ selector }) => ({
         messages: [
           {
             role: "user",
             content: {
               type: "text",
-              text: `Check the spacing consistency for the '${component}' component. Measure the horizontal and vertical gaps between several instances of this component or its children using 'caliper_measure'. Document any deviations from a consistent grid or spacing system.`,
-            },
-          },
-        ],
-      })
-    );
+              text: `Please perform a comprehensive audit for the element: '${selector}'.
 
-    this.server.registerPrompt(
-      "caliper-figma-audit",
-      {
-        description: "Perform a pixel-perfect audit against a Figma design.",
-        argsSchema: {
-          layerName: z.string().describe("The name of the layer/component in Figma to audit"),
-          selector: z.string().describe("The Caliper Selector (Agent ID) of the live element"),
-          strategy: z.enum(["A", "B", "C"]).describe("A=Container, B=Padding, C=Ratio"),
-        },
-      },
-      async ({ layerName, selector, strategy }) => ({
-        messages: [
-          {
-            role: "user",
-            content: {
-              type: "text",
-              text: `I want to perform a Pixel-Perfect audit for the '${layerName}' component against the browser element '${selector}' using Strategy '${strategy}'.
-          
-1. First, use Figma's 'get_metadata' tool to find the node and extract its absoluteBoundingBox (nodeX/Y, width, height) and its parent's dimensions.
-2. If the design relies on spacing, use Figma's 'get_variable_defs' to find the design tokens.
-3. Call 'caliper_audit_node' with:
-   - selector: "${selector}"
-   - designProps: (from Figma metadata)
-   - strategy: "${strategy}"
-4. Analyze the results. If there are deltas, use 'caliper_walk_dom' and 'caliper_grep' to find the exact source file implementing this element and its styles.
-5. Apply the CSS recommendations provided by Caliper and verify the fix by re-auditing.`,
+1. **Deep Inspection**: Call 'caliper_inspect' to get all computed styles, colors, and typography.
+2. **Hierarchy Walk**: Call 'caliper_walk_and_measure' to understand its position in the tree, its children, and the spacing (gaps) to its neighbors.
+3. **Consistency Check**: 
+   - Analyze if the padding and margins follow a consistent scale (e.g., multiples of 4px or 8px).
+   - Check if font sizes, weights, and colors match the project's design system (if visible in other parts of the site).
+   - Identify any hardcoded "magic numbers" or unusual offsets.
+4. **Source Discovery**: Call 'caliper_grep' to find where these styles are defined.
+5. **Recommendations**: Provide a clear report of discrepancies and the exact CSS fixes needed to improve consistency and quality.`,
             },
           },
         ],
@@ -425,12 +423,12 @@ You are about to audit the element '${selector}'. Before making ANY code changes
    Call 'caliper_inspect' with selector: "${selector}"
    Record: tagName, id, text content, computed styles
 
-2. **Walk the DOM Tree**
-   Call 'caliper_walk_dom' with selector: "${selector}"
-   Record:
-   - Parent landmark (e.g., "nav", "main", "section#hero")
-   - Children structure
-   - Any unique identifiers (ids, data-testid, aria-label)
+    2. **Deep Audit Walk**
+       Call 'caliper_walk_and_measure' with selector: "${selector}" and maxDepth: 2
+       Record:
+       - Parent landmark (e.g., "nav", "main", "section#hero")
+       - Children structure
+       - Any unique identifiers (ids, data-testid, aria-label)
 
 3. **Find Greppable Anchor**
    From steps 1-2, identify a STABLE identifier that will survive HMR:
@@ -461,16 +459,94 @@ BEGIN PHASE 1 NOW. Do not skip any steps.`,
         ],
       })
     );
+
+    this.server.registerPrompt(
+      "caliper-figma-reconcile",
+      {
+        description: "Comprehensive Figma-to-Implementation reconciliation using the harness walk engine. Captures full tree measurements before making any code changes.",
+        argsSchema: {
+          selector: z.string().describe("Caliper Selector (Agent ID) of the root element"),
+          strategy: z.enum(["A", "B", "C"]).describe("A=Container-First, B=Padding-Locked, C=Ratio-Based"),
+          figmaUrl: z.string().optional().describe("Figma layer URL (primary breakpoint)"),
+          figmaSecondaryUrl: z.string().optional().describe("Figma layer URL (secondary breakpoint for responsive)"),
+        },
+      },
+      async ({ selector, strategy, figmaUrl, figmaSecondaryUrl }) => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `## CALIPER-FIGMA RECONCILIATION HARNESS
+
+You are about to perform a pixel-perfect reconciliation between Figma design and live implementation.
+
+**Inputs:**
+- Selector: ${selector}
+- Strategy: ${strategy} ${strategy === "A" ? "(Container-First: centered with max-width)" : strategy === "B" ? "(Padding-Locked: fixed edge spacing)" : "(Ratio-Based: proportional width)"}
+${figmaUrl ? `- Primary Figma URL: ${figmaUrl}` : "- No Figma URL provided (standalone audit)"}
+${figmaSecondaryUrl ? `- Secondary Figma URL: ${figmaSecondaryUrl}` : ""}
+
+---
+
+### PHASE 1: FETCH FIGMA DATA
+${figmaUrl ? `1. Call Figma MCP's 'get_metadata' on: ${figmaUrl}
+   Extract: frameWidth, nodeWidth, nodeX, paddingLeft, paddingRight
+2. Call Figma MCP's 'get_variable_defs' on the selection.
+   Extract: Design tokens (colors, spacing, typography variables) used in the design.
+` : "Skip - no Figma URL provided"}
+${figmaSecondaryUrl ? `3. Call Figma MCP's 'get_metadata' and 'get_variable_defs' on: ${figmaSecondaryUrl}
+   Extract: secondary breakpoint dimensions and variables` : ""}
+
+### PHASE 2: WALK AND MEASURE (MANDATORY)
+4. Call 'caliper_walk_and_measure' with:
+   - selector: "${selector}"
+   - maxDepth: 3
+
+   This captures the FULL implementation tree including:
+   - All computed styles (padding, margin, gap, typography)
+   - Sibling gaps and parent distances
+   - Recursive structure
+
+### PHASE 3: COMPARE
+5. Compare the walkResult to Figma data:
+   - Check padding values against Figma's padding
+   - Check width against Figma's nodeWidth
+   - Check sibling gaps against Figma's itemSpacing
+   - Apply Strategy ${strategy} logic for alignment validation
+
+### PHASE 4: FIND SOURCE
+6. Call 'caliper_grep' with the best anchor from the walkResult:
+   - Prefer: htmlId, unique textContent, data-testid
+   Get the file path and line number.
+
+### PHASE 5: APPLY EDITS (ONLY AFTER PHASES 1-4)
+7. Generate CSS recommendations based on deltas found.
+8. Edit the identified source file.
+9. Re-run 'caliper_walk_and_measure' to verify the fix.
+
+---
+**BEGIN PHASE 1 NOW. Do not skip any steps.**`,
+            },
+          },
+        ],
+      })
+    );
   }
 
   async start() {
     try {
-      bridgeService.start(this.port);
+      await bridgeService.start(this.port);
+    } catch (err) {
+      logger.error("Bridge startup failed:", err);
+    }
+
+    try {
       const transport = new StdioServerTransport();
       await this.server.connect(transport);
       logger.info("Server running on STDIO transport");
     } catch (err) {
-      logger.error("Startup failed:", err);
+      logger.error("MCP Startup failed:", err);
       process.exit(1);
     }
   }

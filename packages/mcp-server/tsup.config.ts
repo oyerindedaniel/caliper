@@ -11,7 +11,8 @@ const getPackageVersion = (): string => {
 
 const version = process.env.NODE_ENV === "production" ? getPackageVersion() : "[DEV]";
 
-const banner = `/**
+const banner = `#!/usr/bin/env node
+/**
  * @name @oyerinde/caliper-mcp
  * @author Daniel Oyerinde
  * @license MIT

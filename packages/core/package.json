@@ -10,11 +10,12 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "pnpm run clean && tsup",
     "dev": "tsup --watch",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\""
   },
   "devDependencies": {
     "@oyerinde/caliper-schema": "workspace:*",

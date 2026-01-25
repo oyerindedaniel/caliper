@@ -22,7 +22,9 @@ import {
   type RulerState,
   RESIZE_THROTTLE_MS,
   generateId,
+  filterRuntimeClasses,
 } from "@caliper/core";
+import type { CaliperSelectorInput } from "@oyerinde/caliper-schema";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
 
@@ -324,13 +326,17 @@ export function Root(config: RootConfig) {
 
       const id = (element as HTMLElement).id;
       const text = getGrepText(element);
+      const classes = filterRuntimeClasses(element.classList);
 
-      const clipboardData: Record<string, string> = {
+      const clipboardData: CaliperSelectorInput = {
         selector: agentId,
         tag: tagName,
+        timestamp: Date.now(),
       };
+
       if (id) clipboardData.id = id;
       if (text) clipboardData.text = text;
+      if (classes.length > 0) clipboardData.classes = classes;
 
       return JSON.stringify(clipboardData);
     };

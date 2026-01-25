@@ -74,4 +74,5 @@ export {
 export { showVersionInfo } from "./shared/utils/version-check.js";
 export { lerp, lerpRect } from "./shared/utils/math.js";
 export { generateId } from "./shared/utils/id.js";
+export { filterRuntimeClasses } from "./shared/utils/class-filter.js";
 export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";

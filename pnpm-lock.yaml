@@ -206,9 +206,6 @@ importers:
       '@caliper/overlay':
         specifier: workspace:*
         version: link:../overlay
-      '@oyerinde/caliper-schema':
-        specifier: workspace:*
-        version: link:../schema
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
@@ -353,14 +350,13 @@ importers:
         version: 5.9.3
 
   packages/overlay:
-    dependencies:
+    devDependencies:
       '@caliper/core':
         specifier: workspace:*
         version: link:../core
-      solid-js:
-        specifier: ^1.9.10
-        version: 1.9.10
-    devDependencies:
+      '@oyerinde/caliper-schema':
+        specifier: workspace:*
+        version: link:../schema
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
@@ -382,6 +378,9 @@ importers:
       prettier:
         specifier: ^3.7.4
         version: 3.7.4
+      solid-js:
+        specifier: ^1.9.10
+        version: 1.9.10
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.4.31)(typescript@5.9.3)

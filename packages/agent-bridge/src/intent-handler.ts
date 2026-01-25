@@ -1,5 +1,6 @@
-import { createMeasurementBetween, deduceGeometry } from "@oyerinde/caliper/core";
+import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses } from "@oyerinde/caliper/core";
 import { sanitizeSelection, sanitizeMeasurement } from "./utils.js";
+import { walkAndMeasure, parseSelection } from "./harness/walk-engine.js";
 import type {
   CaliperIntent,
   CaliperActionResult,
@@ -94,7 +95,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       }
 
       selectionSystem.select(primaryElement);
-      
+
       measurementSystem.applyResult(measurement.result);
       measurementSystem.freeze();
 
@@ -189,13 +190,10 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
     const getElSummary = (el: Element) => ({
       tagName: el.tagName.toLowerCase(),
       id: el.id || undefined,
-      classList: Array.from(el.classList),
+      classList: filterRuntimeClasses(el.classList),
       agentId: el.getAttribute("data-caliper-agent-id") || undefined,
       text: el.textContent?.trim().slice(0, 50) || undefined,
     });
-
-    const parent = element.parentElement ? getElSummary(element.parentElement) : null;
-    const children = Array.from(element.children).map(getElSummary);
 
     return {
       success: true,
@@ -203,8 +201,8 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       selector,
       domContext: {
         element: getElSummary(element),
-        parent,
-        children,
+        parent: element.parentElement ? getElSummary(element.parentElement) : null,
+        children: Array.from(element.children).map((child) => getElSummary(child)),
       },
       timestamp: Date.now(),
     };
@@ -245,6 +243,40 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
             method: "CALIPER_CLEAR",
             timestamp: Date.now(),
           };
+          break;
+        case "CALIPER_PARSE_SELECTION":
+          const parsed = parseSelection(intent.params.selectionJson);
+          result = {
+            success: parsed.isValid,
+            method: "CALIPER_PARSE_SELECTION",
+            selector: parsed.selector,
+            parsed,
+            error: parsed.errorMessage,
+            timestamp: Date.now(),
+          } as CaliperActionResult;
+          break;
+        case "CALIPER_WALK_AND_MEASURE":
+          try {
+            const walkResult = walkAndMeasure(
+              intent.params.selector,
+              intent.params.maxDepth ?? 5
+            );
+            result = {
+              success: true,
+              method: "CALIPER_WALK_AND_MEASURE",
+              selector: intent.params.selector,
+              walkResult,
+              timestamp: Date.now(),
+            } as CaliperActionResult;
+          } catch (walkError) {
+            result = {
+              success: false,
+              method: "CALIPER_WALK_AND_MEASURE",
+              selector: intent.params.selector,
+              error: walkError instanceof Error ? walkError.message : String(walkError),
+              timestamp: Date.now(),
+            } as CaliperActionResult;
+          }
           break;
         default:
           const _exhaustive: never = intent;

@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { CaliperMcpServer } from "./services/mcp-server.js";
 import { DEFAULT_BRIDGE_PORT } from "./shared/constants.js";
 
@@ -25,8 +24,12 @@ Usage:
 
 Options:
   -p, --port <number>  WebSocket relay port (default: ${DEFAULT_BRIDGE_PORT})
+  -d, --docs           Open documentation: https://caliper.danieloyerinde.com/
   -h, --help           Show this help message
 `);
+            process.exit(0);
+        } else if (args[i] === "--docs" || args[i] === "-d") {
+            console.log("\n📚 View Documentation: https://caliper.danieloyerinde.com/\n");
             process.exit(0);
         }
     }
@@ -45,3 +48,4 @@ const shutdown = async () => {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+process.stdin.on("end", shutdown);

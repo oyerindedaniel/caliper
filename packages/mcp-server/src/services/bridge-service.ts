@@ -9,19 +9,72 @@ import { DEFAULT_BRIDGE_PORT, BRIDGE_REQUEST_TIMEOUT_MS } from "../shared/consta
 
 const logger = createLogger("mcp-bridge");
 
+function getExponentialBackoff(attempt: number, baseDelay: number): number {
+  return Math.pow(2, attempt) * baseDelay;
+}
+
 export class BridgeService {
   private wss: WebSocketServer | null = null;
   private pendingCalls = new Map<
     string,
     (result: CaliperActionResult | CaliperAgentState | { error: string }) => void
   >();
+  private startupError: string | null = null;
 
   constructor() { }
 
-  start(port: number = DEFAULT_BRIDGE_PORT) {
+  async start(port: number = DEFAULT_BRIDGE_PORT, retries: number = 3): Promise<void> {
     if (this.wss) return;
-    this.wss = new WebSocketServer({ port });
-    this.init();
+
+    const attemptStart = (currentPort: number, remaining: number): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        try {
+          const server = new WebSocketServer({ port: currentPort });
+
+          server.on("listening", () => {
+            this.wss = server;
+            this.init();
+            resolve();
+          });
+
+          server.on("error", (error: unknown) => {
+            const err = error as { code?: string; message?: string };
+
+            if (err.code === "EADDRINUSE" && remaining > 0) {
+              const attemptNum = retries - remaining + 1;
+              const delay = getExponentialBackoff(attemptNum - 1, 500);
+
+              logger.warn(`Port ${currentPort} is currently in use. Retrying in ${delay}ms... (Attempt ${attemptNum}/${retries})`);
+              server.close();
+              server.removeAllListeners();
+
+              setTimeout(() => {
+                attemptStart(currentPort, remaining - 1).then(resolve).catch(reject);
+              }, delay);
+            } else {
+              const errorMessage = err.code === "EADDRINUSE"
+                ? `Port ${currentPort} is already in use by another process. Please close the other instance of Caliper or use a different port.`
+                : `WebSocket server error: ${String(error)}`;
+
+              logger.error(errorMessage);
+              this.startupError = errorMessage;
+              server.close();
+              reject(new Error(errorMessage));
+            }
+          });
+        } catch (err) {
+          reject(err);
+        }
+      });
+    };
+
+    try {
+      await attemptStart(port, retries);
+    } catch (error: unknown) {
+      if (!this.startupError) {
+        this.startupError = `Failed to start WebSocket relay after multiple attempts: ${String(error)}`;
+      }
+    }
   }
 
   private init() {
@@ -81,7 +134,7 @@ export class BridgeService {
               }
               break;
           }
-        } catch (e) {
+        } catch (e: unknown) {
           logger.error("WS Message Processing Error:", e);
         }
       });
@@ -101,6 +154,10 @@ export class BridgeService {
     params: Record<string, unknown>,
     retries: number = 2
   ): Promise<T> {
+    if (this.startupError) {
+      throw new Error(`Caliper Bridge Unavailable: ${this.startupError}`);
+    }
+
     const tab = tabManager.getActiveTab();
     if (!tab) {
       throw new Error("No active browser tab connected to Caliper Bridge. Ensure the browser is open with Caliper enabled.");
@@ -151,8 +208,9 @@ export class BridgeService {
         }
 
         if (i < retries) {
-          logger.warn(lastError.message);
-          await new Promise(r => setTimeout(r, 1000));
+          const delay = getExponentialBackoff(i, 300);
+          logger.warn(`${lastError.message}. Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
         }
       }
     }

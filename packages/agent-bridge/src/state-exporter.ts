@@ -6,7 +6,7 @@ import type {
     AgentBridgeConfig,
     CaliperCoreSystems,
 } from "./types.js";
-import { generateId, isVisible } from "@oyerinde/caliper/core";
+import { generateId, isVisible, filterRuntimeClasses } from "@oyerinde/caliper/core";
 import { DEFAULT_DEBOUNCE_MS } from "./constants.js";
 import { sanitizeSelection, sanitizeMeasurement } from "./utils.js";
 import { CaliperStateStore } from "./state-store.js";
@@ -42,7 +42,7 @@ function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentI
         tagName: element.tagName.toLowerCase(),
         textContent: getTextContent(element),
         id: element.id || undefined,
-        classList: element.classList.length > 0 ? Array.from(element.classList) : undefined,
+        classList: element.classList.length > 0 ? filterRuntimeClasses(element.classList) : undefined,
     };
 }
 
