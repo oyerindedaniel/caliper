@@ -23,6 +23,7 @@ import {
   RESIZE_THROTTLE_MS,
   generateId,
   filterRuntimeClasses,
+  getElementDirectText,
 } from "@caliper/core";
 import type { CaliperSelectorInput } from "@oyerinde/caliper-schema";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
@@ -301,19 +302,6 @@ export function Root(config: RootConfig) {
         }
       }
     };
-    const MAX_TEXT_LENGTH = 40;
-
-    const getGrepText = (element: Element): string | null => {
-      let directText = "";
-      for (const child of element.childNodes) {
-        if (child.nodeType === Node.TEXT_NODE) {
-          directText += child.textContent || "";
-        }
-      }
-      const trimmed = directText.trim().replace(/\s+/g, " ");
-      if (!trimmed) return null;
-      return trimmed.slice(0, MAX_TEXT_LENGTH);
-    };
 
     const buildSelectorInfo = (element: Element): string => {
       const tagName = element.tagName.toLowerCase();
@@ -325,7 +313,7 @@ export function Root(config: RootConfig) {
       }
 
       const id = (element as HTMLElement).id;
-      const text = getGrepText(element);
+      const text = getElementDirectText(element);
       const classes = filterRuntimeClasses(element.classList);
 
       const clipboardData: CaliperSelectorInput = {

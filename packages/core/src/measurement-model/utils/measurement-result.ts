@@ -1,4 +1,4 @@
-import type { SyncSource, CursorContext } from "../../shared/types/index.js";
+import type { SyncSource, CursorContext, Remap } from "../../shared/types/index.js";
 import type {
   MeasurementLine as BaseMeasurementLine,
   MeasurementResult as BaseMeasurementResult,
@@ -10,20 +10,13 @@ import {
 
 export type MeasurementLine = BaseMeasurementLine;
 
-export interface MeasurementResult
-  extends Omit<
-    BaseMeasurementResult,
-    | "primary"
-    | "secondary"
-    | "primaryHierarchy"
-    | "secondaryHierarchy"
-  > {
+export type MeasurementResult = Remap<BaseMeasurementResult, {
   primary: DOMRect;
   secondary: DOMRect | null;
   primaryHierarchy: ScrollState[];
   secondaryHierarchy: ScrollState[];
   secondaryElement: Element | null;
-}
+}>;
 
 /**
  * Create measurement lines based on context

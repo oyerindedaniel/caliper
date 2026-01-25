@@ -127,7 +127,7 @@ export function initAgentBridge(options: InitAgentBridgeOptions): () => void {
         }
         isInitialized = false;
 
-        logger.info("Bridge stopped. State store cleared and connections closed.");
+        logger.info("Bridge stopped. Connections closed.");
     };
 }
 

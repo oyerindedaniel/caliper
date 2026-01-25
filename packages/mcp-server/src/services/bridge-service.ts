@@ -1,6 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
-import { BridgeMessageSchema, CaliperActionResult, CaliperMethod, CaliperAgentState } from "@oyerinde/caliper-schema";
+import { BridgeMessageSchema, type CaliperActionResult, type CaliperMethod, type CaliperAgentState, BitBridge } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { generateId } from "../utils/id.js";
@@ -84,17 +84,28 @@ export class BridgeService {
 
       ws.on("message", (data) => {
         try {
-          const rawMessage = JSON.parse(data.toString());
+          let rawMessage: unknown;
+          let binaryPayload: Uint8Array | undefined;
+
+          if (Buffer.isBuffer(data)) {
+            const { json, payload } = BitBridge.unpackEnvelope(new Uint8Array(data));
+            rawMessage = JSON.parse(json);
+            binaryPayload = payload;
+          } else {
+            rawMessage = JSON.parse(data.toString());
+          }
+
           const result = BridgeMessageSchema.safeParse(rawMessage);
 
           if (!result.success) {
             logger.error("Invalid WS message format:", z.treeifyError(result.error));
 
-            if (rawMessage.id && typeof rawMessage.id === "string") {
-              const resolve = this.pendingCalls.get(rawMessage.id);
+            const msgObj = rawMessage as { id?: string };
+            if (msgObj?.id && typeof msgObj.id === "string") {
+              const resolve = this.pendingCalls.get(msgObj.id);
               if (resolve) {
                 resolve({ error: new BridgeValidationError().message });
-                this.pendingCalls.delete(rawMessage.id);
+                this.pendingCalls.delete(msgObj.id);
               }
             }
             return;
@@ -124,7 +135,25 @@ export class BridgeService {
               const resolve = this.pendingCalls.get(message.id);
               if (resolve) {
                 if (message.result) {
-                  resolve(message.result);
+                  let finalResult = message.result as CaliperActionResult;
+
+                  if (finalResult.success && finalResult.method === "CALIPER_WALK_AND_MEASURE" && binaryPayload) {
+                    try {
+                      const root = BitBridge.deserialize(binaryPayload);
+                      finalResult = {
+                        ...finalResult,
+                        walkResult: {
+                          ...finalResult.walkResult,
+                          root,
+                        },
+                      };
+                      logger.info(`Bit-Bridge: Reconstructed tree from ${binaryPayload.byteLength} bytes.`);
+                    } catch (e) {
+                      logger.error("Bit-Bridge reconstruction failed:", e);
+                    }
+                  }
+
+                  resolve(finalResult);
                 } else {
                   resolve({ error: message.error || "Unknown bridge error" });
                 }
@@ -152,7 +181,7 @@ export class BridgeService {
   async call<T = CaliperActionResult>(
     method: CaliperMethod,
     params: Record<string, unknown>,
-    retries: number = 2
+    retries: number = 1
   ): Promise<T> {
     if (this.startupError) {
       throw new Error(`Caliper Bridge Unavailable: ${this.startupError}`);

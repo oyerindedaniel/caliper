@@ -1,5 +1,5 @@
-import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses } from "@oyerinde/caliper/core";
-import { sanitizeSelection, sanitizeMeasurement } from "./utils.js";
+import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText } from "@oyerinde/caliper/core";
+import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles } from "./utils.js";
 import { walkAndMeasure, parseSelection } from "./harness/walk-engine.js";
 import type {
   CaliperIntent,
@@ -9,6 +9,8 @@ import type {
   CaliperInspectPayload,
   CaliperWalkDomPayload,
 } from "@oyerinde/caliper-schema";
+import { BitBridge } from "@oyerinde/caliper-schema";
+import { DEFAULT_WALK_DEPTH } from "./constants.js";
 import type { CaliperCoreSystems } from "./types.js";
 import type { CaliperStateStore } from "./state-store.js";
 
@@ -150,16 +152,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         horizontal: rect.width,
         vertical: rect.height,
       },
-      computedStyles: {
-        paddingLeft: parseFloat(computedStyle.paddingLeft) || 0,
-        paddingRight: parseFloat(computedStyle.paddingRight) || 0,
-        paddingTop: parseFloat(computedStyle.paddingTop) || 0,
-        paddingBottom: parseFloat(computedStyle.paddingBottom) || 0,
-        marginLeft: parseFloat(computedStyle.marginLeft) || 0,
-        marginRight: parseFloat(computedStyle.marginRight) || 0,
-        marginTop: parseFloat(computedStyle.marginTop) || 0,
-        marginBottom: parseFloat(computedStyle.marginBottom) || 0,
-      },
+      computedStyles: parseComputedStyles(computedStyle),
       selection: sanitizeSelection({
         element,
         rect: geometry.rect,
@@ -192,7 +185,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       id: el.id || undefined,
       classList: filterRuntimeClasses(el.classList),
       agentId: el.getAttribute("data-caliper-agent-id") || undefined,
-      text: el.textContent?.trim().slice(0, 50) || undefined,
+      text: getElementDirectText(el),
     });
 
     return {
@@ -259,15 +252,19 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           try {
             const walkResult = walkAndMeasure(
               intent.params.selector,
-              intent.params.maxDepth ?? 5
+              intent.params.maxDepth ?? DEFAULT_WALK_DEPTH
             );
+            const { root, ...stats } = walkResult;
+            const binaryPayload = BitBridge.serialize(root) as Uint8Array;
+
             result = {
               success: true,
               method: "CALIPER_WALK_AND_MEASURE",
               selector: intent.params.selector,
-              walkResult,
+              walkResult: stats,
+              binaryPayload,
               timestamp: Date.now(),
-            } as CaliperActionResult;
+            };
           } catch (walkError) {
             result = {
               success: false,
@@ -275,7 +272,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
               selector: intent.params.selector,
               error: walkError instanceof Error ? walkError.message : String(walkError),
               timestamp: Date.now(),
-            } as CaliperActionResult;
+            };
           }
           break;
         default:

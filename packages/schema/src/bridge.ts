@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MeasurementResultSchema, SelectionMetadataSchema } from "./core.js";
+import { CaliperComputedStylesSchema } from "./audit.js";
 
 export const ViewportSchema = z.object({
     width: z.number(),
@@ -57,16 +58,7 @@ export const CaliperActionResultSchema = z.union([
             horizontal: z.number(),
             vertical: z.number(),
         }),
-        computedStyles: z.object({
-            paddingLeft: z.number(),
-            paddingRight: z.number(),
-            paddingTop: z.number(),
-            paddingBottom: z.number(),
-            marginLeft: z.number(),
-            marginRight: z.number(),
-            marginTop: z.number(),
-            marginBottom: z.number(),
-        }),
+        computedStyles: CaliperComputedStylesSchema,
         selection: SelectionMetadataSchema,
         timestamp: z.number()
     }),
@@ -103,14 +95,22 @@ export const CaliperActionResultSchema = z.union([
         method: z.literal("CALIPER_WALK_AND_MEASURE"),
         selector: z.string(),
         walkResult: z.object({
-            root: z.any(),
+            root: z.any().optional(),
             nodeCount: z.number(),
             maxDepthReached: z.number(),
             walkDurationMs: z.number(),
         }),
-        timestamp: z.number()
+        timestamp: z.number(),
+        binaryPayload: z.custom<Uint8Array>().optional(),
     }),
-    z.object({ success: z.literal(false), method: CaliperMethodSchema, selector: z.string().optional(), error: z.string(), timestamp: z.number() }),
+    z.object({
+        success: z.literal(false),
+        method: CaliperMethodSchema,
+        selector: z.string().optional(),
+        error: z.string(),
+        timestamp: z.number(),
+        binaryPayload: z.custom<Uint8Array>().optional(),
+    }),
 ]);
 
 export const CaliperAgentStateSchema = z.object({

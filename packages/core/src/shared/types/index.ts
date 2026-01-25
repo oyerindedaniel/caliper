@@ -20,3 +20,9 @@ export interface RulerLine {
 export interface RulerState {
   lines: RulerLine[];
 }
+
+export type Prettify<T> = {
+  [K in keyof T]: T[K];
+} & {};
+
+export type Remap<T, U> = Prettify<Omit<T, keyof U> & U>;

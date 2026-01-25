@@ -6,7 +6,7 @@ import type {
     AgentBridgeConfig,
     CaliperCoreSystems,
 } from "./types.js";
-import { generateId, isVisible, filterRuntimeClasses } from "@oyerinde/caliper/core";
+import { generateId, isVisible, filterRuntimeClasses, getElementDirectText } from "@oyerinde/caliper/core";
 import { DEFAULT_DEBOUNCE_MS } from "./constants.js";
 import { sanitizeSelection, sanitizeMeasurement } from "./utils.js";
 import { CaliperStateStore } from "./state-store.js";
@@ -15,18 +15,6 @@ const SEMANTIC_TAGS = ["main", "section", "article", "nav", "header", "footer", 
 
 function isSemanticLandmark(element: Element): boolean {
     return SEMANTIC_TAGS.includes(element.tagName.toLowerCase());
-}
-
-function getTextContent(element: Element): string | undefined {
-    let directText = "";
-    for (const child of element.childNodes) {
-        if (child.nodeType === Node.TEXT_NODE) {
-            directText += child.textContent || "";
-        }
-    }
-    const trimmed = directText.trim();
-    if (!trimmed || trimmed.length > 50) return undefined;
-    return trimmed;
 }
 
 function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentId" | "selector"> {
@@ -40,7 +28,7 @@ function computeElementGeometry(element: Element): Omit<ElementGeometry, "agentI
         absoluteX: rect.left + window.scrollX,
         absoluteY: rect.top + window.scrollY,
         tagName: element.tagName.toLowerCase(),
-        textContent: getTextContent(element),
+        textContent: getElementDirectText(element),
         id: element.id || undefined,
         classList: element.classList.length > 0 ? filterRuntimeClasses(element.classList) : undefined,
     };

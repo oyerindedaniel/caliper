@@ -4,6 +4,7 @@ import type {
   CaliperAgentState,
   ToolCallMessage,
 } from "@oyerinde/caliper-schema";
+import { BitBridge } from "@oyerinde/caliper-schema";
 import { createLogger } from "@oyerinde/caliper/core";
 
 import { DEFAULT_WS_URL, BRIDGE_TAB_ID_KEY } from "./constants.js";
@@ -20,6 +21,10 @@ export function createWSBridge(options: BridgeOptions) {
   const { onIntent, onGetState, wsUrl = DEFAULT_WS_URL } = options;
   let ws: WebSocket | null = null;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  let reconnectAttempts = 0;
+
+  const BASE_DELAY = 1000; // 1s
+  const MAX_DELAY = 30000; // 30s
 
   let tabId = sessionStorage.getItem(BRIDGE_TAB_ID_KEY);
   if (!tabId) {
@@ -34,6 +39,8 @@ export function createWSBridge(options: BridgeOptions) {
 
       socket.onopen = () => {
         logger.info("Connected to MCP Relay Server");
+        reconnectAttempts = 0;
+
         socket.send(
           JSON.stringify({
             type: "REGISTER_TAB",
@@ -69,16 +76,24 @@ export function createWSBridge(options: BridgeOptions) {
 
           const result = await onIntent(message);
 
-          console.log("result", result);
-
           if (socket.readyState === WebSocket.OPEN) {
-            socket.send(
-              JSON.stringify({
+            if ("binaryPayload" in result && result.binaryPayload instanceof Uint8Array) {
+              const { binaryPayload, ...metadata } = result;
+              const json = JSON.stringify({
                 type: "TOOL_RESPONSE",
                 id: messageId,
-                result,
-              })
-            );
+                result: metadata,
+              });
+              socket.send(BitBridge.packEnvelope(json, binaryPayload));
+            } else {
+              socket.send(
+                JSON.stringify({
+                  type: "TOOL_RESPONSE",
+                  id: messageId,
+                  result,
+                })
+              );
+            }
           }
         } catch (e) {
           logger.error("Failed to handle MCP message:", e);
@@ -96,14 +111,12 @@ export function createWSBridge(options: BridgeOptions) {
 
       socket.onclose = () => {
         if (ws === socket) {
-          logger.warn("MCP Relay connection closed. Reconnecting in 5s...");
           ws = null;
           scheduleReconnect();
         }
       };
 
       socket.onerror = () => {
-        // Silently fail, server might not be running
         socket.close();
       };
     } catch (e) {
@@ -113,7 +126,16 @@ export function createWSBridge(options: BridgeOptions) {
 
   function scheduleReconnect() {
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    reconnectTimeout = setTimeout(connect, 5000);
+
+    const exponent = Math.min(reconnectAttempts, 6);
+    const delay = Math.min(BASE_DELAY * Math.pow(2, exponent), MAX_DELAY);
+    const jitter = Math.random() * (delay * 0.1);
+    const finalDelay = delay + jitter;
+
+    reconnectAttempts++;
+
+    logger.warn(`MCP Relay connection lost. Reconnecting in ${Math.round(finalDelay / 1000)}s... (Attempt ${reconnectAttempts})`);
+    reconnectTimeout = setTimeout(connect, finalDelay);
   }
 
   function sendUpdate() {

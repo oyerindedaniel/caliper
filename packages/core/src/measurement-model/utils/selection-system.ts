@@ -5,16 +5,16 @@ import {
   type PositionMode,
   type StickyConfig,
 } from "../../geometry/utils/scroll-aware.js";
+import type { Remap } from "../../shared/types/index.js";
 
 /**
  * Selection system for tracking selected elements
  */
-
-export interface SelectionMetadata extends Omit<BaseSelectionMetadata, "rect" | "scrollHierarchy"> {
+export type SelectionMetadata = Remap<BaseSelectionMetadata, {
   element: Element | null;
   rect: DOMRect | null;
   scrollHierarchy: ScrollState[];
-}
+}>;
 
 export interface SelectionSystem {
   select: (element: Element | null) => void;
