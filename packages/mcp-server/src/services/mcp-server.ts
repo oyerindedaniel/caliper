@@ -283,7 +283,7 @@ The output includes:
     );
 
     this.server.registerTool(
-      "caliper_semantic_reconcile",
+      "caliper_reconcile",
       {
         description: `Perform precision reconciliation using the Semantic Harmony Engine.
 Matches live DOM nodes to Figma design context with design token awareness.`,
@@ -509,8 +509,8 @@ ${figmaSecondaryUrl ? "3" : "2"}. **Walk the DOM**
 
 ### Phase 3: Reconciliation Engine
 
-${figmaSecondaryUrl ? "4" : "3"}. **Trigger Semantic Reconciliation**
-   Call \`caliper_semantic_reconcile\` with:
+${figmaSecondaryUrl ? "4" : "3"}. **Trigger Reconciliation**
+   Call \`caliper_reconcile\` with:
    - caliperTree: (From Phase 2)
    - expectedHtml: (From context gathering)
    - designTokens: (From context gathering)

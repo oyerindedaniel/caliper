@@ -70,6 +70,7 @@ The following flags are available when running the server:
 | Flag | Description | Default |
 | :--- | :--- | :--- |
 | `-p, --port` | Specify the WebSocket relay port. | `9876` |
+| `-d, --docs` | Show a link to the official documentation. | - |
 | `-h, --help` | Show usage instructions and available options. | - |
 
 > **Note**: Ensure the port used by the MCP server matches the one initialized in the `@oyerinde/caliper-bridge` in your web application.
@@ -92,7 +93,7 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
 - `caliper_parse_selector(jsonString)`: Parse rich selector data copied from the Caliper UI.
 - `caliper_walk_and_measure(selector, maxDepth?)`: Comprehensive recursive DOM walk with style and gap extraction.
-- `caliper_semantic_reconcile(...)`: Perform precision reconciliation using the Semantic Harmony Engine (token-aware).
+- `caliper_reconcile(...)`: Perform precision reconciliation using the Semantic Harmony Engine (token-aware).
 
 ## Figma MCP Integration 🎨
 
