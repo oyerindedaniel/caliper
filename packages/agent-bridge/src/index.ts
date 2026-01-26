@@ -24,13 +24,11 @@
 import type {
     CaliperIntent,
     CaliperActionResult,
-    CaliperAgentState,
 } from "@oyerinde/caliper-schema";
 import type {
     AgentBridgeConfig,
     CaliperCoreSystems,
 } from "./types.js";
-import { createStateExporter } from "./state-exporter.js";
 import { createIntentHandler } from "./intent-handler.js";
 import { createWSBridge } from "./ws-bridge.js";
 import { createLogger } from "@oyerinde/caliper/core";
@@ -41,7 +39,6 @@ const logger = createLogger("agent-bridge");
 
 export * from "./types.js";
 
-let stateExporter: ReturnType<typeof createStateExporter> | null = null;
 let intentHandler: ReturnType<typeof createIntentHandler> | null = null;
 let stateStore: ReturnType<typeof createStateStore> | null = null;
 let isInitialized = false;
@@ -84,15 +81,12 @@ export function initAgentBridge(options: InitAgentBridgeOptions): () => void {
 
     stateStore = createStateStore();
 
-    stateExporter = createStateExporter(options, options.systems, stateStore);
-    stateExporter.start();
 
     intentHandler = createIntentHandler(options.systems, stateStore);
 
     const wsUrl = options.wsUrl ?? DEFAULT_WS_URL;
     const wsBridge = createWSBridge({
         onIntent: (intent) => intentHandler!.dispatch(intent),
-        onGetState: () => stateStore?.getState() ?? null,
         wsUrl,
     });
 
@@ -112,10 +106,6 @@ export function initAgentBridge(options: InitAgentBridgeOptions): () => void {
     logger.info(`Initialized. MCP Relay enabled on ${wsUrl}`);
 
     return () => {
-        if (stateExporter) {
-            stateExporter.stop();
-            stateExporter = null;
-        }
 
         wsBridge.destroy();
         clearGlobals();
@@ -131,10 +121,6 @@ export function initAgentBridge(options: InitAgentBridgeOptions): () => void {
     };
 }
 
-export function getCaliperState(): CaliperAgentState | null {
-    return stateStore?.getState() ?? null;
-}
-
 export async function dispatchCaliperIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
     if (!window.dispatchCaliperIntent) {
         return {
@@ -147,8 +133,3 @@ export async function dispatchCaliperIntent(intent: CaliperIntent): Promise<Cali
     return window.dispatchCaliperIntent(intent);
 }
 
-export function forceStateUpdate(): void {
-    if (stateExporter) {
-        stateExporter.forceUpdate();
-    }
-}

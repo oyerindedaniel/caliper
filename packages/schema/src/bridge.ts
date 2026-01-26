@@ -34,7 +34,6 @@ export const CaliperMethodSchema = z.enum([
     "CALIPER_INSPECT",
     "CALIPER_FREEZE",
     "CALIPER_CLEAR",
-    "CALIPER_GET_STATE",
     "CALIPER_AUDIT_NODE",
     "CALIPER_WALK_DOM",
     "CALIPER_PARSE_SELECTION",
@@ -192,7 +191,7 @@ export type CaliperWalkDomPayload = z.infer<typeof CaliperWalkDomPayloadSchema>;
 export type CaliperParseSelectionPayload = z.infer<typeof CaliperParseSelectionPayloadSchema>;
 export type CaliperWalkAndMeasurePayload = z.infer<typeof CaliperWalkAndMeasurePayloadSchema>;
 
-export type CaliperIntentType = Exclude<CaliperMethod, "CALIPER_GET_STATE" | "CALIPER_AUDIT_NODE">;
+export type CaliperIntentType = Exclude<CaliperMethod, "CALIPER_AUDIT_NODE">;
 
 export type CaliperIntent =
     | { method: "CALIPER_SELECT"; params: CaliperSelectPayload }
@@ -205,7 +204,6 @@ export type CaliperIntent =
     | { method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload };
 
 export type ToolCallMessage =
-    | { id: string; method: "CALIPER_GET_STATE"; params: {} }
     | { id: string; method: "CALIPER_SELECT"; params: CaliperSelectPayload }
     | { id: string; method: "CALIPER_MEASURE"; params: CaliperMeasurePayload }
     | { id: string; method: "CALIPER_INSPECT"; params: CaliperInspectPayload }

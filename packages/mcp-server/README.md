@@ -87,7 +87,6 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_switch_tab(tabId)`: Switch targeting to a specific browser tab.
 - `caliper_inspect(selector)`: Get an element's geometry, z-index, and full computed styles (padding/margin).
 - `caliper_measure(primary, secondary)`: Perform high-precision distance calculation between two elements.
-- `caliper_get_state`: Get the current passive state of Caliper (viewport + significant elements).
 - `caliper_clear`: Reset all active measurements and guides in the UI.
 - `caliper_grep(query, tag?)`: Search the codebase for elements using text, IDs, or tags.
 - `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
@@ -117,7 +116,6 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 
 ## Resources 📚
 
-- `caliper://state`: Read-only access to the current browser layout state.
 - `caliper://tabs`: Live list of connected browser windows.
 
 ## License ⚖️

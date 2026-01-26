@@ -86,7 +86,7 @@ export class CaliperMcpServer {
     this.server.registerTool(
       "caliper_inspect",
       {
-        description: "Get full geometry, z-index, and computed visibility for an element. Use the 'selector' (Caliper ID) obtained from caliper_get_state for best results.",
+        description: "Get full geometry, z-index, and computed visibility for an element.",
         inputSchema: z.object({
           selector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector of the element"),
         }),
@@ -107,7 +107,7 @@ export class CaliperMcpServer {
     this.server.registerTool(
       "caliper_measure",
       {
-        description: "Perform a high-precision measurement between two elements. Use Caliper IDs (caliper-xxxx) obtained from caliper_get_state for best results.",
+        description: "Perform a high-precision measurement between two elements.",
         inputSchema: z.object({
           primarySelector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector for the primary element"),
           secondarySelector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector for the target element"),
@@ -123,25 +123,6 @@ export class CaliperMcpServer {
         } catch (error) {
           return {
             content: [{ type: "text", text: `Error performing measurement: ${error instanceof Error ? error.message : String(error)}` }],
-            isError: true,
-          };
-        }
-      }
-    );
-
-    this.server.registerTool(
-      "caliper_get_state",
-      {
-        description: "Get the current passive state of Caliper (viewport + significant elements only).",
-        inputSchema: z.object({}),
-      },
-      async () => {
-        try {
-          const result = await bridgeService.call<CaliperAgentState>("CALIPER_GET_STATE", {});
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
-        } catch (error) {
-          return {
-            content: [{ type: "text", text: `Error getting state: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
           };
         }
@@ -320,24 +301,6 @@ Matches live DOM nodes to Figma design context with design token awareness.`,
   }
 
   private registerResources() {
-    this.server.registerResource(
-      "caliper-state",
-      "caliper://state",
-      { description: "The current real-time state of Caliper including viewport and significant element geometry." },
-      async () => {
-        const result = await bridgeService.call<CaliperAgentState>("CALIPER_GET_STATE", {});
-        return {
-          contents: [
-            {
-              uri: "caliper://state",
-              mimeType: "application/json",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-    );
-
     this.server.registerResource(
       "caliper-tabs",
       "caliper://tabs",
@@ -592,7 +555,6 @@ You are working across multiple tabs. The agent-ID is **tab-specific** - if you 
 **Before Each Command:**
 1. Use \`caliper_list_tabs\` to see all connected tabs
 2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
-3. After switching, verify with \`caliper_get_state\` that the selection exists
 ` : `
 Both selections are on the SAME tab. No tab switching required.
 `}

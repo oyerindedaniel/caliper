@@ -1,7 +1,6 @@
 import type {
   CaliperActionResult,
   CaliperIntent,
-  CaliperAgentState,
   ToolCallMessage,
 } from "@oyerinde/caliper-schema";
 import { BitBridge } from "@oyerinde/caliper-schema";
@@ -13,12 +12,11 @@ const logger = createLogger("bridge");
 
 interface BridgeOptions {
   onIntent: (intent: CaliperIntent) => Promise<CaliperActionResult>;
-  onGetState: () => CaliperAgentState | null;
   wsUrl?: string;
 }
 
 export function createWSBridge(options: BridgeOptions) {
-  const { onIntent, onGetState, wsUrl = DEFAULT_WS_URL } = options;
+  const { onIntent, wsUrl = DEFAULT_WS_URL } = options;
   let ws: WebSocket | null = null;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let reconnectAttempts = 0;
@@ -60,19 +58,6 @@ export function createWSBridge(options: BridgeOptions) {
           const message = JSON.parse(event.data) as ToolCallMessage;
           messageId = message.id;
 
-          if (message.method === "CALIPER_GET_STATE") {
-            const state = onGetState();
-            if (socket.readyState === WebSocket.OPEN) {
-              socket.send(
-                JSON.stringify({
-                  type: "TOOL_RESPONSE",
-                  id: messageId,
-                  result: state,
-                })
-              );
-            }
-            return;
-          }
 
           const result = await onIntent(message);
 

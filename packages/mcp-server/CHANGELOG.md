@@ -6,8 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Initial release of `@oyerinde/caliper-mcp`.
-- **MCP tools**: `caliper_list_tabs`, `caliper_switch_tab`, `caliper_inspect`, `caliper_measure`, `caliper_get_state`, `caliper_clear`, `caliper_grep`, `caliper_walk_dom`, `caliper_parse_selector`, `caliper_walk_and_measure`, and `caliper_reconcile`.
+- **MCP tools**: `caliper_list_tabs`, `caliper_switch_tab`, `caliper_inspect`, `caliper_measure`, `caliper_clear`, `caliper_grep`, `caliper_walk_dom`, `caliper_parse_selector`, `caliper_walk_and_measure`, and `caliper_reconcile`.
 - **MCP prompts**: `caliper-selector-audit`, `caliper-audit-harness`, `caliper-figma-reconcile`, and `caliper-cross-compare`.
-- **MCP resources**: `caliper://state` and `caliper://tabs`.
+- **MCP resources**: `caliper://tabs`.
 - CLI support for dynamic port assignment via `--port/-p`.
 - Zero-dependency runtime.
