@@ -2,9 +2,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { bridgeService } from "./bridge-service.js";
-import { CaliperAgentState, CaliperNodeSchema, FigmaFrameContextSchema } from "@oyerinde/caliper-schema";
+import { CaliperAgentState, CaliperNodeSchema, DesignTokenDictionarySchema, FrameworkSchema } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
-import { reconcilerService } from "./reconciler-service.js";
+import { semanticHarmonyReconciler } from "./semantic-harmony-reconciler.js";
 import { createLogger } from "../utils/logger.js";
 import { caliperGrep } from "../utils/grep.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
@@ -283,41 +283,35 @@ The output includes:
     );
 
     this.server.registerTool(
-      "caliper_reconcile",
+      "caliper_semantic_reconcile",
       {
-        description: `Perform high-precision reconciliation between Figma design intent and live implementation.
-
-This tool:
-1. Takes a measured Caliper tree (from caliper_walk_and_measure)
-2. Takes Figma metadata (from Figma MCP get_metadata)
-3. Pairs nodes based on ID, Text, and Structure
-4. Applies A/B/C strategy audit logic
-5. Generates consolidated base and responsive CSS fixes
-
-Inputs:
-- caliperTree: The measured tree from caliper_walk_and_measure
-- figmaPrimary: Primary Figma frame context
-- figmaSecondary: Optional tablet/mobile Figma frame context
-- strategy: Reconciliation strategy (A=Container, B=Padding, C=Ratio)`,
+        description: `Perform precision reconciliation using the Semantic Harmony Engine.
+Matches live DOM nodes to Figma design context with design token awareness.`,
         inputSchema: z.object({
-          caliperTree: CaliperNodeSchema.describe("The root CaliperNode from walkResult"),
-          figmaPrimary: FigmaFrameContextSchema.describe("FigmaFrameContext of the primary design"),
-          figmaSecondary: FigmaFrameContextSchema.optional().describe("FigmaFrameContext of the secondary design"),
-          strategy: z.enum(["A", "B", "C"]).default("A"),
+          caliperTree: CaliperNodeSchema.describe("The measured DOM tree from caliper_walk_and_measure"),
+          expectedHtml: z.string().describe("The EXPECTED HTML/JSX output from figma-mcp's get_design_context"),
+          designTokens: DesignTokenDictionarySchema.describe("The design token dictionary from figma-mcp's get_variable_defs"),
+          framework: FrameworkSchema.describe("The frontend framework/styling approach used (react-tailwind, html-css, etc.)"),
+          figmaLayerUrl: z.string().describe("The URL of the Figma layer being reconciled"),
+          secondaryHtml: z.string().optional().describe("HTML output for secondary breakpoint (optional)"),
+          secondaryTokens: DesignTokenDictionarySchema.optional().describe("Design tokens for secondary breakpoint (optional)"),
         }),
       },
-      async ({ caliperTree, figmaPrimary, figmaSecondary, strategy }) => {
+      async ({ caliperTree, expectedHtml, designTokens, framework, figmaLayerUrl, secondaryHtml, secondaryTokens }) => {
         try {
-          const report = reconcilerService.reconcile(
+          const report = semanticHarmonyReconciler.reconcile({
             caliperTree,
-            figmaPrimary,
-            figmaSecondary,
-            strategy
-          );
+            expectedHtml,
+            designTokens,
+            framework,
+            figmaLayerUrl,
+            secondaryHtml,
+            secondaryTokens,
+          });
           return { content: [{ type: "text", text: JSON.stringify(report, null, 2) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Reconciliation failed: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [{ type: "text", text: `Semantic reconciliation failed: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
           };
         }
@@ -463,70 +457,209 @@ BEGIN PHASE 1 NOW. Do not skip any steps.`,
     this.server.registerPrompt(
       "caliper-figma-reconcile",
       {
-        description: "Comprehensive Figma-to-Implementation reconciliation using the harness walk engine. Captures full tree measurements before making any code changes.",
+        description: "Semantic Harmony reconciliation: Figma design context to live DOM with token-aware diffing.",
         argsSchema: {
           selector: z.string().describe("Caliper Selector (Agent ID) of the root element"),
-          strategy: z.enum(["A", "B", "C"]).describe("A=Container-First, B=Padding-Locked, C=Ratio-Based"),
-          figmaUrl: z.string().optional().describe("Figma layer URL (primary breakpoint)"),
-          figmaSecondaryUrl: z.string().optional().describe("Figma layer URL (secondary breakpoint for responsive)"),
+          figmaUrl: z.string().describe("Figma layer URL (primary breakpoint)"),
+          framework: FrameworkSchema
+            .default("react-tailwind")
+            .describe("Your frontend framework/styling approach"),
+          figmaSecondaryUrl: z.string().optional().describe("Figma layer URL (secondary breakpoint)"),
         },
       },
-      async ({ selector, strategy, figmaUrl, figmaSecondaryUrl }) => ({
+      async ({ selector, figmaUrl, framework, figmaSecondaryUrl }) => ({
         messages: [
           {
             role: "user",
             content: {
               type: "text",
-              text: `## CALIPER-FIGMA RECONCILIATION HARNESS
+              text: `## CALIPER-FIGMA SEMANTIC HARMONY RECONCILIATION
 
-You are about to perform a pixel-perfect reconciliation between Figma design and live implementation.
+You are about to perform a **precision reconciliation** between a Figma design and its live DOM implementation using the Semantic Harmony Engine.
 
 **Inputs:**
-- Selector: ${selector}
-- Strategy: ${strategy} ${strategy === "A" ? "(Container-First: centered with max-width)" : strategy === "B" ? "(Padding-Locked: fixed edge spacing)" : "(Ratio-Based: proportional width)"}
-${figmaUrl ? `- Primary Figma URL: ${figmaUrl}` : "- No Figma URL provided (standalone audit)"}
+- Caliper Selector: \`${selector}\`
+- Figma Layer URL: ${figmaUrl}
+- Framework: ${framework}
 ${figmaSecondaryUrl ? `- Secondary Figma URL: ${figmaSecondaryUrl}` : ""}
 
 ---
 
-### PHASE 1: FETCH FIGMA DATA
-${figmaUrl ? `1. Call Figma MCP's 'get_metadata' on: ${figmaUrl}
-   Extract: frameWidth, nodeWidth, nodeX, paddingLeft, paddingRight
-2. Call Figma MCP's 'get_variable_defs' on the selection.
-   Extract: Design tokens (colors, spacing, typography variables) used in the design.
-` : "Skip - no Figma URL provided"}
-${figmaSecondaryUrl ? `3. Call Figma MCP's 'get_metadata' and 'get_variable_defs' on: ${figmaSecondaryUrl}
-   Extract: secondary breakpoint dimensions and variables` : ""}
+### Phase 1: Context Gathering
 
-### PHASE 2: WALK AND MEASURE (MANDATORY)
-4. Call 'caliper_walk_and_measure' with:
+1. **Capture Primary Context**
+   - Call Figma MCP's \`get_design_context\` for: ${figmaUrl}
+     Prompt: "${getFigmaPrompt(framework)}"
+     **Keep the resulting HTML/JSX output.**
+   - Call \`get_variable_defs\` for: ${figmaUrl}
+     **Keep the design tokens dictionary.**
+
+${figmaSecondaryUrl ? `2. **Capture Secondary Context (Responsive)**
+   - Call \`get_design_context\` for: ${figmaSecondaryUrl}
+     Prompt: "${getFigmaPrompt(framework)}"
+   - Call \`get_variable_defs\` for: ${figmaSecondaryUrl}` : ""}
+
+### Phase 2: Implementation Audit
+
+${figmaSecondaryUrl ? "3" : "2"}. **Walk the DOM**
+   Call \`caliper_walk_and_measure\` with:
    - selector: "${selector}"
-   - maxDepth: 3
+   - maxDepth: 5
+   **Keep the resulting CaliperNode tree.**
 
-   This captures the FULL implementation tree including:
-   - All computed styles (padding, margin, gap, typography)
-   - Sibling gaps and parent distances
-   - Recursive structure
+### Phase 3: Reconciliation Engine
 
-### PHASE 3: COMPARE
-5. Compare the walkResult to Figma data:
-   - Check padding values against Figma's padding
-   - Check width against Figma's nodeWidth
-   - Check sibling gaps against Figma's itemSpacing
-   - Apply Strategy ${strategy} logic for alignment validation
+${figmaSecondaryUrl ? "4" : "3"}. **Trigger Semantic Reconciliation**
+   Call \`caliper_semantic_reconcile\` with:
+   - caliperTree: (From Phase 2)
+   - expectedHtml: (From context gathering)
+   - designTokens: (From context gathering)
+   - framework: "${framework}"
+   - figmaLayerUrl: "${figmaUrl}"
+${figmaSecondaryUrl ? `   - secondaryHtml: (From Phase 1, Step 2)
+   - secondaryTokens: (From Phase 1, Step 2)` : ""}
 
-### PHASE 4: FIND SOURCE
-6. Call 'caliper_grep' with the best anchor from the walkResult:
-   - Prefer: htmlId, unique textContent, data-testid
-   Get the file path and line number.
+   **Analyze the reconciliation report.** The Engine will have performed:
+   
+   1. **Semantic Matching**:
+      - Parsed HTML into a semantic tree.
+      - Matched nodes using hierarchical pairing with confidence scoring (tag match, text exact/fuzzy, layout structure).
+   
+   2. **Token-Aware Property Diffing**:
+      - Compared **spacing**: padding, margin, and gap against design tokens.
+      - Compared **typography**: font-size, font-weight, line-height.
+      - Compared **visuals**: normalized colors (hex) and border-radius.
+      - Generated CSS recommendations using **token names**:
+        \`padding: var(--spacing-md); /* 16px */\`
 
-### PHASE 5: APPLY EDITS (ONLY AFTER PHASES 1-4)
-7. Generate CSS recommendations based on deltas found.
-8. Edit the identified source file.
-9. Re-run 'caliper_walk_and_measure' to verify the fix.
+   Identify major vs minor deltas and use matching confidence signals to prioritize fixes.
+
+### Phase 4: Fix and Verify
+
+${figmaSecondaryUrl ? "5" : "4"}. **Find Source Code**
+   Use \`caliper_grep\` with identifiers from the report to find the target file.
+
+${figmaSecondaryUrl ? "6" : "5"}. **Apply Fixes**
+   Update the source code using the recommendations in the report.
+
+${figmaSecondaryUrl ? "7" : "6"}. **Verify**
+   Re-run \`caliper_walk_and_measure\` to confirm the fix.
 
 ---
-**BEGIN PHASE 1 NOW. Do not skip any steps.**`,
+**BEGIN PHASE 1 NOW. Complete all phases in order following all instructions precisely.**`,
+            },
+          },
+        ],
+      })
+    );
+
+    this.server.registerPrompt(
+      "caliper-cross-compare",
+      {
+        description: "Compare two selections (A and B) to learn from A and fix B. Supports cross-tab comparisons.",
+        argsSchema: {
+          selectorA: z.string().describe("Caliper Selector for the REFERENCE element (the 'good' one to learn from)"),
+          selectorB: z.string().describe("Caliper Selector for the TARGET element (the one to fix)"),
+          tabIdA: z.string().optional().describe("Tab ID containing Selection A (use caliper_list_tabs to find IDs)"),
+          tabIdB: z.string().optional().describe("Tab ID containing Selection B (defaults to same tab as A)"),
+          properties: z.array(z.enum(["spacing", "typography", "colors", "layout", "all"]))
+            .default(["all"])
+            .describe("Which properties to compare"),
+        },
+      },
+      async ({ selectorA, selectorB, tabIdA, tabIdB, properties }) => ({
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `## CALIPER CROSS-SELECTION COMPARISON
+
+You are comparing TWO elements to understand the styling of one (A) and apply corrections to the other (B).
+
+**Inputs:**
+- Selection A (REFERENCE): \`${selectorA}\`${tabIdA ? ` in Tab: ${tabIdA}` : ""}
+- Selection B (TARGET): \`${selectorB}\`${tabIdB ? ` in Tab: ${tabIdB}` : " (same tab as A)"}
+- Properties to Compare: ${properties.join(", ")}
+
+---
+
+### IMPORTANT: TAB MANAGEMENT
+
+${tabIdA || tabIdB ? `
+You are working across multiple tabs. The agent-ID is **tab-specific** - if you send a command to the wrong tab, it will fail.
+
+**Before Each Command:**
+1. Use \`caliper_list_tabs\` to see all connected tabs
+2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
+3. After switching, verify with \`caliper_get_state\` that the selection exists
+` : `
+Both selections are on the SAME tab. No tab switching required.
+`}
+
+### PHASE 1: WALK SELECTION A (REFERENCE)
+
+${tabIdA ? `1. **Switch to Tab A**
+   Call \`caliper_switch_tab\` with tabId: "${tabIdA}"
+
+2. ` : "1. "}**Walk and Measure A**
+   Call \`caliper_walk_and_measure\` with:
+   - selector: "${selectorA}"
+   - maxDepth: 3
+
+   Record A's styles as the REFERENCE:
+   ${properties.includes("all") || properties.includes("spacing") ? "- padding, margin, gap values" : ""}
+   ${properties.includes("all") || properties.includes("typography") ? "- font-size, font-weight, line-height" : ""}
+   ${properties.includes("all") || properties.includes("colors") ? "- background-color, color, border-color" : ""}
+   ${properties.includes("all") || properties.includes("layout") ? "- display, flex-direction, justify-content, align-items" : ""}
+
+### PHASE 2: WALK SELECTION B (TARGET)
+
+${tabIdB ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
+   Call \`caliper_switch_tab\` with tabId: "${tabIdB}"
+
+${tabIdA ? "4" : "3"}. ` : `${tabIdA ? "3" : "2"}. `}**Walk and Measure B**
+   Call \`caliper_walk_and_measure\` with:
+   - selector: "${selectorB}"
+   - maxDepth: 3
+
+### PHASE 3: COMPARE AND ANALYZE
+
+${tabIdB ? (tabIdA ? "5" : "4") : (tabIdA ? "4" : "3")}. **Generate Comparison Report**
+   For each property category, list:
+   - Property name
+   - Value in A (REFERENCE)
+   - Value in B (TARGET)
+   - Delta (difference)
+   - Recommended fix for B
+
+   Focus on making B match A's styling approach.
+
+### PHASE 4: FIND SOURCE FOR B
+
+${tabIdB ? (tabIdA ? "6" : "5") : (tabIdA ? "5" : "4")}. **Locate B's Source**
+   ${tabIdB ? `Switch back to Tab B if needed.` : ""}
+   Call \`caliper_grep\` with B's best anchor.
+   Get the exact file path and line number.
+
+### PHASE 5: APPLY FIXES TO B
+
+${tabIdB ? (tabIdA ? "7" : "6") : (tabIdA ? "6" : "5")}. **Generate CSS Fixes**
+   Create CSS rules that will make B match A:
+   \`\`\`css
+   ${selectorB.startsWith("#") ? selectorB : `.${selectorB}`} {
+     /* Fixes to match Selection A */
+   }
+   \`\`\`
+
+${tabIdB ? (tabIdA ? "8" : "7") : (tabIdA ? "7" : "6")}. **Edit Source File**
+   Apply the CSS fixes to B's source file.
+
+${tabIdB ? (tabIdA ? "9" : "8") : (tabIdA ? "8" : "7")}. **Verify**
+   Re-run \`caliper_walk_and_measure\` on B to confirm the fix.
+
+---
+**BEGIN PHASE 1 NOW. Remember to switch tabs before each walk command if working across tabs.**`,
             },
           },
         ],
@@ -555,4 +688,13 @@ ${figmaSecondaryUrl ? `3. Call Figma MCP's 'get_metadata' and 'get_variable_defs
     await bridgeService.stop();
     logger.info("Server stopped.");
   }
+}
+
+function getFigmaPrompt(framework: string): string {
+  const isTailwind = framework.endsWith("-tailwind");
+  const base = framework.split("-")[0];
+  const frameworkName = base === "html" ? "plain HTML" : base === "react" ? "React" : base === "vue" ? "Vue" : "Svelte";
+  const styling = isTailwind ? "with Tailwind CSS" : "with CSS classes and inline styles";
+
+  return `generate my Figma selection in ${frameworkName} ${styling}`;
 }

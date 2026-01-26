@@ -2,6 +2,12 @@ import type { CaliperNode } from "@oyerinde/caliper-schema";
 import { isVisible, filterRuntimeClasses, getElementDirectText } from "@oyerinde/caliper/core";
 import { DEFAULT_WALK_DEPTH } from "../constants.js";
 import { parseComputedStyles } from "../utils.js";
+import {
+    initWalkVisualizer,
+    showWalkBoundary,
+    showChildBoundary,
+    cleanupWalkVisualizer,
+} from "./walk-visualizer.js";
 
 function generateStableSelector(element: Element, domIndex?: number): string {
     if (element.id) return `#${element.id}`;
@@ -77,7 +83,22 @@ export interface WalkResult {
     walkDurationMs: number;
 }
 
-export function walkAndMeasure(rootSelector: string, maxDepth: number = DEFAULT_WALK_DEPTH): WalkResult {
+export interface WalkOptions {
+    maxDepth?: number;
+    visualize?: boolean;
+}
+
+export function walkAndMeasure(
+    rootSelector: string,
+    maxDepthOrOptions: number | WalkOptions = DEFAULT_WALK_DEPTH
+): WalkResult {
+    const options: WalkOptions = typeof maxDepthOrOptions === "number"
+        ? { maxDepth: maxDepthOrOptions, visualize: false }
+        : maxDepthOrOptions;
+
+    const maxDepth = options.maxDepth ?? DEFAULT_WALK_DEPTH;
+    const visualize = options.visualize ?? false;
+
     const startTime = performance.now();
 
     const rootElement = rootSelector.startsWith("caliper-")
@@ -86,8 +107,16 @@ export function walkAndMeasure(rootSelector: string, maxDepth: number = DEFAULT_
 
     if (!rootElement) throw new Error(`Root element not found: ${rootSelector}`);
 
+    if (visualize) {
+        initWalkVisualizer();
+    }
+
     const rootNode = createNodeSnapshot(rootElement, 0);
     const queue: Array<{ el: Element; node: CaliperNode }> = [{ el: rootElement, node: rootNode }];
+
+    if (visualize) {
+        showWalkBoundary(rootElement, rootNode.agentId, true);
+    }
 
     let nodeCount = 0;
     let maxDepthReached = 0;
@@ -96,6 +125,10 @@ export function walkAndMeasure(rootSelector: string, maxDepth: number = DEFAULT_
         const { el, node } = queue.shift()!;
         nodeCount++;
         maxDepthReached = Math.max(maxDepthReached, node.depth);
+
+        if (visualize) {
+            showWalkBoundary(el, node.agentId, true);
+        }
 
         if (node.depth >= maxDepth) continue;
 
@@ -110,6 +143,10 @@ export function walkAndMeasure(rootSelector: string, maxDepth: number = DEFAULT_
 
             const childNode = createNodeSnapshot(childEl, node.depth + 1, domIdx, visibleIdx);
             childNode.parentAgentId = node.agentId;
+
+            if (visualize) {
+                showChildBoundary(childEl, childNode.agentId);
+            }
 
             const pPadding = node.styles.padding;
             const pRect = node.rect;
@@ -141,6 +178,12 @@ export function walkAndMeasure(rootSelector: string, maxDepth: number = DEFAULT_
             queue.push({ el: childEl, node: childNode });
             visibleIdx++;
         }
+    }
+
+    if (visualize) {
+        setTimeout(() => {
+            cleanupWalkVisualizer();
+        }, 2000);
     }
 
     return {

@@ -51,6 +51,10 @@ export class TabManager {
     return this.tabs.get(this.activeTabId) || null;
   }
 
+  getTabById(id: string): ConnectedTab | null {
+    return this.tabs.get(id) || null;
+  }
+
   getAllTabs(): ConnectedTab[] {
     return Array.from(this.tabs.values());
   }
@@ -61,6 +65,19 @@ export class TabManager {
       return true;
     }
     return false;
+  }
+
+  getTabCount(): number {
+    return this.tabs.size;
+  }
+
+  findTabByUrl(urlFragment: string): ConnectedTab | null {
+    for (const tab of this.tabs.values()) {
+      if (tab.url.includes(urlFragment)) {
+        return tab;
+      }
+    }
+    return null;
   }
 }
 

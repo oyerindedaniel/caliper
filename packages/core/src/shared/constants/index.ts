@@ -13,6 +13,7 @@ export const RULER_SNAP_THRESHOLD = 6;
 export const RULER_HIT_SIZE = 11;
 
 export const CALIPER_PREFIX = "caliper-";
+export const BRIDGE_TAB_ID_KEY = "caliper-bridge-tab-id";
 
 export const RUNTIME_CLASS_IGNORE_PREFIXES = [
     "caliper-",

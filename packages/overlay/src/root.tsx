@@ -24,6 +24,7 @@ import {
   generateId,
   filterRuntimeClasses,
   getElementDirectText,
+  BRIDGE_TAB_ID_KEY,
 } from "@caliper/core";
 import type { CaliperSelectorInput } from "@oyerinde/caliper-schema";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
@@ -325,6 +326,9 @@ export function Root(config: RootConfig) {
       if (id) clipboardData.id = id;
       if (text) clipboardData.text = text;
       if (classes.length > 0) clipboardData.classes = classes;
+
+      const tabId = sessionStorage.getItem(BRIDGE_TAB_ID_KEY);
+      if (tabId) clipboardData.tabId = tabId;
 
       return JSON.stringify(clipboardData);
     };

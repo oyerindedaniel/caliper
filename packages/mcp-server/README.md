@@ -78,7 +78,7 @@ The following flags are available when running the server:
 Once connected, the AI agent will have access to high-precision layout tools. You can ask:
 - "Inspect the header element for alignment issues."
 - "Measure the spacing between the logo and the navigation links."
-- "Audit this component against Figma."
+- "Audit this React component against its Figma design URL."
 
 ## Tools Provided 🛠️
 
@@ -92,19 +92,16 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
 - `caliper_parse_selector(jsonString)`: Parse rich selector data copied from the Caliper UI.
 - `caliper_walk_and_measure(selector, maxDepth?)`: Comprehensive recursive DOM walk with style and gap extraction.
-- `caliper_reconcile(caliperTree, figmaPrimary, ...)`: Reconcile a measured tree against Figma design data.
+- `caliper_semantic_reconcile(...)`: Perform precision reconciliation using the Semantic Harmony Engine (token-aware).
 
 ## Figma MCP Integration 🎨
 
 Caliper works alongside the **official Figma MCP server** to create a **Closed-Loop Audit System**. The AI agent acts as the translator between Figma's design context and Caliper's live browser measurements.
 
-### Audit Strategies
-
-| Strategy | When to Use | Design Interpretation |
-| :--- | :--- | :--- |
-| **A (Container-First)** | Figma frame is the max content width | Element is centered, shrinks on smaller screens |
-| **B (Padding-Locked)** | Design relies on fixed edge spacing | Padding is preserved exactly, content stretches |
-| **C (Ratio-Based)** | Element must scale proportionally | Width is a percentage of viewport |
+### Semantic Harmony Engine
+The new reconciliation engine (v2.0) automatically infers design intent from your code. It supports both **Tailwind** and **Standard CSS** across multiple frameworks:
+- **Tailwind-based**: React, Vue, Svelte, HTML.
+- **CSS/Inline-based**: Universal support via style attribute parsing.
 
 ## Prompts Provided 📋
 
@@ -113,7 +110,8 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 | Prompt | Description |
 | :--- | :--- |
 | `caliper-selector-audit` | Comprehensive element audit (styles, spacing, hierarchy). |
-| `caliper-figma-reconcile` | Deep reconciliation workflow between Figma and Code. |
+| `caliper-figma-reconcile` | Deep reconciliation workflow (Primary + Secondary breakpoints). |
+| `caliper-cross-compare` | Compare two elements (A reference vs B target) to fix styling. |
 | `caliper-audit-harness` | Mandatory context-gathering loop to ensure stable code edits. |
 
 ## Resources 📚
