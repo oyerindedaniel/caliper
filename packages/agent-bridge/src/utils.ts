@@ -176,7 +176,7 @@ export function getContextMetrics() {
     return {
         rootFontSize: parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16,
         devicePixelRatio: window.devicePixelRatio || 1,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
+        viewportWidth: document.documentElement.clientWidth,
+        viewportHeight: document.documentElement.clientHeight,
     };
 }

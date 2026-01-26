@@ -147,8 +147,8 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       distances: {
         top: rect.top,
         left: rect.left,
-        bottom: window.innerHeight - rect.bottom,
-        right: window.innerWidth - rect.right,
+        bottom: document.documentElement.clientHeight - rect.bottom,
+        right: document.documentElement.clientWidth - rect.right,
         horizontal: rect.width,
         vertical: rect.height,
       },
