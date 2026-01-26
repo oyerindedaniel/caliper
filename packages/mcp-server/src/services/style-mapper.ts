@@ -1,4 +1,6 @@
-import type { InferredStyles, BoxEdgesString, SemanticNode, Framework } from "@oyerinde/caliper-schema";
+import type { InferredStyles, BoxEdgesString, SemanticNode, Framework, DesignTokenDictionary, ContextMetrics } from "@oyerinde/caliper-schema";
+import { tokenResolverService } from "./token-resolver-service.js";
+import { resolveCalc, toPixels } from "../utils/unit-utils.js";
 
 type PartialInferredStyles = Partial<InferredStyles>;
 
@@ -113,15 +115,48 @@ const BORDER_RADIUS_SCALE: Record<string, string> = {
     "full": "9999px",
 };
 
-function resolveSpacing(value: string): string | undefined {
+function resolveSpacing(value: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): string | undefined {
+    // 1. Handle Tailwind Arbitrary Values [12px] or [var(--spacing-md)]
     if (value.startsWith("[") && value.endsWith("]")) {
-        return value.slice(1, -1).replace(/_/g, " ");
+        const inner = value.slice(1, -1).replace(/_/g, " ");
+        if (inner.startsWith("var(--") && inner.endsWith(")") && tokens) {
+            const tokenName = inner.slice(6, -1);
+            const resolved = tokenResolverService.resolveToken(tokens, tokenName);
+            if (resolved) return resolved;
+        }
+        // Support for [(--variable)]
+        if (inner.startsWith("(--") && inner.endsWith(")") && tokens) {
+            const tokenName = inner.slice(3, -1);
+            const resolved = tokenResolverService.resolveToken(tokens, tokenName) || tokenResolverService.resolveToken(tokens, `--${tokenName}`);
+            if (resolved) return resolved;
+        }
+        return inner;
     }
 
+    // 2. Handle Tailwind v4.0 Variable Shorthand (e.g. p-(--spacing-md))
+    if (value.startsWith("(--") && value.endsWith(")")) {
+        const tokenName = value.slice(1, -1); // e.g. "--spacing-md"
+        if (tokens) {
+            // Try resolving with and without the dashes
+            const cleanName = tokenName.startsWith("--") ? tokenName.slice(2) : tokenName;
+            const resolved = tokenResolverService.resolveToken(tokens, cleanName) ||
+                tokenResolverService.resolveToken(tokens, tokenName);
+            if (resolved) return resolved;
+        }
+        return `var(${tokenName})`;
+    }
+
+    // 3. Handle calc()
+    if (value.startsWith("calc(") && metrics) {
+        return `${resolveCalc(value, metrics, { tokens })}px`;
+    }
+
+    // 4. Handle Standard Spacing Scale
     if (SPACING_SCALE[value]) {
         return SPACING_SCALE[value];
     }
 
+    // 5. Handle Units
     for (const unit of Object.keys(VIEWPORT_UNITS)) {
         if (value.endsWith(unit)) return value;
     }
@@ -129,218 +164,293 @@ function resolveSpacing(value: string): string | undefined {
     return undefined;
 }
 
+function resolveColor(value: string, tokens?: DesignTokenDictionary): string | undefined {
+    // 1. Handle Tailwind Arbitrary Values [var(--brand-color)]
+    if (value.startsWith("[") && value.endsWith("]")) {
+        const inner = value.slice(1, -1).replace(/_/g, " ");
+        if (inner.startsWith("var(--") && inner.endsWith(")") && tokens) {
+            const tokenName = inner.slice(6, -1);
+            const resolved = tokenResolverService.resolveToken(tokens, tokenName);
+            if (resolved) return resolved;
+        }
+        return inner;
+    }
+
+    // 2. Handle Tailwind v4.0 Variable Shorthand (e.g. text-(--brand-color))
+    if (value.startsWith("(--") && value.endsWith(")")) {
+        const tokenName = value.slice(1, -1);
+        if (tokens) {
+            const cleanName = tokenName.startsWith("--") ? tokenName.slice(2) : tokenName;
+            const resolved = tokenResolverService.resolveToken(tokens, cleanName) ||
+                tokenResolverService.resolveToken(tokens, tokenName);
+            if (resolved) return resolved;
+        }
+        return `var(${tokenName})`;
+    }
+
+    return value;
+}
+
 function createBoxEdges(top: string, right: string, bottom: string, left: string): BoxEdgesString {
     return { top, right, bottom, left };
 }
 
-function parsePaddingClass(className: string): Partial<{ padding: BoxEdgesString }> | null {
-    if (className.startsWith("p-")) {
-        const value = resolveSpacing(className.slice(2));
-        if (value) {
-            return { padding: createBoxEdges(value, value, value, value) };
-        }
-    }
-    if (className.startsWith("px-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) {
-            return { padding: createBoxEdges("0px", value, "0px", value) };
-        }
-    }
-    if (className.startsWith("py-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) {
-            return { padding: createBoxEdges(value, "0px", value, "0px") };
-        }
-    }
-    if (className.startsWith("pt-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) return { padding: createBoxEdges(value, "0px", "0px", "0px") };
-    }
-    if (className.startsWith("pr-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) return { padding: createBoxEdges("0px", value, "0px", "0px") };
-    }
-    if (className.startsWith("pb-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) return { padding: createBoxEdges("0px", "0px", value, "0px") };
-    }
-    if (className.startsWith("pl-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) return { padding: createBoxEdges("0px", "0px", "0px", value) };
+function extractValue(className: string, prefix: string): string | null {
+    if (className.startsWith(prefix)) {
+        return className.slice(prefix.length);
     }
     return null;
 }
 
-function parseMarginClass(className: string): Partial<{ margin: BoxEdgesString }> | null {
-    if (className.startsWith("m-")) {
-        const value = resolveSpacing(className.slice(2));
-        if (value) {
-            return { margin: createBoxEdges(value, value, value, value) };
-        }
-    }
-    if (className.startsWith("mx-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) {
-            return { margin: createBoxEdges("0px", value, "0px", value) };
-        }
-    }
-    if (className.startsWith("my-")) {
-        const value = resolveSpacing(className.slice(3));
-        if (value) {
-            return { margin: createBoxEdges(value, "0px", value, "0px") };
-        }
+function parseBoxEdgesClass(className: string, prefix: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): BoxEdgesString | null {
+    const value = extractValue(className, prefix);
+    if (!value) return null;
+
+    const resolved = resolveSpacing(value, tokens, metrics);
+    if (!resolved) return null;
+
+    if (prefix.endsWith("-x-")) return createBoxEdges("0px", resolved, "0px", resolved);
+    if (prefix.endsWith("-y-")) return createBoxEdges(resolved, "0px", resolved, "0px");
+    if (prefix.endsWith("-t-")) return createBoxEdges(resolved, "0px", "0px", "0px");
+    if (prefix.endsWith("-r-")) return createBoxEdges("0px", resolved, "0px", "0px");
+    if (prefix.endsWith("-b-")) return createBoxEdges("0px", "0px", resolved, "0px");
+    if (prefix.endsWith("-l-")) return createBoxEdges("0px", "0px", "0px", resolved);
+
+    return createBoxEdges(resolved, resolved, resolved, resolved);
+}
+
+function parsePaddingClass(className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): Partial<{ padding: BoxEdgesString }> | null {
+    const prefixes = ["p-", "px-", "py-", "pt-", "pr-", "pb-", "pl-"];
+    for (const p of prefixes) {
+        const edges = parseBoxEdgesClass(className, p, tokens, metrics);
+        if (edges) return { padding: edges };
     }
     return null;
 }
 
-function parseGapClass(className: string): Partial<{ gap: string }> | null {
+function parseMarginClass(className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): Partial<{ margin: BoxEdgesString }> | null {
+    const prefixes = ["m-", "mx-", "my-", "mt-", "mr-", "mb-", "ml-"];
+    for (const p of prefixes) {
+        const edges = parseBoxEdgesClass(className, p, tokens, metrics);
+        if (edges) return { margin: edges };
+    }
+    return null;
+}
+
+function parseGapClass(className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): Partial<{ gap: string }> | null {
     if (className.startsWith("gap-")) {
-        const value = resolveSpacing(className.slice(4));
+        const value = resolveSpacing(className.slice(4), tokens, metrics);
         if (value) return { gap: value };
     }
     return null;
 }
 
-function parseFontSizeClass(className: string): Partial<{ fontSize: string }> | null {
-    if (className.startsWith("text-")) {
-        const sizeKey = className.slice(5);
-        const value = FONT_SIZE_SCALE[sizeKey];
-        if (value) return { fontSize: value };
-    }
+function parseFontSizeClass(className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): PartialInferredStyles | null {
+    const value = extractValue(className, "text-");
+    if (!value) return null;
+
+    const scaleValue = FONT_SIZE_SCALE[value];
+    if (scaleValue) return { fontSize: scaleValue };
+
+    const resolved = resolveSpacing(value, tokens, metrics);
+    if (resolved) return { fontSize: resolved };
+
     return null;
 }
 
-function parseFontWeightClass(className: string): Partial<{ fontWeight: string }> | null {
-    if (className.startsWith("font-")) {
-        const weightKey = className.slice(5);
-        const value = FONT_WEIGHT_MAP[weightKey];
-        if (value) return { fontWeight: value };
-    }
+function parseFontWeightClass(className: string): PartialInferredStyles | null {
+    const value = extractValue(className, "font-");
+    if (value && FONT_WEIGHT_MAP[value]) return { fontWeight: FONT_WEIGHT_MAP[value] };
     return null;
 }
 
-function parseBorderRadiusClass(className: string): Partial<{ borderRadius: string }> | null {
-    if (className === "rounded") {
-        return { borderRadius: BORDER_RADIUS_SCALE[""] };
-    }
-    if (className.startsWith("rounded-")) {
-        const key = className.slice(8);
-        const value = BORDER_RADIUS_SCALE[key];
-        if (value) return { borderRadius: value };
-    }
+function parseBorderRadiusClass(className: string): PartialInferredStyles | null {
+    if (className === "rounded") return { borderRadius: BORDER_RADIUS_SCALE[""] };
+    const value = extractValue(className, "rounded-");
+    if (value && BORDER_RADIUS_SCALE[value]) return { borderRadius: BORDER_RADIUS_SCALE[value] };
+    return null;
+}
+
+function parseKeywordClass(className: string, mapping: Record<string, any>, prop: keyof InferredStyles): PartialInferredStyles | null {
+    if (mapping[className]) return { [prop]: mapping[className] };
     return null;
 }
 
 function parseDisplayClass(className: string): PartialInferredStyles | null {
-    switch (className) {
-        case "flex": return { display: "flex" };
-        case "inline-flex": return { display: "inline-flex" };
-        case "grid": return { display: "grid" };
-        case "block": return { display: "block" };
-        case "inline": return { display: "inline" };
-        case "inline-block": return { display: "inline-block" };
-        case "hidden": return { display: "none" };
-        default: return null;
-    }
+    const mapping = {
+        "flex": "flex", "inline-flex": "inline-flex", "grid": "grid",
+        "block": "block", "inline": "inline", "inline-block": "inline-block", "hidden": "none"
+    };
+    return parseKeywordClass(className, mapping, "display");
 }
 
 function parseFlexDirectionClass(className: string): PartialInferredStyles | null {
-    switch (className) {
-        case "flex-row": return { flexDirection: "row" };
-        case "flex-col": return { flexDirection: "column" };
-        case "flex-row-reverse": return { flexDirection: "row-reverse" };
-        case "flex-col-reverse": return { flexDirection: "column-reverse" };
-        default: return null;
-    }
+    const mapping = {
+        "flex-row": "row", "flex-col": "column",
+        "flex-row-reverse": "row-reverse", "flex-col-reverse": "column-reverse"
+    };
+    return parseKeywordClass(className, mapping, "flexDirection");
 }
 
 function parseJustifyClass(className: string): PartialInferredStyles | null {
-    if (className.startsWith("justify-")) {
-        const value = className.slice(8);
-        const mapping: Record<string, string> = {
-            "start": "flex-start",
-            "end": "flex-end",
-            "center": "center",
-            "between": "space-between",
-            "around": "space-around",
-            "evenly": "space-evenly",
-        };
-        if (mapping[value]) return { justifyContent: mapping[value] };
-    }
+    const value = extractValue(className, "justify-");
+    if (!value) return null;
+    const mapping: Record<string, string> = {
+        "start": "flex-start", "end": "flex-end", "center": "center",
+        "between": "space-between", "around": "space-around", "evenly": "space-evenly",
+    };
+    if (mapping[value]) return { justifyContent: mapping[value] };
     return null;
 }
 
 function parseAlignItemsClass(className: string): PartialInferredStyles | null {
-    if (className.startsWith("items-")) {
-        const value = className.slice(6);
-        const mapping: Record<string, string> = {
-            "start": "flex-start",
-            "end": "flex-end",
-            "center": "center",
-            "baseline": "baseline",
-            "stretch": "stretch",
-        };
-        if (mapping[value]) return { alignItems: mapping[value] };
-    }
+    const value = extractValue(className, "items-");
+    if (!value) return null;
+    const mapping: Record<string, string> = {
+        "start": "flex-start", "end": "flex-end", "center": "center",
+        "baseline": "baseline", "stretch": "stretch",
+    };
+    if (mapping[value]) return { alignItems: mapping[value] };
     return null;
 }
 
-function parseWidthClass(className: string): PartialInferredStyles | null {
-    if (className.startsWith("w-")) {
-        const value = className.slice(2);
-        if (value === "full") return { width: "100%" };
-        if (value === "screen") return { width: "100vw" };
-        if (value === "min") return { width: "min-content" };
-        if (value === "max") return { width: "max-content" };
-        if (value === "fit") return { width: "fit-content" };
-        if (value === "auto") return { width: "auto" };
+function parseDimensionClass(className: string, prefix: "w-" | "h-", tokens?: DesignTokenDictionary, metrics?: ContextMetrics): PartialInferredStyles | null {
+    const value = extractValue(className, prefix);
+    if (!value) return null;
 
-        for (const unit of Object.keys(VIEWPORT_UNITS)) {
-            if (value.endsWith(unit)) return { width: value };
-        }
+    const key = prefix === "w-" ? "width" : "height";
+    const viewportUnit = prefix === "w-" ? "100vw" : "100vh";
 
-        const spacing = resolveSpacing(value);
-        if (spacing) return { width: spacing };
+    if (value === "full") return { [key]: "100%" };
+    if (value === "screen") return { [key]: viewportUnit };
+    if (value === "min") return { [key]: "min-content" };
+    if (value === "max") return { [key]: "max-content" };
+    if (value === "fit") return { [key]: "fit-content" };
+    if (value === "auto") return { [key]: "auto" };
+
+    for (const unit of Object.keys(VIEWPORT_UNITS)) {
+        if (value.endsWith(unit)) return { [key]: value };
     }
+
+    const spacing = resolveSpacing(value, tokens, metrics);
+    if (spacing) return { [key]: spacing };
+
     return null;
 }
 
-function parseHeightClass(className: string): PartialInferredStyles | null {
-    if (className.startsWith("h-")) {
-        const value = className.slice(2);
-        if (value === "full") return { height: "100%" };
-        if (value === "screen") return { height: "100vh" };
-        if (value === "min") return { height: "min-content" };
-        if (value === "max") return { height: "max-content" };
-        if (value === "fit") return { height: "fit-content" };
-        if (value === "auto") return { height: "auto" };
+function parseWidthClass(className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): PartialInferredStyles | null {
+    return parseDimensionClass(className, "w-", tokens, metrics);
+}
 
-        for (const unit of Object.keys(VIEWPORT_UNITS)) {
-            if (value.endsWith(unit)) return { height: value };
-        }
+function parseHeightClass(className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): PartialInferredStyles | null {
+    return parseDimensionClass(className, "h-", tokens, metrics);
+}
 
-        const spacing = resolveSpacing(value);
-        if (spacing) return { height: spacing };
-    }
+function parseNumericUtility(className: string, prefix: string, prop: keyof InferredStyles, factor: number = 1): PartialInferredStyles | null {
+    const value = extractValue(className, prefix);
+    if (!value) return null;
+    const num = parseInt(value, 10);
+    if (!isNaN(num)) return { [prop]: num / factor };
     return null;
 }
 
-const TAILWIND_PARSERS = [
-    parseDisplayClass,
-    parseFlexDirectionClass,
-    parseJustifyClass,
-    parseAlignItemsClass,
-    parsePaddingClass,
-    parseMarginClass,
-    parseGapClass,
-    parseFontSizeClass,
-    parseFontWeightClass,
-    parseBorderRadiusClass,
-    parseWidthClass,
-    parseHeightClass,
-];
+function parseOpacityClass(className: string): PartialInferredStyles | null {
+    return parseNumericUtility(className, "opacity-", "opacity", 100);
+}
 
-export function inferStylesFromClasses(classes: string[], framework: Framework): InferredStyles {
+function parseZIndexClass(className: string): PartialInferredStyles | null {
+    return parseNumericUtility(className, "z-", "zIndex");
+}
+
+function parseColorUtility(className: string, prefix: string, prop: keyof InferredStyles, tokens?: DesignTokenDictionary): PartialInferredStyles | null {
+    const value = extractValue(className, prefix);
+    if (!value) return null;
+
+    const resolved = resolveColor(value, tokens);
+    if (resolved) return { [prop]: resolved };
+    return null;
+}
+
+function parseBackgroundColorClass(className: string, tokens?: DesignTokenDictionary): PartialInferredStyles | null {
+    return parseColorUtility(className, "bg-", "backgroundColor", tokens);
+}
+
+function parseTextColorClass(className: string, tokens?: DesignTokenDictionary): PartialInferredStyles | null {
+    const value = extractValue(className, "text-");
+    if (!value || FONT_SIZE_SCALE[value]) return null;
+    return parseColorUtility(className, "text-", "color", tokens);
+}
+
+function parseBorderColorClass(className: string, tokens?: DesignTokenDictionary): PartialInferredStyles | null {
+    const value = extractValue(className, "border-");
+    if (!value || /^\d+|[trblxy]$/.test(value)) return null;
+    return parseColorUtility(className, "border-", "borderColor", tokens);
+}
+
+function parseOutlineColorClass(className: string, tokens?: DesignTokenDictionary): PartialInferredStyles | null {
+    const value = extractValue(className, "outline-");
+    if (!value || /^\d+|none$/.test(value)) return null;
+    return parseColorUtility(className, "outline-", "outlineColor", tokens);
+}
+
+function parseShadowClass(className: string, tokens?: DesignTokenDictionary): PartialInferredStyles | null {
+    const shadows: Record<string, string> = {
+        "shadow-sm": "0 1px 2px 0 rgb(0 0 0 / 0.05)",
+        "shadow": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+        "shadow-md": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+        "shadow-lg": "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+        "shadow-xl": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)",
+        "shadow-2xl": "0 25px 50px -12px rgb(0 0 0 / 0.5)",
+        "shadow-inner": "inset 0 2px 4px 0 rgb(0 0 0 / 0.05)",
+        "shadow-none": "0 0 #0000",
+    };
+    if (shadows[className]) return { boxShadow: shadows[className] };
+
+    if (className.startsWith("shadow-")) {
+        const value = className.slice(7);
+        const resolved = resolveColor(value, tokens);
+        if (resolved) return { boxShadow: `0 0 0 1px ${resolved}` }; // Estimation for custom shadow vars
+    }
+
+    return null;
+}
+
+type ParserFn = (className: string, tokens?: DesignTokenDictionary, metrics?: ContextMetrics) => PartialInferredStyles | null;
+
+const PREFIX_PARSERS: Record<string, ParserFn> = {
+    "p-": parsePaddingClass, "px-": parsePaddingClass, "py-": parsePaddingClass, "pt-": parsePaddingClass, "pr-": parsePaddingClass, "pb-": parsePaddingClass, "pl-": parsePaddingClass,
+    "m-": parseMarginClass, "mx-": parseMarginClass, "my-": parseMarginClass, "mt-": parseMarginClass, "mr-": parseMarginClass, "mb-": parseMarginClass, "ml-": parseMarginClass,
+    "gap-": parseGapClass,
+    "text-": (c, t, m) => parseFontSizeClass(c, t, m) || parseTextColorClass(c, t),
+    "font-": parseFontWeightClass,
+    "rounded": parseBorderRadiusClass,
+    "w-": parseWidthClass,
+    "h-": parseHeightClass,
+    "opacity-": parseOpacityClass,
+    "z-": parseZIndexClass,
+    "shadow": parseShadowClass,
+    "bg-": parseBackgroundColorClass,
+    "border-": parseBorderColorClass,
+    "outline-": parseOutlineColorClass,
+};
+
+const STATIC_PARSERS: Record<string, PartialInferredStyles> = {
+    "flex": { display: "flex" },
+    "inline-flex": { display: "inline-flex" },
+    "grid": { display: "grid" },
+    "block": { display: "block" },
+    "inline": { display: "inline" },
+    "inline-block": { display: "inline-block" },
+    "hidden": { display: "none" },
+    "flex-row": { flexDirection: "row" },
+    "flex-col": { flexDirection: "column" },
+    "flex-row-reverse": { flexDirection: "row-reverse" },
+    "flex-col-reverse": { flexDirection: "column-reverse" },
+};
+
+const CLASS_STYLE_CACHE = new Map<string, PartialInferredStyles>();
+
+export function inferStylesFromClasses(classes: string[], framework: Framework, tokens?: DesignTokenDictionary, metrics?: ContextMetrics): InferredStyles {
     if (!framework.endsWith("-tailwind")) {
         return {};
     }
@@ -348,11 +458,38 @@ export function inferStylesFromClasses(classes: string[], framework: Framework):
     const result: InferredStyles = {};
 
     for (const className of classes) {
-        for (const parser of TAILWIND_PARSERS) {
-            const parsed = parser(className);
+        const cacheKey = `${className}|${framework}|${metrics?.rootFontSize ?? 16}`;
+        if (CLASS_STYLE_CACHE.has(cacheKey)) {
+            Object.assign(result, CLASS_STYLE_CACHE.get(cacheKey));
+            continue;
+        }
+
+        if (STATIC_PARSERS[className]) {
+            const parsed = STATIC_PARSERS[className]!;
+            CLASS_STYLE_CACHE.set(cacheKey, parsed);
+            Object.assign(result, parsed);
+            continue;
+        }
+
+        if (className.startsWith("justify-") || className.startsWith("items-")) {
+            const parsed = parseJustifyClass(className) || parseAlignItemsClass(className);
             if (parsed) {
+                CLASS_STYLE_CACHE.set(cacheKey, parsed);
                 Object.assign(result, parsed);
-                break;
+                continue;
+            }
+        }
+
+        const dashIdx = className.indexOf("-");
+        const prefix = dashIdx !== -1 ? className.slice(0, dashIdx + 1) : className;
+
+        const parser = PREFIX_PARSERS[prefix];
+        if (parser) {
+            const parsed = parser(className, tokens, metrics);
+            if (parsed) {
+                CLASS_STYLE_CACHE.set(cacheKey, parsed);
+                Object.assign(result, parsed);
+                continue;
             }
         }
     }
@@ -365,10 +502,10 @@ export function parseInlineStyles(styleString: string): InferredStyles {
     const declarations = styleString.split(";").filter(Boolean);
 
     for (const decl of declarations) {
-        const [prop, value] = decl.split(":").map(s => s.trim());
+        const [prop, value] = decl.split(":").map(segment => segment.trim());
         if (!prop || !value) continue;
 
-        const camelProp = prop.replace(/-([a-z])/g, g => g[1]!.toUpperCase());
+        const camelProp = prop.replace(/-([a-z])/g, match => match[1]!.toUpperCase());
 
         if (camelProp === "display") {
             const valid = ["flex", "grid", "block", "inline", "inline-flex", "inline-block", "none"] as const;
@@ -382,11 +519,22 @@ export function parseInlineStyles(styleString: string): InferredStyles {
             continue;
         }
 
-        const stringProps = ["justifyContent", "alignItems", "gap", "fontSize", "fontWeight", "borderRadius", "backgroundColor", "color", "width", "height"] as const;
+        const stringProps = ["justifyContent", "alignItems", "gap", "fontSize", "fontWeight", "borderRadius", "backgroundColor", "color", "width", "height", "boxShadow", "outline", "letterSpacing"] as const;
         type StringPropKey = typeof stringProps[number];
 
         if ((stringProps as readonly string[]).includes(camelProp)) {
             result[camelProp as StringPropKey] = value;
+            continue;
+        }
+
+        if (camelProp === "opacity" || camelProp === "zIndex") {
+            const num = parseFloat(value);
+            if (!isNaN(num)) result[camelProp as "opacity" | "zIndex"] = num;
+            continue;
+        }
+
+        if (camelProp === "lineHeight") {
+            result.lineHeight = /^\d+(\.\d+)?$/.test(value) ? parseFloat(value) : value;
             continue;
         }
 
@@ -413,8 +561,8 @@ export function parseInlineStyles(styleString: string): InferredStyles {
     return result;
 }
 
-export function applyInferredStylesToTree(node: SemanticNode, framework: Framework): void {
-    const classStyles = inferStylesFromClasses(node.classes, framework);
+export function applyInferredStylesToTree(node: SemanticNode, framework: Framework, tokens?: DesignTokenDictionary, metrics?: ContextMetrics, inheritedFontSize?: number): void {
+    const classStyles = inferStylesFromClasses(node.classes, framework, tokens, metrics);
     const inlineStyles = node.rawStyles ? parseInlineStyles(node.rawStyles) : {};
 
     node.inferredStyles = {
@@ -422,7 +570,12 @@ export function applyInferredStylesToTree(node: SemanticNode, framework: Framewo
         ...inlineStyles,
     };
 
+    let currentFontSize = inheritedFontSize ?? (metrics?.rootFontSize || 16);
+    if (node.inferredStyles.fontSize) {
+        currentFontSize = toPixels(node.inferredStyles.fontSize, metrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 }, { parentFontSize: inheritedFontSize, tokens });
+    }
+
     for (const child of node.children) {
-        applyInferredStylesToTree(child, framework);
+        applyInferredStylesToTree(child, framework, tokens, metrics, currentFontSize);
     }
 }

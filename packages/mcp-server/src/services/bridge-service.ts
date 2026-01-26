@@ -239,7 +239,7 @@ export class BridgeService {
         if (i < retries) {
           const delay = getExponentialBackoff(i, 300);
           logger.warn(`${lastError.message}. Retrying in ${delay}ms...`);
-          await new Promise(r => setTimeout(r, delay));
+          await new Promise(resolve => setTimeout(resolve, delay));
         }
       }
     }

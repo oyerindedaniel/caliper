@@ -1,8 +1,7 @@
-import type { CaliperNode, CaliperComputedStyles, CaliperMeasurements, BoxEdges } from "./audit.js";
+import type { CaliperNode, BoxEdges } from "./audit.js";
 
 export class BitBridge {
     private static readonly MAGIC = 0x43414C49; // "CALI"
-    private static readonly VERSION = 1;
 
     static serialize(root: CaliperNode): Uint8Array {
         const strings = new Map<string, number>();
@@ -26,19 +25,30 @@ export class BitBridge {
             getStringId(node.htmlId);
             getStringId(node.textContent);
             if (node.classes) {
-                node.classes.forEach(c => getStringId(c));
+                node.classes.forEach(className => getStringId(className));
             }
 
-            const s = node.styles;
-            getStringId(s.display);
-            getStringId(s.position);
-            getStringId(s.boxSizing);
-            getStringId(s.color);
-            getStringId(s.backgroundColor);
-            getStringId(s.borderRadius);
-            getStringId(s.overflow);
-            getStringId(s.fontFamily);
-            getStringId(s.fontWeight);
+            const styles = node.styles;
+            getStringId(styles.display);
+            getStringId(styles.position);
+            getStringId(styles.boxSizing);
+            getStringId(styles.color);
+            getStringId(styles.backgroundColor);
+            getStringId(styles.borderRadius);
+            getStringId(styles.borderColor);
+            getStringId(styles.boxShadow);
+            getStringId(styles.outline);
+            getStringId(styles.outlineColor);
+            getStringId(styles.overflow);
+            getStringId(styles.overflowX);
+            getStringId(styles.overflowY);
+            getStringId(styles.fontFamily);
+            getStringId(styles.fontWeight);
+            getStringId(styles.lineHeight === null ? null : String(styles.lineHeight));
+            getStringId(String(styles.letterSpacing));
+            getStringId(String(styles.opacity));
+            getStringId(styles.zIndex === null ? null : String(styles.zIndex));
+            getStringId(styles.gap === null ? null : String(styles.gap));
 
             if (node.children) {
                 node.children.forEach(collect);
@@ -47,22 +57,21 @@ export class BitBridge {
         collect(root);
 
         const encoder = new TextEncoder();
-        const encodedStrings = stringList.map(s => encoder.encode(s));
+        const encodedStrings = stringList.map(rawString => encoder.encode(rawString));
         let dictSize = 4;
-        encodedStrings.forEach(b => dictSize += 2 + b.length);
+        encodedStrings.forEach(bytes => dictSize += 2 + bytes.length);
 
         const buffer = new ArrayBuffer(dictSize + 1024 * 1024 * 5);
         const view = new DataView(buffer);
         let offset = 0;
 
         view.setUint32(offset, BitBridge.MAGIC); offset += 4;
-        view.setUint16(offset, BitBridge.VERSION); offset += 2;
 
         view.setUint32(offset, stringList.length); offset += 4;
-        encodedStrings.forEach(b => {
-            view.setUint16(offset, b.length); offset += 2;
-            new Uint8Array(buffer, offset, b.length).set(b);
-            offset += b.length;
+        encodedStrings.forEach(bytes => {
+            view.setUint16(offset, bytes.length); offset += 2;
+            new Uint8Array(buffer, offset, bytes.length).set(bytes);
+            offset += bytes.length;
         });
 
         const encodeNode = (node: CaliperNode) => {
@@ -74,8 +83,8 @@ export class BitBridge {
 
             const classes = node.classes || [];
             view.setUint16(offset, classes.length); offset += 2;
-            classes.forEach(c => {
-                view.setUint16(offset, getStringId(c)); offset += 2;
+            classes.forEach(className => {
+                view.setUint16(offset, getStringId(className)); offset += 2;
             });
 
             view.setFloat32(offset, node.rect.top); offset += 4;
@@ -87,26 +96,38 @@ export class BitBridge {
             view.setFloat32(offset, node.viewportRect.top); offset += 4;
             view.setFloat32(offset, node.viewportRect.left); offset += 4;
 
-            const s = node.styles;
-            view.setUint16(offset, getStringId(s.display)); offset += 2;
-            view.setUint16(offset, getStringId(s.position)); offset += 2;
-            view.setUint16(offset, getStringId(s.boxSizing)); offset += 2;
-            view.setFloat32(offset, s.fontSize); offset += 4;
-            view.setUint16(offset, getStringId(s.fontWeight)); offset += 2;
-            view.setUint16(offset, getStringId(s.fontFamily)); offset += 2;
-            view.setFloat32(offset, s.opacity); offset += 4;
-            view.setUint16(offset, getStringId(s.color)); offset += 2;
-            view.setUint16(offset, getStringId(s.backgroundColor)); offset += 2;
+            const styles = node.styles;
+            view.setUint16(offset, getStringId(styles.display)); offset += 2;
+            view.setUint16(offset, getStringId(styles.position)); offset += 2;
+            view.setUint16(offset, getStringId(styles.boxSizing)); offset += 2;
+            view.setFloat32(offset, styles.fontSize); offset += 4;
+            view.setUint16(offset, getStringId(styles.fontWeight)); offset += 2;
+            view.setUint16(offset, getStringId(styles.fontFamily)); offset += 2;
+            view.setUint16(offset, getStringId(String(styles.opacity))); offset += 2;
+            view.setUint16(offset, getStringId(styles.color)); offset += 2;
+            view.setUint16(offset, getStringId(styles.backgroundColor)); offset += 2;
+            view.setUint16(offset, getStringId(styles.borderRadius)); offset += 2;
+            view.setUint16(offset, getStringId(styles.borderColor)); offset += 2;
+            view.setUint16(offset, getStringId(styles.boxShadow)); offset += 2;
+            view.setUint16(offset, getStringId(styles.outline)); offset += 2;
+            view.setUint16(offset, getStringId(styles.outlineColor)); offset += 2;
+            view.setUint16(offset, getStringId(styles.overflow)); offset += 2;
+            view.setUint16(offset, getStringId(styles.overflowX)); offset += 2;
+            view.setUint16(offset, getStringId(styles.overflowY)); offset += 2;
+            view.setUint16(offset, getStringId(styles.lineHeight === null ? null : String(styles.lineHeight))); offset += 2;
+            view.setUint16(offset, getStringId(String(styles.letterSpacing))); offset += 2;
+            view.setUint16(offset, getStringId(styles.zIndex === null ? null : String(styles.zIndex))); offset += 2;
+            view.setUint16(offset, getStringId(styles.gap === null ? null : String(styles.gap))); offset += 2;
 
-            const writeEdges = (e: BoxEdges) => {
-                view.setFloat32(offset, e.top); offset += 4;
-                view.setFloat32(offset, e.right); offset += 4;
-                view.setFloat32(offset, e.bottom); offset += 4;
-                view.setFloat32(offset, e.left); offset += 4;
+            const writeEdges = (edges: BoxEdges) => {
+                view.setFloat32(offset, edges.top); offset += 4;
+                view.setFloat32(offset, edges.right); offset += 4;
+                view.setFloat32(offset, edges.bottom); offset += 4;
+                view.setFloat32(offset, edges.left); offset += 4;
             };
-            writeEdges(s.padding);
-            writeEdges(s.margin);
-            writeEdges(s.border);
+            writeEdges(styles.padding);
+            writeEdges(styles.margin);
+            writeEdges(styles.border);
 
             view.setUint16(offset, node.depth); offset += 2;
             const children = node.children || [];
@@ -125,8 +146,6 @@ export class BitBridge {
 
         const magic = view.getUint32(offset); offset += 4;
         if (magic !== BitBridge.MAGIC) throw new Error("Invalid BitBridge format");
-
-        const version = view.getUint16(offset); offset += 2;
 
         const stringCount = view.getUint32(offset); offset += 4;
         const stringList: string[] = [""];
@@ -171,14 +190,32 @@ export class BitBridge {
             const fontSize = view.getFloat32(offset); offset += 4;
             const fontWeight = stringList[view.getUint16(offset)] || ""; offset += 2;
             const fontFamily = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const opacity = view.getFloat32(offset); offset += 4;
+            const opacityStr = stringList[view.getUint16(offset)] || "1"; offset += 2;
             const color = stringList[view.getUint16(offset)] || ""; offset += 2;
             const backgroundColor = stringList[view.getUint16(offset)] || ""; offset += 2;
+            const borderRadius = stringList[view.getUint16(offset)] || "0"; offset += 2;
+            const borderColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
+            const boxShadow = stringList[view.getUint16(offset)] || undefined; offset += 2;
+            const outline = stringList[view.getUint16(offset)] || undefined; offset += 2;
+            const outlineColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
+            const overflow = stringList[view.getUint16(offset)] || "visible"; offset += 2;
+            const overflowX = stringList[view.getUint16(offset)] || "visible"; offset += 2;
+            const overflowY = stringList[view.getUint16(offset)] || "visible"; offset += 2;
+            const lhStr = stringList[view.getUint16(offset)] || null; offset += 2;
+            const lsStr = stringList[view.getUint16(offset)] || "0"; offset += 2;
+            const ziStr = stringList[view.getUint16(offset)] || null; offset += 2;
+            const gapStr = stringList[view.getUint16(offset)] || null; offset += 2;
+
+            const opacity = isNaN(parseFloat(opacityStr)) ? opacityStr : parseFloat(opacityStr);
+            const lineHeight = lhStr === null ? null : (isNaN(parseFloat(lhStr)) ? lhStr : parseFloat(lhStr));
+            const letterSpacing = isNaN(parseFloat(lsStr)) ? lsStr : parseFloat(lsStr);
+            const zIndex = ziStr === null ? null : (isNaN(parseFloat(ziStr)) ? ziStr : parseInt(ziStr, 10));
+            const gap = gapStr === null ? null : parseFloat(gapStr);
 
             const readEdges = (): BoxEdges => {
-                const e = { top: view.getFloat32(offset), right: view.getFloat32(offset + 4), bottom: view.getFloat32(offset + 8), left: view.getFloat32(offset + 12) };
+                const edges = { top: view.getFloat32(offset), right: view.getFloat32(offset + 4), bottom: view.getFloat32(offset + 8), left: view.getFloat32(offset + 12) };
                 offset += 16;
-                return e;
+                return edges;
             };
             const padding = readEdges();
             const margin = readEdges();
@@ -194,9 +231,11 @@ export class BitBridge {
                 styles: {
                     display, position, boxSizing, padding, margin, border,
                     fontSize, fontWeight, fontFamily, opacity, color, backgroundColor,
-                    lineHeight: null, letterSpacing: 0,
-                    overflow: "visible", overflowX: "visible", overflowY: "visible",
-                    borderRadius: "0", gap: null, zIndex: null
+                    lineHeight,
+                    letterSpacing,
+                    borderRadius, borderColor, boxShadow, outline, outlineColor,
+                    overflow, overflowX, overflowY,
+                    gap, zIndex
                 },
                 measurements: {
                     toParent: { top: 0, left: 0, bottom: 0, right: 0 },

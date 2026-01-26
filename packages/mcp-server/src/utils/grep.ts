@@ -103,9 +103,9 @@ export function caliperGrep(query: string, rootDir: string, tag?: string): GrepR
         const tagArgs = [...baseArgs, "-e", tagPattern];
         const tagResults = parseRgOutput(runRg(tagArgs, normalizedRootDir), normalizedRootDir, "tag-context");
 
-        for (const r of tagResults) {
-            if (!results.some(x => x.file === r.file && x.line === r.line)) {
-                results.push(r);
+        for (const result of tagResults) {
+            if (!results.some(existing => existing.file === result.file && existing.line === result.line)) {
+                results.push(result);
             }
         }
     }
@@ -119,9 +119,9 @@ export function caliperGrep(query: string, rootDir: string, tag?: string): GrepR
         const partialArgs = [...baseArgs, query];
         const partialResults = parseRgOutput(runRg(partialArgs, normalizedRootDir), normalizedRootDir, "partial");
 
-        for (const r of partialResults) {
-            if (!results.some(x => x.file === r.file && x.line === r.line)) {
-                results.push(r);
+        for (const result of partialResults) {
+            if (!results.some(existing => existing.file === result.file && existing.line === result.line)) {
+                results.push(result);
             }
         }
     }

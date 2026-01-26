@@ -180,12 +180,12 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       };
     }
 
-    const getElSummary = (el: Element) => ({
-      tagName: el.tagName.toLowerCase(),
-      id: el.id || undefined,
-      classList: filterRuntimeClasses(el.classList),
-      agentId: el.getAttribute("data-caliper-agent-id") || undefined,
-      text: getElementDirectText(el),
+    const getElSummary = (element: Element) => ({
+      tagName: element.tagName.toLowerCase(),
+      id: element.id || undefined,
+      classList: filterRuntimeClasses(element.classList),
+      agentId: element.getAttribute("data-caliper-agent-id") || undefined,
+      text: getElementDirectText(element),
     });
 
     return {

@@ -112,7 +112,7 @@ export function walkAndMeasure(
     }
 
     const rootNode = createNodeSnapshot(rootElement, 0);
-    const queue: Array<{ el: Element; node: CaliperNode }> = [{ el: rootElement, node: rootNode }];
+    const queue: Array<{ element: Element; node: CaliperNode }> = [{ element: rootElement, node: rootNode }];
 
     if (visualize) {
         showWalkBoundary(rootElement, rootNode.agentId, true);
@@ -122,39 +122,39 @@ export function walkAndMeasure(
     let maxDepthReached = 0;
 
     while (queue.length > 0) {
-        const { el, node } = queue.shift()!;
+        const { element, node } = queue.shift()!;
         nodeCount++;
         maxDepthReached = Math.max(maxDepthReached, node.depth);
 
         if (visualize) {
-            showWalkBoundary(el, node.agentId, true);
+            showWalkBoundary(element, node.agentId, true);
         }
 
         if (node.depth >= maxDepth) continue;
 
-        const allChildren = Array.from(el.children);
+        const allChildren = Array.from(element.children);
         const visibleChildren = allChildren.filter(isVisible);
         node.measurements.siblingCount = visibleChildren.length;
 
         let visibleIdx = 0;
         for (let domIdx = 0; domIdx < allChildren.length; domIdx++) {
-            const childEl = allChildren[domIdx]!;
-            if (!isVisible(childEl)) continue;
+            const childElement = allChildren[domIdx]!;
+            if (!isVisible(childElement)) continue;
 
-            const childNode = createNodeSnapshot(childEl, node.depth + 1, domIdx, visibleIdx);
+            const childNode = createNodeSnapshot(childElement, node.depth + 1, domIdx, visibleIdx);
             childNode.parentAgentId = node.agentId;
 
             if (visualize) {
-                showChildBoundary(childEl, childNode.agentId);
+                showChildBoundary(childElement, childNode.agentId);
             }
 
-            const pPadding = node.styles.padding;
-            const pRect = node.rect;
+            const parentPadding = node.styles.padding;
+            const parentRect = node.rect;
             childNode.measurements.toParent = {
-                top: childNode.rect.top - (pRect.top + pPadding.top),
-                left: childNode.rect.left - (pRect.left + pPadding.left),
-                bottom: (pRect.bottom - pPadding.bottom) - childNode.rect.bottom,
-                right: (pRect.right - pPadding.right) - childNode.rect.right,
+                top: childNode.rect.top - (parentRect.top + parentPadding.top),
+                left: childNode.rect.left - (parentRect.left + parentPadding.left),
+                bottom: (parentRect.bottom - parentPadding.bottom) - childNode.rect.bottom,
+                right: (parentRect.right - parentPadding.right) - childNode.rect.right,
             };
 
             if (visibleIdx > 0) {
@@ -175,7 +175,7 @@ export function walkAndMeasure(
             }
 
             node.children.push(childNode);
-            queue.push({ el: childEl, node: childNode });
+            queue.push({ element: childElement, node: childNode });
             visibleIdx++;
         }
     }

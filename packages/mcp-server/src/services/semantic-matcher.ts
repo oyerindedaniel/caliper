@@ -3,7 +3,11 @@ import type {
     SemanticNode,
     NodePair,
     MatchSignal,
+    DesignTokenDictionary,
+    Framework,
+    ContextMetrics,
 } from "@oyerinde/caliper-schema";
+import { inferStylesFromClasses, parseInlineStyles } from "./style-mapper.js";
 
 interface MatchCandidate {
     actualIdx: number;
@@ -60,8 +64,8 @@ function calculateTextScore(actualText: string | undefined, expectedText: string
 function calculateClassScore(actualClasses: string[], expectedClasses: string[]): { score: number; signal?: MatchSignal } {
     if (actualClasses.length === 0 || expectedClasses.length === 0) return { score: 0 };
 
-    const actualSet = new Set(actualClasses.map(c => c.toLowerCase()));
-    const expectedSet = new Set(expectedClasses.map(c => c.toLowerCase()));
+    const actualSet = new Set(actualClasses.map(className => className.toLowerCase()));
+    const expectedSet = new Set(expectedClasses.map(className => className.toLowerCase()));
 
     let matches = 0;
     for (const cls of expectedSet) {
@@ -110,8 +114,15 @@ function calculateLayoutScore(
 
 export function calculateSemanticSimilarity(
     actual: CaliperNode,
-    expected: SemanticNode
+    expected: SemanticNode,
+    context?: { framework: Framework, tokens: DesignTokenDictionary, metrics?: ContextMetrics }
 ): { score: number; signals: MatchSignal[] } {
+    if (context && Object.keys(expected.inferredStyles).length === 0) {
+        const classStyles = inferStylesFromClasses(expected.classes, context.framework, context.tokens, context.metrics);
+        const inlineStyles = expected.rawStyles ? parseInlineStyles(expected.rawStyles) : {};
+        expected.inferredStyles = { ...classStyles, ...inlineStyles };
+    }
+
     const signals: MatchSignal[] = [];
     let totalScore = 0;
 
@@ -146,7 +157,8 @@ export function calculateSemanticSimilarity(
 
 export function greedyChildAlignment(
     actualChildren: CaliperNode[],
-    expectedChildren: SemanticNode[]
+    expectedChildren: SemanticNode[],
+    context?: { framework: Framework, tokens: DesignTokenDictionary, metrics?: ContextMetrics }
 ): Array<{ actualIdx: number; expectedIdx: number; score: number; signals: MatchSignal[] }> {
     if (actualChildren.length === 0 || expectedChildren.length === 0) {
         return [];
@@ -156,7 +168,7 @@ export function greedyChildAlignment(
 
     for (let i = 0; i < actualChildren.length; i++) {
         for (let j = 0; j < expectedChildren.length; j++) {
-            const { score, signals } = calculateSemanticSimilarity(actualChildren[i]!, expectedChildren[j]!);
+            const { score, signals } = calculateSemanticSimilarity(actualChildren[i]!, expectedChildren[j]!, context);
             candidates.push({ actualIdx: i, expectedIdx: j, score, signals });
         }
     }
@@ -192,7 +204,8 @@ export function pairHierarchically(
     actualRoot: CaliperNode,
     expectedRoot: SemanticNode,
     actualIdLookup: Map<string, CaliperNode>,
-    expectedIndexLookup: Map<number, SemanticNode>
+    expectedIndexLookup: Map<number, SemanticNode>,
+    context?: { framework: Framework, tokens: DesignTokenDictionary, metrics?: ContextMetrics }
 ): HierarchicalPairingResult {
     const pairs: NodePair[] = [];
     const matchedActualIds = new Set<string>();
@@ -216,7 +229,7 @@ export function pairHierarchically(
     buildExpectedIndexMap(expectedRoot, rootExpectedIdx);
 
     function recurse(actual: CaliperNode, expected: SemanticNode, expectedIdx: number, depth: number): void {
-        const { score, signals } = calculateSemanticSimilarity(actual, expected);
+        const { score, signals } = calculateSemanticSimilarity(actual, expected, context);
 
         pairs.push({
             actualNodeId: actual.agentId,
@@ -229,30 +242,22 @@ export function pairHierarchically(
         matchedActualIds.add(actual.agentId);
         matchedExpectedIndices.add(expectedIdx);
 
-        const childAlignments = greedyChildAlignment(actual.children, expected.children);
+        // greedyChildAlignment is O(Ca * Ce), we keep it as is but avoid redundant index searches.
+        const childAlignments = greedyChildAlignment(actual.children, expected.children, context);
 
         for (const alignment of childAlignments) {
             const actualChild = actual.children[alignment.actualIdx]!;
             const expectedChild = expected.children[alignment.expectedIdx]!;
 
-            let childExpectedIdx = -1;
-            let counter = rootExpectedIdx + 1;
 
-            const findIdx = (node: SemanticNode, target: SemanticNode): number => {
-                if (node === target) return counter;
-                counter++;
-                for (const c of node.children) {
-                    const found = findIdx(c, target);
-                    if (found !== -1) return found;
-                }
-                return -1;
-            };
-
-            childExpectedIdx = findIdx(expectedRoot, expectedChild);
-            if (childExpectedIdx === -1) childExpectedIdx = counter;
-
+            const childExpectedIdx = nodeToIndex.get(expectedChild) ?? -1;
             recurse(actualChild, expectedChild, childExpectedIdx, depth + 1);
         }
+    }
+
+    const nodeToIndex = new Map<SemanticNode, number>();
+    for (const [idx, node] of expectedIndexLookup.entries()) {
+        nodeToIndex.set(node, idx);
     }
 
     recurse(actualRoot, expectedRoot, rootExpectedIdx, 0);

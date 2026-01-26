@@ -1,116 +1,149 @@
-import type { DesignTokenDictionary, MissedToken } from "@oyerinde/caliper-schema";
+import type { DesignTokenDictionary, MissedToken, ContextMetrics } from "@oyerinde/caliper-schema";
+import { parseColor, calculateDeltaE, NormalizedColor } from "../utils/color-utils.js";
+import { toPixels } from "../utils/unit-utils.js";
 
-function normalizeColorValue(value: string): string {
+function normalizeValue(property: string, value: string, metrics?: ContextMetrics, percentageReference?: number, tokens?: DesignTokenDictionary): string | number {
     const trimmed = value.trim().toLowerCase();
 
-    if (trimmed.startsWith("rgb")) {
-        const match = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
-        if (match) {
-            const r = parseInt(match[1]!, 10).toString(16).padStart(2, "0");
-            const g = parseInt(match[2]!, 10).toString(16).padStart(2, "0");
-            const b = parseInt(match[3]!, 10).toString(16).padStart(2, "0");
-            return `#${r}${g}${b}`;
-        }
-    }
-
-    if (trimmed.startsWith("#")) {
-        if (trimmed.length === 4) {
-            return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
-        }
-        return trimmed.slice(0, 7);
-    }
-
-    return trimmed;
-}
-
-function normalizeSpacingValue(value: string): string {
-    const trimmed = value.trim().toLowerCase();
-
-    if (trimmed.endsWith("rem")) {
-        const num = parseFloat(trimmed);
-        return `${num * 16}px`;
-    }
-
-    if (trimmed.endsWith("em")) {
-        const num = parseFloat(trimmed);
-        return `${num * 16}px`;
-    }
-
-    return trimmed;
-}
-
-function normalizeValue(property: string, value: string): string {
-    const colorProps = ["color", "background-color", "backgroundColor", "border-color", "borderColor"];
+    const colorProps = ["color", "background-color", "backgroundColor", "border-color", "borderColor", "outline-color", "outlineColor"];
     if (colorProps.includes(property)) {
-        return normalizeColorValue(value);
+        return trimmed;
     }
 
     const spacingProps = [
         "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+        "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
         "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
-        "gap", "width", "height", "border-radius", "font-size"
+        "marginTop", "marginRight", "marginBottom", "marginLeft",
+        "gap", "width", "height", "fontSize", "font-size", "border-radius", "borderRadius",
+        "letter-spacing", "letterSpacing", "line-height", "lineHeight", "outline-width", "outlineWidth"
     ];
     if (spacingProps.includes(property)) {
-        return normalizeSpacingValue(value);
+        const ctx = metrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 };
+        return toPixels(value, ctx, { percentageReference, tokens });
     }
 
-    return value.trim().toLowerCase();
+    return trimmed;
 }
 
 export class TokenResolverService {
-    private colorIndex: Map<string, string> = new Map();
-    private spacingIndex: Map<string, string> = new Map();
-    private borderRadiusIndex: Map<string, string> = new Map();
+    private colorIndex: Map<string, { name: string, normalized: NormalizedColor }> = new Map();
+    private spacingIndex: Array<{ name: string, px: number }> = [];
+    private borderRadiusIndex: Array<{ name: string, px: number }> = [];
+    private currentMetrics?: ContextMetrics;
+    private resolutionCache: Map<string, number> = new Map();
 
-    buildIndex(tokens: DesignTokenDictionary): void {
+    buildIndex(tokens: DesignTokenDictionary, metrics?: ContextMetrics): void {
         this.colorIndex.clear();
-        this.spacingIndex.clear();
-        this.borderRadiusIndex.clear();
+        this.spacingIndex = [];
+        this.borderRadiusIndex = [];
+        this.resolutionCache.clear();
+        this.currentMetrics = metrics;
+
+        const ctx = metrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 };
 
         for (const [name, value] of Object.entries(tokens.colors)) {
-            const normalized = normalizeColorValue(value);
-            this.colorIndex.set(normalized, name);
+            const normalized = parseColor(value);
+            this.colorIndex.set(value.toLowerCase(), { name, normalized });
         }
 
+        const spacingList: Array<{ name: string, px: number }> = [];
         for (const [name, value] of Object.entries(tokens.spacing)) {
-            const normalized = normalizeSpacingValue(value);
-            this.spacingIndex.set(normalized, name);
+            const px = toPixels(value, ctx, { tokens });
+            spacingList.push({ name, px });
         }
+        this.spacingIndex = spacingList.sort((a, b) => a.px - b.px);
 
+        const radiusList: Array<{ name: string, px: number }> = [];
         for (const [name, value] of Object.entries(tokens.borderRadius)) {
-            const normalized = normalizeSpacingValue(value);
-            this.borderRadiusIndex.set(normalized, name);
+            const px = toPixels(value, ctx, { tokens });
+            radiusList.push({ name, px });
         }
+        this.borderRadiusIndex = radiusList.sort((a, b) => a.px - b.px);
     }
 
     findTokenByValue(
         tokens: DesignTokenDictionary,
         property: string,
-        value: string
+        value: string,
+        percentageReference?: number
     ): string | null {
-        const normalized = normalizeValue(property, value);
+        const trimmed = value.trim().toLowerCase();
 
         const colorProps = ["color", "background-color", "backgroundColor", "border-color", "borderColor"];
         if (colorProps.includes(property)) {
-            return this.colorIndex.get(normalized) ?? null;
+            if (this.colorIndex.has(trimmed)) return this.colorIndex.get(trimmed)!.name;
+
+            return this.findNearestColorToken(trimmed);
         }
 
         const spacingProps = [
-            "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
-            "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-            "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
-            "marginTop", "marginRight", "marginBottom", "marginLeft",
-            "gap", "width", "height", "fontSize", "font-size"
+            "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+            "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
+            "gap", "width", "height", "fontSize", "font-size", "borderRadius", "border-radius"
         ];
         if (spacingProps.includes(property)) {
-            return this.spacingIndex.get(normalized) ?? null;
-        }
-
-        if (property === "border-radius" || property === "borderRadius") {
-            return this.borderRadiusIndex.get(normalized) ?? null;
+            const pxValue = this.getCachedPx(value, this.currentMetrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 }, { tokens, percentageReference });
+            return this.findNearestSpacingToken(pxValue, property.includes("radius") ? "radius" : "spacing");
         }
 
         return null;
+    }
+
+    private findNearestColorToken(value: string): string | null {
+        const target = parseColor(value);
+        let bestMatch: string | null = null;
+        let minDistance = Infinity;
+
+        for (const { name, normalized } of this.colorIndex.values()) {
+            const distance = calculateDeltaE(target, normalized);
+            if (distance < minDistance) {
+                minDistance = distance;
+                bestMatch = name;
+            }
+        }
+
+        // Only return if it's "close enough" (perceptually similar)
+        return minDistance < 0.05 ? bestMatch : null;
+    }
+
+    private findNearestSpacingToken(pxValue: number, category: "spacing" | "radius"): string | null {
+        const sortedList = category === "radius" ? this.borderRadiusIndex : this.spacingIndex;
+        if (sortedList.length === 0) return null;
+
+        let low = 0;
+        let high = sortedList.length - 1;
+        let bestIdx = 0;
+        let minDiff = Infinity;
+
+        while (low <= high) {
+            const mid = Math.floor((low + high) / 2);
+            const midItem = sortedList[mid]!;
+            const diff = Math.abs(midItem.px - pxValue);
+
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestIdx = mid;
+            }
+
+            if (midItem.px < pxValue) {
+                low = mid + 1;
+            } else if (midItem.px > pxValue) {
+                high = mid - 1;
+            } else {
+                return midItem.name; // Exact match
+            }
+        }
+
+        return minDiff <= 2 ? sortedList[bestIdx]!.name : null;
+    }
+
+    private getCachedPx(value: string, metrics: ContextMetrics, options: { percentageReference?: number, tokens?: DesignTokenDictionary }): number {
+        const cacheKey = `${value}|${metrics.viewportWidth}|${metrics.rootFontSize}|${options.percentageReference ?? 0}`;
+        if (this.resolutionCache.has(cacheKey)) return this.resolutionCache.get(cacheKey)!;
+        const result = toPixels(value, metrics, options);
+        this.resolutionCache.set(cacheKey, result);
+        return result;
     }
 
     resolveToken(tokens: DesignTokenDictionary, tokenName: string): string | null {
@@ -126,17 +159,19 @@ export class TokenResolverService {
         expectedValue: string,
         actualValue: string,
         tokens: DesignTokenDictionary,
-        selector: string
+        selector: string,
+        metrics?: ContextMetrics,
+        percentageReference?: number
     ): { isMatch: boolean; tokenName?: string; missedToken?: MissedToken } {
-        const normalizedExpected = normalizeValue(property, expectedValue);
-        const normalizedActual = normalizeValue(property, actualValue);
+        const normExpected = normalizeValue(property, expectedValue, metrics, percentageReference, tokens);
+        const normActual = normalizeValue(property, actualValue, metrics, percentageReference, tokens);
 
-        if (normalizedExpected === normalizedActual) {
-            const tokenName = this.findTokenByValue(tokens, property, expectedValue);
+        if (normExpected === normActual) {
+            const tokenName = this.findTokenByValue(tokens, property, expectedValue, percentageReference);
             return { isMatch: true, tokenName: tokenName ?? undefined };
         }
 
-        const tokenName = this.findTokenByValue(tokens, property, expectedValue);
+        const tokenName = this.findTokenByValue(tokens, property, expectedValue, percentageReference);
         if (tokenName) {
             const tokenCategory = this.getTokenCategory(property);
             return {
@@ -145,8 +180,8 @@ export class TokenResolverService {
                 missedToken: {
                     tokenName,
                     tokenCategory,
-                    expectedValue: normalizedExpected,
-                    actualValue: normalizedActual,
+                    expectedValue: String(normExpected),
+                    actualValue: String(normActual),
                     property,
                     selector,
                 },

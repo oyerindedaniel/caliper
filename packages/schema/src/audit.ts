@@ -51,15 +51,19 @@ export const CaliperComputedStylesSchema = z.object({
     fontSize: z.number(),
     fontWeight: z.string(),
     fontFamily: z.string(),
-    lineHeight: z.number().nullable(),
-    letterSpacing: z.number(),
+    lineHeight: z.union([z.number(), z.string()]).nullable(),
+    letterSpacing: z.union([z.number(), z.string()]),
     color: z.string(),
 
     // Visual
     backgroundColor: z.string(),
+    borderColor: z.string().optional(),
     borderRadius: z.string(),
-    opacity: z.number(),
-    zIndex: z.number().nullable(),
+    boxShadow: z.string().optional(),
+    opacity: z.union([z.number(), z.string()]),
+    outline: z.string().optional(),
+    outlineColor: z.string().optional(),
+    zIndex: z.union([z.number(), z.string()]).nullable(),
 
     // Overflow
     overflow: z.string(),

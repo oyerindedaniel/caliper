@@ -17,7 +17,7 @@ interface BridgeOptions {
 
 export function createWSBridge(options: BridgeOptions) {
   const { onIntent, wsUrl = DEFAULT_WS_URL } = options;
-  let ws: WebSocket | null = null;
+  let activeSocket: WebSocket | null = null;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let reconnectAttempts = 0;
 
@@ -33,7 +33,7 @@ export function createWSBridge(options: BridgeOptions) {
   function connect() {
     try {
       const socket = new WebSocket(wsUrl);
-      ws = socket;
+      activeSocket = socket;
 
       socket.onopen = () => {
         logger.info("Connected to MCP Relay Server");
@@ -80,14 +80,14 @@ export function createWSBridge(options: BridgeOptions) {
               );
             }
           }
-        } catch (e) {
-          logger.error("Failed to handle MCP message:", e);
+        } catch (error) {
+          logger.error("Failed to handle MCP message:", error);
           if (messageId && socket.readyState === WebSocket.OPEN) {
             socket.send(
               JSON.stringify({
                 type: "TOOL_RESPONSE",
                 id: messageId,
-                error: e instanceof Error ? e.message : String(e),
+                error: error instanceof Error ? error.message : String(error),
               })
             );
           }
@@ -95,8 +95,8 @@ export function createWSBridge(options: BridgeOptions) {
       };
 
       socket.onclose = () => {
-        if (ws === socket) {
-          ws = null;
+        if (activeSocket === socket) {
+          activeSocket = null;
           scheduleReconnect();
         }
       };
@@ -104,7 +104,7 @@ export function createWSBridge(options: BridgeOptions) {
       socket.onerror = () => {
         socket.close();
       };
-    } catch (e) {
+    } catch (error) {
       scheduleReconnect();
     }
   }
@@ -124,8 +124,8 @@ export function createWSBridge(options: BridgeOptions) {
   }
 
   function sendUpdate() {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(
+    if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+      activeSocket.send(
         JSON.stringify({
           type: "TAB_UPDATE",
           payload: {
@@ -144,9 +144,9 @@ export function createWSBridge(options: BridgeOptions) {
     destroy: () => {
       document.removeEventListener("visibilitychange", sendUpdate);
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
-      if (ws) {
-        ws.close();
-        ws = null;
+      if (activeSocket) {
+        activeSocket.close();
+        activeSocket = null;
       }
     },
   };

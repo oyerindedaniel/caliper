@@ -153,17 +153,30 @@ export function parseComputedStyles(styles: CSSStyleDeclaration): CaliperCompute
         fontSize: parseNumber(styles.fontSize),
         fontWeight: styles.fontWeight,
         fontFamily: styles.fontFamily,
-        lineHeight: styles.lineHeight === "normal" ? null : parseNumber(styles.lineHeight),
-        letterSpacing: parseNumber(styles.letterSpacing),
+        lineHeight: styles.lineHeight === "normal" ? "normal" : parseNumber(styles.lineHeight),
+        letterSpacing: styles.letterSpacing === "normal" ? "normal" : parseNumber(styles.letterSpacing),
         color: styles.color,
 
         backgroundColor: styles.backgroundColor,
+        borderColor: styles.borderColor,
         borderRadius: styles.borderRadius,
+        boxShadow: styles.boxShadow || undefined,
         opacity: parseNumber(styles.opacity),
+        outline: styles.outline || undefined,
+        outlineColor: styles.outlineColor,
         zIndex: styles.zIndex === "auto" ? null : parseInt(styles.zIndex, 10),
 
         overflow: styles.overflow,
         overflowX: styles.overflowX,
         overflowY: styles.overflowY,
+    };
+}
+
+export function getContextMetrics() {
+    return {
+        rootFontSize: parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
     };
 }

@@ -22,10 +22,18 @@ export const InferredStylesSchema = z.object({
     width: z.string().optional(),
     height: z.string().optional(),
     backgroundColor: z.string().optional(),
+    borderColor: z.string().optional(),
     color: z.string().optional(),
     fontSize: z.string().optional(),
     fontWeight: z.string().optional(),
+    lineHeight: z.union([z.string(), z.number()]).optional(),
+    letterSpacing: z.string().optional(),
     borderRadius: z.string().optional(),
+    boxShadow: z.string().optional(),
+    opacity: z.number().optional(),
+    outline: z.string().optional(),
+    outlineColor: z.string().optional(),
+    zIndex: z.number().optional(),
 });
 
 export const SemanticNodeSchema: z.ZodType<SemanticNode> = z.lazy(() =>
@@ -96,6 +104,19 @@ export const FrameworkSchema = z.enum([
 ]);
 
 export type Framework = z.infer<typeof FrameworkSchema>;
+
+// ============================================================================
+// CONTEXT METRICS (Browser environment details for relative unit resolution)
+// ============================================================================
+
+export const ContextMetricsSchema = z.object({
+    rootFontSize: z.number(),
+    devicePixelRatio: z.number(),
+    viewportWidth: z.number(),
+    viewportHeight: z.number(),
+});
+
+export type ContextMetrics = z.infer<typeof ContextMetricsSchema>;
 
 // ============================================================================
 // NODE PAIR (Semantic Harmony pairing result)
