@@ -109,10 +109,9 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 
 | Prompt | Description |
 | :--- | :--- |
-| `caliper-selector-audit` | Comprehensive element audit (styles, spacing, hierarchy). |
+| `caliper-selector-audit` | Comprehensive, structured element audit (source discovery + precision analysis). |
 | `caliper-figma-reconcile` | Deep reconciliation workflow (Primary + Secondary breakpoints). |
-| `caliper-cross-compare` | Compare two elements (A reference vs B target) to fix styling. |
-| `caliper-audit-harness` | Mandatory context-gathering loop to ensure stable code edits. |
+| `caliper-selectors-compare` | Compare two elements (A reference vs B target) to fix styling. |
 
 ## Resources 📚
 
