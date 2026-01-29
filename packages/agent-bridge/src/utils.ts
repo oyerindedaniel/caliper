@@ -3,14 +3,15 @@ import type {
     MeasurementResult,
     ScrollState as CoreScrollState,
     MeasurementLine as CoreMeasurementLine
-} from "@oyerinde/caliper/core";
+} from "@caliper/core";
 import type {
     SelectionMetadata as BridgeSelectionMetadata,
     MeasurementResult as BridgeMeasurementResult,
     ScrollState as BridgeScrollState,
     CaliperComputedStyles,
     Rect,
-    MeasurementLine as BridgeMeasurementLine
+    MeasurementLine as BridgeMeasurementLine,
+    ContextMetrics
 } from "@oyerinde/caliper-schema";
 
 export function sanitizeSelection(
@@ -36,6 +37,7 @@ export function sanitizeSelection(
             elementWidth: metadata.stickyConfig.elementWidth,
             elementHeight: metadata.stickyConfig.elementHeight,
         } : undefined,
+        hasContainingBlock: metadata.hasContainingBlock,
     };
 }
 
@@ -104,6 +106,8 @@ export function sanitizeMeasurement(
             elementWidth: result.secondarySticky.elementWidth,
             elementHeight: result.secondarySticky.elementHeight,
         } : undefined,
+        primaryHasContainingBlock: result.primaryHasContainingBlock,
+        secondaryHasContainingBlock: result.secondaryHasContainingBlock,
     };
 }
 
@@ -172,11 +176,13 @@ export function parseComputedStyles(styles: CSSStyleDeclaration): CaliperCompute
     };
 }
 
-export function getContextMetrics() {
+export function getContextMetrics(): ContextMetrics {
     return {
         rootFontSize: parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16,
         devicePixelRatio: window.devicePixelRatio || 1,
         viewportWidth: document.documentElement.clientWidth,
         viewportHeight: document.documentElement.clientHeight,
+        visualViewportWidth: window.visualViewport?.width || window.innerWidth,
+        visualViewportHeight: window.visualViewport?.height || window.innerHeight,
     };
 }

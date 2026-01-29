@@ -1,35 +1,91 @@
 import type { DesignTokenDictionary, MissedToken, ContextMetrics } from "@oyerinde/caliper-schema";
+import { DEFAULT_CONTEXT_METRICS } from "@oyerinde/caliper-schema";
 import { parseColor, calculateDeltaE, NormalizedColor } from "../utils/color-utils.js";
 import { toPixels } from "../utils/unit-utils.js";
+import {
+    PROPERTY_CONFIG,
+    FONT_WEIGHT_MAP,
+    LAYOUT_VALUES
+} from "../shared/properties.js";
 
-function normalizeValue(property: string, value: string, metrics?: ContextMetrics, percentageReference?: number, tokens?: DesignTokenDictionary): string | number {
-    const trimmed = value.trim().toLowerCase();
+export function normalizeValue(property: string, value: string, metrics?: ContextMetrics, percentageReference?: number, tokens?: DesignTokenDictionary): string | number {
+    const trimmed = value.trim();
+    const lowValue = trimmed.toLowerCase();
+    const config = PROPERTY_CONFIG[property];
 
-    const colorProps = ["color", "background-color", "backgroundColor", "border-color", "borderColor", "outline-color", "outlineColor"];
-    if (colorProps.includes(property)) {
-        return trimmed;
+    if (!config) {
+        const camelCase = property.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        const fallbackConfig = PROPERTY_CONFIG[camelCase];
+        if (fallbackConfig) {
+            return normalizeValue(camelCase, value, metrics, percentageReference, tokens);
+        }
+        return lowValue;
     }
 
-    const spacingProps = [
-        "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
-        "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-        "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
-        "marginTop", "marginRight", "marginBottom", "marginLeft",
-        "gap", "width", "height", "fontSize", "font-size", "border-radius", "borderRadius",
-        "letter-spacing", "letterSpacing", "line-height", "lineHeight", "outline-width", "outlineWidth"
-    ];
-    if (spacingProps.includes(property)) {
-        const ctx = metrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 };
-        return toPixels(value, ctx, { percentageReference, tokens });
+    // Global Keywords
+    const globals = ["inherit", "initial", "unset", "revert", "revert-layer"];
+    if (globals.includes(lowValue)) return lowValue;
+
+    // Symmetric Layout Mapping
+    const layoutMap = (LAYOUT_VALUES as Record<string, Record<string, string>>)[property];
+    if (layoutMap && layoutMap[lowValue]) {
+        return layoutMap[lowValue]!;
     }
 
-    return trimmed;
+    switch (config.valueType) {
+        case "color":
+            return lowValue;
+
+        case "keyword":
+            return lowValue;
+
+        case "number":
+            const num = parseFloat(trimmed);
+            return isNaN(num) ? lowValue : num;
+
+        case "hybrid":
+            // 1. Font Weight Mapping (Priority for fontWeight)
+            if (property === "fontWeight") {
+                if (FONT_WEIGHT_MAP[lowValue]) return parseInt(FONT_WEIGHT_MAP[lowValue]!, 10);
+            }
+
+            // 2. Common Keywords
+            if (lowValue === "normal" || lowValue === "auto" || lowValue === "none" || lowValue === "contents") {
+                return lowValue;
+            }
+
+            // 3. Pure numeric check (z-index, opacity, line-height 1.5)
+            const numericValue = parseFloat(trimmed);
+            if (!isNaN(numericValue) && trimmed.match(/^-?[\d.]+$/)) {
+                return numericValue;
+            }
+
+            // 4. Length/Token/Calc check
+            if (trimmed.match(/[a-z%]/i) || trimmed.startsWith("var") || trimmed.startsWith("calc")) {
+                const ctx = metrics ?? DEFAULT_CONTEXT_METRICS;
+                return toPixels(value, ctx, { percentageReference, tokens });
+            }
+
+            return lowValue;
+
+        case "length":
+            // Length should only call toPixels if it looks like a dimension or number
+            if (trimmed.match(/[a-z%]/i) || trimmed.match(/^-?[\d.]+$/) || trimmed.startsWith("var") || trimmed.startsWith("calc")) {
+                const ctx = metrics ?? DEFAULT_CONTEXT_METRICS;
+                return toPixels(value, ctx, { percentageReference, tokens });
+            }
+            return lowValue;
+
+        default:
+            return lowValue;
+    }
 }
 
 export class TokenResolverService {
     private colorIndex: Map<string, { name: string, normalized: NormalizedColor }> = new Map();
     private spacingIndex: Array<{ name: string, px: number }> = [];
     private borderRadiusIndex: Array<{ name: string, px: number }> = [];
+    private typographyIndex: Array<{ name: string, px: number }> = [];
     private currentMetrics?: ContextMetrics;
     private resolutionCache: Map<string, number> = new Map();
 
@@ -37,10 +93,11 @@ export class TokenResolverService {
         this.colorIndex.clear();
         this.spacingIndex = [];
         this.borderRadiusIndex = [];
+        this.typographyIndex = [];
         this.resolutionCache.clear();
         this.currentMetrics = metrics;
 
-        const ctx = metrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 };
+        const ctx = metrics ?? DEFAULT_CONTEXT_METRICS;
 
         for (const [name, value] of Object.entries(tokens.colors)) {
             const normalized = parseColor(value);
@@ -60,6 +117,12 @@ export class TokenResolverService {
             radiusList.push({ name, px });
         }
         this.borderRadiusIndex = radiusList.sort((a, b) => a.px - b.px);
+
+        const typographyList: Array<{ name: string, px: number }> = [];
+        for (const [name, def] of Object.entries(tokens.typography)) {
+            typographyList.push({ name, px: def.fontSize });
+        }
+        this.typographyIndex = typographyList.sort((a, b) => a.px - b.px);
     }
 
     findTokenByValue(
@@ -69,22 +132,58 @@ export class TokenResolverService {
         percentageReference?: number
     ): string | null {
         const trimmed = value.trim().toLowerCase();
+        const config = PROPERTY_CONFIG[property];
 
-        const colorProps = ["color", "background-color", "backgroundColor", "border-color", "borderColor"];
-        if (colorProps.includes(property)) {
-            if (this.colorIndex.has(trimmed)) return this.colorIndex.get(trimmed)!.name;
+        if (!config) {
+            const camelCase = property.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            if (PROPERTY_CONFIG[camelCase]) {
+                return this.findTokenByValue(tokens, camelCase, value, percentageReference);
+            }
+            return null;
+        }
 
+        if (config.valueType === "color") {
+            if (this.colorIndex.has(trimmed)) {
+                return this.colorIndex.get(trimmed)!.name;
+            }
             return this.findNearestColorToken(trimmed);
         }
 
-        const spacingProps = [
-            "padding", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-            "margin", "marginTop", "marginRight", "marginBottom", "marginLeft",
-            "gap", "width", "height", "fontSize", "font-size", "borderRadius", "border-radius"
-        ];
-        if (spacingProps.includes(property)) {
-            const pxValue = this.getCachedPx(value, this.currentMetrics ?? { rootFontSize: 16, devicePixelRatio: 1, viewportWidth: 1920, viewportHeight: 1080 }, { tokens, percentageReference });
-            return this.findNearestSpacingToken(pxValue, property.includes("radius") ? "radius" : "spacing");
+        if (config.valueType === "length") {
+            const pxValue = this.getCachedPx(
+                value,
+                this.currentMetrics ?? DEFAULT_CONTEXT_METRICS,
+                { tokens, percentageReference }
+            );
+
+            if (config.category === "borderRadius") {
+                return this.findNearestSpacingToken(pxValue, "radius");
+            } else if (config.category === "typography") {
+                return this.findNearestSpacingToken(pxValue, "typography");
+            } else {
+                return this.findNearestSpacingToken(pxValue, "spacing");
+            }
+        }
+
+        // Hybrid values (fontWeight, lineHeight, etc.) - try to match if numeric
+        if (config.valueType === "hybrid") {
+            const numericValue = parseFloat(trimmed);
+            if (!isNaN(numericValue)) {
+                // Determine if we should treat it as a tokenizable length
+                // fontWeight (typography) usually doesn't have tokens for numbers
+                // width/height/gap (spacing) usually DO have tokens
+                const pxValue = this.getCachedPx(
+                    value,
+                    this.currentMetrics ?? DEFAULT_CONTEXT_METRICS,
+                    { tokens, percentageReference }
+                );
+
+                if (config.category === "borderRadius") {
+                    return this.findNearestSpacingToken(pxValue, "radius");
+                } else if (config.category === "spacing") {
+                    return this.findNearestSpacingToken(pxValue, "spacing");
+                }
+            }
         }
 
         return null;
@@ -107,8 +206,11 @@ export class TokenResolverService {
         return minDistance < 0.05 ? bestMatch : null;
     }
 
-    private findNearestSpacingToken(pxValue: number, category: "spacing" | "radius"): string | null {
-        const sortedList = category === "radius" ? this.borderRadiusIndex : this.spacingIndex;
+    private findNearestSpacingToken(pxValue: number, category: "spacing" | "radius" | "typography"): string | null {
+        let sortedList = this.spacingIndex;
+        if (category === "radius") sortedList = this.borderRadiusIndex;
+        if (category === "typography") sortedList = this.typographyIndex;
+
         if (sortedList.length === 0) return null;
 
         let low = 0;
@@ -192,14 +294,24 @@ export class TokenResolverService {
     }
 
     private getTokenCategory(property: string): "colors" | "spacing" | "typography" | "borderRadius" {
-        const colorProps = ["color", "background-color", "backgroundColor", "border-color", "borderColor"];
-        if (colorProps.includes(property)) return "colors";
+        const config = PROPERTY_CONFIG[property];
 
-        if (property === "border-radius" || property === "borderRadius") return "borderRadius";
+        if (!config) {
+            // Try kebab-case to camelCase conversion
+            const camelCase = property.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            const fallbackConfig = PROPERTY_CONFIG[camelCase];
+            if (fallbackConfig) {
+                return this.getTokenCategory(camelCase);
+            }
+            return "spacing"; // Default fallback
+        }
 
-        if (property === "font-size" || property === "fontSize") return "typography";
+        // Map layout category to spacing (layout properties don't have tokens)
+        if (config.category === "layout") {
+            return "spacing";
+        }
 
-        return "spacing";
+        return config.category;
     }
 
     generateCssRecommendation(

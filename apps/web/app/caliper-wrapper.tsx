@@ -2,31 +2,24 @@
 
 import { useEffect } from "react";
 import { init } from "@oyerinde/caliper";
-import { initAgentBridge } from "@oyerinde/caliper-bridge";
+import { CaliperBridge } from "@oyerinde/caliper-bridge";
 import { useConfig } from "./config-context";
 
 export function CaliperWrapper() {
   const { getCaliperConfig } = useConfig();
-  const config = getCaliperConfig();
+  const config = getCaliperConfig()
   const configHash = JSON.stringify(config);
 
   useEffect(() => {
     const caliper = init(config);
-    let cleanupAgent: (() => void) | null = null;
-    let isActive = true;
 
-    caliper.waitForSystems().then((systems) => {
-      if (!isActive) return;
-
-      cleanupAgent = initAgentBridge({
+    caliper.use(
+      CaliperBridge({
         enabled: true,
-        systems,
-      });
-    });
+      })
+    );
 
     return () => {
-      isActive = false;
-      cleanupAgent?.();
       caliper.dispose();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

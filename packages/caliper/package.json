@@ -1,6 +1,6 @@
 {
   "name": "@oyerinde/caliper",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "description": "High-precision browser measurements, projections, and layout auditing",
   "type": "module",
   "main": "dist/index.cjs",
@@ -43,10 +43,14 @@
         }
       }
     },
-    "./core": {
-      "types": "./dist/core.d.ts",
-      "import": "./dist/core.js",
-      "require": "./dist/core.cjs"
+    "./bridge": {
+      "node": {
+        "import": "./dist/bridge.server.js",
+        "require": "./dist/bridge.server.cjs"
+      },
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js",
+      "require": "./dist/bridge.cjs"
     }
   },
   "files": [
@@ -90,6 +94,8 @@
     "@babel/preset-typescript": "^7.28.5",
     "@caliper/core": "workspace:*",
     "@caliper/overlay": "workspace:*",
+    "@microsoft/api-extractor": "^7.55.2",
+    "@oyerinde/caliper-bridge": "workspace:*",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^24.10.9",

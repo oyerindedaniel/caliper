@@ -11,54 +11,11 @@ import type {
 } from "@oyerinde/caliper-schema";
 
 import { semanticParserService } from "./semantic-parser-service.js";
+import { applyInferredStylesToTree } from "./style-mapper.js";
 import { tokenResolverService, TokenResolverService } from "./token-resolver-service.js";
 import { pairHierarchically, HierarchicalPairingResult } from "./semantic-matcher.js";
-
-interface ReconciliationInput {
-    caliperTree: CaliperNode;
-    expectedHtml: string;
-    designTokens: DesignTokenDictionary;
-    framework: Framework;
-    figmaLayerUrl: string;
-    metrics?: ContextMetrics;
-    secondaryHtml?: string;
-    secondaryTokens?: DesignTokenDictionary;
-}
-
-interface PropertyDefinition {
-    id: string;
-    inferredKey: keyof NonNullable<SemanticNode["inferredStyles"]>;
-    actualValue: (node: CaliperNode, parentWidth: number, parentHeight: number) => string | null;
-    percentageBasis?: (parentWidth: number, parentHeight: number, node: CaliperNode) => number;
-    category: "colors" | "spacing" | "typography" | "borderRadius";
-}
-
-const PROPERTY_REGISTRY: PropertyDefinition[] = [
-    { id: "gap", inferredKey: "gap", actualValue: node => node.styles.gap !== null ? `${node.styles.gap}px` : null, percentageBasis: width => width, category: "spacing" },
-    { id: "paddingTop", inferredKey: "padding", actualValue: node => `${node.styles.padding.top}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "paddingRight", inferredKey: "padding", actualValue: node => `${node.styles.padding.right}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "paddingBottom", inferredKey: "padding", actualValue: node => `${node.styles.padding.bottom}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "paddingLeft", inferredKey: "padding", actualValue: node => `${node.styles.padding.left}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "marginTop", inferredKey: "margin", actualValue: node => `${node.styles.margin.top}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "marginRight", inferredKey: "margin", actualValue: node => `${node.styles.margin.right}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "marginBottom", inferredKey: "margin", actualValue: node => `${node.styles.margin.bottom}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "marginLeft", inferredKey: "margin", actualValue: node => `${node.styles.margin.left}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "fontSize", inferredKey: "fontSize", actualValue: node => `${node.styles.fontSize}px`, percentageBasis: (_, __, node) => node.styles.fontSize, category: "typography" },
-    { id: "fontWeight", inferredKey: "fontWeight", actualValue: node => node.styles.fontWeight, category: "typography" },
-    { id: "lineHeight", inferredKey: "lineHeight", actualValue: node => node.styles.lineHeight === "normal" ? "normal" : `${node.styles.lineHeight}px`, percentageBasis: (_, __, node) => node.styles.fontSize, category: "typography" },
-    { id: "letterSpacing", inferredKey: "letterSpacing", actualValue: node => node.styles.letterSpacing === "normal" ? "normal" : `${node.styles.letterSpacing}px`, percentageBasis: (_, __, node) => node.styles.fontSize, category: "typography" },
-    { id: "borderRadius", inferredKey: "borderRadius", actualValue: node => node.styles.borderRadius, percentageBasis: width => width, category: "borderRadius" },
-    { id: "backgroundColor", inferredKey: "backgroundColor", actualValue: node => node.styles.backgroundColor, category: "colors" },
-    { id: "borderColor", inferredKey: "borderColor", actualValue: node => node.styles.borderColor || null, category: "colors" },
-    { id: "color", inferredKey: "color", actualValue: node => node.styles.color, category: "colors" },
-    { id: "boxShadow", inferredKey: "boxShadow", actualValue: node => node.styles.boxShadow || "none", category: "spacing" },
-    { id: "opacity", inferredKey: "opacity", actualValue: node => String(node.styles.opacity), category: "spacing" },
-    { id: "outline", inferredKey: "outline", actualValue: node => node.styles.outline || "none", category: "spacing" },
-    { id: "outlineColor", inferredKey: "outlineColor", actualValue: node => node.styles.outlineColor || null, category: "colors" },
-    { id: "zIndex", inferredKey: "zIndex", actualValue: node => node.styles.zIndex === null ? "auto" : String(node.styles.zIndex), category: "spacing" },
-    { id: "width", inferredKey: "width", actualValue: node => `${node.rect.width}px`, percentageBasis: width => width, category: "spacing" },
-    { id: "height", inferredKey: "height", actualValue: node => `${node.rect.height}px`, percentageBasis: (_, height) => height, category: "spacing" },
-];
+import type { PropertyDefinition, ReconciliationInput } from "../types/index.js";
+import { PROPERTY_REGISTRY, SPACING_SCALE } from "../shared/properties.js";
 
 export class SemanticHarmonyReconciler {
     private tokenResolver: TokenResolverService;
@@ -67,10 +24,21 @@ export class SemanticHarmonyReconciler {
         this.tokenResolver = tokenResolverService;
     }
 
+    private prepareTargetTree(html: string, input: ReconciliationInput): SemanticNode {
+        const root = semanticParserService.parse(html);
+        applyInferredStylesToTree(
+            root,
+            input.framework,
+            input.designTokens,
+            input.metrics
+        );
+        return root;
+    }
+
     reconcile(input: ReconciliationInput): ReconciliationReport {
         const startTime = performance.now();
 
-        const expectedRoot = semanticParserService.parse(input.expectedHtml);
+        const expectedRoot = this.prepareTargetTree(input.expectedHtml, input);
         this.tokenResolver.buildIndex(input.designTokens, input.metrics);
 
         const actualIdLookup = new Map<string, CaliperNode>();
@@ -106,7 +74,8 @@ export class SemanticHarmonyReconciler {
                 input.caliperTree,
                 input.secondaryHtml,
                 input.secondaryTokens || input.designTokens,
-                input.framework
+                input.framework,
+                input.metrics
             );
         }
 
@@ -161,17 +130,17 @@ export class SemanticHarmonyReconciler {
         const parentWidth = parent ? parent.rect.width : (metrics?.viewportWidth ?? 1920);
         const parentHeight = parent ? parent.rect.height : (metrics?.viewportHeight ?? 1080);
 
-        for (const prop of PROPERTY_REGISTRY) {
-            const expectedVal = this.getExpectedValue(inferred, prop);
+        for (const property of PROPERTY_REGISTRY) {
+            const expectedVal = this.getExpectedValue(inferred, property);
             if (expectedVal === undefined || expectedVal === null) continue;
 
-            const actualVal = prop.actualValue(actual, parentWidth, parentHeight);
+            const actualVal = property.actualValue(actual, parentWidth, parentHeight);
             if (actualVal === null) continue;
 
-            const basis = prop.percentageBasis ? prop.percentageBasis(parentWidth, parentHeight, actual) : undefined;
+            const basis = property.percentageBasis ? property.percentageBasis(parentWidth, parentHeight, actual) : undefined;
 
             const delta = this.compareProperty(
-                prop.id,
+                property.id,
                 String(expectedVal),
                 actualVal,
                 tokens,
@@ -186,16 +155,17 @@ export class SemanticHarmonyReconciler {
         return deltas;
     }
 
-    private getExpectedValue(inferred: SemanticNode["inferredStyles"], prop: PropertyDefinition): any {
+    private getExpectedValue(inferred: SemanticNode["inferredStyles"], prop: PropertyDefinition): string | number | undefined {
+        if (!inferred) return undefined;
         const val = inferred[prop.inferredKey];
-        if (!val) return undefined;
+        if (val === undefined || val === null) return undefined;
 
-        if (typeof val === "object" && val !== null && !Array.isArray(val)) {
+        if (typeof val === "object" && !Array.isArray(val)) {
             const edge = prop.id.replace(/^(padding|margin)/, "").toLowerCase() as "top" | "right" | "bottom" | "left";
             return (val)[edge];
         }
 
-        return val;
+        return val as string | number;
     }
 
     private compareProperty(
@@ -268,10 +238,14 @@ export class SemanticHarmonyReconciler {
     }
 
     private getTokenCategory(property: string): "colors" | "spacing" | "typography" | "borderRadius" {
-        const colorProps = ["color", "backgroundColor", "borderColor", "outlineColor"];
-        if (colorProps.includes(property)) return "colors";
-        if (property === "borderRadius") return "borderRadius";
-        if (property === "fontSize" || property === "fontWeight" || property === "lineHeight" || property === "letterSpacing") return "typography";
+        const propDef = PROPERTY_REGISTRY.find(p => p.id === property);
+        if (!propDef) return "spacing";
+
+        // Map 'layout' or 'visual' or other categories to the 4 main token categories
+        if (propDef.category === "colors") return "colors";
+        if (propDef.category === "typography") return "typography";
+        if (propDef.category === "borderRadius") return "borderRadius";
+
         return "spacing";
     }
 
@@ -297,24 +271,136 @@ export class SemanticHarmonyReconciler {
         caliperTree: CaliperNode,
         secondaryHtml: string,
         tokens: DesignTokenDictionary,
-        framework: Framework
+        framework: Framework,
+        metrics?: ContextMetrics,
     ): string {
-        const secondaryRoot = semanticParserService.parse(secondaryHtml);
+        const secondaryInput: ReconciliationInput = {
+            caliperTree,
+            expectedHtml: secondaryHtml,
+            designTokens: tokens,
+            framework,
+            figmaLayerUrl: "",
+            metrics,
+        };
+
+        const secondaryRoot = this.prepareTargetTree(secondaryHtml, secondaryInput);
 
         const actualIdLookup = new Map<string, CaliperNode>();
         const expectedIndexLookup = new Map<number, SemanticNode>();
 
         const pairing = pairHierarchically(caliperTree, secondaryRoot, actualIdLookup, expectedIndexLookup, {
             framework,
-            tokens
+            tokens,
+            metrics
         });
-        const deltas = this.reconcileProperties(pairing, actualIdLookup, expectedIndexLookup, tokens);
+        const deltas = this.reconcileProperties(pairing, actualIdLookup, expectedIndexLookup, tokens, metrics);
+
+        if (deltas.length === 0) return "";
+
+        if (framework.endsWith("-tailwind")) {
+            return this.generateTailwindResponsiveClasses(deltas, metrics?.viewportWidth);
+        }
 
         const css = this.generateCssRecommendations(deltas, true);
-
         if (!css) return "";
 
-        return `@media (max-width: 768px) {\n${css.split("\n").map(line => `  ${line}`).join("\n")}\n}`;
+        const breakpoint = metrics?.viewportWidth || 768;
+        const viewportLabel = metrics?.viewportWidth ? `${metrics.viewportWidth}px` : "secondary";
+
+        return `/* Responsive overrides for ${viewportLabel} view */
+@media (max-width: ${breakpoint}px) {
+${css.split("\n").map(line => `  ${line}`).join("\n")}
+}`;
+    }
+
+    /**
+     * Generates Tailwind utility classes with responsive prefixes for mobile breakpoints.
+     */
+    private generateTailwindResponsiveClasses(deltas: PropertyDelta[], viewportWidth?: number): string {
+        const grouped = new Map<string, PropertyDelta[]>();
+
+        for (const delta of deltas) {
+            const existing = grouped.get(delta.selector) || [];
+            existing.push(delta);
+            grouped.set(delta.selector, existing);
+        }
+
+        // Map viewport width to Tailwind prefix
+        // Tailwind breakpoints are min-width, so we pick the prefix that STARTS 
+        // at or below our target viewport width.
+        const getTailwindPrefix = (width: number): string => {
+            if (width >= 1536) return "2xl";
+            if (width >= 1280) return "xl";
+            if (width >= 1024) return "lg";
+            if (width >= 768) return "md";
+            if (width >= 640) return "sm";
+            return "max-sm"; // Use a max-width variant if available, or fallback to sm
+        };
+
+        const prefix = viewportWidth ? getTailwindPrefix(viewportWidth) : "sm";
+
+        const recommendations: string[] = [];
+        for (const [selector, selectorDeltas] of grouped) {
+            const classes = selectorDeltas.map(delta => {
+                const tailwindClass = this.cssToTailwindClass(delta.property, delta.figmaValue);
+                return tailwindClass ? `${prefix}:${tailwindClass}` : null;
+            }).filter(Boolean);
+
+            if (classes.length > 0) {
+                recommendations.push(`/* ${selector} (target: ${viewportWidth || "mobile"}px) */\n/* Add classes: ${classes.join(" ")} */`);
+            }
+        }
+
+        return recommendations.join("\n\n");
+    }
+
+    /**
+     * Converts a CSS property-value pair to a Tailwind utility class.
+     */
+    private cssToTailwindClass(property: string, value: string): string | null {
+        const pxMatch = value.match(/^(\d+(?:\.\d+)?)px$/);
+        const pxValue = pxMatch ? parseFloat(pxMatch[1] ?? "0") : null;
+
+        const findSpacingToken = (px: number): string => {
+            for (const [token, pxString] of Object.entries(SPACING_SCALE)) {
+                const tokenPx = parseFloat(pxString);
+                if (tokenPx === px) return token;
+            }
+            const entries = Object.entries(SPACING_SCALE)
+                .map(([token, pxStr]) => ({ token, px: parseFloat(pxStr) }))
+                .sort((a, b) => a.px - b.px);
+            for (const entry of entries) {
+                if (entry.px >= px) return entry.token;
+            }
+            return `[${px}px]`;
+        };
+
+        switch (property) {
+            case "paddingTop": return pxValue !== null ? `pt-${findSpacingToken(pxValue)}` : null;
+            case "paddingRight": return pxValue !== null ? `pr-${findSpacingToken(pxValue)}` : null;
+            case "paddingBottom": return pxValue !== null ? `pb-${findSpacingToken(pxValue)}` : null;
+            case "paddingLeft": return pxValue !== null ? `pl-${findSpacingToken(pxValue)}` : null;
+            case "marginTop": return pxValue !== null ? `mt-${findSpacingToken(pxValue)}` : null;
+            case "marginRight": return pxValue !== null ? `mr-${findSpacingToken(pxValue)}` : null;
+            case "marginBottom": return pxValue !== null ? `mb-${findSpacingToken(pxValue)}` : null;
+            case "marginLeft": return pxValue !== null ? `ml-${findSpacingToken(pxValue)}` : null;
+            case "gap": return pxValue !== null ? `gap-${findSpacingToken(pxValue)}` : null;
+            case "fontSize": return pxValue !== null ? `text-[${pxValue}px]` : null;
+            case "width": return pxValue !== null ? `w-[${pxValue}px]` : null;
+            case "height": return pxValue !== null ? `h-[${pxValue}px]` : null;
+            case "display":
+                if (value === "flex") return "flex";
+                if (value === "grid") return "grid";
+                if (value === "block") return "block";
+                if (value === "none") return "hidden";
+                return null;
+            case "flexDirection":
+                if (value === "column") return "flex-col";
+                if (value === "row") return "flex-row";
+                return null;
+            default:
+                return null;
+        }
     }
 
     private buildSummary(

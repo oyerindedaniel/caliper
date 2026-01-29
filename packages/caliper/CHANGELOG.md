@@ -2,12 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.5] - 2026-01-24
+## [0.2.0] - 2026-01-27
 
 ### Added
 
-- **AI Bridge Support**: Full compatibility with `@oyerinde/caliper-bridge` and `@oyerinde/caliper-mcp`.
-- **Context Menu**: Right-click anywhere while an element is selected to instantly copy its metadata (selector, ID, text) for easy lookup.
+- **Agent Bridge**: Support for AI agents and programmatic audits via `@oyerinde/caliper/bridge`.
+- **Context Menu**: Right-click selected elements to copy metadata.
+
+### Fixed
+
+- **Geometry Engine**: Improved coordinate tracking for `fixed` and `sticky` elements and nested scroll containers.
+  - Fix: Precision tracking for sticky elements across complex DOM hierarchies.
+  - Fix: Deep scroll resolution for nested overflow containers.
+  - Fix: Real-time clipping path calculation for partially visible elements.
 
 ## [0.1.4] - 2026-01-16
 

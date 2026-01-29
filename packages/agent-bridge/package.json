@@ -60,7 +60,7 @@
     "@oyerinde/caliper": ">=0.1.4"
   },
   "devDependencies": {
-    "@oyerinde/caliper": "workspace:*",
+    "@caliper/core": "workspace:*",
     "@oyerinde/caliper-schema": "workspace:*",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
@@ -68,6 +68,7 @@
     "cross-env": "^10.1.0",
     "eslint": "^9.39.1",
     "tsup": "^8.5.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.0.18"
   }
 }

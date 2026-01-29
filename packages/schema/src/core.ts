@@ -59,6 +59,8 @@ export const MeasurementResultSchema = z.object({
     secondaryWinY: z.number(),
     primarySticky: StickyConfigSchema.optional(),
     secondarySticky: StickyConfigSchema.optional(),
+    primaryHasContainingBlock: z.boolean().optional(),
+    secondaryHasContainingBlock: z.boolean().optional(),
 });
 
 export const SelectionMetadataSchema = z.object({
@@ -68,6 +70,7 @@ export const SelectionMetadataSchema = z.object({
     stickyConfig: StickyConfigSchema.optional(),
     initialWindowX: z.number(),
     initialWindowY: z.number(),
+    hasContainingBlock: z.boolean().optional(),
 });
 
 export type Rect = z.infer<typeof RectSchema>;

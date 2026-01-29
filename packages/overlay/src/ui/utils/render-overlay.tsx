@@ -27,7 +27,8 @@ export function Overlay(props: OverlayProps) {
       res.primaryPosition,
       res.primarySticky,
       res.primaryWinX,
-      res.primaryWinY
+      res.primaryWinY,
+      !!res.primaryHasContainingBlock
     );
     if (!primaryGeo) return null;
 
@@ -39,7 +40,8 @@ export function Overlay(props: OverlayProps) {
           res.primaryPosition,
           res.primarySticky,
           res.primaryWinX,
-          res.primaryWinY
+          res.primaryWinY,
+          !!res.primaryHasContainingBlock
         ),
       },
       secondary: {
@@ -49,14 +51,16 @@ export function Overlay(props: OverlayProps) {
           res.secondaryPosition,
           res.secondarySticky,
           res.secondaryWinX,
-          res.secondaryWinY
+          res.secondaryWinY,
+          !!res.secondaryHasContainingBlock
         ),
         delta: getTotalScrollDelta(
           res.secondaryHierarchy,
           res.secondaryPosition,
           res.secondarySticky,
           res.secondaryWinX,
-          res.secondaryWinY
+          res.secondaryWinY,
+          !!res.secondaryHasContainingBlock
         ),
       },
       common: getCommonVisibilityWindow(

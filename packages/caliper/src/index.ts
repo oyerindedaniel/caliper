@@ -11,11 +11,8 @@
  */
 
 export { createOverlay as init } from "@caliper/overlay";
-
-export type { OverlayInstance } from "@caliper/overlay";
-
 export { setConfig, getConfig } from "@caliper/core";
-export type { OverlayConfig } from "@caliper/core";
+export type { OverlayConfig, OverlayInstance, CaliperPlugin, CaliperCoreSystems as Systems } from "@caliper/core";
 
 declare const process: { env: { VERSION: string; NODE_ENV: string } };
 

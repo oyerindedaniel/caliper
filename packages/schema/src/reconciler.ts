@@ -12,28 +12,57 @@ export const BoxEdgesStringSchema = z.object({
 });
 
 export const InferredStylesSchema = z.object({
-    display: z.enum(["flex", "grid", "block", "inline", "inline-flex", "inline-block", "none"]).optional(),
+    // Layout
+    display: z.enum(["flex", "grid", "block", "inline", "inline-flex", "inline-block", "none", "contents", "table", "table-row", "table-cell"]).optional(),
+    position: z.enum(["static", "relative", "absolute", "fixed", "sticky"]).optional(),
+    boxSizing: z.enum(["content-box", "border-box"]).optional(),
     flexDirection: z.enum(["row", "column", "row-reverse", "column-reverse"]).optional(),
     justifyContent: z.string().optional(),
     alignItems: z.string().optional(),
+    gridTemplateColumns: z.string().optional(),
+    gridTemplateRows: z.string().optional(),
+
+    // Spacing
     gap: z.string().optional(),
     padding: BoxEdgesStringSchema.optional(),
     margin: BoxEdgesStringSchema.optional(),
+
+    // Dimensions
     width: z.string().optional(),
     height: z.string().optional(),
+
+    // Colors
     backgroundColor: z.string().optional(),
     borderColor: z.string().optional(),
     color: z.string().optional(),
+
+    // Typography
     fontSize: z.string().optional(),
     fontWeight: z.string().optional(),
+    fontFamily: z.string().optional(),
     lineHeight: z.union([z.string(), z.number()]).optional(),
     letterSpacing: z.string().optional(),
+
+    // Visual
     borderRadius: z.string().optional(),
     boxShadow: z.string().optional(),
     opacity: z.number().optional(),
     outline: z.string().optional(),
     outlineColor: z.string().optional(),
     zIndex: z.number().optional(),
+
+    // Overflow
+    overflow: z.string().optional(),
+    overflowX: z.string().optional(),
+    overflowY: z.string().optional(),
+
+    // Visual Filter
+    filter: z.string().optional(),
+    backdropFilter: z.string().optional(),
+    transform: z.string().optional(),
+    content: z.string().optional(),
+    backgroundImage: z.string().optional(),
+    maskSize: z.string().optional(),
 });
 
 export const SemanticNodeSchema: z.ZodType<SemanticNode> = z.lazy(() =>
@@ -81,12 +110,7 @@ export const DesignTokenDictionarySchema = z.object({
     borderRadius: z.record(z.string(), z.string()),
 });
 
-export interface DesignTokenDictionary {
-    colors: Record<string, string>;
-    spacing: Record<string, string>;
-    typography: Record<string, z.infer<typeof FontDefinitionSchema>>;
-    borderRadius: Record<string, string>;
-}
+export type DesignTokenDictionary = z.infer<typeof DesignTokenDictionarySchema>
 
 // ============================================================================
 // RECONCILIATION CONTEXT
@@ -114,9 +138,20 @@ export const ContextMetricsSchema = z.object({
     devicePixelRatio: z.number(),
     viewportWidth: z.number(),
     viewportHeight: z.number(),
+    visualViewportWidth: z.number().optional(),
+    visualViewportHeight: z.number().optional(),
 });
 
 export type ContextMetrics = z.infer<typeof ContextMetricsSchema>;
+
+export const DEFAULT_CONTEXT_METRICS: ContextMetrics = {
+    rootFontSize: 16,
+    devicePixelRatio: 1,
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    visualViewportWidth: 1920,
+    visualViewportHeight: 1080,
+};
 
 // ============================================================================
 // NODE PAIR (Semantic Harmony pairing result)

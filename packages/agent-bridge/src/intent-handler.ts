@@ -1,4 +1,4 @@
-import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText } from "@oyerinde/caliper/core";
+import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText, type CaliperCoreSystems } from "@caliper/core";
 import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles } from "./utils.js";
 import { walkAndMeasure, parseSelection } from "./harness/walk-engine.js";
 import type {
@@ -11,7 +11,6 @@ import type {
 } from "@oyerinde/caliper-schema";
 import { BitBridge } from "@oyerinde/caliper-schema";
 import { DEFAULT_WALK_DEPTH } from "./constants.js";
-import type { CaliperCoreSystems } from "./types.js";
 import type { CaliperStateStore } from "./state-store.js";
 
 export function createIntentHandler(systems: CaliperCoreSystems, stateStore: CaliperStateStore) {

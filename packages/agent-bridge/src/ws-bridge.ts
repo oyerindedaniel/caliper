@@ -4,7 +4,7 @@ import type {
   ToolCallMessage,
 } from "@oyerinde/caliper-schema";
 import { BitBridge } from "@oyerinde/caliper-schema";
-import { createLogger, BRIDGE_TAB_ID_KEY } from "@oyerinde/caliper/core";
+import { createLogger, BRIDGE_TAB_ID_KEY } from "@caliper/core";
 
 import { DEFAULT_WS_URL } from "./constants.js";
 

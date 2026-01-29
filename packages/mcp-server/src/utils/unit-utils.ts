@@ -27,8 +27,11 @@ export function toPixels(
     // 2. Handle var(--token-name) or var(--token-name, fallback)
     if (trimmed.startsWith("var(--") && trimmed.endsWith(")") && options.tokens) {
         const content = trimmed.slice(4, -1); // "--token-name" or "--token-name, fallback"
-        const [tokenPart] = content.split(",").map(part => part.trim());
-        const tokenName = tokenPart!.startsWith("--") ? tokenPart!.slice(2) : tokenPart!;
+        const commaIdx = content.indexOf(",");
+        const tokenPart = commaIdx !== -1 ? content.slice(0, commaIdx).trim() : content.trim();
+        const fallbackPart = commaIdx !== -1 ? content.slice(commaIdx + 1).trim() : undefined;
+
+        const tokenName = tokenPart.startsWith("--") ? tokenPart.slice(2) : tokenPart;
 
         const visited = options.visited ?? new Set<string>();
         if (visited.has(tokenName)) return 0;
@@ -41,12 +44,19 @@ export function toPixels(
             options.tokens.colors[tokenName] ||
             (options.tokens.typography[tokenName] ? `${options.tokens.typography[tokenName]!.fontSize}px` : undefined);
 
-        let result = 0;
         if (resolved) {
-            result = toPixels(resolved, context, newOptions);
+            const result = toPixels(resolved, context, newOptions);
+            visited.delete(tokenName);
+            return result;
         }
+
         visited.delete(tokenName);
-        return result;
+
+        if (fallbackPart) {
+            return toPixels(fallbackPart, context, options);
+        }
+
+        return 0;
     }
 
     // 3. Handle simple numeric values
@@ -68,8 +78,18 @@ export function toPixels(
     if (trimmed.endsWith("vmin")) return (num / 100) * Math.min(context.viewportWidth, context.viewportHeight);
     if (trimmed.endsWith("vmax")) return (num / 100) * Math.max(context.viewportWidth, context.viewportHeight);
 
-    if (trimmed.endsWith("svw") || trimmed.endsWith("dvw") || trimmed.endsWith("lvw")) return (num / 100) * context.viewportWidth;
-    if (trimmed.endsWith("svh") || trimmed.endsWith("dvh") || trimmed.endsWith("lvh")) return (num / 100) * context.viewportHeight;
+    if (trimmed.endsWith("svw") || trimmed.endsWith("lvw")) return (num / 100) * context.viewportWidth;
+    if (trimmed.endsWith("svh") || trimmed.endsWith("lvh")) return (num / 100) * context.viewportHeight;
+
+    // Dynamic Viewport Units (Use visualViewport if available)
+    if (trimmed.endsWith("dvw")) return (num / 100) * (context.visualViewportWidth ?? context.viewportWidth);
+    if (trimmed.endsWith("dvh")) return (num / 100) * (context.visualViewportHeight ?? context.viewportHeight);
+
+    // Container Query Units (Fallback to small viewport units as per spec if no container)
+    if (trimmed.endsWith("cqw") || trimmed.endsWith("cqi")) return (num / 100) * context.viewportWidth;
+    if (trimmed.endsWith("cqh") || trimmed.endsWith("cqb")) return (num / 100) * context.viewportHeight;
+    if (trimmed.endsWith("cqmin")) return (num / 100) * Math.min(context.viewportWidth, context.viewportHeight);
+    if (trimmed.endsWith("cqmax")) return (num / 100) * Math.max(context.viewportWidth, context.viewportHeight);
 
     // Physical Units
     for (const [unit, factor] of Object.entries(PHYSICAL_UNITS)) {
@@ -102,7 +122,9 @@ export function resolveCalc(
     let expression = trimmed.startsWith("calc(") ? trimmed.slice(5, -1) : trimmed;
 
     if (options.tokens) {
-        expression = expression.replace(/var\(--([a-zA-Z0-9_-]+)\)/g, (match) => {
+        // Match var(--name) or var(--name, fallback)
+        // This handles recursive/nested parens to some extent, but for calc it's mostly simple tokens
+        expression = expression.replace(/var\(--([a-zA-Z0-9_-]+)(?:\s*,\s*([^)]+))?\)/g, (match) => {
             return toPixels(match, context, options).toString();
         });
     }

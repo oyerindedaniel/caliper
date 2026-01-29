@@ -7,7 +7,7 @@ import type {
 } from "./overlay-config.js";
 import { DEFAULT_COMMANDS, DEFAULT_ANIMATION, DEFAULT_THEME } from "./overlay-config.js";
 
-function parseNumber(value: any, defaultValue: number): number {
+function parseNumber(value: unknown, defaultValue: number): number {
   if (value === undefined || value === null || value === "") return defaultValue;
   const num = Number(value);
   return isFinite(num) && !isNaN(num) ? num : defaultValue;
@@ -144,6 +144,7 @@ export function getConfig(): OverlayConfig {
           theme: { ...windowConfig.theme, ...parsed.theme },
           commands: { ...windowConfig.commands, ...parsed.commands },
           animation: { ...windowConfig.animation, ...parsed.animation },
+          bridge: { ...windowConfig.bridge, ...parsed.bridge },
         };
       } catch (e) {
         console.warn("[CALIPER] Failed to parse data-config attribute", e);

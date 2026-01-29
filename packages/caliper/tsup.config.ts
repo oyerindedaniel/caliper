@@ -58,31 +58,51 @@ const getEsbuildPlugins = () => [
 ];
 
 export default defineConfig((options) => {
-  const isProd = process.env.NODE_ENV === "production";
-  const watch =
-    !isProd && options.watch ? ["src/**/*", "../overlay/src/**/*", "../core/src/**/*"] : false;
+  const otherNoExternal = ["@oyerinde/caliper-bridge"];
 
   return [
     {
       ...DEFAULT_OPTIONS,
-      entry: { index: "./src/auto.ts" },
+      entry: { "index.global": "./src/auto.ts" },
       format: ["iife"],
       globalName: "Caliper",
       platform: "browser",
+      noExternal: [...DEFAULT_OPTIONS.noExternal!, ...otherNoExternal],
       esbuildPlugins: getEsbuildPlugins(),
-      watch,
+      dts: false,
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: { "index.global.min": "./src/auto-lite.ts" },
+      format: ["iife"],
+      globalName: "Caliper",
+      minify: true,
+      platform: "browser",
+      esbuildPlugins: getEsbuildPlugins(),
+      dts: false,
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: {
+        bridge: "../agent-bridge/src/index.ts",
+      },
+      format: ["cjs", "esm"],
+      platform: "browser",
+      noExternal: ["@caliper/core", "@oyerinde/caliper-schema"],
+      external: [],
+      experimentalDts: true,
+      splitting: true,
     },
     {
       ...DEFAULT_OPTIONS,
       entry: {
         index: "./src/index.ts",
-        core: "../core/src/index.ts",
       },
       format: ["cjs", "esm"],
+      experimentalDts: true,
       platform: "browser",
       splitting: true,
       esbuildPlugins: getEsbuildPlugins(),
-      watch,
     },
     {
       ...DEFAULT_OPTIONS,
@@ -93,7 +113,16 @@ export default defineConfig((options) => {
       external: ["solid-js", "@caliper/core", "@caliper/overlay"],
       esbuildPlugins: [],
       dts: false,
-      watch,
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: { "bridge.server": "../agent-bridge/src/index.server.ts" },
+      format: ["cjs", "esm"],
+      platform: "node",
+      noExternal: [],
+      external: ["@caliper/core", "@caliper/overlay"],
+      esbuildPlugins: [],
+      dts: false,
     },
   ] as Options[];
 });

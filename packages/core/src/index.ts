@@ -59,6 +59,9 @@ export type {
   ProjectionState,
   RulerLine,
   RulerState,
+  CaliperCoreSystems,
+  OverlayInstance,
+  CaliperPlugin,
 } from "./shared/types/index.js";
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";

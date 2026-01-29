@@ -246,7 +246,8 @@ export function getLiveLineValue(line: MeasurementLine, result: MeasurementResul
     result.primaryPosition,
     result.primarySticky,
     result.primaryWinX,
-    result.primaryWinY
+    result.primaryWinY,
+    !!result.primaryHasContainingBlock
   );
 
   const secondaryDelta = getTotalScrollDelta(
@@ -254,7 +255,8 @@ export function getLiveLineValue(line: MeasurementLine, result: MeasurementResul
     result.secondaryPosition,
     result.secondarySticky,
     result.secondaryWinX,
-    result.secondaryWinY
+    result.secondaryWinY,
+    !!result.secondaryHasContainingBlock
   );
 
   const startPoint = getLivePoint(line.start, line.startSync, line, primaryDelta, secondaryDelta);

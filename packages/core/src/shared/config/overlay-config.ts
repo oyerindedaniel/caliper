@@ -3,6 +3,7 @@
  * This file defines how users can customize the calculator triggers and appearance.
  */
 import { OS } from "../utils/os.js";
+import type { CaliperAgentState } from "@oyerinde/caliper-schema";
 
 export type DeepRequired<T> = {
   [K in keyof T]-?: DeepRequired<T[K]>;
@@ -67,10 +68,24 @@ export interface AnimationConfig {
   lerpFactor?: number;
 }
 
+export interface AgentBridgeConfig {
+  /** Enable the agentic bridge for AI integration (default: false) */
+  enabled?: boolean;
+  /** WebSocket URL for the MCP relay (default: ws://localhost:8080) */
+  wsUrl?: string;
+  /** Debounce duration for state updates in ms (default: 100) */
+  debounceMs?: number;
+  /** Minimum element area to be considered for agent observation (default: 400) */
+  minElementSize?: number;
+  /** Callback for agent state changes */
+  onStateChange?: (state: CaliperAgentState) => void;
+}
+
 export interface OverlayConfig {
   theme?: ThemeConfig;
   commands?: CommandsConfig;
   animation?: AnimationConfig;
+  bridge?: AgentBridgeConfig;
 }
 
 export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {

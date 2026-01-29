@@ -77,11 +77,11 @@ export function parseColor(colorStr: string): NormalizedColor {
     // 6. Generic color() notation
     if (trimmed.startsWith("color(")) return parseGenericColor(trimmed);
 
-    // 7. Channel Values (for recursive mix parsing)
-    if (!isNaN(parseFloat(trimmed))) {
-        const val = parseNumericValue(trimmed);
-        return { l: val, a: 0, b: 0, alpha: 1, raw: colorStr };
-    }
+    // // 7. Channel Values (for recursive mix parsing)
+    // if (!isNaN(parseFloat(trimmed))) {
+    //     const val = parseNumericValue(trimmed);
+    //     return { l: val, a: 0, b: 0, alpha: 1, raw: colorStr };
+    // }
 
     // Fallback to Transparent Black
     return { l: 0, a: 0, b: 0, alpha: 0, raw: colorStr };
@@ -325,6 +325,9 @@ function parseColorMix(str: string): NormalizedColor {
 }
 
 function xyzToOklab(x: number, y: number, z: number, alpha: number, raw: string): NormalizedColor {
+    // Canonicalize invisible colors to avoid noise in comparisons
+    if (alpha === 0) return { l: 0, a: 0, b: 0, alpha: 0, raw };
+
     // Standard LMS cone response transform
     const lValue = 0.8189330101 * x + 0.3618667424 * y - 0.1288597137 * z;
     const mValue = 0.0329845436 * x + 0.9293118715 * y + 0.0361456387 * z;
@@ -385,4 +388,40 @@ export function calculateDeltaE(color1: NormalizedColor, color2: NormalizedColor
 
     // Weighted distance: L, a, b + alpha weight
     return Math.sqrt(deltaL * deltaL + deltaA * deltaA + deltaB * deltaB + deltaAlpha * deltaAlpha * 0.5);
+}
+
+/**
+ * Converts a NormalizedColor back to a CSS color string (rgb or rgba)
+ */
+export function serializeColor(color: NormalizedColor): string {
+    if (color.alpha === 0) return "transparent";
+
+    // Oklab to LMS'
+    const l_ = color.l + 0.3963377774 * color.a + 0.2158037573 * color.b;
+    const m_ = color.l - 0.1055613458 * color.a - 0.0638541728 * color.b;
+    const s_ = color.l - 0.0894841775 * color.a - 1.2914855480 * color.b;
+
+    // LMS' to LMS
+    const l = l_ * l_ * l_;
+    const m = m_ * m_ * m_;
+    const s = s_ * s_ * s_;
+
+    // LMS to Linear RGB
+    const r_lin = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    const g_lin = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    const b_lin = -0.0041960863 * l - 0.7034186147 * m + 1.7076127010 * s;
+
+    // Linear RGB to sRGB
+    const r = Math.min(255, Math.max(0, Math.round(unpivotRgb(r_lin) * 255)));
+    const g = Math.min(255, Math.max(0, Math.round(unpivotRgb(g_lin) * 255)));
+    const b = Math.min(255, Math.max(0, Math.round(unpivotRgb(b_lin) * 255)));
+
+    if (color.alpha >= 0.999) {
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+    return `rgba(${r}, ${g}, ${b}, ${Number(color.alpha.toFixed(3))})`;
+}
+
+function unpivotRgb(c: number): number {
+    return c > 0.0031308 ? 1.055 * Math.pow(c, 1 / 2.4) - 0.055 : 12.92 * c;
 }

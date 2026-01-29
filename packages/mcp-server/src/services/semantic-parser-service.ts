@@ -14,8 +14,22 @@ interface ParsedTag {
     rawAttributes: string;
 }
 
+function findOpeningTagEnd(html: string): number {
+    let inQuote: string | null = null;
+    for (let i = 0; i < html.length; i++) {
+        const char = html[i];
+        if (char === '"' || char === "'") {
+            if (inQuote === char) inQuote = null;
+            else if (!inQuote) inQuote = char;
+        } else if (char === ">" && !inQuote) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 function parseOpeningTag(tagString: string): ParsedTag | null {
-    const match = tagString.match(/^<(\w+)([^>]*)\/?>$/);
+    const match = tagString.match(/^<(\w+)([\s\S]*?)\/?>$/);
     if (!match) return null;
 
     const tag = match[1]!.toLowerCase();
@@ -44,12 +58,30 @@ function parseOpeningTag(tagString: string): ParsedTag | null {
     return { tag, classes, id, rawStyles, isSelfClosing, rawAttributes: attrString };
 }
 
+
 function extractTextContent(html: string): string {
-    const textOnly = html
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    return textOnly.slice(0, 100);
+    let text = "";
+    let inTag = false;
+    let inQuote: string | null = null;
+
+    for (let i = 0; i < html.length; i++) {
+        const char = html[i];
+        if (inTag) {
+            if (char === '"' || char === "'") {
+                if (inQuote === char) inQuote = null;
+                else if (!inQuote) inQuote = char;
+            } else if (char === ">" && !inQuote) {
+                inTag = false;
+            }
+        } else if (char === "<") {
+            inTag = true;
+            text += " "; // Word break
+        } else {
+            text += char;
+        }
+    }
+
+    return text.replace(/\s+/g, " ").trim().slice(0, 500);
 }
 
 export class SemanticParserService {
@@ -67,7 +99,7 @@ export class SemanticParserService {
         const trimmed = html.trim();
         if (!trimmed || !trimmed.startsWith("<")) return null;
 
-        const openTagEnd = trimmed.indexOf(">");
+        const openTagEnd = findOpeningTagEnd(trimmed);
         if (openTagEnd === -1) return null;
 
         const openTagStr = trimmed.slice(0, openTagEnd + 1);
@@ -89,6 +121,7 @@ export class SemanticParserService {
 
         const closingIdx = this.findMatchingClosingTag(trimmed, parsed.tag, openTagEnd + 1);
         if (closingIdx === -1) {
+            node.textContent = extractTextContent(trimmed.slice(openTagEnd + 1));
             return node;
         }
 
@@ -98,11 +131,9 @@ export class SemanticParserService {
             const childNodes = this.parseChildren(innerHtml, depth + 1);
             node.children = childNodes;
 
-            if (childNodes.length === 0) {
-                const text = extractTextContent(innerHtml);
-                if (text) {
-                    node.textContent = text;
-                }
+            const text = extractTextContent(innerHtml);
+            if (text) {
+                node.textContent = text;
             }
         }
 
@@ -111,7 +142,7 @@ export class SemanticParserService {
 
     private findMatchingClosingTag(html: string, tag: string, startIdx: number): number {
         const openPattern = new RegExp(`<${tag}[\\s>]`, "gi");
-        const closePattern = new RegExp(`</${tag}>`, "gi");
+        const closePattern = new RegExp(`</\\s*${tag}\\s*>`, "gi");
 
         let depth = 1;
         let pos = startIdx;
@@ -126,8 +157,11 @@ export class SemanticParserService {
             if (!closeMatch) return -1;
 
             if (openMatch && openMatch.index < closeMatch.index) {
-                const checkSelfClose = html.slice(openMatch.index, html.indexOf(">", openMatch.index) + 1);
-                if (!checkSelfClose.endsWith("/>")) {
+                // Check if it's actually self-closing even without the slash (rare but possible in loose HTML)
+                const checkEnd = findOpeningTagEnd(html.slice(openMatch.index));
+                const tagFull = html.slice(openMatch.index, openMatch.index + checkEnd + 1);
+
+                if (!tagFull.endsWith("/>")) {
                     depth++;
                 }
                 pos = openMatch.index + 1;
@@ -152,10 +186,9 @@ export class SemanticParserService {
                 const nextTagIdx = remaining.indexOf("<");
                 if (nextTagIdx === -1) break;
                 remaining = remaining.slice(nextTagIdx);
-                continue;
             }
 
-            const openTagEnd = remaining.indexOf(">");
+            const openTagEnd = findOpeningTagEnd(remaining);
             if (openTagEnd === -1) break;
 
             const openTagStr = remaining.slice(0, openTagEnd + 1);
@@ -180,18 +213,28 @@ export class SemanticParserService {
             }
 
             const closingIdx = this.findMatchingClosingTag(remaining, parsed.tag, openTagEnd + 1);
+            const closingTagLen = `</${parsed.tag}>`.length; // Estimation, we use the actual match later if needed
+
             if (closingIdx === -1) {
-                remaining = remaining.slice(openTagEnd + 1);
-                continue;
+                const node: SemanticNode = {
+                    tag: parsed.tag, classes: parsed.classes, id: parsed.id,
+                    rawStyles: parsed.rawStyles, inferredStyles: {}, children: [],
+                    textContent: extractTextContent(remaining.slice(openTagEnd + 1))
+                };
+                children.push(node);
+                break;
             }
 
-            const fullElement = remaining.slice(0, closingIdx + `</${parsed.tag}>`.length);
+            const actualClosingMatch = remaining.slice(closingIdx).match(/^<\/\s*\w+\s*>/);
+            const actualClosingLen = actualClosingMatch ? actualClosingMatch[0]!.length : closingTagLen;
+
+            const fullElement = remaining.slice(0, closingIdx + actualClosingLen);
             const childNode = this.parseNode(fullElement, depth);
             if (childNode) {
                 children.push(childNode);
             }
 
-            remaining = remaining.slice(closingIdx + `</${parsed.tag}>`.length).trim();
+            remaining = remaining.slice(closingIdx + actualClosingLen).trim();
         }
 
         return children;

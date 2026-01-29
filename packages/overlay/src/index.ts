@@ -1,6 +1,6 @@
 import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
-import type { OverlayConfig, MeasurementSystem, SelectionSystem } from "@caliper/core";
+import type { OverlayConfig, CaliperCoreSystems as Systems, OverlayInstance, CaliperPlugin } from "@caliper/core";
 import {
   applyTheme,
   mergeCommands,
@@ -9,25 +9,12 @@ import {
   getConfig,
   showVersionInfo,
 } from "@caliper/core";
+
 import { injectStyles, removeStyles } from "./style-injector/utils/inject-styles.js";
 
 const IS_BROWSER = typeof window !== "undefined";
 
 declare const process: { env: { VERSION: string } };
-
-export interface Systems {
-  measurementSystem: MeasurementSystem;
-  selectionSystem: SelectionSystem;
-  onViewportChange: (listener: () => void) => () => void;
-}
-
-export interface OverlayInstance {
-  mount: (container?: HTMLElement) => void;
-  dispose: () => void;
-  getSystems: () => Systems | null;
-  waitForSystems: () => Promise<Systems>;
-  mounted: boolean;
-}
 
 declare global {
   interface Window {
@@ -44,6 +31,7 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
       dispose: () => { },
       getSystems: () => null,
       waitForSystems: () => new Promise(() => { }),
+      use: () => instance,
       mounted: false,
     };
   }
@@ -82,6 +70,7 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
 
   let cleanup: (() => void) | null = null;
   let systems: Systems | null = null;
+  const plugins = new Map<string, CaliperPlugin>();
 
   const pendingSystemsResolvers: ((s: Systems) => void)[] = [];
   const waitForSystems = (): Promise<Systems> => {
@@ -129,6 +118,11 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
         removeStyles();
         instance.mounted = false;
         systems = null;
+
+        // Dispose plugins
+        plugins.forEach((plugin) => plugin.dispose?.());
+        plugins.clear();
+
         if (activeInstance === instance) activeInstance = null;
       };
 
@@ -142,6 +136,14 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
     },
     getSystems: () => systems,
     waitForSystems,
+    use: (plugin: CaliperPlugin) => {
+      if (plugins.has(plugin.name)) {
+        return instance;
+      }
+      plugins.set(plugin.name, plugin);
+      plugin.install(instance);
+      return instance;
+    },
   };
 
   activeInstance = instance;

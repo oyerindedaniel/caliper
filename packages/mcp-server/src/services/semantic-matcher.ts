@@ -169,7 +169,9 @@ export function greedyChildAlignment(
     for (let i = 0; i < actualChildren.length; i++) {
         for (let j = 0; j < expectedChildren.length; j++) {
             const { score, signals } = calculateSemanticSimilarity(actualChildren[i]!, expectedChildren[j]!, context);
-            candidates.push({ actualIdx: i, expectedIdx: j, score, signals });
+            if (score > 10 || signals.includes("id_match")) {
+                candidates.push({ actualIdx: i, expectedIdx: j, score, signals });
+            }
         }
     }
 
@@ -270,6 +272,7 @@ export function pairHierarchically(
             collectActualIds(child);
         }
     }
+
     collectActualIds(actualRoot);
 
     const unmatchedActualIds = allActualIds.filter(id => !matchedActualIds.has(id));

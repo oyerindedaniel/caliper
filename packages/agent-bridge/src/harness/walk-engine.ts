@@ -1,5 +1,5 @@
 import type { CaliperNode } from "@oyerinde/caliper-schema";
-import { isVisible, filterRuntimeClasses, getElementDirectText } from "@oyerinde/caliper/core";
+import { isVisible, filterRuntimeClasses, getElementDirectText } from "@caliper/core";
 import { DEFAULT_WALK_DEPTH } from "../constants.js";
 import { parseComputedStyles } from "../utils.js";
 import {

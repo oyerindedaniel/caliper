@@ -7,6 +7,16 @@
 
 Caliper is a high-precision, framework-agnostic measurement tool that lives in your browser during development. It helps you catch "pixel-drift" and alignment issues before they reach production.
 
+### AI Agents & MCP 🤖
+
+Caliper is "AI-Native". It can be connected to AI agents (like Cursor, Claude Code, or Antigravity) via the **Model Context Protocol (MCP)**, allowing agents to perform pixel-perfect audits of your UI.
+
+1. **Install Bridge**: Available as `@oyerinde/caliper/bridge` for custom integrations.
+2. **Run Server**: `npx -y @oyerinde/caliper-mcp` ([MCP Docs](https://github.com/oyerindedaniel/caliper/tree/main/packages/mcp-server))
+3. **Connect**: Add the MCP server to your editor on the default port **9876**.
+
+The AI agent gains "layout eyes" and can perform high-precision audits, measurements, and alignment checks directly in your browser.
+
 ---
 
 ## Features 🚀
@@ -17,6 +27,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 - **Edge Projections**: Check alignment across the entire viewport using relative projections (W/A/S/D).
 - **Viewport Rulers**: Draggable guidelines with magnetic snapping and chained distance measurements (Shift + R).
 - **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/G).
+- **Agent Bridge**: Built-in support for AI-driven audits and programmatic UI inspection.
 - **Full Customization**: Fully configurable shortcuts and theme colors.
 
 ---
@@ -150,6 +161,56 @@ export function Root() {
     </html>
   );
 }
+```
+
+---
+
+## Agent Bridge Installation 🤖
+
+The Agent Bridge enables AI agents (like Claude or Cursor) to communicate with Caliper. It is available as a sub-export of the main package.
+
+### 1. Vite & Module Bundlers
+If you've installed `@oyerinde/caliper` via npm, you can initialize the bridge using the plugin pattern:
+
+```typescript
+import { init } from "@oyerinde/caliper";
+import { CaliperBridge } from "@oyerinde/caliper/bridge";
+
+const caliper = init();
+
+caliper.use(
+  CaliperBridge({
+    enabled: true,
+    wsUrl: "ws://localhost:9876",
+  })
+);
+```
+
+### 2. Standalone (CDN/IIFE)
+If you are using the global script tag, the bridge is automatically included in the default bundle. Use the **minified lite** version if you don't need bridge support:
+
+```html
+<!-- Full version (Includes Agent Bridge) -->
+<script 
+  src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+  data-config='{"bridge": {"enabled": true}}'
+></script>
+
+<!-- Lite Version (Core only, No Bridge) -->
+<script src="https://unpkg.com/@oyerinde/caliper/dist/index.global.min.js"></script>
+```
+
+### 3. Next.js (App Router)
+Enable the bridge directly in your configuration block:
+
+```tsx
+<Script
+  src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+  data-config={JSON.stringify({ 
+    bridge: { enabled: true } 
+  })}
+  strategy="afterInteractive"
+/>
 ```
 
 ---

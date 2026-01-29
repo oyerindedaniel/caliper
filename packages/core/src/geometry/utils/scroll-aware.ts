@@ -7,6 +7,7 @@ import type {
   StickyConfig as BaseStickyConfig,
   SelectionMetadata as BaseSelectionMetadata,
 } from "@oyerinde/caliper-schema";
+import { isRenderable } from "../../shared/utils/dom-utils.js";
 
 export interface ScrollState extends Omit<BaseScrollState, "containerRect"> {
   element: HTMLElement;
@@ -20,6 +21,7 @@ export type StickyConfig = BaseStickyConfig;
 export interface DeducedGeometry extends Omit<BaseSelectionMetadata, "scrollHierarchy" | "rect"> {
   rect: DOMRect;
   scrollHierarchy: ScrollState[];
+  containingBlock: HTMLElement | null;
 }
 
 export interface LiveGeometry {
@@ -45,9 +47,9 @@ export function getScrollAwareRect(rect: DOMRect): DOMRect {
 }
 
 export function isScrollContainer(element: Element): boolean {
-  if (!(element instanceof HTMLElement)) return false;
+  if (!isRenderable(element)) return false;
   const style = window.getComputedStyle(element);
-  return /(auto|scroll)/.test(style.overflow + style.overflowY + style.overflowX);
+  return /(auto|scroll|clip)/.test(style.overflow + style.overflowY + style.overflowX);
 }
 
 export function getScrollHierarchy(element: Element): ScrollState[] {
@@ -132,23 +134,20 @@ export function getTotalScrollDelta(
   position: PositionMode = "static",
   sticky?: StickyConfig,
   initWinX = 0,
-  initWinY = 0
+  initWinY = 0,
+  hasContainingBlock = false
 ) {
-  // It stays in viewport, so document coords must shift
-  // opposite to the window to result in a stable viewport transform.
-  if (position === "fixed") {
-    return {
-      deltaX: initWinX - window.scrollX,
-      deltaY: initWinY - window.scrollY,
-    };
-  }
-
   let deltaX = 0;
   let deltaY = 0;
 
   for (let i = 0; i < hierarchy.length; i++) {
     const s = hierarchy[i];
     if (!s) continue;
+
+    // Check if THIS container is fixed. 
+    // If it is, any scroll above it doesn't move it relative to viewport.
+    const style = window.getComputedStyle(s.element);
+    const isFixed = style.position === "fixed";
 
     let dX = s.element.scrollLeft - s.initialScrollLeft;
     let dY = s.element.scrollTop - s.initialScrollTop;
@@ -175,11 +174,28 @@ export function getTotalScrollDelta(
 
     deltaX += dX;
     deltaY += dY;
+
+    if (isFixed) {
+      // We've hit the fixed horizon. Stop adding ancestor scroll.
+      // Add the window scroll counter (unless captured by a containing block)
+      if (!hasContainingBlock) {
+        deltaX += initWinX - window.scrollX;
+        deltaY += initWinY - window.scrollY;
+      }
+      return { deltaX, deltaY };
+    }
   }
 
-  // Handle Window Sticky (when hierarchy is empty)
+  // If we finished loop and we are effectively fixed but the fixed anchor wasn't 
+  // a "scroll container" itself, we still need window pinning.
+  if (position === "fixed" && !hasContainingBlock) {
+    deltaX += initWinX - window.scrollX;
+    deltaY += initWinY - window.scrollY;
+  }
+
+  // Handle Window Sticky (when hierarchy is empty or no scroll-containers above stick)
   if (hierarchy.length === 0 && position === "sticky" && sticky) {
-    deltaX = calculateStickyDelta(
+    deltaX += calculateStickyDelta(
       window.scrollX,
       initWinX,
       sticky.naturalLeft,
@@ -187,7 +203,7 @@ export function getTotalScrollDelta(
       window.innerWidth,
       sticky.elementWidth
     );
-    deltaY = calculateStickyDelta(
+    deltaY += calculateStickyDelta(
       window.scrollY,
       initWinY,
       sticky.naturalTop,
@@ -319,11 +335,19 @@ export function getLiveGeometry(
   position: PositionMode = "static",
   sticky?: StickyConfig,
   initWinX = 0,
-  initWinY = 0
+  initWinY = 0,
+  hasContainingBlock = false
 ): LiveGeometry | null {
   if (!stableRect) return null;
 
-  const { deltaX, deltaY } = getTotalScrollDelta(hierarchy, position, sticky, initWinX, initWinY);
+  const { deltaX, deltaY } = getTotalScrollDelta(
+    hierarchy,
+    position,
+    sticky,
+    initWinX,
+    initWinY,
+    hasContainingBlock
+  );
 
   let vMinX = -Infinity;
   let vMaxX = Infinity;
@@ -408,19 +432,51 @@ function parseStickyOffset(val: string): number | null {
 function getInheritedPositionMode(element: Element): {
   mode: PositionMode;
   anchor: HTMLElement | null;
+  containingBlock: HTMLElement | null;
 } {
   let curr: Element | null = element;
-  while (curr && curr !== document.body) {
-    if (!(curr instanceof HTMLElement)) {
+  let mode: PositionMode = "static";
+  let anchor: HTMLElement | null = null;
+  let containingBlock: HTMLElement | null = null;
+
+  while (curr) {
+    if (!isRenderable(curr)) {
       curr = curr.parentElement;
       continue;
     }
+
     const style = window.getComputedStyle(curr);
-    if (style.position === "fixed") return { mode: "fixed", anchor: curr };
-    if (style.position === "sticky") return { mode: "sticky", anchor: curr };
+
+    // Identify effective positioning mode (nearest positioned ancestor in fixed/sticky track)
+    if (mode === "static") {
+      if (style.position === "fixed") {
+        mode = "fixed";
+        anchor = curr as HTMLElement;
+      } else if (style.position === "sticky") {
+        mode = "sticky";
+        anchor = curr as HTMLElement;
+      }
+    }
+
+    // Capture the first ancestor that establishes a containing block for our element
+    // NOTE: An element does not establish a containing block for itself in the 'fixed' sense
+    if (curr !== element && !containingBlock && (
+      style.transform !== "none" ||
+      style.filter !== "none" ||
+      style.perspective !== "none" ||
+      style.contain === "paint" ||
+      style.contain === "layout" ||
+      style.willChange === "transform" ||
+      style.willChange === "filter"
+    )) {
+      containingBlock = curr as HTMLElement;
+    }
+
+    if (curr === document.documentElement) break;
     curr = curr.parentElement;
   }
-  return { mode: "static", anchor: null };
+
+  return { mode, anchor, containingBlock };
 }
 
 /**
@@ -457,7 +513,7 @@ export function deduceGeometry(element: Element): DeducedGeometry {
   const initialWindowX = window.scrollX;
   const initialWindowY = window.scrollY;
 
-  const { mode: position, anchor } = getInheritedPositionMode(element);
+  const { mode: position, anchor, containingBlock } = getInheritedPositionMode(element);
 
   let stickyConfig;
   if (position === "sticky" && anchor) {
@@ -501,6 +557,8 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     stickyConfig,
     initialWindowX,
     initialWindowY,
+    hasContainingBlock: !!containingBlock,
+    containingBlock,
   };
 }
 

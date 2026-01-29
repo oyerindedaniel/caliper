@@ -1,16 +1,23 @@
 /**
- * @caliper/agent-bridge - Server Stub
- * This module is loaded on Node.js to prevent SSR errors.
+ * @oyerinde/caliper/bridge - Server Stub
+ *
+ * This file is loaded when the package is imported in a Node.js/SSR environment.
+ * It exports no-op stubs to prevent "window is not defined" errors.
  */
 
-export const initAgentBridge = () => {
-  // No-op on server
-};
+export function CaliperBridge(): unknown {
+  return {
+    name: "agent-bridge",
+    install: () => { },
+    dispose: () => { },
+  };
+}
 
-export const dispatchCaliperIntent = () => {
-  return { error: "Agent bridge is not available on server" };
-};
-
-export const getCaliperState = () => {
-  return null;
-};
+export async function dispatchCaliperIntent(): Promise<unknown> {
+  return {
+    success: false,
+    method: "UNKNOWN",
+    error: "Agent bridge is not available in SSR environment",
+    timestamp: Date.now(),
+  };
+}

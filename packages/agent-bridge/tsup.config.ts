@@ -31,9 +31,11 @@ const DEFAULT_OPTIONS: Options = {
     VERSION: version,
   },
   splitting: false,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
-  outDir: "dist",
+  outDir: "./dist",
+  treeshake: true,
+  target: "esnext"
 };
 
 export default defineConfig([
@@ -46,7 +48,6 @@ export default defineConfig([
     external: ["@oyerinde/caliper"],
     noExternal: ["@oyerinde/caliper-schema"],
     platform: "browser",
-    target: "es2022",
   },
   // Server stub (no-op for SSR)
   {
@@ -54,8 +55,6 @@ export default defineConfig([
     entry: { "index.server": "src/index.server.ts" },
     format: ["esm", "cjs"],
     dts: false,
-    sourcemap: false,
     platform: "node",
-    target: "node18",
   },
 ]);

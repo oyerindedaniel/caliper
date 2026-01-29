@@ -1,9 +1,18 @@
+import { isRenderable } from "../../shared/utils/dom-utils.js";
+
 /**
  * Check if an element is visible
  * Elements are ignored if they are invisible or zero-size
  */
 export function isVisible(element: Element): boolean {
-  if (!(element instanceof HTMLElement || element instanceof SVGElement)) {
+  if (!isRenderable(element)) {
+    return false;
+  }
+
+  const tagName = element.tagName.toUpperCase();
+
+  // Explicitly ignore non-renderable metadata/structural tags
+  if (["STYLE", "SCRIPT", "NOSCRIPT", "TEMPLATE", "META", "LINK", "HEAD"].includes(tagName)) {
     return false;
   }
 
@@ -20,7 +29,8 @@ export function isVisible(element: Element): boolean {
   }
 
   // Check opacity
-  if (parseFloat(style.opacity) === 0) {
+  const opacity = style.opacity;
+  if (opacity !== "" && parseFloat(opacity) === 0) {
     return false;
   }
 
@@ -32,7 +42,7 @@ export function isVisible(element: Element): boolean {
  * Elements with zero width or height are ignored
  */
 export function hasSize(element: Element): boolean {
-  if (!(element instanceof HTMLElement || element instanceof SVGElement)) {
+  if (!isRenderable(element)) {
     return false;
   }
 

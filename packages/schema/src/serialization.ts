@@ -18,7 +18,9 @@ export class BitBridge {
             return id;
         };
 
-        const collect = (node: CaliperNode) => {
+        const stack: CaliperNode[] = [root];
+        while (stack.length > 0) {
+            const node = stack.pop()!;
             getStringId(node.tag);
             getStringId(node.selector);
             getStringId(node.agentId);
@@ -43,7 +45,7 @@ export class BitBridge {
             getStringId(styles.overflowX);
             getStringId(styles.overflowY);
             getStringId(styles.fontFamily);
-            getStringId(styles.fontWeight);
+            getStringId(String(styles.fontWeight));
             getStringId(styles.lineHeight === null ? null : String(styles.lineHeight));
             getStringId(String(styles.letterSpacing));
             getStringId(String(styles.opacity));
@@ -51,30 +53,34 @@ export class BitBridge {
             getStringId(styles.gap === null ? null : String(styles.gap));
 
             if (node.children) {
-                node.children.forEach(collect);
+                for (let i = node.children.length - 1; i >= 0; i--) {
+                    stack.push(node.children[i]!);
+                }
             }
-        };
-        collect(root);
+        }
 
         const encoder = new TextEncoder();
         const encodedStrings = stringList.map(rawString => encoder.encode(rawString));
-        let dictSize = 4;
+        let dictSize = 8; // MAGIC (4) + COUNT (4)
         encodedStrings.forEach(bytes => dictSize += 2 + bytes.length);
 
-        const buffer = new ArrayBuffer(dictSize + 1024 * 1024 * 5);
+        const buffer = new ArrayBuffer(dictSize + 1024 * 1024 * 5); // Base + 5MB
         const view = new DataView(buffer);
         let offset = 0;
 
         view.setUint32(offset, BitBridge.MAGIC); offset += 4;
-
         view.setUint32(offset, stringList.length); offset += 4;
+
         encodedStrings.forEach(bytes => {
             view.setUint16(offset, bytes.length); offset += 2;
             new Uint8Array(buffer, offset, bytes.length).set(bytes);
             offset += bytes.length;
         });
 
-        const encodeNode = (node: CaliperNode) => {
+        const nodeStack: CaliperNode[] = [root];
+        while (nodeStack.length > 0) {
+            const node = nodeStack.pop()!;
+
             view.setUint16(offset, getStringId(node.tag)); offset += 2;
             view.setUint16(offset, getStringId(node.selector)); offset += 2;
             view.setUint16(offset, getStringId(node.agentId)); offset += 2;
@@ -101,7 +107,7 @@ export class BitBridge {
             view.setUint16(offset, getStringId(styles.position)); offset += 2;
             view.setUint16(offset, getStringId(styles.boxSizing)); offset += 2;
             view.setFloat32(offset, styles.fontSize); offset += 4;
-            view.setUint16(offset, getStringId(styles.fontWeight)); offset += 2;
+            view.setUint16(offset, getStringId(String(styles.fontWeight))); offset += 2;
             view.setUint16(offset, getStringId(styles.fontFamily)); offset += 2;
             view.setUint16(offset, getStringId(String(styles.opacity))); offset += 2;
             view.setUint16(offset, getStringId(styles.color)); offset += 2;
@@ -132,10 +138,12 @@ export class BitBridge {
             view.setUint16(offset, node.depth); offset += 2;
             const children = node.children || [];
             view.setUint16(offset, children.length); offset += 2;
-            children.forEach(encodeNode);
-        };
 
-        encodeNode(root);
+            for (let i = children.length - 1; i >= 0; i--) {
+                nodeStack.push(children[i]!);
+            }
+        }
+
         return new Uint8Array(buffer, 0, offset);
     }
 
@@ -157,103 +165,127 @@ export class BitBridge {
             offset += len;
         }
 
-        const decodeNode = (): CaliperNode => {
-            const tag = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const selector = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const agentId = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const htmlId = stringList[view.getUint16(offset)] || undefined; offset += 2;
-            const textContent = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const root = this.deserializeNode(view, offset, stringList);
+        offset = root.newOffset;
 
-            const classCount = view.getUint16(offset); offset += 2;
-            const classes: string[] = [];
-            for (let i = 0; i < classCount; i++) {
-                classes.push(stringList[view.getUint16(offset)] || "");
-                offset += 2;
-            }
+        const nodeStack: { node: CaliperNode, childrenToRead: number }[] = [{
+            node: root.node,
+            childrenToRead: root.childCount
+        }];
 
-            const rect = {
-                top: view.getFloat32(offset), left: view.getFloat32(offset + 4),
-                width: view.getFloat32(offset + 8), height: view.getFloat32(offset + 12),
-                bottom: view.getFloat32(offset + 16), right: view.getFloat32(offset + 20),
-                x: 0, y: 0
-            };
-            rect.x = rect.left;
-            rect.y = rect.top;
-            offset += 24;
+        while (nodeStack.length > 0) {
+            const current = nodeStack[nodeStack.length - 1]!;
 
-            const vTop = view.getFloat32(offset); offset += 4;
-            const vLeft = view.getFloat32(offset); offset += 4;
+            if (current.childrenToRead > 0) {
+                const childResult = this.deserializeNode(view, offset, stringList);
+                offset = childResult.newOffset;
 
-            const display = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const position = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const boxSizing = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const fontSize = view.getFloat32(offset); offset += 4;
-            const fontWeight = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const fontFamily = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const opacityStr = stringList[view.getUint16(offset)] || "1"; offset += 2;
-            const color = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const backgroundColor = stringList[view.getUint16(offset)] || ""; offset += 2;
-            const borderRadius = stringList[view.getUint16(offset)] || "0"; offset += 2;
-            const borderColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
-            const boxShadow = stringList[view.getUint16(offset)] || undefined; offset += 2;
-            const outline = stringList[view.getUint16(offset)] || undefined; offset += 2;
-            const outlineColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
-            const overflow = stringList[view.getUint16(offset)] || "visible"; offset += 2;
-            const overflowX = stringList[view.getUint16(offset)] || "visible"; offset += 2;
-            const overflowY = stringList[view.getUint16(offset)] || "visible"; offset += 2;
-            const lhStr = stringList[view.getUint16(offset)] || null; offset += 2;
-            const lsStr = stringList[view.getUint16(offset)] || "0"; offset += 2;
-            const ziStr = stringList[view.getUint16(offset)] || null; offset += 2;
-            const gapStr = stringList[view.getUint16(offset)] || null; offset += 2;
+                childResult.node.parentAgentId = current.node.agentId;
+                current.node.children.push(childResult.node);
+                current.childrenToRead--;
 
-            const opacity = isNaN(parseFloat(opacityStr)) ? opacityStr : parseFloat(opacityStr);
-            const lineHeight = lhStr === null ? null : (isNaN(parseFloat(lhStr)) ? lhStr : parseFloat(lhStr));
-            const letterSpacing = isNaN(parseFloat(lsStr)) ? lsStr : parseFloat(lsStr);
-            const zIndex = ziStr === null ? null : (isNaN(parseFloat(ziStr)) ? ziStr : parseInt(ziStr, 10));
-            const gap = gapStr === null ? null : parseFloat(gapStr);
-
-            const readEdges = (): BoxEdges => {
-                const edges = { top: view.getFloat32(offset), right: view.getFloat32(offset + 4), bottom: view.getFloat32(offset + 8), left: view.getFloat32(offset + 12) };
-                offset += 16;
-                return edges;
-            };
-            const padding = readEdges();
-            const margin = readEdges();
-            const border = readEdges();
-
-            const depth = view.getUint16(offset); offset += 2;
-            const childCount = view.getUint16(offset); offset += 2;
-
-            const node: CaliperNode = {
-                agentId, selector, tag, htmlId, classes, textContent,
-                rect, viewportRect: { top: vTop, left: vLeft },
-                depth, childCount, children: [],
-                styles: {
-                    display, position, boxSizing, padding, margin, border,
-                    fontSize, fontWeight, fontFamily, opacity, color, backgroundColor,
-                    lineHeight,
-                    letterSpacing,
-                    borderRadius, borderColor, boxShadow, outline, outlineColor,
-                    overflow, overflowX, overflowY,
-                    gap, zIndex
-                },
-                measurements: {
-                    toParent: { top: 0, left: 0, bottom: 0, right: 0 },
-                    toPreviousSibling: null, toNextSibling: null,
-                    indexInParent: 0, siblingCount: childCount
+                if (childResult.childCount > 0) {
+                    nodeStack.push({
+                        node: childResult.node,
+                        childrenToRead: childResult.childCount
+                    });
                 }
-            };
-
-            for (let i = 0; i < childCount; i++) {
-                const child = decodeNode();
-                child.parentAgentId = node.agentId;
-                node.children.push(child);
+            } else {
+                nodeStack.pop();
             }
+        }
 
-            return node;
+        return root.node;
+    }
+
+    private static deserializeNode(view: DataView, offset: number, stringList: string[]): { node: CaliperNode, childCount: number, newOffset: number } {
+        const tag = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const selector = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const agentId = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const htmlId = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const textContent = stringList[view.getUint16(offset)] || undefined; offset += 2;
+
+        const classCount = view.getUint16(offset); offset += 2;
+        const classes: string[] = [];
+        for (let i = 0; i < classCount; i++) {
+            classes.push(stringList[view.getUint16(offset)] || "");
+            offset += 2;
+        }
+
+        const rect = {
+            top: view.getFloat32(offset), left: view.getFloat32(offset + 4),
+            width: view.getFloat32(offset + 8), height: view.getFloat32(offset + 12),
+            bottom: view.getFloat32(offset + 16), right: view.getFloat32(offset + 20),
+            x: 0, y: 0
+        };
+        rect.x = rect.left;
+        rect.y = rect.top;
+        offset += 24;
+
+        const vTop = view.getFloat32(offset); offset += 4;
+        const vLeft = view.getFloat32(offset); offset += 4;
+
+        const display = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const position = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const boxSizing = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const fontSize = view.getFloat32(offset); offset += 4;
+        const fontWeight = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const fontFamily = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const opacityStr = stringList[view.getUint16(offset)] || "1"; offset += 2;
+        const color = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const backgroundColor = stringList[view.getUint16(offset)] || ""; offset += 2;
+        const borderRadius = stringList[view.getUint16(offset)] || "0"; offset += 2;
+        const borderColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const boxShadow = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const outline = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const outlineColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const overflow = stringList[view.getUint16(offset)] || "visible"; offset += 2;
+        const overflowX = stringList[view.getUint16(offset)] || "visible"; offset += 2;
+        const overflowY = stringList[view.getUint16(offset)] || "visible"; offset += 2;
+        const lhStr = stringList[view.getUint16(offset)] || null; offset += 2;
+        const lsStr = stringList[view.getUint16(offset)] || "0"; offset += 2;
+        const ziStr = stringList[view.getUint16(offset)] || null; offset += 2;
+        const gapStr = stringList[view.getUint16(offset)] || null; offset += 2;
+
+        const opacity = isNaN(parseFloat(opacityStr)) ? opacityStr : parseFloat(opacityStr);
+        const lineHeight = lhStr === null ? null : (isNaN(parseFloat(lhStr)) ? lhStr : parseFloat(lhStr));
+        const letterSpacing = isNaN(parseFloat(lsStr)) ? lsStr : parseFloat(lsStr);
+        const zIndex = ziStr === null ? null : (isNaN(parseFloat(ziStr)) ? ziStr : parseInt(ziStr, 10));
+        const gap = gapStr === null ? null : parseFloat(gapStr);
+
+        const readEdges = (): BoxEdges => {
+            const edges = { top: view.getFloat32(offset), right: view.getFloat32(offset + 4), bottom: view.getFloat32(offset + 8), left: view.getFloat32(offset + 12) };
+            offset += 16;
+            return edges;
+        };
+        const padding = readEdges();
+        const margin = readEdges();
+        const border = readEdges();
+
+        const depth = view.getUint16(offset); offset += 2;
+        const childCount = view.getUint16(offset); offset += 2;
+
+        const node: CaliperNode = {
+            agentId, selector, tag, htmlId, classes, textContent,
+            rect, viewportRect: { top: vTop, left: vLeft },
+            depth, childCount, children: [],
+            styles: {
+                display, position, boxSizing, padding, margin, border,
+                fontSize, fontWeight, fontFamily, opacity, color, backgroundColor,
+                lineHeight,
+                letterSpacing,
+                borderRadius, borderColor, boxShadow, outline, outlineColor,
+                overflow, overflowX, overflowY,
+                gap, zIndex
+            },
+            measurements: {
+                toParent: { top: 0, left: 0, bottom: 0, right: 0 },
+                toPreviousSibling: null, toNextSibling: null,
+                indexInParent: 0, siblingCount: childCount
+            }
         };
 
-        return decodeNode();
+        return { node, childCount, newOffset: offset };
     }
 
     static packEnvelope(json: string, payload: Uint8Array): Uint8Array {

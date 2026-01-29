@@ -36,7 +36,6 @@ interface RootConfig {
   onSystemsReady?: (systems: {
     measurementSystem: MeasurementSystem;
     selectionSystem: SelectionSystem;
-    onViewportChange: (listener: () => void) => () => void;
   }) => void;
 }
 
@@ -89,12 +88,6 @@ export function Root(config: RootConfig) {
   const [isAgentActive, setIsAgentActive] = createSignal(false);
 
   let copyTimeoutId: number | null = null;
-  const viewportListeners = new Set<() => void>();
-
-  const onViewportChange = (listener: () => void) => {
-    viewportListeners.add(listener);
-    return () => viewportListeners.delete(listener);
-  };
 
   const ignoredElements = new WeakSet<Element>();
 
@@ -153,7 +146,6 @@ export function Root(config: RootConfig) {
       version: (prev.version || 0) + 1,
     }));
     viewportRafId = null;
-    viewportListeners.forEach((listener) => listener());
   };
 
   const scheduleUpdate = () => {
@@ -174,7 +166,6 @@ export function Root(config: RootConfig) {
       config.onSystemsReady({
         measurementSystem: system,
         selectionSystem,
-        onViewportChange,
       });
     }
 

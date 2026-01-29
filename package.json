@@ -9,16 +9,20 @@
     "format": "turbo run format",
     "check-types": "turbo run check-types",
     "clean": "turbo run clean && rm -rf node_modules",
-    "test": "echo \"Tests coming soon\"",
+    "test": "vitest run",
     "version:write": "node scripts/write-version.mjs",
     "build:caliper": "turbo run build --filter=@oyerinde/caliper...",
     "bb": "turbo run build  --filter=@oyerinde/caliper-schema --filter=@caliper/core --filter=@caliper/overlay --filter=@oyerinde/caliper --filter=@oyerinde/caliper-mcp --filter=@oyerinde/caliper-bridge",
     "release": "pnpm build:caliper && pnpm --filter @oyerinde/caliper run release"
   },
   "devDependencies": {
+    "@types/jsdom": "^27.0.0",
+    "@vitest/browser": "^4.0.18",
+    "jsdom": "^27.4.0",
     "prettier": "^3.7.4",
     "turbo": "^2.7.2",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^4.0.18"
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {

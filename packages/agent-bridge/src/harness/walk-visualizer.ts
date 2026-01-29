@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, CALIPER_PREFIX } from "@oyerinde/caliper/core";
+import { DEFAULT_THEME, CALIPER_PREFIX } from "@caliper/core";
 
 const WALK_VIS_PREFIX = `${CALIPER_PREFIX}walk-vis`;
 const WALK_VIS_CONTAINER_ID = `${WALK_VIS_PREFIX}-container`;
