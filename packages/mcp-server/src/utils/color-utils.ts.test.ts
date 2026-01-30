@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseColor, calculateDeltaE, serializeColor } from './color-utils.js';
+import { parseColor, calculateDeltaE, serializeColor, getLuminance, calculateContrastRatio } from './color-utils.js';
 
 describe('Color Utilities', () => {
     describe('parseColor', () => {
@@ -169,6 +169,68 @@ describe('Color Utilities', () => {
             // White in oklch
             const color = parseColor('oklch(1 0 0)');
             expect(serializeColor(color)).toBe('rgb(255, 255, 255)');
+        });
+    });
+
+    describe('getLuminance', () => {
+        it('should return 0 for black', () => {
+            const black = parseColor('#000000');
+            expect(getLuminance(black)).toBeCloseTo(0, 5);
+        });
+
+        it('should return 1 for white', () => {
+            const white = parseColor('#ffffff');
+            expect(getLuminance(white)).toBeCloseTo(1, 3);
+        });
+
+        it('should return approximately 0.21 for red', () => {
+            const red = parseColor('#ff0000');
+            expect(getLuminance(red)).toBeCloseTo(0.2126, 2);
+        });
+
+        it('should return approximately 0.72 for green', () => {
+            const green = parseColor('#00ff00');
+            expect(getLuminance(green)).toBeCloseTo(0.7152, 2);
+        });
+
+        it('should return approximately 0.07 for blue', () => {
+            const blue = parseColor('#0000ff');
+            expect(getLuminance(blue)).toBeCloseTo(0.0722, 2);
+        });
+    });
+
+    describe('calculateContrastRatio', () => {
+        it('should return 21 for black on white', () => {
+            const black = parseColor('#000000');
+            const white = parseColor('#ffffff');
+            expect(calculateContrastRatio(black, white)).toBeCloseTo(21, 1);
+        });
+
+        it('should return 1 for same colors', () => {
+            const red = parseColor('#ff0000');
+            expect(calculateContrastRatio(red, red)).toBeCloseTo(1, 5);
+        });
+
+        it('should be symmetric (fg/bg order should not affect ratio)', () => {
+            const color1 = parseColor('#336699');
+            const color2 = parseColor('#ffcc00');
+            const ratio1 = calculateContrastRatio(color1, color2);
+            const ratio2 = calculateContrastRatio(color2, color1);
+            expect(ratio1).toBeCloseTo(ratio2, 5);
+        });
+
+        it('should pass AA for black text on light gray', () => {
+            const black = parseColor('#000000');
+            const lightGray = parseColor('#767676'); // WCAG AA boundary
+            const ratio = calculateContrastRatio(black, lightGray);
+            expect(ratio).toBeGreaterThanOrEqual(4.5);
+        });
+
+        it('should fail AAA for common low-contrast pairs', () => {
+            const gray1 = parseColor('#777777');
+            const gray2 = parseColor('#999999');
+            const ratio = calculateContrastRatio(gray1, gray2);
+            expect(ratio).toBeLessThan(7);
         });
     });
 });

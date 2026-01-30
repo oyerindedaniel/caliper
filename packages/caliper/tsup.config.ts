@@ -90,7 +90,7 @@ export default defineConfig((options) => {
       platform: "browser",
       noExternal: ["@caliper/core", "@oyerinde/caliper-schema"],
       external: [],
-      experimentalDts: true,
+      // experimentalDts: true,
       splitting: true,
     },
     {
@@ -99,7 +99,7 @@ export default defineConfig((options) => {
         index: "./src/index.ts",
       },
       format: ["cjs", "esm"],
-      experimentalDts: true,
+      // experimentalDts: true,
       platform: "browser",
       splitting: true,
       esbuildPlugins: getEsbuildPlugins(),

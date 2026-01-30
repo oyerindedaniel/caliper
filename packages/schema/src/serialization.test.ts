@@ -174,4 +174,132 @@ describe('BitBridge Serialization', () => {
         }
         expect(current.agentId).toBe('depth-50');
     });
+
+    it('should serialize and deserialize flexbox properties correctly', () => {
+        const flexNode: CaliperNode = {
+            agentId: 'flex-container',
+            tag: 'div',
+            selector: 'div.flex',
+            classes: ['flex'],
+            rect: { top: 0, left: 0, width: 200, height: 100, bottom: 100, right: 200, x: 0, y: 0 },
+            viewportRect: { top: 0, left: 0 },
+            depth: 0,
+            childCount: 0,
+            children: [],
+            styles: {
+                display: 'flex',
+                position: 'relative',
+                boxSizing: 'border-box',
+                fontSize: 16,
+                fontWeight: '400',
+                fontFamily: 'Arial',
+                color: 'black',
+                backgroundColor: 'white',
+                padding: { top: 0, right: 0, bottom: 0, left: 0 },
+                margin: { top: 0, right: 0, bottom: 0, left: 0 },
+                border: { top: 0, right: 0, bottom: 0, left: 0 },
+                borderRadius: '0px',
+                opacity: 1,
+                overflow: 'visible',
+                overflowX: 'visible',
+                overflowY: 'visible',
+                gap: 16,
+                lineHeight: 1.5,
+                letterSpacing: 0,
+                zIndex: 10,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+            },
+            measurements: {
+                toParent: { top: 0, left: 0, bottom: 0, right: 0 },
+                toPreviousSibling: null,
+                toNextSibling: null,
+                indexInParent: 0,
+                siblingCount: 1
+            }
+        };
+
+        const serialized = BitBridge.serialize(flexNode);
+        const reconstructed = BitBridge.deserialize(serialized);
+
+        expect(reconstructed.styles.flexDirection).toBe('row');
+        expect(reconstructed.styles.justifyContent).toBe('space-between');
+        expect(reconstructed.styles.alignItems).toBe('center');
+        expect(reconstructed.styles.gap).toBe(16);
+        expect(reconstructed.styles.zIndex).toBe(10);
+    });
+
+    it('should handle nullable and optional style fields correctly', () => {
+        const nodeWithNulls: CaliperNode = {
+            agentId: 'nulls-test',
+            tag: 'span',
+            selector: 'span',
+            classes: [],
+            rect: { top: 0, left: 0, width: 50, height: 20, bottom: 20, right: 50, x: 0, y: 0 },
+            viewportRect: { top: 0, left: 0 },
+            depth: 0,
+            childCount: 0,
+            children: [],
+            styles: {
+                display: 'inline',
+                position: 'static',
+                boxSizing: 'content-box',
+                fontSize: 12,
+                fontWeight: '300',
+                fontFamily: 'Times',
+                color: '#333',
+                backgroundColor: 'transparent',
+                padding: { top: 0, right: 0, bottom: 0, left: 0 },
+                margin: { top: 0, right: 0, bottom: 0, left: 0 },
+                border: { top: 0, right: 0, bottom: 0, left: 0 },
+                borderRadius: '0',
+                opacity: 0.5,
+                overflow: 'visible',
+                overflowX: 'visible',
+                overflowY: 'visible',
+                gap: null,
+                lineHeight: null,
+                letterSpacing: 'normal',
+                zIndex: null,
+                flexDirection: undefined,
+                justifyContent: undefined,
+                alignItems: undefined,
+                borderColor: undefined,
+                boxShadow: undefined,
+                outline: undefined,
+                outlineColor: undefined,
+            },
+            measurements: {
+                toParent: { top: 0, left: 0, bottom: 0, right: 0 },
+                toPreviousSibling: null,
+                toNextSibling: null,
+                indexInParent: 0,
+                siblingCount: 1
+            }
+        };
+
+        const serialized = BitBridge.serialize(nodeWithNulls);
+        const reconstructed = BitBridge.deserialize(serialized);
+
+        expect(reconstructed.styles.gap).toBeNull();
+        expect(reconstructed.styles.lineHeight).toBeNull();
+        expect(reconstructed.styles.zIndex).toBeNull();
+        expect(reconstructed.styles.flexDirection).toBeUndefined();
+        expect(reconstructed.styles.justifyContent).toBeUndefined();
+        expect(reconstructed.styles.alignItems).toBeUndefined();
+        expect(reconstructed.styles.opacity).toBe(0.5);
+        expect(reconstructed.styles.letterSpacing).toBe('normal');
+    });
+
+    it('should pack and unpack envelope correctly', () => {
+        const metadata = JSON.stringify({ version: '1.0', timestamp: Date.now() });
+        const payload = new Uint8Array([1, 2, 3, 4, 5]);
+
+        const packed = BitBridge.packEnvelope(metadata, payload);
+        const unpacked = BitBridge.unpackEnvelope(packed);
+
+        expect(JSON.parse(unpacked.json)).toHaveProperty('version', '1.0');
+        expect(unpacked.payload).toEqual(payload);
+    });
 });

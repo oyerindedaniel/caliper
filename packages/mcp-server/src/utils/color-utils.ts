@@ -397,31 +397,89 @@ export function serializeColor(color: NormalizedColor): string {
     if (color.alpha === 0) return "transparent";
 
     // Oklab to LMS'
-    const l_ = color.l + 0.3963377774 * color.a + 0.2158037573 * color.b;
-    const m_ = color.l - 0.1055613458 * color.a - 0.0638541728 * color.b;
-    const s_ = color.l - 0.0894841775 * color.a - 1.2914855480 * color.b;
+    const lmsPrimeL = color.l + 0.3963377774 * color.a + 0.2158037573 * color.b;
+    const lmsPrimeM = color.l - 0.1055613458 * color.a - 0.0638541728 * color.b;
+    const lmsPrimeS = color.l - 0.0894841775 * color.a - 1.2914855480 * color.b;
 
     // LMS' to LMS
-    const l = l_ * l_ * l_;
-    const m = m_ * m_ * m_;
-    const s = s_ * s_ * s_;
+    const lmsL = lmsPrimeL * lmsPrimeL * lmsPrimeL;
+    const lmsM = lmsPrimeM * lmsPrimeM * lmsPrimeM;
+    const lmsS = lmsPrimeS * lmsPrimeS * lmsPrimeS;
 
     // LMS to Linear RGB
-    const r_lin = +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
-    const g_lin = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
-    const b_lin = -0.0041960863 * l - 0.7034186147 * m + 1.7076127010 * s;
+    const linearR = +4.0767416621 * lmsL - 3.3077115913 * lmsM + 0.2309699292 * lmsS;
+    const linearG = -1.2684380046 * lmsL + 2.6097574011 * lmsM - 0.3413193965 * lmsS;
+    const linearB = -0.0041960863 * lmsL - 0.7034186147 * lmsM + 1.7076127010 * lmsS;
 
     // Linear RGB to sRGB
-    const r = Math.min(255, Math.max(0, Math.round(unpivotRgb(r_lin) * 255)));
-    const g = Math.min(255, Math.max(0, Math.round(unpivotRgb(g_lin) * 255)));
-    const b = Math.min(255, Math.max(0, Math.round(unpivotRgb(b_lin) * 255)));
+    const red = Math.min(255, Math.max(0, Math.round(unpivotRgb(linearR) * 255)));
+    const green = Math.min(255, Math.max(0, Math.round(unpivotRgb(linearG) * 255)));
+    const blue = Math.min(255, Math.max(0, Math.round(unpivotRgb(linearB) * 255)));
 
     if (color.alpha >= 0.999) {
-        return `rgb(${r}, ${g}, ${b})`;
+        return `rgb(${red}, ${green}, ${blue})`;
     }
-    return `rgba(${r}, ${g}, ${b}, ${Number(color.alpha.toFixed(3))})`;
+    return `rgba(${red}, ${green}, ${blue}, ${Number(color.alpha.toFixed(3))})`;
 }
 
 function unpivotRgb(c: number): number {
     return c > 0.0031308 ? 1.055 * Math.pow(c, 1 / 2.4) - 0.055 : 12.92 * c;
+}
+
+/**
+ * Converts a NormalizedColor (Oklab) back to sRGB components (0-1 range).
+ */
+function oklabToSrgbComponents(color: NormalizedColor): { red: number; green: number; blue: number } {
+    // Oklab to LMS'
+    const lmsPrimeL = color.l + 0.3963377774 * color.a + 0.2158037573 * color.b;
+    const lmsPrimeM = color.l - 0.1055613458 * color.a - 0.0638541728 * color.b;
+    const lmsPrimeS = color.l - 0.0894841775 * color.a - 1.2914855480 * color.b;
+
+    // LMS' to LMS
+    const lmsL = lmsPrimeL * lmsPrimeL * lmsPrimeL;
+    const lmsM = lmsPrimeM * lmsPrimeM * lmsPrimeM;
+    const lmsS = lmsPrimeS * lmsPrimeS * lmsPrimeS;
+
+    // LMS to Linear RGB
+    const linearR = +4.0767416621 * lmsL - 3.3077115913 * lmsM + 0.2309699292 * lmsS;
+    const linearG = -1.2684380046 * lmsL + 2.6097574011 * lmsM - 0.3413193965 * lmsS;
+    const linearB = -0.0041960863 * lmsL - 0.7034186147 * lmsM + 1.7076127010 * lmsS;
+
+    // Linear RGB to sRGB (clamped 0-1)
+    return {
+        red: Math.min(1, Math.max(0, unpivotRgb(linearR))),
+        green: Math.min(1, Math.max(0, unpivotRgb(linearG))),
+        blue: Math.min(1, Math.max(0, unpivotRgb(linearB))),
+    };
+}
+
+/**
+ * Calculates the relative luminance of a color per WCAG 2.1.
+ * Input: NormalizedColor (Oklab internal representation)
+ * Output: Luminance value between 0 (black) and 1 (white)
+ */
+export function getLuminance(color: NormalizedColor): number {
+    const { red, green, blue } = oklabToSrgbComponents(color);
+
+    // sRGB to linear (gamma expand)
+    const rLin = red <= 0.04045 ? red / 12.92 : Math.pow((red + 0.055) / 1.055, 2.4);
+    const gLin = green <= 0.04045 ? green / 12.92 : Math.pow((green + 0.055) / 1.055, 2.4);
+    const bLin = blue <= 0.04045 ? blue / 12.92 : Math.pow((blue + 0.055) / 1.055, 2.4);
+
+    // WCAG luminance formula
+    return 0.2126 * rLin + 0.7152 * gLin + 0.0722 * bLin;
+}
+
+/**
+ * Calculates the WCAG 2.1 contrast ratio between two colors.
+ * Returns a value between 1 (no contrast) and 21 (max contrast).
+ */
+export function calculateContrastRatio(fg: NormalizedColor, bg: NormalizedColor): number {
+    const l1 = getLuminance(fg);
+    const l2 = getLuminance(bg);
+
+    const lighter = Math.max(l1, l2);
+    const darker = Math.min(l1, l2);
+
+    return (lighter + 0.05) / (darker + 0.05);
 }

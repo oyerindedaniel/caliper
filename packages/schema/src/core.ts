@@ -73,6 +73,30 @@ export const SelectionMetadataSchema = z.object({
     hasContainingBlock: z.boolean().optional(),
 });
 
+// ============================================================================
+// CONTEXT METRICS (Browser environment details for relative unit resolution)
+// ============================================================================
+
+export const ContextMetricsSchema = z.object({
+    rootFontSize: z.number(),
+    devicePixelRatio: z.number(),
+    viewportWidth: z.number(),
+    viewportHeight: z.number(),
+    visualViewportWidth: z.number().optional(),
+    visualViewportHeight: z.number().optional(),
+});
+
+export type ContextMetrics = z.infer<typeof ContextMetricsSchema>;
+
+export const DEFAULT_CONTEXT_METRICS: ContextMetrics = {
+    rootFontSize: 16,
+    devicePixelRatio: 1,
+    viewportWidth: 1920,
+    viewportHeight: 1080,
+    visualViewportWidth: 1920,
+    visualViewportHeight: 1080,
+};
+
 export type Rect = z.infer<typeof RectSchema>;
 export type PositionMode = z.infer<typeof PositionModeSchema>;
 export type CursorContext = z.infer<typeof CursorContextSchema>;
@@ -81,3 +105,4 @@ export type StickyConfig = z.infer<typeof StickyConfigSchema>;
 export type MeasurementLine = z.infer<typeof MeasurementLineSchema>;
 export type MeasurementResult = z.infer<typeof MeasurementResultSchema>;
 export type SelectionMetadata = z.infer<typeof SelectionMetadataSchema>;
+

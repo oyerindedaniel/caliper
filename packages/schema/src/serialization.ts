@@ -1,4 +1,159 @@
-import type { CaliperNode, BoxEdges } from "./audit.js";
+import type { CaliperNode, BoxEdges, CaliperComputedStyles } from "./audit.js";
+
+type StyleSerializerEntry<T> = {
+    collectStrings: (value: T, collect: (strVal: string | null | undefined) => void) => void;
+    serialize: (value: T, context: SerializeContext) => void;
+    deserialize: (context: DeserializeContext) => T;
+};
+
+type StyleSerializerMap = {
+    [K in keyof CaliperComputedStyles]: StyleSerializerEntry<CaliperComputedStyles[K]>;
+};
+
+interface SerializeContext {
+    view: DataView;
+    offset: number;
+    getStringId: (strVal: string | null | undefined) => number;
+}
+
+interface DeserializeContext {
+    view: DataView;
+    offset: number;
+    stringList: string[];
+}
+
+const stringSerializer = (defaultValue: string = ""): StyleSerializerEntry<string> => ({
+    collectStrings: (value, collect) => collect(value),
+    serialize: (value, context) => {
+        context.view.setUint16(context.offset, context.getStringId(value));
+        context.offset += 2;
+    },
+    deserialize: (context) => {
+        const result = context.stringList[context.view.getUint16(context.offset)] || defaultValue;
+        context.offset += 2;
+        return result;
+    },
+});
+
+const optionalStringSerializer = (): StyleSerializerEntry<string | undefined> => ({
+    collectStrings: (value, collect) => collect(value),
+    serialize: (value, context) => {
+        context.view.setUint16(context.offset, context.getStringId(value));
+        context.offset += 2;
+    },
+    deserialize: (context) => {
+        const result = context.stringList[context.view.getUint16(context.offset)] || undefined;
+        context.offset += 2;
+        return result;
+    },
+});
+
+const floatSerializer = (): StyleSerializerEntry<number> => ({
+    collectStrings: () => { },
+    serialize: (value, context) => {
+        context.view.setFloat32(context.offset, value);
+        context.offset += 4;
+    },
+    deserialize: (context) => {
+        const result = context.view.getFloat32(context.offset);
+        context.offset += 4;
+        return result;
+    },
+});
+
+const boxEdgesSerializer = (): StyleSerializerEntry<BoxEdges> => ({
+    collectStrings: () => { },
+    serialize: (edges, context) => {
+        context.view.setFloat32(context.offset, edges.top); context.offset += 4;
+        context.view.setFloat32(context.offset, edges.right); context.offset += 4;
+        context.view.setFloat32(context.offset, edges.bottom); context.offset += 4;
+        context.view.setFloat32(context.offset, edges.left); context.offset += 4;
+    },
+    deserialize: (context) => {
+        const edges = {
+            top: context.view.getFloat32(context.offset),
+            right: context.view.getFloat32(context.offset + 4),
+            bottom: context.view.getFloat32(context.offset + 8),
+            left: context.view.getFloat32(context.offset + 12),
+        };
+        context.offset += 16;
+        return edges;
+    },
+});
+
+const nullableNumberSerializer = (): StyleSerializerEntry<number | null> => ({
+    collectStrings: (value, collect) => collect(value === null ? null : String(value)),
+    serialize: (value, context) => {
+        context.view.setUint16(context.offset, context.getStringId(value === null ? null : String(value)));
+        context.offset += 2;
+    },
+    deserialize: (context) => {
+        const strValue = context.stringList[context.view.getUint16(context.offset)] || null;
+        context.offset += 2;
+        return strValue === null ? null : parseFloat(strValue);
+    },
+});
+
+const numberOrStringSerializer = (defaultValue: string | number = ""): StyleSerializerEntry<number | string> => ({
+    collectStrings: (value, collect) => collect(String(value)),
+    serialize: (value, context) => {
+        context.view.setUint16(context.offset, context.getStringId(String(value)));
+        context.offset += 2;
+    },
+    deserialize: (context) => {
+        const strValue = context.stringList[context.view.getUint16(context.offset)] || String(defaultValue);
+        context.offset += 2;
+        const numValue = parseFloat(strValue);
+        return isNaN(numValue) ? strValue : numValue;
+    },
+});
+
+const nullableNumberOrStringSerializer = (): StyleSerializerEntry<number | string | null> => ({
+    collectStrings: (value, collect) => collect(value === null ? null : String(value)),
+    serialize: (value, context) => {
+        context.view.setUint16(context.offset, context.getStringId(value === null ? null : String(value)));
+        context.offset += 2;
+    },
+    deserialize: (context) => {
+        const strValue = context.stringList[context.view.getUint16(context.offset)] || null;
+        context.offset += 2;
+        if (strValue === null) return null;
+        const numValue = parseFloat(strValue);
+        return isNaN(numValue) ? strValue : numValue;
+    },
+});
+
+const STYLE_SERIALIZERS = {
+    display: stringSerializer(),
+    position: stringSerializer(),
+    boxSizing: stringSerializer(),
+    padding: boxEdgesSerializer(),
+    margin: boxEdgesSerializer(),
+    border: boxEdgesSerializer(),
+    gap: nullableNumberSerializer(),
+    flexDirection: optionalStringSerializer(),
+    justifyContent: optionalStringSerializer(),
+    alignItems: optionalStringSerializer(),
+    fontSize: floatSerializer(),
+    fontWeight: stringSerializer(),
+    fontFamily: stringSerializer(),
+    lineHeight: nullableNumberOrStringSerializer(),
+    letterSpacing: numberOrStringSerializer(0),
+    color: stringSerializer(),
+    backgroundColor: stringSerializer(),
+    borderColor: optionalStringSerializer(),
+    borderRadius: stringSerializer("0"),
+    boxShadow: optionalStringSerializer(),
+    opacity: numberOrStringSerializer(1),
+    outline: optionalStringSerializer(),
+    outlineColor: optionalStringSerializer(),
+    zIndex: nullableNumberOrStringSerializer(),
+    overflow: stringSerializer("visible"),
+    overflowX: stringSerializer("visible"),
+    overflowY: stringSerializer("visible"),
+} satisfies StyleSerializerMap;
+
+const STYLE_KEYS = Object.keys(STYLE_SERIALIZERS) as (keyof CaliperComputedStyles)[];
 
 export class BitBridge {
     private static readonly MAGIC = 0x43414C49; // "CALI"
@@ -18,6 +173,7 @@ export class BitBridge {
             return id;
         };
 
+        // First pass: collect all strings for the dictionary
         const stack: CaliperNode[] = [root];
         while (stack.length > 0) {
             const node = stack.pop()!;
@@ -26,31 +182,16 @@ export class BitBridge {
             getStringId(node.agentId);
             getStringId(node.htmlId);
             getStringId(node.textContent);
-            if (node.classes) {
-                node.classes.forEach(className => getStringId(className));
-            }
+            node.classes?.forEach(className => getStringId(className));
 
-            const styles = node.styles;
-            getStringId(styles.display);
-            getStringId(styles.position);
-            getStringId(styles.boxSizing);
-            getStringId(styles.color);
-            getStringId(styles.backgroundColor);
-            getStringId(styles.borderRadius);
-            getStringId(styles.borderColor);
-            getStringId(styles.boxShadow);
-            getStringId(styles.outline);
-            getStringId(styles.outlineColor);
-            getStringId(styles.overflow);
-            getStringId(styles.overflowX);
-            getStringId(styles.overflowY);
-            getStringId(styles.fontFamily);
-            getStringId(String(styles.fontWeight));
-            getStringId(styles.lineHeight === null ? null : String(styles.lineHeight));
-            getStringId(String(styles.letterSpacing));
-            getStringId(String(styles.opacity));
-            getStringId(styles.zIndex === null ? null : String(styles.zIndex));
-            getStringId(styles.gap === null ? null : String(styles.gap));
+            // Collect strings from styles using the serializer registry
+            for (const key of STYLE_KEYS) {
+                const serializer = STYLE_SERIALIZERS[key];
+                (serializer.collectStrings as (v: CaliperComputedStyles[typeof key], c: (s: string | null | undefined) => void) => void)(
+                    node.styles[key],
+                    getStringId
+                );
+            }
 
             if (node.children) {
                 for (let i = node.children.length - 1; i >= 0; i--) {
@@ -59,6 +200,7 @@ export class BitBridge {
             }
         }
 
+        // Build buffer
         const encoder = new TextEncoder();
         const encodedStrings = stringList.map(rawString => encoder.encode(rawString));
         let dictSize = 8; // MAGIC (4) + COUNT (4)
@@ -77,6 +219,7 @@ export class BitBridge {
             offset += bytes.length;
         });
 
+        // Second pass: serialize nodes
         const nodeStack: CaliperNode[] = [root];
         while (nodeStack.length > 0) {
             const node = nodeStack.pop()!;
@@ -102,38 +245,16 @@ export class BitBridge {
             view.setFloat32(offset, node.viewportRect.top); offset += 4;
             view.setFloat32(offset, node.viewportRect.left); offset += 4;
 
-            const styles = node.styles;
-            view.setUint16(offset, getStringId(styles.display)); offset += 2;
-            view.setUint16(offset, getStringId(styles.position)); offset += 2;
-            view.setUint16(offset, getStringId(styles.boxSizing)); offset += 2;
-            view.setFloat32(offset, styles.fontSize); offset += 4;
-            view.setUint16(offset, getStringId(String(styles.fontWeight))); offset += 2;
-            view.setUint16(offset, getStringId(styles.fontFamily)); offset += 2;
-            view.setUint16(offset, getStringId(String(styles.opacity))); offset += 2;
-            view.setUint16(offset, getStringId(styles.color)); offset += 2;
-            view.setUint16(offset, getStringId(styles.backgroundColor)); offset += 2;
-            view.setUint16(offset, getStringId(styles.borderRadius)); offset += 2;
-            view.setUint16(offset, getStringId(styles.borderColor)); offset += 2;
-            view.setUint16(offset, getStringId(styles.boxShadow)); offset += 2;
-            view.setUint16(offset, getStringId(styles.outline)); offset += 2;
-            view.setUint16(offset, getStringId(styles.outlineColor)); offset += 2;
-            view.setUint16(offset, getStringId(styles.overflow)); offset += 2;
-            view.setUint16(offset, getStringId(styles.overflowX)); offset += 2;
-            view.setUint16(offset, getStringId(styles.overflowY)); offset += 2;
-            view.setUint16(offset, getStringId(styles.lineHeight === null ? null : String(styles.lineHeight))); offset += 2;
-            view.setUint16(offset, getStringId(String(styles.letterSpacing))); offset += 2;
-            view.setUint16(offset, getStringId(styles.zIndex === null ? null : String(styles.zIndex))); offset += 2;
-            view.setUint16(offset, getStringId(styles.gap === null ? null : String(styles.gap))); offset += 2;
-
-            const writeEdges = (edges: BoxEdges) => {
-                view.setFloat32(offset, edges.top); offset += 4;
-                view.setFloat32(offset, edges.right); offset += 4;
-                view.setFloat32(offset, edges.bottom); offset += 4;
-                view.setFloat32(offset, edges.left); offset += 4;
-            };
-            writeEdges(styles.padding);
-            writeEdges(styles.margin);
-            writeEdges(styles.border);
+            // Serialize styles using the registry
+            const ctx: SerializeContext = { view, offset, getStringId };
+            for (const key of STYLE_KEYS) {
+                const serializer = STYLE_SERIALIZERS[key];
+                (serializer.serialize as (v: CaliperComputedStyles[typeof key], c: SerializeContext) => void)(
+                    node.styles[key],
+                    ctx
+                );
+            }
+            offset = ctx.offset;
 
             view.setUint16(offset, node.depth); offset += 2;
             const children = node.children || [];
@@ -168,7 +289,7 @@ export class BitBridge {
         const root = this.deserializeNode(view, offset, stringList);
         offset = root.newOffset;
 
-        const nodeStack: { node: CaliperNode, childrenToRead: number }[] = [{
+        const nodeStack: { node: CaliperNode; childrenToRead: number }[] = [{
             node: root.node,
             childrenToRead: root.childCount
         }];
@@ -198,7 +319,7 @@ export class BitBridge {
         return root.node;
     }
 
-    private static deserializeNode(view: DataView, offset: number, stringList: string[]): { node: CaliperNode, childCount: number, newOffset: number } {
+    private static deserializeNode(view: DataView, offset: number, stringList: string[]): { node: CaliperNode; childCount: number; newOffset: number } {
         const tag = stringList[view.getUint16(offset)] || ""; offset += 2;
         const selector = stringList[view.getUint16(offset)] || ""; offset += 2;
         const agentId = stringList[view.getUint16(offset)] || ""; offset += 2;
@@ -225,42 +346,14 @@ export class BitBridge {
         const vTop = view.getFloat32(offset); offset += 4;
         const vLeft = view.getFloat32(offset); offset += 4;
 
-        const display = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const position = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const boxSizing = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const fontSize = view.getFloat32(offset); offset += 4;
-        const fontWeight = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const fontFamily = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const opacityStr = stringList[view.getUint16(offset)] || "1"; offset += 2;
-        const color = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const backgroundColor = stringList[view.getUint16(offset)] || ""; offset += 2;
-        const borderRadius = stringList[view.getUint16(offset)] || "0"; offset += 2;
-        const borderColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
-        const boxShadow = stringList[view.getUint16(offset)] || undefined; offset += 2;
-        const outline = stringList[view.getUint16(offset)] || undefined; offset += 2;
-        const outlineColor = stringList[view.getUint16(offset)] || undefined; offset += 2;
-        const overflow = stringList[view.getUint16(offset)] || "visible"; offset += 2;
-        const overflowX = stringList[view.getUint16(offset)] || "visible"; offset += 2;
-        const overflowY = stringList[view.getUint16(offset)] || "visible"; offset += 2;
-        const lhStr = stringList[view.getUint16(offset)] || null; offset += 2;
-        const lsStr = stringList[view.getUint16(offset)] || "0"; offset += 2;
-        const ziStr = stringList[view.getUint16(offset)] || null; offset += 2;
-        const gapStr = stringList[view.getUint16(offset)] || null; offset += 2;
-
-        const opacity = isNaN(parseFloat(opacityStr)) ? opacityStr : parseFloat(opacityStr);
-        const lineHeight = lhStr === null ? null : (isNaN(parseFloat(lhStr)) ? lhStr : parseFloat(lhStr));
-        const letterSpacing = isNaN(parseFloat(lsStr)) ? lsStr : parseFloat(lsStr);
-        const zIndex = ziStr === null ? null : (isNaN(parseFloat(ziStr)) ? ziStr : parseInt(ziStr, 10));
-        const gap = gapStr === null ? null : parseFloat(gapStr);
-
-        const readEdges = (): BoxEdges => {
-            const edges = { top: view.getFloat32(offset), right: view.getFloat32(offset + 4), bottom: view.getFloat32(offset + 8), left: view.getFloat32(offset + 12) };
-            offset += 16;
-            return edges;
-        };
-        const padding = readEdges();
-        const margin = readEdges();
-        const border = readEdges();
+        // Deserialize styles using the registry
+        const ctx: DeserializeContext = { view, offset, stringList };
+        const styles = {} as CaliperComputedStyles;
+        for (const key of STYLE_KEYS) {
+            const serializer = STYLE_SERIALIZERS[key];
+            (styles as Record<string, unknown>)[key] = serializer.deserialize(ctx);
+        }
+        offset = ctx.offset;
 
         const depth = view.getUint16(offset); offset += 2;
         const childCount = view.getUint16(offset); offset += 2;
@@ -269,15 +362,7 @@ export class BitBridge {
             agentId, selector, tag, htmlId, classes, textContent,
             rect, viewportRect: { top: vTop, left: vLeft },
             depth, childCount, children: [],
-            styles: {
-                display, position, boxSizing, padding, margin, border,
-                fontSize, fontWeight, fontFamily, opacity, color, backgroundColor,
-                lineHeight,
-                letterSpacing,
-                borderRadius, borderColor, boxShadow, outline, outlineColor,
-                overflow, overflowX, overflowY,
-                gap, zIndex
-            },
+            styles,
             measurements: {
                 toParent: { top: 0, left: 0, bottom: 0, right: 0 },
                 toPreviousSibling: null, toNextSibling: null,
@@ -300,7 +385,7 @@ export class BitBridge {
         return combined;
     }
 
-    static unpackEnvelope(data: Uint8Array): { json: string, payload: Uint8Array } {
+    static unpackEnvelope(data: Uint8Array): { json: string; payload: Uint8Array } {
         const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
         const jsonLen = view.getUint32(0);
         const jsonStr = new TextDecoder().decode(data.subarray(4, 4 + jsonLen));
@@ -308,3 +393,4 @@ export class BitBridge {
         return { json: jsonStr, payload };
     }
 }
+

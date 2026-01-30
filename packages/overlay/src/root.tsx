@@ -74,6 +74,7 @@ export function Root(config: RootConfig) {
   const [activeInputFocus, setActiveInputFocus] = createSignal<"calculator" | "projection">(
     "calculator"
   );
+  const [pinnedCalculatorPos, setPinnedCalculatorPos] = createSignal<{ x: number; y: number } | null>(null);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
@@ -108,6 +109,7 @@ export function Root(config: RootConfig) {
   const resetCalculatorUI = () => {
     setCalculatorState(null);
     setActiveCalculatorLine(null);
+    setPinnedCalculatorPos(null);
     if (projectionState().direction !== null) {
       setActiveInputFocus("projection");
     }
@@ -672,10 +674,28 @@ export function Root(config: RootConfig) {
       window.focus();
     };
 
+    const handleDblClick = (e: MouseEvent) => {
+      if (!calculatorState()?.isActive) return;
+
+      const target = e.target as HTMLElement;
+      const isOnCalculator = target.closest(`.${PREFIX}calculator`);
+
+      if (isOnCalculator) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setPinnedCalculatorPos(null);
+      } else if (pinnedCalculatorPos() === null) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setPinnedCalculatorPos({ x: e.clientX, y: e.clientY });
+      }
+    };
+
     window.addEventListener("caliper:agent-lock-change", handleAgentLockChange);
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
     window.addEventListener("pointerup", handlePointerUp, { capture: true });
     window.addEventListener("click", handleClick, { capture: true });
+    window.addEventListener("dblclick", handleDblClick, { capture: true });
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("keyup", handleKeyUp, { capture: true });
@@ -688,6 +708,7 @@ export function Root(config: RootConfig) {
       window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp, { capture: true });
       window.removeEventListener("click", handleClick, { capture: true });
+      window.removeEventListener("dblclick", handleDblClick, { capture: true });
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp, { capture: true });
@@ -963,7 +984,7 @@ export function Root(config: RootConfig) {
   return (
     <Overlay
       result={result}
-      cursor={cursor}
+      cursor={() => pinnedCalculatorPos() ?? cursor()}
       selectionMetadata={selectionMetadata}
       isActivatePressed={isActivatePressed}
       isFrozen={isFrozen}

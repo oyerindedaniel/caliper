@@ -1,2 +1,16 @@
 SEMANTIC_HARMONY_STRATEGY.md
 RECONCILIATION_MATCHING_DEEP_DIVE.md
+src/shared/properties.ts
+src/types/index.ts
+
+src/services/reconcile-backup.ts
+src/services/semantic-matcher.ts
+src/services/semantic-matcher.test.ts
+src/services/semantic-parser-service.ts
+src/services/semantic-parser-service.test.ts
+src/services/semantic-harmony-reconciler.ts
+src/services/reconciler.test.ts
+src/services/token-resolver-service.ts
+src/services/token-resolver.test.ts
+src/services/style-mapper.ts
+src/services/style-mapper.test.ts

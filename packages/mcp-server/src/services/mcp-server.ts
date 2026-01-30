@@ -5,6 +5,7 @@ import { bridgeService } from "./bridge-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { caliperGrep } from "../utils/grep.js";
+import { parseColor, calculateDeltaE, calculateContrastRatio } from "../utils/color-utils.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
@@ -255,6 +256,99 @@ The output includes:
         } catch (error) {
           return {
             content: [{ type: "text", text: `Walk and Measure failed: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_check_contrast",
+      {
+        description: `Check WCAG 2.1 contrast ratio between two colors.
+
+Returns the contrast ratio (1-21) and pass/fail status for:
+- AA Normal Text (4.5:1)
+- AA Large Text (3:1)
+- AAA Normal Text (7:1)
+- AAA Large Text (4.5:1)`,
+        inputSchema: z.object({
+          foreground: z.string().describe("Foreground color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
+          background: z.string().describe("Background color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
+        }),
+      },
+      async ({ foreground, background }) => {
+        try {
+          const fg = parseColor(foreground);
+          const bg = parseColor(background);
+          const ratio = calculateContrastRatio(fg, bg);
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                foreground,
+                background,
+                ratio: Number(ratio.toFixed(2)),
+                passAA: ratio >= 4.5,
+                passAALarge: ratio >= 3,
+                passAAA: ratio >= 7,
+                passAAALarge: ratio >= 4.5,
+              }, null, 2)
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: `Contrast check failed: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_delta_e",
+      {
+        description: `Calculate perceptual color difference (Delta E) between two colors using Oklab.
+
+Returns the Delta E value and a human-readable interpretation:
+- < 0.02: Imperceptible
+- 0.02-0.05: Just noticeable
+- 0.05-0.1: Noticeable
+- 0.1-0.3: Distinct
+- > 0.3: Very different`,
+        inputSchema: z.object({
+          color1: z.string().describe("First color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
+          color2: z.string().describe("Second color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
+        }),
+      },
+      async ({ color1, color2 }) => {
+        try {
+          const c1 = parseColor(color1);
+          const c2 = parseColor(color2);
+          const deltaE = calculateDeltaE(c1, c2);
+
+          let interpretation: string;
+          if (deltaE < 0.02) interpretation = "Imperceptible (< 0.02)";
+          else if (deltaE < 0.05) interpretation = "Just noticeable (0.02-0.05)";
+          else if (deltaE < 0.1) interpretation = "Noticeable (0.05-0.1)";
+          else if (deltaE < 0.3) interpretation = "Distinct (0.1-0.3)";
+          else interpretation = "Very different (> 0.3)";
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                color1,
+                color2,
+                deltaE: Number(deltaE.toFixed(4)),
+                interpretation,
+              }, null, 2)
+            }]
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: `Delta E calculation failed: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
           };
         }

@@ -79,7 +79,7 @@ The following flags are available when running the server:
 Once connected, the AI agent will have access to high-precision layout tools. You can ask:
 - "Inspect the header element for alignment issues."
 - "Measure the spacing between the logo and the navigation links."
-- "Audit this React component against its Figma design URL."
+- "Check the contrast ratio between the text and background colors."
 
 ## Tools Provided 🛠️
 
@@ -92,16 +92,9 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
 - `caliper_parse_selector(jsonString)`: Parse rich selector data copied from the Caliper UI.
 - `caliper_walk_and_measure(selector, maxDepth?)`: Comprehensive recursive DOM walk with style and gap extraction.
-- `caliper_reconcile(...)`: Perform precision reconciliation using the Semantic Harmony Engine (token-aware).
+- `caliper_check_contrast(foreground, background)`: Check WCAG 2.1 contrast ratio between two colors (hex, rgb, oklch, etc.).
+- `caliper_delta_e(color1, color2)`: Calculate perceptual color difference between two colors using Oklab.
 
-## Figma MCP Integration 🎨
-
-Caliper works alongside the **official Figma MCP server** to create a **Closed-Loop Audit System**. The AI agent acts as the translator between Figma's design context and Caliper's live browser measurements.
-
-### Semantic Harmony Engine
-The new reconciliation engine (v2.0) automatically infers design intent from your code. It supports both **Tailwind** and **Standard CSS** across multiple frameworks:
-- **Tailwind-based**: React, Vue, Svelte, HTML.
-- **CSS/Inline-based**: Universal support via style attribute parsing.
 
 ## Prompts Provided 📋
 
@@ -110,7 +103,6 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 | Prompt | Description |
 | :--- | :--- |
 | `caliper-selector-audit` | Comprehensive, structured element audit (source discovery + precision analysis). |
-| `caliper-figma-reconcile` | Deep reconciliation workflow (Primary + Secondary breakpoints). |
 | `caliper-selectors-compare` | Compare two elements (A reference vs B target) to fix styling. |
 
 ## Resources 📚
