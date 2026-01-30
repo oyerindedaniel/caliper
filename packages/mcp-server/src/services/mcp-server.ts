@@ -2,9 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { bridgeService } from "./bridge-service.js";
-import { CaliperAgentState, CaliperNodeSchema, DesignTokenDictionarySchema, FrameworkSchema } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
-import { semanticHarmonyReconciler } from "./semantic-harmony-reconciler.js";
 import { createLogger } from "../utils/logger.js";
 import { caliperGrep } from "../utils/grep.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
@@ -262,42 +260,6 @@ The output includes:
         }
       }
     );
-
-    this.server.registerTool(
-      "caliper_reconcile",
-      {
-        description: `Perform precision reconciliation using the Semantic Harmony Engine.
-Matches live DOM nodes to Figma design context with design token awareness.`,
-        inputSchema: z.object({
-          caliperTree: CaliperNodeSchema.describe("The measured DOM tree from caliper_walk_and_measure"),
-          expectedHtml: z.string().describe("The EXPECTED HTML/JSX output from figma-mcp's get_design_context"),
-          designTokens: DesignTokenDictionarySchema.describe("The design token dictionary from figma-mcp's get_variable_defs"),
-          framework: FrameworkSchema.describe("The frontend framework/styling approach used (react-tailwind, html-css, etc.)"),
-          figmaLayerUrl: z.string().describe("The URL of the Figma layer being reconciled"),
-          secondaryHtml: z.string().optional().describe("HTML output for secondary breakpoint (optional)"),
-          secondaryTokens: DesignTokenDictionarySchema.optional().describe("Design tokens for secondary breakpoint (optional)"),
-        }),
-      },
-      async ({ caliperTree, expectedHtml, designTokens, framework, figmaLayerUrl, secondaryHtml, secondaryTokens }) => {
-        try {
-          const report = semanticHarmonyReconciler.reconcile({
-            caliperTree,
-            expectedHtml,
-            designTokens,
-            framework,
-            figmaLayerUrl,
-            secondaryHtml,
-            secondaryTokens,
-          });
-          return { content: [{ type: "text", text: JSON.stringify(report, null, 2) }] };
-        } catch (error) {
-          return {
-            content: [{ type: "text", text: `Semantic reconciliation failed: ${error instanceof Error ? error.message : String(error)}` }],
-            isError: true,
-          };
-        }
-      }
-    );
   }
 
   private registerResources() {
@@ -477,105 +439,6 @@ ${tabIdB ? (tabIdA ? "9" : "8") : (tabIdA ? "8" : "7")}. **Verify**
         ],
       })
     );
-
-    this.server.registerPrompt(
-      "caliper-figma-reconcile",
-      {
-        description: "Semantic Harmony reconciliation: Figma design context to live DOM with token-aware diffing.",
-        argsSchema: {
-          selector: z.string().describe("Caliper Selector (Agent ID) of the root element"),
-          figmaUrl: z.string().describe("Figma layer URL (primary breakpoint)"),
-          framework: FrameworkSchema
-            .default("react-tailwind")
-            .describe("Your frontend framework/styling approach"),
-          figmaSecondaryUrl: z.string().optional().describe("Figma layer URL (secondary breakpoint)"),
-        },
-      },
-      async ({ selector, figmaUrl, framework, figmaSecondaryUrl }) => ({
-        messages: [
-          {
-            role: "user",
-            content: {
-              type: "text",
-              text: `## CALIPER-FIGMA SEMANTIC HARMONY RECONCILIATION
-
-You are about to perform a **precision reconciliation** between a Figma design and its live DOM implementation using the Semantic Harmony Engine.
-
-**Inputs:**
-- Caliper Selector: \`${selector}\`
-- Figma Layer URL: ${figmaUrl}
-- Framework: ${framework}
-${figmaSecondaryUrl ? `- Secondary Figma URL: ${figmaSecondaryUrl}` : ""}
-
----
-
-### Phase 1: Context Gathering
-
-1. **Capture Primary Context**
-   - Call Figma MCP's \`get_design_context\` for: ${figmaUrl}
-     Prompt: "${getFigmaPrompt(framework)}"
-     **Keep the resulting HTML/JSX output.**
-   - Call \`get_variable_defs\` for: ${figmaUrl}
-     **Keep the design tokens dictionary.**
-
-${figmaSecondaryUrl ? `2. **Capture Secondary Context (Responsive)**
-   - Call \`get_design_context\` for: ${figmaSecondaryUrl}
-     Prompt: "${getFigmaPrompt(framework)}"
-   - Call \`get_variable_defs\` for: ${figmaSecondaryUrl}` : ""}
-
-### Phase 2: Implementation Audit
-
-${figmaSecondaryUrl ? "3" : "2"}. **Walk the DOM**
-   Call \`caliper_walk_and_measure\` with:
-   - selector: "${selector}"
-   - maxDepth: 5
-   **Keep the resulting CaliperNode tree.**
-
-### Phase 3: Reconciliation Engine
-
-${figmaSecondaryUrl ? "4" : "3"}. **Trigger Reconciliation**
-   Call \`caliper_reconcile\` with:
-   - caliperTree: (From Phase 2)
-   - expectedHtml: (From context gathering)
-   - designTokens: (From context gathering)
-   - framework: "${framework}"
-   - figmaLayerUrl: "${figmaUrl}"
-${figmaSecondaryUrl ? `   - secondaryHtml: (From Phase 1, Step 2)
-   - secondaryTokens: (From Phase 1, Step 2)` : ""}
-
-   **Analyze the reconciliation report.** The Engine will have performed:
-   
-   1. **Semantic Matching**:
-      - Parsed HTML into a semantic tree.
-      - Matched nodes using hierarchical pairing with confidence scoring (tag match, text exact/fuzzy, layout structure).
-   
-   2. **Token-Aware Property Diffing**:
-      - Compared **spacing**: padding, margin, and gap against design tokens.
-      - Compared **typography**: font-size, font-weight, line-height.
-      - Compared **visuals**: normalized colors (hex) and border-radius.
-      - Generated CSS recommendations using **token names**:
-        \`padding: var(--spacing-md); /* 16px */\`
-
-   Identify major vs minor deltas and use matching confidence signals to prioritize fixes.
-
-### Phase 4: Fix and Verify
-
-${figmaSecondaryUrl ? "5" : "4"}. **Find Source Code**
-   Use \`caliper_grep\` with identifiers from the report to find the target file.
-
-${figmaSecondaryUrl ? "6" : "5"}. **Apply Fixes**
-   Update the source code using the recommendations in the report.
-
-${figmaSecondaryUrl ? "7" : "6"}. **Verify**
-   Re-run \`caliper_walk_and_measure\` to confirm the fix.
-
----
-**BEGIN PHASE 1 NOW. Complete all phases in order following all instructions precisely.**`,
-            },
-          },
-        ],
-      })
-    );
   }
 
   async start() {
@@ -601,11 +464,3 @@ ${figmaSecondaryUrl ? "7" : "6"}. **Verify**
   }
 }
 
-function getFigmaPrompt(framework: string): string {
-  const isTailwind = framework.endsWith("-tailwind");
-  const base = framework.split("-")[0];
-  const frameworkName = base === "html" ? "plain HTML" : base === "react" ? "React" : base === "vue" ? "Vue" : "Svelte";
-  const styling = isTailwind ? "with Tailwind CSS" : "with CSS classes and inline styles";
-
-  return `generate my Figma selection in ${frameworkName} ${styling}`;
-}
