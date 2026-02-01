@@ -20,6 +20,7 @@ const caliper = init();
 caliper.use(
   CaliperBridge({
     enabled: true,
+    wsPort: 9876
   })
 );
 ```
@@ -29,9 +30,7 @@ caliper.use(
 | Option | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `enabled` | `boolean` | No | Set to `true` to activate the bridge (default: `false`) |
-| `wsUrl` | `string` | No | Custom WebSocket URL for the MCP relay (default: `ws://localhost:9876`) |
-| `debounceMs` | `number` | No | Passive state update interval (default: `200ms`) |
-| `minElementSize` | `number` | No | Minimum element size for tracking (default: `24px`) |
+| `wsPort` | `number` | No | WebSocket port for the MCP relay (default: `9876`) |
 | `onStateChange` | `(state: CaliperAgentState) => void` | No | Callback for real-time state synchronization |
 
 ## License ⚖️

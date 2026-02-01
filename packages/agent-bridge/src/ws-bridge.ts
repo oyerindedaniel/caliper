@@ -6,7 +6,7 @@ import type {
 import { BitBridge } from "@oyerinde/caliper-schema";
 import { createLogger, BRIDGE_TAB_ID_KEY } from "@caliper/core";
 
-import { DEFAULT_WS_URL } from "./constants.js";
+import { DEFAULT_WS_PORT } from "./constants.js";
 
 const logger = createLogger("bridge");
 
@@ -16,7 +16,7 @@ interface BridgeOptions {
 }
 
 export function createWSBridge(options: BridgeOptions) {
-  const { onIntent, wsUrl = DEFAULT_WS_URL } = options;
+  const { onIntent, wsUrl = `ws://localhost:${DEFAULT_WS_PORT}` } = options;
   let activeSocket: WebSocket | null = null;
   let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   let reconnectAttempts = 0;

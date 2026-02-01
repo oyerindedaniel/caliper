@@ -177,6 +177,14 @@ export function parseComputedStyles(styles: CSSStyleDeclaration): CaliperCompute
 }
 
 export function getContextMetrics(): ContextMetrics {
+    const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+    const colorScheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "no-preference";
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     return {
         rootFontSize: parseFloat(window.getComputedStyle(document.documentElement).fontSize) || 16,
         devicePixelRatio: window.devicePixelRatio || 1,
@@ -184,5 +192,28 @@ export function getContextMetrics(): ContextMetrics {
         viewportHeight: document.documentElement.clientHeight,
         visualViewportWidth: window.visualViewport?.width || window.innerWidth,
         visualViewportHeight: window.visualViewport?.height || window.innerHeight,
+        scrollX: window.scrollX,
+        scrollY: window.scrollY,
+        documentWidth: document.documentElement.scrollWidth,
+        documentHeight: document.documentElement.scrollHeight,
+        orientation: isPortrait ? "portrait" : "landscape",
+        preferences: {
+            colorScheme,
+            reducedMotion,
+        },
     };
 }
+
+/**
+ * Schedules a callback to run after requestAnimationFrame and a microtask.
+ */
+export async function waitPostRaf<T>(callback: () => T): Promise<T> {
+    return new Promise((resolve) => {
+        requestAnimationFrame(() => {
+            Promise.resolve().then(() => {
+                resolve(callback());
+            });
+        });
+    });
+}
+

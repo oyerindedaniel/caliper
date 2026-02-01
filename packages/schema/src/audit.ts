@@ -32,43 +32,43 @@ export const BoxEdgesSchema = z.object({
  */
 export const CaliperComputedStylesSchema = z.object({
     // Box Model
-    display: z.string(),
-    position: z.string(),
-    boxSizing: z.string(),
+    display: z.string().optional(),
+    position: z.string().optional(),
+    boxSizing: z.string().optional(),
 
     // Spacing
-    padding: BoxEdgesSchema,
-    margin: BoxEdgesSchema,
-    border: BoxEdgesSchema,
+    padding: BoxEdgesSchema.optional(),
+    margin: BoxEdgesSchema.optional(),
+    border: BoxEdgesSchema.optional(),
 
     // Flexbox/Grid
-    gap: z.number().nullable(),
+    gap: z.number().nullable().optional(),
     flexDirection: z.string().optional(),
     justifyContent: z.string().optional(),
     alignItems: z.string().optional(),
 
     // Typography
-    fontSize: z.number(),
-    fontWeight: z.string(),
-    fontFamily: z.string(),
-    lineHeight: z.union([z.number(), z.string()]).nullable(),
-    letterSpacing: z.union([z.number(), z.string()]),
-    color: z.string(),
+    fontSize: z.number().optional(),
+    fontWeight: z.string().optional(),
+    fontFamily: z.string().optional(),
+    lineHeight: z.union([z.number(), z.string()]).nullable().optional(),
+    letterSpacing: z.union([z.number(), z.string()]).optional(),
+    color: z.string().optional(),
 
     // Visual
-    backgroundColor: z.string(),
+    backgroundColor: z.string().optional(),
     borderColor: z.string().optional(),
-    borderRadius: z.string(),
+    borderRadius: z.string().optional(),
     boxShadow: z.string().optional(),
-    opacity: z.union([z.number(), z.string()]),
+    opacity: z.union([z.number(), z.string()]).optional(),
     outline: z.string().optional(),
     outlineColor: z.string().optional(),
-    zIndex: z.union([z.number(), z.string()]).nullable(),
+    zIndex: z.union([z.number(), z.string()]).nullable().optional(),
 
     // Overflow
-    overflow: z.string(),
-    overflowX: z.string(),
-    overflowY: z.string(),
+    overflow: z.string().optional(),
+    overflowX: z.string().optional(),
+    overflowY: z.string().optional(),
 });
 
 // ============================================================================

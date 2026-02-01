@@ -1,5 +1,5 @@
 import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText, type CaliperCoreSystems } from "@caliper/core";
-import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles } from "./utils.js";
+import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles, waitPostRaf, getContextMetrics } from "./utils.js";
 import { walkAndMeasure, parseSelection } from "./harness/walk-engine.js";
 import type {
   CaliperIntent,
@@ -121,7 +121,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
     });
   }
 
-  function handleInspect(params: CaliperInspectPayload): CaliperActionResult {
+  async function handleInspect(params: CaliperInspectPayload): Promise<CaliperActionResult> {
     const { selector } = params;
     const element = resolveElement(selector);
 
@@ -135,37 +135,40 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       };
     }
 
-    const geometry = deduceGeometry(element);
-    const rect = element.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(element);
+    return waitPostRaf(() => {
+      const geometry = deduceGeometry(element);
+      const rect = element.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(element);
 
-    return {
-      success: true,
-      method: "CALIPER_INSPECT",
-      selector,
-      distances: {
-        top: rect.top,
-        left: rect.left,
-        bottom: document.documentElement.clientHeight - rect.bottom,
-        right: document.documentElement.clientWidth - rect.right,
-        horizontal: rect.width,
-        vertical: rect.height,
-      },
-      computedStyles: parseComputedStyles(computedStyle),
-      selection: sanitizeSelection({
-        element,
-        rect: geometry.rect,
-        scrollHierarchy: geometry.scrollHierarchy,
-        position: geometry.position,
-        stickyConfig: geometry.stickyConfig,
-        initialWindowX: geometry.initialWindowX,
-        initialWindowY: geometry.initialWindowY,
-      })!,
-      timestamp: Date.now(),
-    };
+      return {
+        success: true,
+        method: "CALIPER_INSPECT",
+        selector,
+        distances: {
+          top: rect.top,
+          left: rect.left,
+          bottom: document.documentElement.clientHeight - rect.bottom,
+          right: document.documentElement.clientWidth - rect.right,
+          horizontal: rect.width,
+          vertical: rect.height,
+        },
+        computedStyles: parseComputedStyles(computedStyle),
+        selection: sanitizeSelection({
+          element,
+          rect: geometry.rect,
+          scrollHierarchy: geometry.scrollHierarchy,
+          position: geometry.position,
+          stickyConfig: geometry.stickyConfig,
+          initialWindowX: geometry.initialWindowX,
+          initialWindowY: geometry.initialWindowY,
+        })!,
+        timestamp: Date.now(),
+      };
+    });
   }
 
-  function handleWalkDom(params: CaliperWalkDomPayload): CaliperActionResult {
+
+  async function handleWalkDom(params: CaliperWalkDomPayload): Promise<CaliperActionResult> {
     const { selector } = params;
     const element = resolveElement(selector);
 
@@ -179,26 +182,29 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       };
     }
 
-    const getElSummary = (element: Element) => ({
-      tagName: element.tagName.toLowerCase(),
-      id: element.id || undefined,
-      classList: filterRuntimeClasses(element.classList),
-      agentId: element.getAttribute("data-caliper-agent-id") || undefined,
-      text: getElementDirectText(element),
-    });
+    return waitPostRaf(() => {
+      const getElSummary = (element: Element) => ({
+        tagName: element.tagName.toLowerCase(),
+        id: element.id || undefined,
+        classList: filterRuntimeClasses(element.classList),
+        agentId: element.getAttribute("data-caliper-agent-id") || undefined,
+        text: getElementDirectText(element, 100),
+      });
 
-    return {
-      success: true,
-      method: "CALIPER_WALK_DOM",
-      selector,
-      domContext: {
-        element: getElSummary(element),
-        parent: element.parentElement ? getElSummary(element.parentElement) : null,
-        children: Array.from(element.children).map((child) => getElSummary(child)),
-      },
-      timestamp: Date.now(),
-    };
+      return {
+        success: true,
+        method: "CALIPER_WALK_DOM",
+        selector,
+        domContext: {
+          element: getElSummary(element),
+          parent: element.parentElement ? getElSummary(element.parentElement) : null,
+          children: Array.from(element.children).map((child) => getElSummary(child)),
+        },
+        timestamp: Date.now(),
+      };
+    });
   }
+
 
   async function dispatch(intent: CaliperIntent): Promise<CaliperActionResult> {
     stateStore.setAgentLock(true);
@@ -214,11 +220,12 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           result = await handleMeasure(intent.params);
           break;
         case "CALIPER_INSPECT":
-          result = handleInspect(intent.params);
+          result = await handleInspect(intent.params);
           break;
         case "CALIPER_WALK_DOM":
-          result = handleWalkDom(intent.params);
+          result = await handleWalkDom(intent.params);
           break;
+
         case "CALIPER_FREEZE":
           measurementSystem.freeze();
           result = {
@@ -249,10 +256,16 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           break;
         case "CALIPER_WALK_AND_MEASURE":
           try {
-            const walkResult = walkAndMeasure(
-              intent.params.selector,
-              intent.params.maxDepth ?? DEFAULT_WALK_DEPTH
+            const walkResult = await waitPostRaf(() =>
+              walkAndMeasure(
+                intent.params.selector,
+                {
+                  maxDepth: intent.params.maxDepth ?? DEFAULT_WALK_DEPTH,
+                  visualize: true
+                }
+              )
             );
+
             const { root, ...stats } = walkResult;
             const binaryPayload = BitBridge.serialize(root) as Uint8Array;
 
@@ -273,6 +286,14 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
               timestamp: Date.now(),
             };
           }
+          break;
+        case "CALIPER_GET_CONTEXT":
+          result = {
+            success: true,
+            method: "CALIPER_GET_CONTEXT",
+            context: getContextMetrics(),
+            timestamp: Date.now(),
+          };
           break;
         default:
           const _exhaustive: never = intent;

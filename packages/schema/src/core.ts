@@ -84,6 +84,15 @@ export const ContextMetricsSchema = z.object({
     viewportHeight: z.number(),
     visualViewportWidth: z.number().optional(),
     visualViewportHeight: z.number().optional(),
+    scrollX: z.number(),
+    scrollY: z.number(),
+    documentWidth: z.number(),
+    documentHeight: z.number(),
+    orientation: z.enum(["portrait", "landscape"]),
+    preferences: z.object({
+        colorScheme: z.enum(["light", "dark", "no-preference"]),
+        reducedMotion: z.boolean(),
+    }),
 });
 
 export type ContextMetrics = z.infer<typeof ContextMetricsSchema>;
@@ -95,6 +104,15 @@ export const DEFAULT_CONTEXT_METRICS: ContextMetrics = {
     viewportHeight: 1080,
     visualViewportWidth: 1920,
     visualViewportHeight: 1080,
+    scrollX: 0,
+    scrollY: 0,
+    documentWidth: 1920,
+    documentHeight: 1080,
+    orientation: "landscape",
+    preferences: {
+        colorScheme: "light",
+        reducedMotion: false,
+    },
 };
 
 export type Rect = z.infer<typeof RectSchema>;

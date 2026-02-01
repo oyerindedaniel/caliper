@@ -9,7 +9,7 @@ import { Configurator } from "./configurator";
 import { Instructions } from "./instructions";
 import { TryCaliper } from "./try-caliper";
 import { Footer } from "./footer";
-import { FocusProvider } from "./focus-context";
+import { FocusProvider } from "./contexts/focus-context";
 import { Nav } from "./components/nav";
 
 export default function HomePage() {
@@ -19,13 +19,13 @@ export default function HomePage() {
         <main className={styles.main}>
           <Nav />
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div className="flex flex-col gap-12">
             <Image
               src="/caliper_logo.svg"
               alt="Caliper logo"
               width={172}
               height={50}
-              style={{ height: "auto" }}
+              className="h-auto"
               priority
               unoptimized
             />

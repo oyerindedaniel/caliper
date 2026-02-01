@@ -1,10 +1,12 @@
 import { useState, useMemo, useRef } from "react";
 import styles from "./page.module.css";
-import { useFocus } from "./focus-context";
+import { useFocus } from "./contexts/focus-context";
 import { useCopy } from "./hooks/use-copy";
 import { useKeyCapture } from "./hooks/use-key-capture";
-import { useConfig, type CommandConfig } from "./config-context";
+import { useConfig, type CommandConfig } from "./contexts/config-context";
 import { ColorPicker } from "./components/color-picker";
+import { useIsClient } from "./hooks/use-is-client";
+
 
 const ShortcutField = ({
   label,
@@ -94,6 +96,7 @@ const ShortcutField = ({
 };
 
 export function Configurator() {
+  const isClient = useIsClient();
   const { copy } = useCopy();
   const [status, setStatus] = useState<"copied" | "tried" | null>(null);
   const { commands, updateCommand, theme, updateTheme, resetConfig, applyConfig } = useConfig();
@@ -173,6 +176,8 @@ export function Configurator() {
   const update = (key: keyof CommandConfig, value: string) => {
     updateCommand(key, value);
   };
+
+  if (!isClient) return null;
 
   return (
     <section className={styles.section}>

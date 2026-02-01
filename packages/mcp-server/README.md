@@ -10,7 +10,6 @@ Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (
 - **Visual Feedback**: You can see exactly what the agent is measuring as it happens in the browser overlay.
 - **Caliper ID System**: Pinpoint accuracy using stable element identifiers that prevent selector "hallucinations".
 - **Multi-Tab Support**: Automatically targets and tracks the focused browser tab.
-- **Project Context**: Integrated source code search (grep) to map browser elements directly to your implementation.
 - **Zero Config**: Standardized WebSocket relay on port 9876.
 
 ## Installation & Setup 📦
@@ -88,10 +87,10 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_inspect(selector)`: Get an element's geometry, z-index, and full computed styles (padding/margin).
 - `caliper_measure(primary, secondary)`: Perform high-precision distance calculation between two elements.
 - `caliper_clear`: Reset all active measurements and guides in the UI.
-- `caliper_grep(query, tag?)`: Search the codebase for elements using text, IDs, or tags.
 - `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
 - `caliper_parse_selector(jsonString)`: Parse rich selector data copied from the Caliper UI.
 - `caliper_walk_and_measure(selector, maxDepth?)`: Comprehensive recursive DOM walk with style and gap extraction.
+- `caliper_get_context`: Get comprehensive window, viewport, and accessibility metrics from the current browser tab.
 - `caliper_check_contrast(foreground, background)`: Check WCAG 2.1 contrast ratio between two colors (hex, rgb, oklch, etc.).
 - `caliper_delta_e(color1, color2)`: Calculate perceptual color difference between two colors using Oklab.
 

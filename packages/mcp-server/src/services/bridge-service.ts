@@ -88,9 +88,13 @@ export class BridgeService {
           let binaryPayload: Uint8Array | undefined;
 
           if (Buffer.isBuffer(data)) {
-            const { json, payload } = BitBridge.unpackEnvelope(new Uint8Array(data));
-            rawMessage = JSON.parse(json);
-            binaryPayload = payload;
+            if (data[0] === 0x7b) {
+              rawMessage = JSON.parse(data.toString());
+            } else {
+              const { json, payload } = BitBridge.unpackEnvelope(new Uint8Array(data));
+              rawMessage = JSON.parse(json);
+              binaryPayload = payload;
+            }
           } else {
             rawMessage = JSON.parse(data.toString());
           }

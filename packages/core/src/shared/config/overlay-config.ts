@@ -71,12 +71,8 @@ export interface AnimationConfig {
 export interface AgentBridgeConfig {
   /** Enable the agentic bridge for AI integration (default: false) */
   enabled?: boolean;
-  /** WebSocket URL for the MCP relay (default: ws://localhost:8080) */
-  wsUrl?: string;
-  /** Debounce duration for state updates in ms (default: 100) */
-  debounceMs?: number;
-  /** Minimum element area to be considered for agent observation (default: 400) */
-  minElementSize?: number;
+  /** WebSocket port for the MCP relay (default: 9876) */
+  wsPort?: number;
   /** Callback for agent state changes */
   onStateChange?: (state: CaliperAgentState) => void;
 }

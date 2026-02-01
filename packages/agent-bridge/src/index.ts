@@ -29,7 +29,7 @@ import { createIntentHandler } from "./intent-handler.js";
 import { createWSBridge } from "./ws-bridge.js";
 import type { OverlayInstance, CaliperPlugin, CaliperCoreSystems, AgentBridgeConfig } from "@caliper/core";
 import { createLogger } from "@caliper/core";
-import { DEFAULT_WS_URL } from "./constants.js";
+import { DEFAULT_WS_PORT } from "./constants.js";
 import { createStateStore } from "./state-store.js";
 import "./types.js";
 
@@ -80,7 +80,8 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
                 stateStore = createStateStore();
                 intentHandler = createIntentHandler(systems, stateStore);
 
-                const wsUrl = config.wsUrl ?? DEFAULT_WS_URL;
+                const wsPort = config.wsPort ?? DEFAULT_WS_PORT;
+                const wsUrl = `ws://localhost:${wsPort}`;
                 const wsBridge = createWSBridge({
                     onIntent: (intent) => intentHandler!.dispatch(intent),
                     wsUrl,
@@ -99,7 +100,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
                 };
 
                 isInitialized = true;
-                logger.info(`Initialized. MCP Relay enabled on ${wsUrl}`);
+                logger.info(`Initialized. MCP Relay enabled on port ${wsPort} (${wsUrl})`);
 
                 bridgeDispose = () => {
                     wsBridge.destroy();

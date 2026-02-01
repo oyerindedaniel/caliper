@@ -51,17 +51,13 @@ export default function ChangelogPage({ changelog }: ChangelogPageProps) {
   return (
     <div className={styles.page} data-caliper-ignore>
       <main className={styles.main}>
-        <div style={{ marginBottom: "32px" }}>
+        <div className="mb-32">
           <Link
             href="/"
+            className="flex items-center gap-4 op-6 fs-14"
             style={{
               color: "var(--gray-rgb)",
               textDecoration: "none",
-              fontSize: "14px",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-              opacity: 0.6,
               transition: "opacity 0.2s",
               fontFamily: "var(--font-geist-sans)",
             }}
@@ -72,20 +68,20 @@ export default function ChangelogPage({ changelog }: ChangelogPageProps) {
           </Link>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
+        <div className="flex justify-center mb-20">
           <Image
             src="/caliper_logo.svg"
             alt="Caliper logo"
             width={172}
             height={50}
-            style={{ height: "auto" }}
+            className="h-auto"
             priority
             unoptimized
           />
         </div>
 
-        <h1 className={styles.changelogTitle}>{changelog.title}</h1>
-        <p className={styles.instructionItem} style={{ marginBottom: "24px" }}>
+        <h1 className={styles.pageTitle}>{changelog.title}</h1>
+        <p className={`${styles.instructionItem} mb-24`}>
           {changelog.description}
         </p>
 

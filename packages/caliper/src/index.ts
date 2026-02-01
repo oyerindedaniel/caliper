@@ -7,7 +7,7 @@
  * Usage:
  * 1. Script tag (Auto-mount): <script src="@oyerinde/caliper/dist/index.global.js"></script>
  * 2. ESM import (Manual): import { init } from "@oyerinde/caliper"
- * 3. Initialize: const caliper = init(); caliper.mount();
+ * 3. Initialize: const caliper = init();
  */
 
 export { createOverlay as init } from "@caliper/overlay";

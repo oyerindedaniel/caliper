@@ -125,7 +125,7 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
         });
     }
 
-    it('should accurately calculate vertical spacing (Real World: Stack)', () => {
+    it('should accurately calculate vertical spacing (Real World: Stack)', async () => {
         document.body.innerHTML = `
             <div id="stack">
                 <div id="item1">Top</div>
@@ -137,14 +137,14 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
         setElementLayout('#item1', { top: 10, left: 0, width: 200, height: 50 });
         setElementLayout('#item2', { top: 100, left: 0, width: 200, height: 50 });
 
-        const result = walkAndMeasure('#stack');
+        const result = await walkAndMeasure('#stack');
         const node2 = result.root.children[1]!;
 
         expect(node2.measurements.toPreviousSibling?.distance).toBe(40);
         expect(node2.measurements.toPreviousSibling?.direction).toBe('above');
     });
 
-    it('should respect padding-aware inset offsets (Real World: Inset Content)', () => {
+    it('should respect padding-aware inset offsets (Real World: Inset Content)', async () => {
         document.body.innerHTML = `
             <div id="parent">
                 <div id="child">Target</div>
@@ -157,14 +157,14 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
 
         setElementLayout('#child', { top: 200, left: 200, width: 100, height: 100 });
 
-        const result = walkAndMeasure('#parent');
+        const result = await walkAndMeasure('#parent');
         const childNode = result.root.children[0]!;
 
         expect(childNode.measurements.toParent.top).toBe(50);
         expect(childNode.measurements.toParent.left).toBe(50);
     });
 
-    it('should handle flex-row wrap with multi-line spacing', () => {
+    it('should handle flex-row wrap with multi-line spacing', async () => {
         document.body.innerHTML = `
             <div id="grid">
                 <div id="c1">C1</div>
@@ -178,7 +178,7 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
         setElementLayout('#c2', { top: 0, left: 100, width: 90, height: 40 });
         setElementLayout('#c3', { top: 60, left: 0, width: 90, height: 40 });
 
-        const result = walkAndMeasure('#grid');
+        const result = await walkAndMeasure('#grid');
         const n2 = result.root.children[1]!;
         const n3 = result.root.children[2]!;
 
@@ -187,7 +187,7 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
         expect(n3.measurements.toPreviousSibling?.distance).toBe(20);
     });
 
-    it('should correctly prune visibility-inherited trees (Industrial Edge Case)', () => {
+    it('should correctly prune visibility-inherited trees (Industrial Edge Case)', async () => {
         document.body.innerHTML = `
             <div id="root">
                 <div id="container">
@@ -200,14 +200,14 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
         setElementLayout('#container', {}, { visibility: 'hidden' });
         setElementLayout('#target', {}, { visibility: 'hidden' });
 
-        const result = walkAndMeasure('#root');
+        const result = await walkAndMeasure('#root');
 
         expect(result.nodeCount).toBe(2);
         expect(result.root.children.map(c => c.agentId)).toContain('#visible');
         expect(result.root.children.map(c => c.agentId)).not.toContain('#container');
     });
 
-    it('should handle extreme DOM depth without stack overflow (Industrial Stress)', () => {
+    it('should handle extreme DOM depth without stack overflow (Industrial Stress)', async () => {
         let html = '<div id="root">';
         let tail = '</div>';
         for (let i = 0; i < 50; i++) {
@@ -216,7 +216,7 @@ describe('WalkEngine Verification - Industrial Scenarios', () => {
         }
         document.body.innerHTML = html + tail;
 
-        const result = walkAndMeasure('#root', { maxDepth: 100 });
+        const result = await walkAndMeasure('#root', { maxDepth: 100 });
         expect(result.maxDepthReached).toBe(50);
         expect(result.nodeCount).toBe(51);
     });

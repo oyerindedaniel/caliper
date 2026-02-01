@@ -19,11 +19,11 @@ export default function RootLayout({
           src="https://unpkg.com/react-scan/dist/auto.global.js"
           strategy="beforeInteractive"
         />
-        {/* <Script
+        <Script
           src={`/caliper.js?v=${Date.now()}`}
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
           crossOrigin="anonymous"
-        /> */}
+        />
         {children}
       </body>
     </html>

@@ -170,17 +170,37 @@ import { init } from "@oyerinde/caliper";
 
 init({
   theme: {
-    primary: "#18A0FB",    // Main brand color
-    ruler: "#AC2323",      // Guideline color
-    calcBg: "rgba(0,0,0,0.9)" 
+    primary: "#18A0FB",         // Main brand color
+    secondary: "#F24E1E",       // Accent color (for highlights)
+    calcBg: "rgba(30,30,30,0.95)", 
+    calcShadow: "rgba(0,0,0,0.5)",
+    calcOpHighlight: "#18A0FB", // Operator pulse color
+    calcText: "#FFFFFF",
+    text: "#FFFFFF",
+    projection: "#9B51E4",      // Edge projection lines
+    ruler: "#18A0FB"            // Ruler/guideline color
   },
   commands: {
-    activate: "Alt",       // Key to show overlay
-    freeze: " ",           // Key to lock lines
-    ruler: "r"             // Key for guideline (Shift+r)
+    activate: "Alt",            // Reveal overlay
+    freeze: " ",                // Key to lock lines
+    select: "Control",          // Key to select (held)
+    clear: "Escape",            // Clear measurements
+    ruler: "r",                 // Ruler (Shift+r)
+    selectionHoldDuration: 250, // Select hold-time (ms)
+    calculator: {
+      top: "t", right: "r", bottom: "b", left: "l", distance: "g"
+    },
+    projection: {
+      top: "w", left: "a", bottom: "s", right: "d"
+    }
   },
   animation: {
-    lerpFactor: 0.2        // Smoothness (0-1)
+    enabled: true,              // Smooth hover box
+    lerpFactor: 0.25            // Fluidity (low = slower)
+  },
+  bridge: {
+    enabled: true,              // Connect to AI Agents
+    wsPort: 9876                // Port for MCP relay
   }
 });
 ```

@@ -4,7 +4,6 @@ import { z } from "zod";
 import { bridgeService } from "./bridge-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
-import { caliperGrep } from "../utils/grep.js";
 import { parseColor, calculateDeltaE, calculateContrastRatio } from "../utils/color-utils.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
 import { readFileSync } from "fs";
@@ -85,7 +84,7 @@ export class CaliperMcpServer {
     this.server.registerTool(
       "caliper_inspect",
       {
-        description: "Get full geometry, z-index, and computed visibility for an element.",
+        description: "Get full geometry and computed visibility for an element.",
         inputSchema: z.object({
           selector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector of the element"),
         }),
@@ -148,21 +147,6 @@ export class CaliperMcpServer {
     );
 
     this.server.registerTool(
-      "caliper_grep",
-      {
-        description: "Optimized project search to find where a specific element or text is defined in the source code. Uses keywords from caliper_inspect or selection copy.",
-        inputSchema: z.object({
-          query: z.string().describe("Text, ID, or unique class to search for"),
-          tag: z.string().optional().describe("Optional HTML tag to search for in combination with query (e.g., 'span', 'button')"),
-        }),
-      },
-      async ({ query, tag }) => {
-        const results = caliperGrep(query, process.cwd(), tag);
-        return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
-      }
-    );
-
-    this.server.registerTool(
       "caliper_walk_dom",
       {
         description: "Get the semantic context of an element by traversing its parents and children. Useful for understanding component hierarchy.",
@@ -173,7 +157,7 @@ export class CaliperMcpServer {
       async ({ selector }) => {
         try {
           const result = await bridgeService.call("CALIPER_WALK_DOM", { selector });
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
             content: [{ type: "text", text: `DOM Walk failed: ${error instanceof Error ? error.message : String(error)}` }],
@@ -252,10 +236,29 @@ The output includes:
             selector,
             maxDepth: maxDepth ?? 5
           });
-          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
             content: [{ type: "text", text: `Walk and Measure failed: ${error instanceof Error ? error.message : String(error)}` }],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_get_context",
+      {
+        description: "Get comprehensive window, viewport, and accessibility metrics from the current browser tab.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await bridgeService.call("CALIPER_GET_CONTEXT", {});
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: `Get Context failed: ${error instanceof Error ? error.message : String(error)}` }],
             isError: true,
           };
         }
@@ -403,7 +406,7 @@ You are about to perform a structured, comprehensive audit of the element '${sel
 ### PHASE 1: CONTEXT GATHERING
 1. **Deep Inspection**: Call 'caliper_inspect' to get all computed styles, colors, and typography.
 2. **Hierarchy Walk**: Call 'caliper_walk_and_measure' with maxDepth: 3 to understand its position in the tree, its children, and the spacing (gaps) to its neighbors.
-3. **Stable Discovery**: Identify a STABLE identifier (ID, data-testid, unique text, or stable class) and call 'caliper_grep' to locate the exact source file and line number.
+3. **Stable Discovery**: Identify a STABLE identifier (ID, data-testid, unique text, or stable class) and use internal agent search (grep) to locate the exact source file and line number.
 
 ### PHASE 2: ANALYSIS & CONSISTENCY
 4. **Spacing Check**: Analyze if padding, margins, and gaps follow a consistent scale (e.g., multiples of 4px/8px).
@@ -507,7 +510,7 @@ ${tabIdB ? (tabIdA ? "5" : "4") : (tabIdA ? "4" : "3")}. **Generate Comparison R
 
 ${tabIdB ? (tabIdA ? "6" : "5") : (tabIdA ? "5" : "4")}. **Locate B's Source**
    ${tabIdB ? `Switch back to Tab B if needed.` : ""}
-   Call \`caliper_grep\` with B's best anchor.
+   Use internal agent search (grep) with B's best anchor.
    Get the exact file path and line number.
 
 ### PHASE 5: APPLY FIXES TO B

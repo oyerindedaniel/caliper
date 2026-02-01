@@ -71,7 +71,7 @@ export function Configuration() {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionHeader}>Configuration</h2>
-      <div className={styles.tabs} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+      <div className={`${styles.tabs} flex flex-wrap gap-8`}>
         <button
           className={`${styles.tab} ${section === "overview" ? styles.activeTab : ""}`}
           onClick={() => setSection("overview")}

@@ -4,9 +4,9 @@ import "./globals.css";
 import Script from "next/script";
 import { Analytics } from "@vercel/analytics/react";
 import { BASE_URL } from "./constants";
-import { LogoTrail } from "./logo-trail-canvas";
+import { LogoTrail } from "./components/logo-trail-canvas";
 import { CaliperWrapper } from "./caliper-wrapper";
-import { ConfigProvider } from "./config-context";
+import { ConfigProvider } from "./contexts/config-context";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",

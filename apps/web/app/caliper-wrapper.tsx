@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { init } from "@oyerinde/caliper";
 import { CaliperBridge } from "@oyerinde/caliper-bridge";
-import { useConfig } from "./config-context";
+import { useConfig } from "./contexts/config-context";
 
 export function CaliperWrapper() {
   const { getCaliperConfig } = useConfig();

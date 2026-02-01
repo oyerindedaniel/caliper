@@ -22,14 +22,14 @@ interface DeserializeContext {
     stringList: string[];
 }
 
-const stringSerializer = (defaultValue: string = ""): StyleSerializerEntry<string> => ({
+const stringSerializer = (defaultValue: string = ""): StyleSerializerEntry<string | undefined> => ({
     collectStrings: (value, collect) => collect(value),
     serialize: (value, context) => {
         context.view.setUint16(context.offset, context.getStringId(value));
         context.offset += 2;
     },
     deserialize: (context) => {
-        const result = context.stringList[context.view.getUint16(context.offset)] || defaultValue;
+        const result = context.stringList[context.view.getUint16(context.offset)] || defaultValue || undefined;
         context.offset += 2;
         return result;
     },
@@ -48,10 +48,10 @@ const optionalStringSerializer = (): StyleSerializerEntry<string | undefined> =>
     },
 });
 
-const floatSerializer = (): StyleSerializerEntry<number> => ({
+const floatSerializer = (): StyleSerializerEntry<number | undefined> => ({
     collectStrings: () => { },
     serialize: (value, context) => {
-        context.view.setFloat32(context.offset, value);
+        context.view.setFloat32(context.offset, value ?? 0);
         context.offset += 4;
     },
     deserialize: (context) => {
@@ -61,13 +61,13 @@ const floatSerializer = (): StyleSerializerEntry<number> => ({
     },
 });
 
-const boxEdgesSerializer = (): StyleSerializerEntry<BoxEdges> => ({
+const boxEdgesSerializer = (): StyleSerializerEntry<BoxEdges | undefined> => ({
     collectStrings: () => { },
     serialize: (edges, context) => {
-        context.view.setFloat32(context.offset, edges.top); context.offset += 4;
-        context.view.setFloat32(context.offset, edges.right); context.offset += 4;
-        context.view.setFloat32(context.offset, edges.bottom); context.offset += 4;
-        context.view.setFloat32(context.offset, edges.left); context.offset += 4;
+        context.view.setFloat32(context.offset, edges?.top ?? 0); context.offset += 4;
+        context.view.setFloat32(context.offset, edges?.right ?? 0); context.offset += 4;
+        context.view.setFloat32(context.offset, edges?.bottom ?? 0); context.offset += 4;
+        context.view.setFloat32(context.offset, edges?.left ?? 0); context.offset += 4;
     },
     deserialize: (context) => {
         const edges = {
@@ -77,14 +77,18 @@ const boxEdgesSerializer = (): StyleSerializerEntry<BoxEdges> => ({
             left: context.view.getFloat32(context.offset + 12),
         };
         context.offset += 16;
+        // Return undefined if all edges are 0 (pruned)
+        if (edges.top === 0 && edges.right === 0 && edges.bottom === 0 && edges.left === 0) {
+            return undefined;
+        }
         return edges;
     },
 });
 
-const nullableNumberSerializer = (): StyleSerializerEntry<number | null> => ({
-    collectStrings: (value, collect) => collect(value === null ? null : String(value)),
+const nullableNumberSerializer = (): StyleSerializerEntry<number | null | undefined> => ({
+    collectStrings: (value, collect) => collect(value == null ? null : String(value)),
     serialize: (value, context) => {
-        context.view.setUint16(context.offset, context.getStringId(value === null ? null : String(value)));
+        context.view.setUint16(context.offset, context.getStringId(value == null ? null : String(value)));
         context.offset += 2;
     },
     deserialize: (context) => {
@@ -94,24 +98,25 @@ const nullableNumberSerializer = (): StyleSerializerEntry<number | null> => ({
     },
 });
 
-const numberOrStringSerializer = (defaultValue: string | number = ""): StyleSerializerEntry<number | string> => ({
-    collectStrings: (value, collect) => collect(String(value)),
+const numberOrStringSerializer = (defaultValue: string | number = ""): StyleSerializerEntry<number | string | undefined> => ({
+    collectStrings: (value, collect) => collect(value == null ? undefined : String(value)),
     serialize: (value, context) => {
-        context.view.setUint16(context.offset, context.getStringId(String(value)));
+        context.view.setUint16(context.offset, context.getStringId(value == null ? undefined : String(value)));
         context.offset += 2;
     },
     deserialize: (context) => {
-        const strValue = context.stringList[context.view.getUint16(context.offset)] || String(defaultValue);
+        const strValue = context.stringList[context.view.getUint16(context.offset)];
         context.offset += 2;
+        if (!strValue) return undefined;
         const numValue = parseFloat(strValue);
         return isNaN(numValue) ? strValue : numValue;
     },
 });
 
-const nullableNumberOrStringSerializer = (): StyleSerializerEntry<number | string | null> => ({
-    collectStrings: (value, collect) => collect(value === null ? null : String(value)),
+const nullableNumberOrStringSerializer = (): StyleSerializerEntry<number | string | null | undefined> => ({
+    collectStrings: (value, collect) => collect(value == null ? null : String(value)),
     serialize: (value, context) => {
-        context.view.setUint16(context.offset, context.getStringId(value === null ? null : String(value)));
+        context.view.setUint16(context.offset, context.getStringId(value == null ? null : String(value)));
         context.offset += 2;
     },
     deserialize: (context) => {

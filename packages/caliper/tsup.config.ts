@@ -63,9 +63,10 @@ export default defineConfig((options) => {
   return [
     {
       ...DEFAULT_OPTIONS,
-      entry: { "index.global": "./src/auto.ts" },
+      entry: { "index": "./src/auto.ts" },
       format: ["iife"],
       globalName: "Caliper",
+      minify: true,
       platform: "browser",
       noExternal: [...DEFAULT_OPTIONS.noExternal!, ...otherNoExternal],
       esbuildPlugins: getEsbuildPlugins(),
@@ -80,6 +81,11 @@ export default defineConfig((options) => {
       platform: "browser",
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
+      outExtension({ format }) {
+        return {
+          js: `.js`,
+        };
+      },
     },
     {
       ...DEFAULT_OPTIONS,

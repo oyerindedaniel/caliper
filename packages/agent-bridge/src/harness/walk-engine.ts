@@ -1,4 +1,4 @@
-import type { CaliperNode } from "@oyerinde/caliper-schema";
+import type { CaliperNode, CaliperComputedStyles, BoxEdges } from "@oyerinde/caliper-schema";
 import { isVisible, filterRuntimeClasses, getElementDirectText } from "@caliper/core";
 import { DEFAULT_WALK_DEPTH } from "../constants.js";
 import { parseComputedStyles } from "../utils.js";
@@ -8,6 +8,70 @@ import {
     showChildBoundary,
     cleanupWalkVisualizer,
 } from "./walk-visualizer.js";
+
+
+function pruneBoxEdges(edges: BoxEdges): BoxEdges | undefined {
+    if (edges.top === 0 && edges.right === 0 && edges.bottom === 0 && edges.left === 0) {
+        return undefined;
+    }
+    return edges;
+}
+
+function pruneStyles(styles: CaliperComputedStyles): CaliperComputedStyles {
+    const pruned: CaliperComputedStyles = {};
+
+    // Box model - only include if non-default
+    if (styles.display && styles.display !== "block") pruned.display = styles.display;
+    if (styles.position && styles.position !== "static") pruned.position = styles.position;
+    if (styles.boxSizing && styles.boxSizing !== "border-box") pruned.boxSizing = styles.boxSizing;
+
+    // Spacing - only include if non-zero
+    if (styles.padding) {
+        const prunedPadding = pruneBoxEdges(styles.padding);
+        if (prunedPadding) pruned.padding = prunedPadding;
+    }
+    if (styles.margin) {
+        const prunedMargin = pruneBoxEdges(styles.margin);
+        if (prunedMargin) pruned.margin = prunedMargin;
+    }
+    if (styles.border) {
+        const prunedBorder = pruneBoxEdges(styles.border);
+        if (prunedBorder) pruned.border = prunedBorder;
+    }
+
+    // Flexbox/Grid - only include if relevant
+    if (styles.gap !== null && styles.gap !== undefined && styles.gap !== 0) pruned.gap = styles.gap;
+    if (styles.display === "flex" || styles.display === "inline-flex") {
+        if (styles.flexDirection && styles.flexDirection !== "row") pruned.flexDirection = styles.flexDirection;
+        if (styles.justifyContent && styles.justifyContent !== "normal") pruned.justifyContent = styles.justifyContent;
+        if (styles.alignItems && styles.alignItems !== "normal") pruned.alignItems = styles.alignItems;
+    }
+
+    // Typography - always include these as they're critical for audits
+    if (styles.fontSize !== undefined) pruned.fontSize = styles.fontSize;
+    if (styles.fontWeight) pruned.fontWeight = styles.fontWeight;
+    if (styles.fontFamily) pruned.fontFamily = styles.fontFamily;
+    if (styles.lineHeight !== undefined && styles.lineHeight !== "normal") pruned.lineHeight = styles.lineHeight;
+    if (styles.letterSpacing !== undefined && styles.letterSpacing !== "normal") pruned.letterSpacing = styles.letterSpacing;
+    if (styles.color) pruned.color = styles.color;
+
+    // Visual - only include if non-default
+    if (styles.backgroundColor && styles.backgroundColor !== "rgba(0, 0, 0, 0)") pruned.backgroundColor = styles.backgroundColor;
+    if (styles.borderColor) pruned.borderColor = styles.borderColor;
+    if (styles.borderRadius && styles.borderRadius !== "0px") pruned.borderRadius = styles.borderRadius;
+    if (styles.boxShadow && styles.boxShadow !== "none") pruned.boxShadow = styles.boxShadow;
+    if (styles.opacity !== undefined && styles.opacity !== 1 && styles.opacity !== "1") pruned.opacity = styles.opacity;
+    if (styles.zIndex !== null && styles.zIndex !== undefined) pruned.zIndex = styles.zIndex;
+
+    // Overflow - only include if non-default
+    if (styles.overflow && styles.overflow !== "visible") pruned.overflow = styles.overflow;
+    if (styles.overflowX && styles.overflowX !== "visible") pruned.overflowX = styles.overflowX;
+    if (styles.overflowY && styles.overflowY !== "visible") pruned.overflowY = styles.overflowY;
+
+    return pruned;
+}
+
+
 
 function generateStableSelector(element: Element, domIndex?: number): string {
     if (element.id) return `#${element.id}`;
@@ -88,10 +152,10 @@ export interface WalkOptions {
     visualize?: boolean;
 }
 
-export function walkAndMeasure(
+export async function walkAndMeasure(
     rootSelector: string,
     maxDepthOrOptions: number | WalkOptions = DEFAULT_WALK_DEPTH
-): WalkResult {
+): Promise<WalkResult> {
     const options: WalkOptions = typeof maxDepthOrOptions === "number"
         ? { maxDepth: maxDepthOrOptions, visualize: false }
         : maxDepthOrOptions;
@@ -128,6 +192,7 @@ export function walkAndMeasure(
 
         if (visualize) {
             showWalkBoundary(element, node.agentId, true);
+            await new Promise(resolve => requestAnimationFrame(resolve));
         }
 
         if (node.depth >= maxDepth) continue;
@@ -148,7 +213,7 @@ export function walkAndMeasure(
                 showChildBoundary(childElement, childNode.agentId);
             }
 
-            const parentPadding = node.styles.padding;
+            const parentPadding = node.styles.padding || { top: 0, right: 0, bottom: 0, left: 0 };
             const parentRect = node.rect;
             childNode.measurements.toParent = {
                 top: childNode.rect.top - (parentRect.top + parentPadding.top),
@@ -185,6 +250,14 @@ export function walkAndMeasure(
             cleanupWalkVisualizer();
         }, 2000);
     }
+
+    function pruneTreeStyles(node: CaliperNode): void {
+        node.styles = pruneStyles(node.styles);
+        for (const child of node.children) {
+            pruneTreeStyles(child);
+        }
+    }
+    pruneTreeStyles(rootNode);
 
     return {
         root: rootNode,

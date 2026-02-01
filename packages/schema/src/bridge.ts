@@ -38,6 +38,7 @@ export const CaliperMethodSchema = z.enum([
     "CALIPER_WALK_DOM",
     "CALIPER_PARSE_SELECTION",
     "CALIPER_WALK_AND_MEASURE",
+    "CALIPER_GET_CONTEXT",
 ]);
 
 export type CaliperMethod = z.infer<typeof CaliperMethodSchema>;
@@ -101,6 +102,12 @@ export const CaliperActionResultSchema = z.union([
         }),
         timestamp: z.number(),
         binaryPayload: z.custom<Uint8Array>().optional(),
+    }),
+    z.object({
+        success: z.literal(true),
+        method: z.literal("CALIPER_GET_CONTEXT"),
+        context: z.any(), // Will be ContextMetrics
+        timestamp: z.number(),
     }),
     z.object({
         success: z.literal(false),
@@ -178,6 +185,8 @@ export const CaliperWalkAndMeasurePayloadSchema = z.object({
     maxDepth: z.number().optional(),
 });
 
+export const CaliperGetContextPayloadSchema = z.object({});
+
 
 export type ViewportState = z.infer<typeof ViewportSchema>;
 export type ElementGeometry = z.infer<typeof ElementGeometrySchema>;
@@ -190,6 +199,7 @@ export type CaliperInspectPayload = z.infer<typeof CaliperInspectPayloadSchema>;
 export type CaliperWalkDomPayload = z.infer<typeof CaliperWalkDomPayloadSchema>;
 export type CaliperParseSelectionPayload = z.infer<typeof CaliperParseSelectionPayloadSchema>;
 export type CaliperWalkAndMeasurePayload = z.infer<typeof CaliperWalkAndMeasurePayloadSchema>;
+export type CaliperGetContextPayload = z.infer<typeof CaliperGetContextPayloadSchema>;
 
 export type CaliperIntentType = Exclude<CaliperMethod, "CALIPER_AUDIT_NODE">;
 
@@ -201,7 +211,8 @@ export type CaliperIntent =
     | { method: "CALIPER_CLEAR"; params: {} }
     | { method: "CALIPER_WALK_DOM"; params: CaliperWalkDomPayload }
     | { method: "CALIPER_PARSE_SELECTION"; params: CaliperParseSelectionPayload }
-    | { method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload };
+    | { method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload }
+    | { method: "CALIPER_GET_CONTEXT"; params: CaliperGetContextPayload };
 
 export type ToolCallMessage =
     | { id: string; method: "CALIPER_SELECT"; params: CaliperSelectPayload }
@@ -211,7 +222,8 @@ export type ToolCallMessage =
     | { id: string; method: "CALIPER_CLEAR"; params: {} }
     | { id: string; method: "CALIPER_WALK_DOM"; params: CaliperWalkDomPayload }
     | { id: string; method: "CALIPER_PARSE_SELECTION"; params: CaliperParseSelectionPayload }
-    | { id: string; method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload };
+    | { id: string; method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload }
+    | { id: string; method: "CALIPER_GET_CONTEXT"; params: CaliperGetContextPayload };
 
 export type RegisterTabMessage = z.infer<typeof RegisterTabSchema>;
 export type TabUpdateMessage = z.infer<typeof TabUpdateSchema>;

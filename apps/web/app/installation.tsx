@@ -4,10 +4,35 @@ import { CodeBlock } from "./components/code-block";
 
 type Framework = "next" | "vite" | "astro" | "nuxt" | "vue" | "tanstack" | "html";
 
-export function Installation() {
-  const [framework, setFramework] = useState<Framework>("next");
+interface InstallationProps {
+  mode?: "core" | "agentic";
+}
 
-  const nextCode = `// app/layout.tsx (or _document.tsx)
+export function Installation({ mode = "core" }: InstallationProps) {
+  const [framework, setFramework] = useState<Framework>("next");
+  const isAgentic = mode === "agentic";
+
+  // Clean, minimal snippets for each framework
+  const nextCode = isAgentic
+    ? `// components/caliper.tsx
+"use client";
+import { useEffect } from "react";
+
+export function Caliper() {
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      import("@oyerinde/caliper").then(async ({ init }) => {
+        const caliper = init(/* config */);
+        const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
+        caliper.use(CaliperBridge({ enabled: true }));
+      });
+    }
+  }, []);
+  return null;
+}
+
+// Then add <Caliper /> to your layout.tsx`
+    : `// app/layout.tsx
 import Script from "next/script";
 
 export default function RootLayout({ children }) {
@@ -15,11 +40,13 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body>
         {process.env.NODE_ENV === "development" && (
-            <Script
-               src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-               data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
-               strategy="afterInteractive"
-            />
+          <Script
+             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+             data-config={JSON.stringify({ 
+               theme: { primary: "#AC2323" } 
+             })}
+             strategy="afterInteractive"
+          />
         )}
         {children}
       </body>
@@ -27,86 +54,91 @@ export default function RootLayout({ children }) {
   );
 }`;
 
-  const viteCode = `// index.html
-<script type="module">
+  const viteCode = isAgentic
+    ? `// main.ts
 if (import.meta.env.DEV) {
-  // Run npm i @oyerinde/caliper then
-  import("@oyerinde/caliper").then(({ init }) => {
-    init({ theme: { primary: '#AC2323' } });
+  import("@oyerinde/caliper").then(async ({ init }) => {
+    const caliper = init(/* config */);
+    const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
+    caliper.use(CaliperBridge({ enabled: true }));
   });
-}
-</script>`;
+}`
+    : `// main.ts
+if (import.meta.env.DEV) {
+  import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+}`;
 
-  const astroCode = `// src/components/Caliper.astro
-<script type="module" is:inline>
-  if (import.meta.env.DEV) {
-    // Run npm i @oyerinde/caliper then
-    import('@oyerinde/caliper').then(({ init }) => {
-      init();
-    });
-  }
-</script>
-
-// Add <Caliper /> to your Layout.astro`;
-
-  const htmlCode = `// index.html
+  const astroCode = isAgentic
+    ? `// src/layouts/Layout.astro
 <script type="module">
-  const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
-
-  if (isDev) {
-    import("https://unpkg.com/@oyerinde/caliper/dist/index.js").then(({ init }) => {
-      init({ theme: { primary: "#AC2323" } });
+  if (import.meta.env.DEV) {
+    import("@oyerinde/caliper").then(async ({ init }) => {
+      const caliper = init(/* config */);
+      const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
+      caliper.use(CaliperBridge({ enabled: true }));
     });
+  }
+</script>`
+    : `// src/layouts/Layout.astro
+<script type="module">
+  if (import.meta.env.DEV) {
+    import("@oyerinde/caliper").then(({ init }) => init(/* config */));
   }
 </script>`;
 
-  const nuxtCode = `// nuxt.config.ts
-export default defineNuxtConfig({
-  app: {
-    head: {
-      script: [
-        {
-          src: 'https://unpkg.com/@oyerinde/caliper/dist/index.global.js',
-          'data-config': JSON.stringify({ theme: { primary: '#AC2323' } }),
-          defer: true
-        }
-      ]
-    }
+  const htmlCode = isAgentic
+    ? `<!-- index.html -->
+<script 
+  src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+  data-config='{ "bridge": { "enabled": true } }'
+></script>`
+    : `<!-- index.html -->
+<script src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"></script>`;
+
+  const nuxtCode = isAgentic
+    ? `// plugins/caliper.client.ts
+export default defineNuxtPlugin(() => {
+  if (import.meta.dev) {
+    import("@oyerinde/caliper").then(async ({ init }) => {
+      const caliper = init(/* config */);
+      const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
+      caliper.use(CaliperBridge({ enabled: true }));
+    });
+  }
+});`
+    : `// plugins/caliper.client.ts
+export default defineNuxtPlugin(() => {
+  if (import.meta.dev) {
+    import("@oyerinde/caliper").then(({ init }) => init(/* config */));
   }
 });`;
 
-  const vueCode = `// index.html
-<script type="module">
-  if (import.meta.env.DEV) {
-    // Run npm i @oyerinde/caliper then
-    import("@oyerinde/caliper").then(({ init }) => {
-      init({ theme: { primary: '#AC2323' } });
-    });
-  }
-</script>`;
+  const vueCode = isAgentic
+    ? `// main.ts
+if (import.meta.env.DEV) {
+  import("@oyerinde/caliper").then(async ({ init }) => {
+    const caliper = init(/* config */);
+    const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
+    caliper.use(CaliperBridge({ enabled: true }));
+  });
+}`
+    : `// main.ts
+if (import.meta.env.DEV) {
+  import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+}`;
 
-  const tanstackCode = `// root.tsx (TanStack Start)
-import { Meta, Scripts } from '@tanstack/react-router';
-
-export function Root() {
-  return (
-    <html lang="en">
-      <head>
-        <Meta />
-        {process.env.NODE_ENV === 'development' && (
-            <script
-              src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-              data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
-              async
-            />
-        )}
-      </head>
-      <body>
-        {/* ... */}
-        <Scripts />
-      </body>
-    </html>
-  );
+  const tanstackCode = isAgentic
+    ? `// src/entry-client.tsx
+if (process.env.NODE_ENV === "development") {
+  import("@oyerinde/caliper").then(async ({ init }) => {
+    const caliper = init(/* config */);
+    const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
+    caliper.use(CaliperBridge({ enabled: true }));
+  });
+}`
+    : `// src/entry-client.tsx
+if (process.env.NODE_ENV === "development") {
+  import("@oyerinde/caliper").then(({ init }) => init(/* config */));
 }`;
 
   const getLanguage = () => {
@@ -144,52 +176,61 @@ export function Root() {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionHeader}>Installation</h2>
-      <div className={styles.tabs} style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-        <button
-          className={`${styles.tab} ${framework === "next" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("next")}
-        >
-          Next.js
-        </button>
-        <button
-          className={`${styles.tab} ${framework === "astro" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("astro")}
-        >
-          Astro
-        </button>
-        <button
-          className={`${styles.tab} ${framework === "vue" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("vue")}
-        >
-          Vue
-        </button>
-        <button
-          className={`${styles.tab} ${framework === "nuxt" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("nuxt")}
-        >
-          Nuxt
-        </button>
-        <button
-          className={`${styles.tab} ${framework === "tanstack" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("tanstack")}
-        >
-          TanStack Start
-        </button>
-        <button
-          className={`${styles.tab} ${framework === "vite" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("vite")}
-        >
-          Vite
-        </button>
-        <button
-          className={`${styles.tab} ${framework === "html" ? styles.activeTab : ""}`}
-          onClick={() => setFramework("html")}
-        >
-          HTML
-        </button>
+
+      <div className="mb-32">
+        <p className="mb-18 op-8">Step 1: Install the package</p>
+        <CodeBlock code="npm install @oyerinde/caliper" language="bash" />
       </div>
 
-      <CodeBlock code={getCode()} language={getLanguage()} />
+      <div>
+        <p className="mb-18 op-8">Step 2: Initialize in your project</p>
+        <div className={`${styles.tabs} flex flex-wrap gap-8`}>
+          <button
+            className={`${styles.tab} ${framework === "next" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("next")}
+          >
+            Next.js
+          </button>
+          <button
+            className={`${styles.tab} ${framework === "astro" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("astro")}
+          >
+            Astro
+          </button>
+          <button
+            className={`${styles.tab} ${framework === "vue" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("vue")}
+          >
+            Vue
+          </button>
+          <button
+            className={`${styles.tab} ${framework === "nuxt" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("nuxt")}
+          >
+            Nuxt
+          </button>
+          <button
+            className={`${styles.tab} ${framework === "tanstack" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("tanstack")}
+          >
+            TanStack Start
+          </button>
+          <button
+            className={`${styles.tab} ${framework === "vite" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("vite")}
+          >
+            Vite
+          </button>
+          <button
+            className={`${styles.tab} ${framework === "html" ? styles.activeTab : ""}`}
+            onClick={() => setFramework("html")}
+          >
+            HTML
+          </button>
+        </div>
+
+        <CodeBlock code={getCode()} language={getLanguage()} />
+      </div>
     </section>
   );
 }
