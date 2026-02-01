@@ -3,6 +3,7 @@ import styles from "./page.module.css";
 import { CodeBlock } from "./components/code-block";
 
 type Framework = "next" | "vite" | "astro" | "nuxt" | "vue" | "tanstack" | "html";
+type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 
 interface InstallationProps {
   mode?: "core" | "agentic";
@@ -10,28 +11,31 @@ interface InstallationProps {
 
 export function Installation({ mode = "core" }: InstallationProps) {
   const [framework, setFramework] = useState<Framework>("next");
+  const [pkgManager, setPkgManager] = useState<PackageManager>("pnpm");
   const isAgentic = mode === "agentic";
 
-  // Clean, minimal snippets for each framework
   const nextCode = isAgentic
-    ? `// components/caliper.tsx
-"use client";
-import { useEffect } from "react";
+    ? `// app/layout.tsx
+import Script from "next/script";
 
-export function Caliper() {
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      import("@oyerinde/caliper").then(async ({ init }) => {
-        const caliper = init(/* config */);
-        const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
-        caliper.use(CaliperBridge({ enabled: true }));
-      });
-    }
-  }, []);
-  return null;
-}
-
-// Then add <Caliper /> to your layout.tsx`
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>
+        {process.env.NODE_ENV === "development" && (
+          <Script
+             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+             data-config={JSON.stringify({ 
+               bridge: { enabled: true } 
+             })}
+             strategy="afterInteractive"
+          />
+        )}
+        {children}
+      </body>
+    </html>
+  );
+}`
     : `// app/layout.tsx
 import Script from "next/script";
 
@@ -57,10 +61,8 @@ export default function RootLayout({ children }) {
   const viteCode = isAgentic
     ? `// main.ts
 if (import.meta.env.DEV) {
-  import("@oyerinde/caliper").then(async ({ init }) => {
-    const caliper = init(/* config */);
-    const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
-    caliper.use(CaliperBridge({ enabled: true }));
+  import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
+    init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
   });
 }`
     : `// main.ts
@@ -69,22 +71,25 @@ if (import.meta.env.DEV) {
 }`;
 
   const astroCode = isAgentic
-    ? `// src/layouts/Layout.astro
+    ? `<!-- src/layouts/Layout.astro -->
 <script type="module">
   if (import.meta.env.DEV) {
-    import("@oyerinde/caliper").then(async ({ init }) => {
-      const caliper = init(/* config */);
-      const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
-      caliper.use(CaliperBridge({ enabled: true }));
+    import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
+      init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
     });
   }
 </script>`
-    : `// src/layouts/Layout.astro
-<script type="module">
-  if (import.meta.env.DEV) {
-    import("@oyerinde/caliper").then(({ init }) => init(/* config */));
-  }
-</script>`;
+    : `<!-- src/layouts/Layout.astro -->
+<html lang="en">
+  <head>
+    <script type="module">
+      if (import.meta.env.DEV) {
+        import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+      }
+    </script>
+  </head>
+  ...
+</html>`;
 
   const htmlCode = isAgentic
     ? `<!-- index.html -->
@@ -99,10 +104,8 @@ if (import.meta.env.DEV) {
     ? `// plugins/caliper.client.ts
 export default defineNuxtPlugin(() => {
   if (import.meta.dev) {
-    import("@oyerinde/caliper").then(async ({ init }) => {
-      const caliper = init(/* config */);
-      const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
-      caliper.use(CaliperBridge({ enabled: true }));
+    import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
+      init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
     });
   }
 });`
@@ -116,10 +119,8 @@ export default defineNuxtPlugin(() => {
   const vueCode = isAgentic
     ? `// main.ts
 if (import.meta.env.DEV) {
-  import("@oyerinde/caliper").then(async ({ init }) => {
-    const caliper = init(/* config */);
-    const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
-    caliper.use(CaliperBridge({ enabled: true }));
+  import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
+    init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
   });
 }`
     : `// main.ts
@@ -130,10 +131,8 @@ if (import.meta.env.DEV) {
   const tanstackCode = isAgentic
     ? `// src/entry-client.tsx
 if (process.env.NODE_ENV === "development") {
-  import("@oyerinde/caliper").then(async ({ init }) => {
-    const caliper = init(/* config */);
-    const { CaliperBridge } = await import("@oyerinde/caliper/bridge");
-    caliper.use(CaliperBridge({ enabled: true }));
+  import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
+    init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
   });
 }`
     : `// src/entry-client.tsx
@@ -144,6 +143,7 @@ if (process.env.NODE_ENV === "development") {
   const getLanguage = () => {
     switch (framework) {
       case "astro":
+        return "html";
       case "vue":
       case "nuxt":
       case "vite":
@@ -179,7 +179,26 @@ if (process.env.NODE_ENV === "development") {
 
       <div className="mb-32">
         <p className="mb-18 op-8">Step 1: Install the package</p>
-        <CodeBlock code="npm install @oyerinde/caliper" language="bash" />
+        <div className={`${styles.tabs} flex flex-wrap gap-8 mb-12`}>
+          {(["npm", "pnpm", "yarn", "bun"] as const).map((pm) => (
+            <button
+              key={pm}
+              className={`${styles.tab} ${pkgManager === pm ? styles.activeTab : ""}`}
+              onClick={() => setPkgManager(pm)}
+            >
+              {pm}
+            </button>
+          ))}
+        </div>
+        <div className="mb-8">
+          <CodeBlock
+            code={`${pkgManager} ${pkgManager === "yarn" ? "add" : "install"} @oyerinde/caliper`}
+            language="bash"
+          />
+        </div>
+        <p className="mt-8 op-5 fs-12 italic">
+          * Optional if you're only using the global CDN script.
+        </p>
       </div>
 
       <div>

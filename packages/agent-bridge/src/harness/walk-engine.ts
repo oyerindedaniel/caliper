@@ -171,100 +171,102 @@ export async function walkAndMeasure(
 
     if (!rootElement) throw new Error(`Root element not found: ${rootSelector}`);
 
-    if (visualize) {
-        initWalkVisualizer();
-    }
+    try {
+        if (visualize) {
+            initWalkVisualizer();
+        }
 
-    const rootNode = createNodeSnapshot(rootElement, 0);
-    const queue: Array<{ element: Element; node: CaliperNode }> = [{ element: rootElement, node: rootNode }];
-
-    if (visualize) {
-        showWalkBoundary(rootElement, rootNode.agentId, true);
-    }
-
-    let nodeCount = 0;
-    let maxDepthReached = 0;
-
-    while (queue.length > 0) {
-        const { element, node } = queue.shift()!;
-        nodeCount++;
-        maxDepthReached = Math.max(maxDepthReached, node.depth);
+        const rootNode = createNodeSnapshot(rootElement, 0);
+        const queue: Array<{ element: Element; node: CaliperNode }> = [{ element: rootElement, node: rootNode }];
 
         if (visualize) {
-            showWalkBoundary(element, node.agentId, true);
-            await new Promise(resolve => requestAnimationFrame(resolve));
+            showWalkBoundary(rootElement, rootNode.agentId, true);
         }
 
-        if (node.depth >= maxDepth) continue;
+        let nodeCount = 0;
+        let maxDepthReached = 0;
 
-        const allChildren = Array.from(element.children);
-        const visibleChildren = allChildren.filter(isVisible);
-        node.measurements.siblingCount = visibleChildren.length;
-
-        let visibleIdx = 0;
-        for (let domIdx = 0; domIdx < allChildren.length; domIdx++) {
-            const childElement = allChildren[domIdx]!;
-            if (!isVisible(childElement)) continue;
-
-            const childNode = createNodeSnapshot(childElement, node.depth + 1, domIdx, visibleIdx);
-            childNode.parentAgentId = node.agentId;
+        while (queue.length > 0) {
+            const { element, node } = queue.shift()!;
+            nodeCount++;
+            maxDepthReached = Math.max(maxDepthReached, node.depth);
 
             if (visualize) {
-                showChildBoundary(childElement, childNode.agentId);
+                showWalkBoundary(element, node.agentId, true);
+                await new Promise(resolve => requestAnimationFrame(resolve));
             }
 
-            const parentPadding = node.styles.padding || { top: 0, right: 0, bottom: 0, left: 0 };
-            const parentRect = node.rect;
-            childNode.measurements.toParent = {
-                top: childNode.rect.top - (parentRect.top + parentPadding.top),
-                left: childNode.rect.left - (parentRect.left + parentPadding.left),
-                bottom: (parentRect.bottom - parentPadding.bottom) - childNode.rect.bottom,
-                right: (parentRect.right - parentPadding.right) - childNode.rect.right,
-            };
+            if (node.depth >= maxDepth) continue;
 
-            if (visibleIdx > 0) {
-                const prevNode = node.children[visibleIdx - 1]!;
-                const isVertical = childNode.rect.top >= prevNode.rect.bottom;
+            const allChildren = Array.from(element.children);
+            const visibleChildren = allChildren.filter(isVisible);
+            node.measurements.siblingCount = visibleChildren.length;
 
-                const distance = isVertical
-                    ? childNode.rect.top - prevNode.rect.bottom
-                    : childNode.rect.left - prevNode.rect.right;
+            let visibleIdx = 0;
+            for (let domIdx = 0; domIdx < allChildren.length; domIdx++) {
+                const childElement = allChildren[domIdx]!;
+                if (!isVisible(childElement)) continue;
 
-                const direction = isVertical ? "above" as const : "left" as const;
+                const childNode = createNodeSnapshot(childElement, node.depth + 1, domIdx, visibleIdx);
+                childNode.parentAgentId = node.agentId;
 
-                childNode.measurements.toPreviousSibling = { distance, direction };
-                prevNode.measurements.toNextSibling = {
-                    distance,
-                    direction: isVertical ? "below" as const : "right" as const
+                if (visualize) {
+                    showChildBoundary(childElement, childNode.agentId);
+                }
+
+                const parentPadding = node.styles.padding || { top: 0, right: 0, bottom: 0, left: 0 };
+                const parentRect = node.rect;
+                childNode.measurements.toParent = {
+                    top: childNode.rect.top - (parentRect.top + parentPadding.top),
+                    left: childNode.rect.left - (parentRect.left + parentPadding.left),
+                    bottom: (parentRect.bottom - parentPadding.bottom) - childNode.rect.bottom,
+                    right: (parentRect.right - parentPadding.right) - childNode.rect.right,
                 };
+
+                if (visibleIdx > 0) {
+                    const prevNode = node.children[visibleIdx - 1]!;
+                    const isVertical = childNode.rect.top >= prevNode.rect.bottom;
+
+                    const distance = isVertical
+                        ? childNode.rect.top - prevNode.rect.bottom
+                        : childNode.rect.left - prevNode.rect.right;
+
+                    const direction = isVertical ? "above" as const : "left" as const;
+
+                    childNode.measurements.toPreviousSibling = { distance, direction };
+                    prevNode.measurements.toNextSibling = {
+                        distance,
+                        direction: isVertical ? "below" as const : "right" as const
+                    };
+                }
+
+                node.children.push(childNode);
+                queue.push({ element: childElement, node: childNode });
+                visibleIdx++;
             }
+        }
 
-            node.children.push(childNode);
-            queue.push({ element: childElement, node: childNode });
-            visibleIdx++;
+        function pruneTreeStyles(node: CaliperNode): void {
+            node.styles = pruneStyles(node.styles);
+            for (const child of node.children) {
+                pruneTreeStyles(child);
+            }
+        }
+        pruneTreeStyles(rootNode);
+
+        return {
+            root: rootNode,
+            nodeCount,
+            maxDepthReached,
+            walkDurationMs: performance.now() - startTime,
+        };
+    } finally {
+        if (visualize) {
+            setTimeout(() => {
+                cleanupWalkVisualizer();
+            }, 2000);
         }
     }
-
-    if (visualize) {
-        setTimeout(() => {
-            cleanupWalkVisualizer();
-        }, 2000);
-    }
-
-    function pruneTreeStyles(node: CaliperNode): void {
-        node.styles = pruneStyles(node.styles);
-        for (const child of node.children) {
-            pruneTreeStyles(child);
-        }
-    }
-    pruneTreeStyles(rootNode);
-
-    return {
-        root: rootNode,
-        nodeCount,
-        maxDepthReached,
-        walkDurationMs: performance.now() - startTime,
-    };
 }
 
 export interface ParsedSelection {

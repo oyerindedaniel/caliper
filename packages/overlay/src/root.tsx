@@ -14,6 +14,9 @@ import {
   getTopElementAtPoint,
   getLiveLineValue,
   getLiveGeometry,
+  getNormalizedModifiers,
+  getLogicalKey,
+  isKeyMatch,
   type MeasurementLine,
   type DeepRequired,
   type ProjectionSystem,
@@ -228,29 +231,20 @@ export function Root(config: RootConfig) {
     };
 
     const isCommandActive = (e: MouseEvent | PointerEvent | KeyboardEvent): boolean => {
-      const { ctrlKey, metaKey, altKey, shiftKey } = e;
+      const mods = getNormalizedModifiers(e);
       const key = commands.select;
-      const modifiers: Record<string, boolean> = {
-        Control: ctrlKey,
-        Meta: metaKey,
-        Alt: altKey,
-        Shift: shiftKey,
-      };
 
-      if (key in modifiers) {
-        return Object.entries(modifiers).every(([name, value]) =>
+      if (key in mods) {
+        return Object.entries(mods).every(([name, value]) =>
           name === key ? value === true : value === false
         );
       }
 
-      return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
+      return isSelectKeyDown() && !mods.Control && !mods.Meta && !mods.Alt && !mods.Shift;
     };
 
     const isActivateActive = (e: KeyboardEvent): boolean => {
-      return (
-        e.key === commands.activate ||
-        (commands.activate === "Alt" && (e.key === "Alt" || e.key === "AltGraph"))
-      );
+      return isKeyMatch(commands.activate, e);
     };
 
     const handlePointerDown = (e: PointerEvent) => {
@@ -424,9 +418,9 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isAgentActive() && e.key !== commands.clear) return;
+      if (isAgentActive() && !isKeyMatch(commands.clear, e)) return;
 
-      if (e.key === commands.clear) {
+      if (isKeyMatch(commands.clear, e)) {
         if (!isActive()) return;
 
         e.preventDefault();
@@ -450,11 +444,11 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      if (e.key === commands.select) {
+      if (isKeyMatch(commands.select, e)) {
         setIsSelectKeyDown(true);
       }
 
-      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem && !isAgentActive()) {
+      if (getLogicalKey(e).toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem && !isAgentActive()) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));
@@ -477,7 +471,7 @@ export function Root(config: RootConfig) {
         }
 
         setIsActivatePressed(true);
-      } else if (e.key === commands.freeze && system) {
+      } else if (isKeyMatch(commands.freeze, e) && system) {
         const state = system.getState();
 
         if (state === "FROZEN") {
@@ -490,7 +484,7 @@ export function Root(config: RootConfig) {
           system.freeze();
         }
       } else {
-        const key = e.key;
+        const key = getLogicalKey(e);
         const { calculator, projection } = commands;
         const isCalcActive = !!calculatorState();
         const isProjActive = projectionState().direction !== null;
@@ -640,7 +634,7 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === commands.select) {
+      if (isKeyMatch(commands.select, e)) {
         setIsSelectKeyDown(false);
       }
 

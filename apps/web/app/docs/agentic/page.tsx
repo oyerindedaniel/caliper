@@ -5,11 +5,9 @@ import Image from "next/image";
 import { Nav } from "../../components/nav";
 import { Footer } from "../../footer";
 import { Installation } from "../../installation";
-import { CodeBlock } from "../../components/code-block";
+import { McpSetup } from "../../components/mcp-setup";
 
 export default function AgenticDocsPage() {
-    const mcpInstallCode = `npx @oyerinde/caliper-mcp --port 9876`;
-
     return (
         <div className={styles.page}>
             <main className={styles.main}>
@@ -37,22 +35,11 @@ export default function AgenticDocsPage() {
                 <section className={styles.section}>
                     <h2 className={styles.sectionHeader}>MCP Server</h2>
                     <p className="mb-18 op-8">
-                        The Model Context Protocol (MCP) server acts as a relay between your browser (the Bridge) and agentic IDEs like <strong>Cursor</strong> or <strong>Claude Desktop</strong>.
+                        The Model Context Protocol (MCP) server acts as a relay between your browser (the Bridge) and agentic IDEs like <strong>Cursor</strong>, <strong>Claude Code</strong>, or <strong>Antigravity</strong>.
                     </p>
 
-                    <h3 className={styles.subHeader}>Quick Start</h3>
-                    <p className="mb-18 op-8">
-                        Run the MCP server locally. It will start a WebSocket server that the Bridge connects to, and a Stdio transport for the agent.
-                    </p>
-                    <CodeBlock code={mcpInstallCode} language="bash" />
-
-                    <h3 className={styles.subHeader}>Setup in Cursor</h3>
-                    <ol className={styles.instructionList}>
-                        <li className={styles.instructionItem}>1. Open <strong>Settings</strong> &gt; <strong>Features</strong> &gt; <strong>MCP</strong>.</li>
-                        <li className={styles.instructionItem}>2. Click <strong>+ Add New MCP Server</strong>.</li>
-                        <li className={styles.instructionItem}>3. Type: <code>command</code>. Name: <code>Caliper</code>.</li>
-                        <li className={styles.instructionItem}>4. Command: <code>npx @oyerinde/caliper-mcp --port 9876</code></li>
-                    </ol>
+                    <h3 className={styles.subHeader}>Setup</h3>
+                    <McpSetup />
                 </section>
 
                 <section className={styles.section}>

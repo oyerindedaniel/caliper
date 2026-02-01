@@ -51,6 +51,15 @@
       "types": "./dist/bridge.d.ts",
       "import": "./dist/bridge.js",
       "require": "./dist/bridge.cjs"
+    },
+    "./preset": {
+      "node": {
+        "import": "./dist/preset.server.js",
+        "require": "./dist/preset.server.cjs"
+      },
+      "types": "./dist/preset.d.ts",
+      "import": "./dist/preset.js",
+      "require": "./dist/preset.cjs"
     }
   },
   "files": [

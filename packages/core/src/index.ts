@@ -80,3 +80,8 @@ export { generateId } from "./shared/utils/id.js";
 export { getElementDirectText } from "./shared/utils/text-content.js";
 export { filterRuntimeClasses } from "./shared/utils/class-filter.js";
 export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";
+export {
+  getNormalizedModifiers,
+  getLogicalKey,
+  isKeyMatch,
+} from "./shared/utils/keyboard.js";

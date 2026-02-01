@@ -51,7 +51,7 @@ export function Instructions() {
           <strong>Precision Control</strong> — Select a ruler and use <strong>Arrow Keys</strong> to
           nudge.
           <span style={{ opacity: 0.6, fontSize: "12px", display: "block", marginTop: "4px" }}>
-            Shift+Arrow: 10px | {getAltKey()}+Arrow: 0.1px
+            {getControlKey()}+Arrow: 10px | Shift+Arrow: 0.1px
           </span>
         </li>
         <li className={styles.instructionItem}>

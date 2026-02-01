@@ -9,20 +9,16 @@ const WALK_VIS_STYLES = `
   pointer-events: none;
   box-sizing: border-box;
   border: 2px solid ${DEFAULT_THEME.primary};
-  background: rgba(24, 160, 251, 0.05);
   z-index: 999990;
   transition: opacity 0.15s ease-out, border-color 0.15s ease-out;
 }
 
 .${WALK_VIS_PREFIX}-box-active {
   border-color: ${DEFAULT_THEME.primary};
-  background: rgba(24, 160, 251, 0.1);
-  box-shadow: 0 0 8px rgba(24, 160, 251, 0.4);
 }
 
 .${WALK_VIS_PREFIX}-box-child {
   border: 1px dashed ${DEFAULT_THEME.secondary};
-  background: rgba(242, 78, 30, 0.03);
   z-index: 999989;
 }
 

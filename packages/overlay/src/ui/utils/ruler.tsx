@@ -200,8 +200,8 @@ export function RulerOverlay(props: RulerOverlayProps) {
     if (activeLines.length === 0) return;
 
     let step = 1;
-    if (e.shiftKey) step = 10;
-    else if (e.altKey) step = 0.1;
+    if (e.ctrlKey || e.metaKey) step = 10;
+    else if (e.shiftKey) step = 0.1;
 
     const firstLine = activeLines[0];
     if (!firstLine) return;
