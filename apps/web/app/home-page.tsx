@@ -8,7 +8,7 @@ import { Configuration } from "./configuration";
 import { Configurator } from "./configurator";
 import { Instructions } from "./instructions";
 import { TryCaliper } from "./try-caliper";
-import { Footer } from "./footer";
+import { Footer } from "./components/footer";
 import { FocusProvider } from "./contexts/focus-context";
 import { Nav } from "./components/nav";
 

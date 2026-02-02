@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import styles from "../page.module.css";
-import { Footer } from "../footer";
+import { Footer } from "../components/footer";
 import type { ParsedChangelog } from "./parse-changelog";
 
 interface ChangelogPageProps {

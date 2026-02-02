@@ -12,6 +12,11 @@ export const CaliperSelectorInputSchema = z.object({
     text: z.string().optional(), // Visible text snippet
     classes: z.array(z.string()).optional(), // CSS classes (filtered)
     tabId: z.string().optional(), // Tab ID for cross-tab identification
+    nthChild: z.number().optional(),
+    x: z.number().optional(),
+    y: z.number().optional(),
+    depth: z.number().optional(),
+    marker: z.string().optional(), // data-caliper-marker value
 });
 
 export type CaliperSelectorInput = z.infer<typeof CaliperSelectorInputSchema>;

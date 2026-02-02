@@ -38,10 +38,10 @@ function withOpacity(color: string, opacity: number): string {
   return color;
 }
 
-export function applyTheme(theme?: ThemeConfig) {
-  if (!theme) return;
+export function applyTheme(theme?: ThemeConfig, target: HTMLElement = document.documentElement) {
+  if (!theme || !target) return;
 
-  const root = document.documentElement;
+  const root = target;
 
   if (theme.primary) {
     root.style.setProperty("--caliper-primary", theme.primary);

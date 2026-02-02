@@ -1,4 +1,4 @@
-import { DEFAULT_THEME, CALIPER_PREFIX } from "@caliper/core";
+import { DEFAULT_THEME, CALIPER_PREFIX, getOverlayRoot } from "@caliper/core";
 
 const WALK_VIS_PREFIX = `${CALIPER_PREFIX}walk-vis`;
 const WALK_VIS_CONTAINER_ID = `${WALK_VIS_PREFIX}-container`;
@@ -54,7 +54,7 @@ function createContainer(): HTMLDivElement {
     containerElement = document.createElement("div");
     containerElement.id = WALK_VIS_CONTAINER_ID;
     containerElement.className = `${WALK_VIS_PREFIX}-container`;
-    document.body.appendChild(containerElement);
+    getOverlayRoot().appendChild(containerElement);
 
     return containerElement;
 }

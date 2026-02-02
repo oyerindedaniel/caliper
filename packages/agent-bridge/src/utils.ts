@@ -1,8 +1,9 @@
-import type {
-    SelectionMetadata,
-    MeasurementResult,
-    ScrollState as CoreScrollState,
-    MeasurementLine as CoreMeasurementLine
+import {
+    type SelectionMetadata,
+    type MeasurementResult,
+    type ScrollState as CoreScrollState,
+    type MeasurementLine as CoreMeasurementLine,
+    filterRuntimeClasses,
 } from "@caliper/core";
 import type {
     SelectionMetadata as BridgeSelectionMetadata,
@@ -11,7 +12,8 @@ import type {
     CaliperComputedStyles,
     Rect,
     MeasurementLine as BridgeMeasurementLine,
-    ContextMetrics
+    ContextMetrics,
+    CaliperSelectorInput
 } from "@oyerinde/caliper-schema";
 
 export function sanitizeSelection(
@@ -25,6 +27,7 @@ export function sanitizeSelection(
         position: metadata.position,
         initialWindowX: metadata.initialWindowX,
         initialWindowY: metadata.initialWindowY,
+        depth: metadata.depth,
         stickyConfig: metadata.stickyConfig ? {
             top: metadata.stickyConfig.top,
             bottom: metadata.stickyConfig.bottom,
@@ -204,16 +207,40 @@ export function getContextMetrics(): ContextMetrics {
     };
 }
 
-/**
- * Schedules a callback to run after requestAnimationFrame and a microtask.
- */
-export async function waitPostRaf<T>(callback: () => T): Promise<T> {
-    return new Promise((resolve) => {
-        requestAnimationFrame(() => {
-            Promise.resolve().then(() => {
-                resolve(callback());
-            });
-        });
-    });
-}
+export function findElementByFingerprint(info: CaliperSelectorInput): HTMLElement | null {
+    // 1. Try stable marker
+    if (info.marker) {
+        const el = document.querySelector(`[data-caliper-marker="${info.marker}"]`);
+        if (el) return el as HTMLElement;
+    }
 
+    // 2. Try the original agent-id (might work if no HMR happened)
+    const agentIdEl = document.querySelector(`[data-caliper-agent-id="${info.selector}"]`);
+    if (agentIdEl) return agentIdEl as HTMLElement;
+
+    // 3. Try HTML ID
+    if (info.id) {
+        const idEl = document.getElementById(info.id);
+        if (idEl && idEl.tagName.toLowerCase() === info.tag) return idEl;
+    }
+
+    // 4. Try semantic rediscovery using coordinates and tag (Option 1)
+    if (info.x !== undefined && info.y !== undefined) {
+        // Find elements at the point (adjusting for scroll)
+        const elementsAtPoint = document.elementsFromPoint(
+            info.x - window.scrollX,
+            info.y - window.scrollY
+        );
+
+        for (const el of elementsAtPoint) {
+            if (el.tagName.toLowerCase() === info.tag) {
+                const elClasses = filterRuntimeClasses(el.classList);
+                const classMatch = info.classes?.every((className: string) => elClasses.includes(className));
+
+                if (classMatch) return el as HTMLElement;
+            }
+        }
+    }
+
+    return null;
+}

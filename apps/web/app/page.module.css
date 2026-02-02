@@ -757,3 +757,29 @@
   font-size: 9px;
   font-weight: 700;
 }
+
+.logoWrapper {
+  position: relative;
+  display: inline-block;
+  align-self: flex-start;
+}
+
+.agentBadge {
+  position: absolute;
+  top: 0;
+  right: -8px;
+  transform: translate(100%, -20%);
+  background: var(--caliper-primary, #18a0fb);
+  color: white;
+  font-family: var(--font-geist-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 4px rgba(24, 160, 251, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

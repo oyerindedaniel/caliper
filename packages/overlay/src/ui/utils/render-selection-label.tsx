@@ -1,5 +1,5 @@
 import { Show, createMemo } from "solid-js";
-import { type SelectionMetadata, getLiveGeometry } from "@caliper/core";
+import { type SelectionMetadata, getLiveGeometry, getOverlayRoot } from "@caliper/core";
 import { Portal } from "solid-js/web";
 import { PREFIX } from "../../css/styles.js";
 
@@ -74,7 +74,7 @@ export function SelectionLabel(props: SelectionLabelProps) {
   return (
     <Show when={labelData()}>
       {(data) => (
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <div
             class={`${PREFIX}selection-label ${props.isCopied ? `${PREFIX}selection-label-success` : ""}`}
             style={{

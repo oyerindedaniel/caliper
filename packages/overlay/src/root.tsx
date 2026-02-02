@@ -24,12 +24,8 @@ import {
   type RulerSystem,
   type RulerState,
   RESIZE_THROTTLE_MS,
-  generateId,
-  filterRuntimeClasses,
-  getElementDirectText,
-  BRIDGE_TAB_ID_KEY,
+  buildSelectorInfo,
 } from "@caliper/core";
-import type { CaliperSelectorInput } from "@oyerinde/caliper-schema";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
 
@@ -62,6 +58,7 @@ export function Root(config: RootConfig) {
     position: "static",
     initialWindowX: 0,
     initialWindowY: 0,
+    depth: 0,
   });
 
   const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
@@ -290,36 +287,6 @@ export function Root(config: RootConfig) {
         }
       }
     };
-
-    const buildSelectorInfo = (element: Element): string => {
-      const tagName = element.tagName.toLowerCase();
-
-      let agentId = element.getAttribute("data-caliper-agent-id");
-      if (!agentId) {
-        agentId = generateId("caliper");
-        element.setAttribute("data-caliper-agent-id", agentId);
-      }
-
-      const id = (element as HTMLElement).id;
-      const text = getElementDirectText(element);
-      const classes = filterRuntimeClasses(element.classList);
-
-      const clipboardData: CaliperSelectorInput = {
-        selector: agentId,
-        tag: tagName,
-        timestamp: Date.now(),
-      };
-
-      if (id) clipboardData.id = id;
-      if (text) clipboardData.text = text;
-      if (classes.length > 0) clipboardData.classes = classes;
-
-      const tabId = sessionStorage.getItem(BRIDGE_TAB_ID_KEY);
-      if (tabId) clipboardData.tabId = tabId;
-
-      return JSON.stringify(clipboardData);
-    };
-
     const handleContextMenu = (e: MouseEvent) => {
       if (isAgentActive()) return;
 
@@ -329,7 +296,7 @@ export function Root(config: RootConfig) {
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        const selectorInfo = buildSelectorInfo(selectedElement);
+        const selectorInfo = JSON.stringify(buildSelectorInfo(selectedElement, selectionMetadata()));
         navigator.clipboard.writeText(selectorInfo).then(() => {
           if (copyTimeoutId) clearTimeout(copyTimeoutId);
           setIsCopied(true);

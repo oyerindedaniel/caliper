@@ -1,5 +1,5 @@
 
-export function getElementDirectText(element: Element, maxLength: number = 50): string | undefined {
+export function getElementDirectText(element: Element, maxLength: number = 100): string | undefined {
     let directText = "";
 
     const children = element.childNodes;

@@ -86,7 +86,7 @@ export class CaliperMcpServer {
       {
         description: "Get full geometry and computed visibility for an element.",
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector of the element"),
+          selector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
         }),
       },
       async ({ selector }) => {
@@ -107,8 +107,8 @@ export class CaliperMcpServer {
       {
         description: "Perform a high-precision measurement between two elements.",
         inputSchema: z.object({
-          primarySelector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector for the primary element"),
-          secondarySelector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector for the target element"),
+          primarySelector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector for the primary element"),
+          secondarySelector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector for the target element"),
         }),
       },
       async ({ primarySelector, secondarySelector }) => {
@@ -151,7 +151,7 @@ export class CaliperMcpServer {
       {
         description: "Get the semantic context of an element by traversing its parents and children. Useful for understanding component hierarchy.",
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID (caliper-xxxx) or CSS selector of the element"),
+          selector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
         }),
       },
       async ({ selector }) => {
@@ -161,46 +161,6 @@ export class CaliperMcpServer {
         } catch (error) {
           return {
             content: [{ type: "text", text: `DOM Walk failed: ${error instanceof Error ? error.message : String(error)}` }],
-            isError: true,
-          };
-        }
-      }
-    );
-
-
-    this.server.registerTool(
-      "caliper_parse_selector",
-      {
-        description: "Break down the JSON selector info copied from Caliper and provide a code-search strategy.",
-        inputSchema: z.object({
-          selectorInfo: z.string().describe("The JSON selector info copied from Caliper UI"),
-        }),
-      },
-      async ({ selectorInfo }) => {
-        try {
-          const info = JSON.parse(selectorInfo);
-          const strategy: string[] = [];
-
-          if (info.id) strategy.push(`Search for id="${info.id}"`);
-          if (info.classes && info.classes.length > 0) strategy.push(`Search for class(es): .${info.classes.join(".")}`);
-          if (info.text) strategy.push(`Search for exact text: "${info.text}"`);
-          if (info.tag) strategy.push(`Filter results by <${info.tag}> tag`);
-
-          const keywords = [info.id, ...(info.classes || []), info.text].filter(Boolean);
-
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                parsed: info,
-                recommendedKeywords: Array.from(new Set(keywords)),
-                strategy: strategy.join(" -> ")
-              }, null, 2)
-            }]
-          };
-        } catch (e) {
-          return {
-            content: [{ type: "text", text: "Invalid selector info JSON" }],
             isError: true,
           };
         }
@@ -226,7 +186,7 @@ The output includes:
 - maxDepthReached: Deepest level reached
 - walkDurationMs: Time taken to complete the walk`,
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID or CSS selector of the root element to walk"),
+          selector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector of the root element to walk"),
           maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
         }),
       },

@@ -3,9 +3,10 @@
 import styles from "../../page.module.css";
 import Image from "next/image";
 import { Nav } from "../../components/nav";
-import { Footer } from "../../footer";
+import { Footer } from "../../components/footer";
 import { Installation } from "../../installation";
 import { McpSetup } from "../../components/mcp-setup";
+import { CodeBlock } from "../../components/code-block";
 
 export default function AgenticDocsPage() {
     return (
@@ -13,21 +14,24 @@ export default function AgenticDocsPage() {
             <main className={styles.main}>
                 <Nav />
 
-                <div className="mb-32">
-                    <Image
-                        src="/caliper_logo.svg"
-                        alt="Caliper logo"
-                        width={172}
-                        height={50}
-                        className="h-auto"
-                        priority
-                        unoptimized
-                    />
-                </div>
+                <div className="flex flex-col gap-12">
+                    <div className={styles.logoWrapper}>
+                        <Image
+                            src="/caliper_logo.svg"
+                            alt="Caliper logo"
+                            width={172}
+                            height={50}
+                            className="h-auto "
+                            priority
+                            unoptimized
+                        />
+                        <span className={styles.agentBadge}>Agent</span>
+                    </div>
 
-                <div>
-                    <h1 className={styles.pageTitle}>Agentic</h1>
-                    <p className="op-8">Connect your browser to AI agents for high-precision design auditing and automated layout verification.</p>
+                    <div>
+                        <h1 className="sr-only">Agentic</h1>
+                        <p className="op-8">Connect your browser to AI agents for high-precision design auditing and automated layout verification.</p>
+                    </div>
                 </div>
 
                 <Installation mode="agentic" />
@@ -83,10 +87,6 @@ export default function AgenticDocsPage() {
                                     <td>Comprehensive window, viewport, and accessibility metrics.</td>
                                 </tr>
                                 <tr>
-                                    <td><code>caliper_parse_selector</code></td>
-                                    <td>Parse rich selector data copied from the Caliper UI.</td>
-                                </tr>
-                                <tr>
                                     <td><code>caliper_check_contrast</code></td>
                                     <td>WCAG 2.1 contrast ratio check between foreground and background.</td>
                                 </tr>
@@ -100,6 +100,33 @@ export default function AgenticDocsPage() {
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </section>
+
+                <section className={styles.section}>
+                    <h2 className={styles.sectionHeader}>Stable Selectors</h2>
+                    <p className="mb-18 op-8">
+                        AI agents often need to rediscover elements after triggering code changes. While Caliper uses coordinate hit-testing as a fallback, you can ensure 100% reliability by adding stable markers with this helper:
+                    </p>
+                    <div className="mb-24">
+                        <CodeBlock
+                            code={`/**
+ * Helper to add stable markers for Caliper discovery.
+ * Returns {} in production to zero-out overhead.
+ */
+export function caliperProps(marker: string) {
+  if (process.env.NODE_ENV === "production") return {};
+  return { "data-caliper-marker": marker };
+}`}
+                            language="tsx"
+                        />
+                    </div>
+                    <p className="op-8">Use it to mark mission-critical components:</p>
+                    <div className="mb-8">
+                        <CodeBlock
+                            code={`<div {...caliperProps("main-cta")}>Click Me</div>`}
+                            language="tsx"
+                        />
                     </div>
                 </section>
 

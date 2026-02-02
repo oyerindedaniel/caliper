@@ -8,7 +8,7 @@ Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (
 
 - **High Precision**: Agents get the exact sub-pixel geometry from the browser DOM.
 - **Visual Feedback**: You can see exactly what the agent is measuring as it happens in the browser overlay.
-- **Caliper ID System**: Pinpoint accuracy using stable element identifiers that prevent selector "hallucinations".
+- **Semantic Reconciliation**: Agents can rediscover elements across HMR using stable markers, fingerprints, or Sub-pixel geometry.
 - **Multi-Tab Support**: Automatically targets and tracks the focused browser tab.
 - **Zero Config**: Standardized WebSocket relay on port 9876.
 
@@ -84,11 +84,10 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 
 - `caliper_list_tabs`: List all browser tabs currently connected to the bridge.
 - `caliper_switch_tab(tabId)`: Switch targeting to a specific browser tab.
-- `caliper_inspect(selector)`: Get an element's geometry, z-index, and full computed styles (padding/margin).
-- `caliper_measure(primary, secondary)`: Perform high-precision distance calculation between two elements.
+- `caliper_inspect(selector)`: Get an element's geometry, z-index, and full computed styles. Supports Caliper ID, JSON Fingerprint, or CSS selector.
+- `caliper_measure(primary, secondary)`: Perform high-precision distance calculation. Supports Caliper ID, JSON Fingerprint, or CSS selector.
 - `caliper_clear`: Reset all active measurements and guides in the UI.
-- `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element.
-- `caliper_parse_selector(jsonString)`: Parse rich selector data copied from the Caliper UI.
+- `caliper_walk_dom(selector)`: Inspect the DOM hierarchy (parents/children) of a specific element. Supports JSON Fingerprints.
 - `caliper_walk_and_measure(selector, maxDepth?)`: Comprehensive recursive DOM walk with style and gap extraction.
 - `caliper_get_context`: Get comprehensive window, viewport, and accessibility metrics from the current browser tab.
 - `caliper_check_contrast(foreground, background)`: Check WCAG 2.1 contrast ratio between two colors (hex, rgb, oklch, etc.).

@@ -1,6 +1,6 @@
-import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText, type CaliperCoreSystems } from "@caliper/core";
-import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles, waitPostRaf, getContextMetrics } from "./utils.js";
-import { walkAndMeasure, parseSelection } from "./harness/walk-engine.js";
+import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText, waitPostRaf, type CaliperCoreSystems } from "@caliper/core";
+import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles, getContextMetrics, findElementByFingerprint } from "./utils.js";
+import { walkAndMeasure } from "./harness/walk-engine.js";
 import type {
   CaliperIntent,
   CaliperActionResult,
@@ -8,6 +8,7 @@ import type {
   CaliperMeasurePayload,
   CaliperInspectPayload,
   CaliperWalkDomPayload,
+  CaliperSelectorInput,
 } from "@oyerinde/caliper-schema";
 import { BitBridge } from "@oyerinde/caliper-schema";
 import { DEFAULT_WALK_DEPTH } from "./constants.js";
@@ -17,6 +18,14 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
   const { measurementSystem, selectionSystem } = systems;
 
   function resolveElement(selector: string): HTMLElement | null {
+    if (selector.trim().startsWith("{")) {
+      try {
+        const info = JSON.parse(selector) as CaliperSelectorInput;
+        return findElementByFingerprint(info);
+      } catch (e) {
+      }
+    }
+
     if (selector.startsWith("caliper-")) {
       return document.querySelector(`[data-caliper-agent-id="${selector}"]`) as HTMLElement;
     }
@@ -161,6 +170,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           stickyConfig: geometry.stickyConfig,
           initialWindowX: geometry.initialWindowX,
           initialWindowY: geometry.initialWindowY,
+          depth: geometry.depth,
         })!,
         timestamp: Date.now(),
       };
@@ -242,17 +252,6 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
             method: "CALIPER_CLEAR",
             timestamp: Date.now(),
           };
-          break;
-        case "CALIPER_PARSE_SELECTION":
-          const parsed = parseSelection(intent.params.selectionJson);
-          result = {
-            success: parsed.isValid,
-            method: "CALIPER_PARSE_SELECTION",
-            selector: parsed.selector,
-            parsed,
-            error: parsed.errorMessage,
-            timestamp: Date.now(),
-          } as CaliperActionResult;
           break;
         case "CALIPER_WALK_AND_MEASURE":
           try {

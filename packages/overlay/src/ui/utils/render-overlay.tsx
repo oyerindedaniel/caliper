@@ -1,6 +1,6 @@
 import { Show, createMemo } from "solid-js";
 import { Portal } from "solid-js/web";
-import { getLiveGeometry, getTotalScrollDelta, getCommonVisibilityWindow } from "@caliper/core";
+import { getLiveGeometry, getTotalScrollDelta, getCommonVisibilityWindow, getOverlayRoot } from "@caliper/core";
 import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.jsx";
 import { MeasurementLabels } from "./render-labels.jsx";
 import { Calculator } from "./calculator.jsx";
@@ -105,7 +105,7 @@ export function Overlay(props: OverlayProps) {
         viewport={props.viewport()}
       />
       <Show when={(props.isActivatePressed() || props.isFrozen()) && resultData()}>
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <div class={`${PREFIX}overlay`}>
             <MeasurementLinesWithCalculator
               lines={props.result()!.lines}
@@ -123,7 +123,7 @@ export function Overlay(props: OverlayProps) {
         </Portal>
       </Show>
       <Show when={props.calculatorState && props.calculatorState() !== null}>
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <Calculator
             state={props.calculatorState!()!}
             onClose={props.onCalculatorClose || (() => { })}
@@ -139,7 +139,7 @@ export function Overlay(props: OverlayProps) {
           props.projectionState()?.element === props.selectionMetadata().element
         }
       >
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <ProjectionOverlay
             projectionState={props.projectionState!}
             metadata={props.selectionMetadata}
@@ -150,7 +150,7 @@ export function Overlay(props: OverlayProps) {
         </Portal>
       </Show>
       <Show when={props.rulerState && props.rulerState().lines.length > 0}>
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <RulerOverlay
             state={props.rulerState!}
             viewport={props.viewport}

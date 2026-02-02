@@ -70,6 +70,7 @@ export const SelectionMetadataSchema = z.object({
     stickyConfig: StickyConfigSchema.optional(),
     initialWindowX: z.number(),
     initialWindowY: z.number(),
+    depth: z.number(),
     hasContainingBlock: z.boolean().optional(),
 });
 

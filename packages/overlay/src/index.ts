@@ -8,6 +8,8 @@ import {
   mergeTheme,
   getConfig,
   showVersionInfo,
+  OVERLAY_CONTAINER_ID,
+  MAX_SAFE_Z_INDEX,
 } from "@caliper/core";
 
 import { injectStyles, removeStyles } from "./style-injector/utils/inject-styles.js";
@@ -83,19 +85,26 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
     mount: (container?: HTMLElement) => {
       if (instance.mounted) return;
 
-      if (document.getElementById("caliper-overlay-root")) {
+      if (document.getElementById(OVERLAY_CONTAINER_ID)) {
         instance.mounted = true;
         return;
       }
 
-      applyTheme(theme);
-
-      const target = container || document.body;
+      const target = container || document.documentElement;
       injectStyles();
 
       const overlayContainer = document.createElement("div");
-      overlayContainer.id = "caliper-overlay-root";
+      overlayContainer.id = OVERLAY_CONTAINER_ID;
+      overlayContainer.style.position = "fixed";
+      overlayContainer.style.top = "0";
+      overlayContainer.style.left = "0";
+      overlayContainer.style.width = "0";
+      overlayContainer.style.height = "0";
+      overlayContainer.style.pointerEvents = "none";
+      overlayContainer.style.zIndex = MAX_SAFE_Z_INDEX.toString();
       target.appendChild(overlayContainer);
+
+      applyTheme(theme, overlayContainer);
 
       const disposeRender = render(
         () =>
@@ -119,9 +128,9 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
         instance.mounted = false;
         systems = null;
 
-        // Dispose plugins
         plugins.forEach((plugin) => plugin.dispose?.());
         plugins.clear();
+        pendingSystemsResolvers.length = 0;
 
         if (activeInstance === instance) activeInstance = null;
       };

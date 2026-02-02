@@ -34,9 +34,7 @@ export const CaliperMethodSchema = z.enum([
     "CALIPER_INSPECT",
     "CALIPER_FREEZE",
     "CALIPER_CLEAR",
-    "CALIPER_AUDIT_NODE",
     "CALIPER_WALK_DOM",
-    "CALIPER_PARSE_SELECTION",
     "CALIPER_WALK_AND_MEASURE",
     "CALIPER_GET_CONTEXT",
 ]);
@@ -72,21 +70,6 @@ export const CaliperActionResultSchema = z.union([
             element: CaliperElementSummarySchema,
             parent: CaliperElementSummarySchema.nullable(),
             children: z.array(CaliperElementSummarySchema)
-        }),
-        timestamp: z.number()
-    }),
-    z.object({
-        success: z.literal(true),
-        method: z.literal("CALIPER_PARSE_SELECTION"),
-        selector: z.string(),
-        parsed: z.object({
-            selector: z.string(),
-            tag: z.string(),
-            id: z.string().optional(),
-            text: z.string().optional(),
-            classes: z.array(z.string()),
-            timestamp: z.number(),
-            isValid: z.literal(true),
         }),
         timestamp: z.number()
     }),
@@ -176,9 +159,6 @@ export const CaliperWalkDomPayloadSchema = z.object({
     depth: z.number().optional(),
 });
 
-export const CaliperParseSelectionPayloadSchema = z.object({
-    selectionJson: z.string(),
-});
 
 export const CaliperWalkAndMeasurePayloadSchema = z.object({
     selector: z.string(),
@@ -197,11 +177,10 @@ export type CaliperSelectPayload = z.infer<typeof CaliperSelectPayloadSchema>;
 export type CaliperMeasurePayload = z.infer<typeof CaliperMeasurePayloadSchema>;
 export type CaliperInspectPayload = z.infer<typeof CaliperInspectPayloadSchema>;
 export type CaliperWalkDomPayload = z.infer<typeof CaliperWalkDomPayloadSchema>;
-export type CaliperParseSelectionPayload = z.infer<typeof CaliperParseSelectionPayloadSchema>;
 export type CaliperWalkAndMeasurePayload = z.infer<typeof CaliperWalkAndMeasurePayloadSchema>;
 export type CaliperGetContextPayload = z.infer<typeof CaliperGetContextPayloadSchema>;
 
-export type CaliperIntentType = Exclude<CaliperMethod, "CALIPER_AUDIT_NODE">;
+export type CaliperIntentType = CaliperMethod;
 
 export type CaliperIntent =
     | { method: "CALIPER_SELECT"; params: CaliperSelectPayload }
@@ -210,7 +189,6 @@ export type CaliperIntent =
     | { method: "CALIPER_FREEZE"; params: {} }
     | { method: "CALIPER_CLEAR"; params: {} }
     | { method: "CALIPER_WALK_DOM"; params: CaliperWalkDomPayload }
-    | { method: "CALIPER_PARSE_SELECTION"; params: CaliperParseSelectionPayload }
     | { method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload }
     | { method: "CALIPER_GET_CONTEXT"; params: CaliperGetContextPayload };
 
@@ -221,7 +199,6 @@ export type ToolCallMessage =
     | { id: string; method: "CALIPER_FREEZE"; params: {} }
     | { id: string; method: "CALIPER_CLEAR"; params: {} }
     | { id: string; method: "CALIPER_WALK_DOM"; params: CaliperWalkDomPayload }
-    | { id: string; method: "CALIPER_PARSE_SELECTION"; params: CaliperParseSelectionPayload }
     | { id: string; method: "CALIPER_WALK_AND_MEASURE"; params: CaliperWalkAndMeasurePayload }
     | { id: string; method: "CALIPER_GET_CONTEXT"; params: CaliperGetContextPayload };
 

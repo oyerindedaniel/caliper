@@ -12,6 +12,9 @@ export function CaliperWrapper() {
 
   useEffect(() => {
     const caliper = init(config);
+    if (config.theme?.primary) {
+      document.documentElement.style.setProperty("--caliper-primary", config.theme.primary);
+    }
 
     caliper.use(
       CaliperBridge({

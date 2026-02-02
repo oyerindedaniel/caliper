@@ -20,7 +20,7 @@ export function Nav() {
             )}
             {pathname !== "/docs/agentic" && (
                 <Link href="/docs/agentic" className={styles.navLink}>
-                    <span>AI Implementation</span>
+                    <span>Agent</span>
                     <span className={styles.newBadge}>Docs</span>
                 </Link>
             )}

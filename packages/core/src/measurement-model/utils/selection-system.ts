@@ -5,6 +5,7 @@ import {
   type PositionMode,
   type StickyConfig,
 } from "../../geometry/utils/scroll-aware.js";
+import { waitPostRaf } from "../../shared/utils/raf.js";
 import type { Remap } from "../../shared/types/index.js";
 
 /**
@@ -34,6 +35,7 @@ export function createSelectionSystem(): SelectionSystem {
   let stickyConfig: StickyConfig | undefined;
   let initialWindowX = 0;
   let initialWindowY = 0;
+  let depth = 0;
 
   const updateListeners = new Set<(metadata: SelectionMetadata) => void>();
 
@@ -46,6 +48,7 @@ export function createSelectionSystem(): SelectionSystem {
       stickyConfig,
       initialWindowX,
       initialWindowY,
+      depth,
     };
   }
 
@@ -60,20 +63,19 @@ export function createSelectionSystem(): SelectionSystem {
     selectedElement = element;
 
     if (element) {
-      requestAnimationFrame(() => {
-        Promise.resolve().then(() => {
-          if (selectedElement === element) {
-            const geometry = deduceGeometry(element);
-            selectedRect = geometry.rect;
-            scrollHierarchy = geometry.scrollHierarchy;
-            position = geometry.position;
-            stickyConfig = geometry.stickyConfig;
-            initialWindowX = geometry.initialWindowX;
-            initialWindowY = geometry.initialWindowY;
+      waitPostRaf(() => {
+        if (selectedElement === element) {
+          const geometry = deduceGeometry(element);
+          selectedRect = geometry.rect;
+          scrollHierarchy = geometry.scrollHierarchy;
+          position = geometry.position;
+          stickyConfig = geometry.stickyConfig;
+          initialWindowX = geometry.initialWindowX;
+          initialWindowY = geometry.initialWindowY;
+          depth = geometry.depth;
 
-            notifyListeners();
-          }
-        });
+          notifyListeners();
+        }
       });
     } else {
       selectedRect = null;
@@ -82,6 +84,7 @@ export function createSelectionSystem(): SelectionSystem {
       stickyConfig = undefined;
       initialWindowX = 0;
       initialWindowY = 0;
+      depth = 0;
       notifyListeners();
     }
   }

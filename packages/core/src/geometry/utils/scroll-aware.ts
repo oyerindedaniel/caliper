@@ -21,6 +21,7 @@ export type StickyConfig = BaseStickyConfig;
 export interface DeducedGeometry extends Omit<BaseSelectionMetadata, "scrollHierarchy" | "rect"> {
   rect: DOMRect;
   scrollHierarchy: ScrollState[];
+  depth: number;
   containingBlock: HTMLElement | null;
 }
 
@@ -56,7 +57,7 @@ export function getScrollHierarchy(element: Element): ScrollState[] {
   const hierarchy: ScrollState[] = [];
   let parent = element.parentElement;
 
-  while (parent && parent !== document.body) {
+  while (parent && parent !== document.documentElement) {
     if (isScrollContainer(parent)) {
       const el = parent as HTMLElement;
       hierarchy.push({
@@ -433,11 +434,13 @@ function getInheritedPositionMode(element: Element): {
   mode: PositionMode;
   anchor: HTMLElement | null;
   containingBlock: HTMLElement | null;
+  depth: number;
 } {
   let curr: Element | null = element;
   let mode: PositionMode = "static";
   let anchor: HTMLElement | null = null;
   let containingBlock: HTMLElement | null = null;
+  let depth = 0;
 
   while (curr) {
     if (!isRenderable(curr)) {
@@ -474,9 +477,10 @@ function getInheritedPositionMode(element: Element): {
 
     if (curr === document.documentElement) break;
     curr = curr.parentElement;
+    depth++;
   }
 
-  return { mode, anchor, containingBlock };
+  return { mode, anchor, containingBlock, depth };
 }
 
 /**
@@ -513,7 +517,7 @@ export function deduceGeometry(element: Element): DeducedGeometry {
   const initialWindowX = window.scrollX;
   const initialWindowY = window.scrollY;
 
-  const { mode: position, anchor, containingBlock } = getInheritedPositionMode(element);
+  const { mode: position, anchor, containingBlock, depth } = getInheritedPositionMode(element);
 
   let stickyConfig;
   if (position === "sticky" && anchor) {
@@ -557,6 +561,7 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     stickyConfig,
     initialWindowX,
     initialWindowY,
+    depth,
     hasContainingBlock: !!containingBlock,
     containingBlock,
   };
