@@ -135,25 +135,10 @@ export default function AgenticDocsPage() {
           <p className="mb-18 op-8">
             AI agents often need to rediscover elements after triggering code changes. While Caliper
             uses coordinate hit-testing as a fallback, you can ensure 100% reliability by adding
-            stable markers with this helper:
+            stable markers to mission-critical components:
           </p>
-          <div className="mb-24">
-            <CodeBlock
-              code={`/**
- * Helper to add stable markers for Caliper discovery.
- * Returns {} in production to zero-out overhead.
- */
-export function caliperProps(marker: string) {
-  if (process.env.NODE_ENV === "production") return {};
-  return { "data-caliper-marker": marker };
-}`}
-              language="tsx"
-            />
-          </div>
-          <p className="op-8">Use it to mark mission-critical components:</p>
-          <div className="mb-8">
-            <CodeBlock code={`<div {...caliperProps("main-cta")}>Click Me</div>`} language="tsx" />
-          </div>
+
+          <CodeBlock code={`<div {...caliperProps("main-cta")}>Click Me</div>`} language="tsx" />
         </section>
 
         <section className={styles.section}>

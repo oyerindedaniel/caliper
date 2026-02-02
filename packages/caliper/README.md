@@ -283,20 +283,6 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 
 For AI agents to reliably rediscover elements across re-renders (like HMR), we recommend adding stable markers to critical UI components. Use the `caliperProps` helper to add these attributes only in non-production environments.
 
-```tsx
-/**
- * A helper function for developers to add stable markers to their components.
- */
-export function caliperProps(marker: string) {
-  if (typeof process !== "undefined" && process.env.NODE_ENV === "production") {
-    return {};
-  }
-  return {
-    "data-caliper-marker": marker,
-  };
-}
-```
-
 **Usage:**
 
 ```tsx

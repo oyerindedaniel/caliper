@@ -34,10 +34,10 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => {},
-      dispose: () => {},
+      mount: () => { },
+      dispose: () => { },
       getSystems: () => null,
-      waitForSystems: () => new Promise(() => {}),
+      waitForSystems: () => new Promise(() => { }),
       use: () => instance,
       mounted: false,
     };
@@ -100,12 +100,6 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
 
       const overlayContainer = document.createElement("div");
       overlayContainer.id = OVERLAY_CONTAINER_ID;
-      overlayContainer.style.position = "fixed";
-      overlayContainer.style.top = "0";
-      overlayContainer.style.left = "0";
-      overlayContainer.style.width = "0";
-      overlayContainer.style.height = "0";
-      overlayContainer.style.pointerEvents = "none";
       overlayContainer.style.zIndex = MAX_SAFE_Z_INDEX.toString();
       target.appendChild(overlayContainer);
 

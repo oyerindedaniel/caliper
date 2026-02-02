@@ -38,7 +38,6 @@ export const OVERLAY_STYLES = `
   height: 100vh;
   pointer-events: none;
   overflow: visible;
-  z-index: 999999;
 }
 
 .${CALIPER_PREFIX}viewport-fixed {
