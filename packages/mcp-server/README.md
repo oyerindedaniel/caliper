@@ -15,6 +15,7 @@ Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (
 ## Installation & Setup 📦
 
 ### 1. In your Web Application
+
 Ensure you have `@oyerinde/caliper-bridge` initialized in your application (see [Bridge README](../agent-bridge/README.md)).
 
 ### 2. Configure your Editor (Cursor / Claude Code / Antigravity)
@@ -22,6 +23,7 @@ Ensure you have `@oyerinde/caliper-bridge` initialized in your application (see 
 By default, the server runs on port **9876**. If you need to use a different port (e.g., if 9876 is occupied), you can pass the `-p` or `--port` flag.
 
 #### Cursor
+
 Cursor supports MCP via built-in settings. Add the server through the UI or by defining it in your `mcp.json`:
 
 ```json
@@ -42,6 +44,7 @@ Cursor supports MCP via built-in settings. Add the server through the UI or by d
 5. Command: `npx -y @oyerinde/caliper-mcp --port 9876`
 
 #### Claude Code
+
 Add to your Claude configuration:
 
 ```bash
@@ -49,6 +52,7 @@ claude mcp add @oyerinde/caliper-mcp -- npx -y @oyerinde/caliper-mcp --port 9876
 ```
 
 #### Antigravity
+
 Antigravity uses a configuration file named `mcp_config.json`. Add the caliper server to your config:
 
 ```json
@@ -66,16 +70,18 @@ Antigravity uses a configuration file named `mcp_config.json`. Add the caliper s
 
 The following flags are available when running the server:
 
-| Flag | Description | Default |
-| :--- | :--- | :--- |
-| `-p, --port` | Specify the WebSocket relay port. | `9876` |
-| `-d, --docs` | Show a link to the official documentation. | - |
-| `-h, --help` | Show usage instructions and available options. | - |
+| Flag         | Description                                    | Default |
+| :----------- | :--------------------------------------------- | :------ |
+| `-p, --port` | Specify the WebSocket relay port.              | `9876`  |
+| `-d, --docs` | Show a link to the official documentation.     | -       |
+| `-h, --help` | Show usage instructions and available options. | -       |
 
 > **Note**: Ensure the port used by the MCP server matches the one initialized in the `@oyerinde/caliper-bridge` in your web application.
 
 ### 4. Usage
+
 Once connected, the AI agent will have access to high-precision layout tools. You can ask:
+
 - "Inspect the header element for alignment issues."
 - "Measure the spacing between the logo and the navigation links."
 - "Check the contrast ratio between the text and background colors."
@@ -93,15 +99,14 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_check_contrast(foreground, background)`: Check WCAG 2.1 contrast ratio between two colors (hex, rgb, oklch, etc.).
 - `caliper_delta_e(color1, color2)`: Calculate perceptual color difference between two colors using Oklab.
 
-
 ## Prompts Provided 📋
 
 Prompts are predefined expert workflows. Trigger them in your editor (e.g., using `/` in Cursor).
 
-| Prompt | Description |
-| :--- | :--- |
-| `caliper-selector-audit` | Comprehensive, structured element audit (source discovery + precision analysis). |
-| `caliper-selectors-compare` | Compare two elements (A reference vs B target) to fix styling. |
+| Prompt                      | Description                                                                      |
+| :-------------------------- | :------------------------------------------------------------------------------- |
+| `caliper-selector-audit`    | Comprehensive, structured element audit (source discovery + precision analysis). |
+| `caliper-selectors-compare` | Compare two elements (A reference vs B target) to fix styling.                   |
 
 ## Resources 📚
 

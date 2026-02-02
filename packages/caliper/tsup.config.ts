@@ -63,7 +63,7 @@ export default defineConfig((options) => {
   return [
     {
       ...DEFAULT_OPTIONS,
-      entry: { "index": "./src/auto.ts" },
+      entry: { index: "./src/auto.ts" },
       format: ["iife"],
       globalName: "Caliper",
       minify: true,

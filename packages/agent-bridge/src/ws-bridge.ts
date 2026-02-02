@@ -1,8 +1,4 @@
-import type {
-  CaliperActionResult,
-  CaliperIntent,
-  ToolCallMessage,
-} from "@oyerinde/caliper-schema";
+import type { CaliperActionResult, CaliperIntent, ToolCallMessage } from "@oyerinde/caliper-schema";
 import { BitBridge } from "@oyerinde/caliper-schema";
 import { createLogger, BRIDGE_TAB_ID_KEY } from "@caliper/core";
 
@@ -57,7 +53,6 @@ export function createWSBridge(options: BridgeOptions) {
         try {
           const message = JSON.parse(event.data) as ToolCallMessage;
           messageId = message.id;
-
 
           const result = await onIntent(message);
 
@@ -119,7 +114,9 @@ export function createWSBridge(options: BridgeOptions) {
 
     reconnectAttempts++;
 
-    logger.warn(`MCP Relay connection lost. Reconnecting in ${Math.round(finalDelay / 1000)}s... (Attempt ${reconnectAttempts})`);
+    logger.warn(
+      `MCP Relay connection lost. Reconnecting in ${Math.round(finalDelay / 1000)}s... (Attempt ${reconnectAttempts})`
+    );
     reconnectTimeout = setTimeout(connect, finalDelay);
   }
 

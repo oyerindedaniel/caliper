@@ -40,131 +40,131 @@ let activeBoxes: Map<string, HTMLDivElement> = new Map();
 let isVisualizerActive = false;
 
 function injectStyles(): void {
-    if (styleElement) return;
+  if (styleElement) return;
 
-    styleElement = document.createElement("style");
-    styleElement.id = `${WALK_VIS_PREFIX}-styles`;
-    styleElement.textContent = WALK_VIS_STYLES;
-    document.head.appendChild(styleElement);
+  styleElement = document.createElement("style");
+  styleElement.id = `${WALK_VIS_PREFIX}-styles`;
+  styleElement.textContent = WALK_VIS_STYLES;
+  document.head.appendChild(styleElement);
 }
 
 function createContainer(): HTMLDivElement {
-    if (containerElement) return containerElement;
+  if (containerElement) return containerElement;
 
-    containerElement = document.createElement("div");
-    containerElement.id = WALK_VIS_CONTAINER_ID;
-    containerElement.className = `${WALK_VIS_PREFIX}-container`;
-    getOverlayRoot().appendChild(containerElement);
+  containerElement = document.createElement("div");
+  containerElement.id = WALK_VIS_CONTAINER_ID;
+  containerElement.className = `${WALK_VIS_PREFIX}-container`;
+  getOverlayRoot().appendChild(containerElement);
 
-    return containerElement;
+  return containerElement;
 }
 
 function createBox(id: string, rect: DOMRect, isActive: boolean, isChild: boolean): HTMLDivElement {
-    const box = document.createElement("div");
-    box.id = `${WALK_VIS_PREFIX}-box-${id}`;
-    box.className = `${WALK_VIS_PREFIX}-box`;
+  const box = document.createElement("div");
+  box.id = `${WALK_VIS_PREFIX}-box-${id}`;
+  box.className = `${WALK_VIS_PREFIX}-box`;
 
-    if (isActive) {
-        box.classList.add(`${WALK_VIS_PREFIX}-box-active`);
-    }
-    if (isChild) {
-        box.classList.add(`${WALK_VIS_PREFIX}-box-child`);
-    }
+  if (isActive) {
+    box.classList.add(`${WALK_VIS_PREFIX}-box-active`);
+  }
+  if (isChild) {
+    box.classList.add(`${WALK_VIS_PREFIX}-box-child`);
+  }
 
-    box.style.left = `${rect.left}px`;
-    box.style.top = `${rect.top}px`;
-    box.style.width = `${rect.width}px`;
-    box.style.height = `${rect.height}px`;
+  box.style.left = `${rect.left}px`;
+  box.style.top = `${rect.top}px`;
+  box.style.width = `${rect.width}px`;
+  box.style.height = `${rect.height}px`;
 
-    return box;
+  return box;
 }
 
 export function initWalkVisualizer(): void {
-    if (isVisualizerActive) return;
+  if (isVisualizerActive) return;
 
-    injectStyles();
-    createContainer();
-    isVisualizerActive = true;
+  injectStyles();
+  createContainer();
+  isVisualizerActive = true;
 }
 
 export function showWalkBoundary(element: Element, id: string, isActive: boolean = false): void {
-    if (!isVisualizerActive || !containerElement) {
-        initWalkVisualizer();
+  if (!isVisualizerActive || !containerElement) {
+    initWalkVisualizer();
+  }
+
+  const rect = element.getBoundingClientRect();
+
+  const existingBox = activeBoxes.get(id);
+  if (existingBox) {
+    existingBox.style.left = `${rect.left}px`;
+    existingBox.style.top = `${rect.top}px`;
+    existingBox.style.width = `${rect.width}px`;
+    existingBox.style.height = `${rect.height}px`;
+
+    if (isActive) {
+      existingBox.classList.add(`${WALK_VIS_PREFIX}-box-active`);
+    } else {
+      existingBox.classList.remove(`${WALK_VIS_PREFIX}-box-active`);
     }
+    return;
+  }
 
-    const rect = element.getBoundingClientRect();
-
-    const existingBox = activeBoxes.get(id);
-    if (existingBox) {
-        existingBox.style.left = `${rect.left}px`;
-        existingBox.style.top = `${rect.top}px`;
-        existingBox.style.width = `${rect.width}px`;
-        existingBox.style.height = `${rect.height}px`;
-
-        if (isActive) {
-            existingBox.classList.add(`${WALK_VIS_PREFIX}-box-active`);
-        } else {
-            existingBox.classList.remove(`${WALK_VIS_PREFIX}-box-active`);
-        }
-        return;
-    }
-
-    const box = createBox(id, rect, isActive, false);
-    containerElement!.appendChild(box);
-    activeBoxes.set(id, box);
+  const box = createBox(id, rect, isActive, false);
+  containerElement!.appendChild(box);
+  activeBoxes.set(id, box);
 }
 
 export function showChildBoundary(element: Element, id: string): void {
-    if (!isVisualizerActive || !containerElement) {
-        initWalkVisualizer();
-    }
+  if (!isVisualizerActive || !containerElement) {
+    initWalkVisualizer();
+  }
 
-    const rect = element.getBoundingClientRect();
+  const rect = element.getBoundingClientRect();
 
-    if (activeBoxes.has(id)) return;
+  if (activeBoxes.has(id)) return;
 
-    const box = createBox(id, rect, false, true);
-    containerElement!.appendChild(box);
-    activeBoxes.set(id, box);
+  const box = createBox(id, rect, false, true);
+  containerElement!.appendChild(box);
+  activeBoxes.set(id, box);
 }
 
 export function setActiveNode(id: string): void {
-    for (const [boxId, box] of activeBoxes) {
-        if (boxId === id) {
-            box.classList.add(`${WALK_VIS_PREFIX}-box-active`);
-        } else {
-            box.classList.remove(`${WALK_VIS_PREFIX}-box-active`);
-        }
+  for (const [boxId, box] of activeBoxes) {
+    if (boxId === id) {
+      box.classList.add(`${WALK_VIS_PREFIX}-box-active`);
+    } else {
+      box.classList.remove(`${WALK_VIS_PREFIX}-box-active`);
     }
+  }
 }
 
 export function removeWalkBoundary(id: string): void {
-    const box = activeBoxes.get(id);
-    if (box) {
-        box.remove();
-        activeBoxes.delete(id);
-    }
+  const box = activeBoxes.get(id);
+  if (box) {
+    box.remove();
+    activeBoxes.delete(id);
+  }
 }
 
 export function clearAllWalkBoundaries(): void {
-    for (const box of activeBoxes.values()) {
-        box.remove();
-    }
-    activeBoxes.clear();
+  for (const box of activeBoxes.values()) {
+    box.remove();
+  }
+  activeBoxes.clear();
 }
 
 export function cleanupWalkVisualizer(): void {
-    clearAllWalkBoundaries();
+  clearAllWalkBoundaries();
 
-    if (containerElement) {
-        containerElement.remove();
-        containerElement = null;
-    }
+  if (containerElement) {
+    containerElement.remove();
+    containerElement = null;
+  }
 
-    if (styleElement) {
-        styleElement.remove();
-        styleElement = null;
-    }
+  if (styleElement) {
+    styleElement.remove();
+    styleElement = null;
+  }
 
-    isVisualizerActive = false;
+  isVisualizerActive = false;
 }

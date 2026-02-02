@@ -81,9 +81,7 @@ export default function ChangelogPage({ changelog }: ChangelogPageProps) {
         </div>
 
         <h1 className={styles.pageTitle}>{changelog.title}</h1>
-        <p className={`${styles.instructionItem} mb-24`}>
-          {changelog.description}
-        </p>
+        <p className={`${styles.instructionItem} mb-24`}>{changelog.description}</p>
 
         {changelog.versions.map((version) => (
           <div key={version.version}>

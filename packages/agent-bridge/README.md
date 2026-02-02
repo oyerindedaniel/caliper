@@ -2,13 +2,14 @@
 
 # @oyerinde/caliper/bridge
 
-Agentic bridge for Caliper - enables AI agents to use Caliper's high-precision measurement engine for autonomous UI auditing. 
+Agentic bridge for Caliper - enables AI agents to use Caliper's high-precision measurement engine for autonomous UI auditing.
 
 This package provides the "glue" between your browser-based Caliper UI and the Model Context Protocol (MCP) relay.
 
 ## Usage 🚀
 
 ### 1. Initialize with Caliper
+
 The bridge is initialized as a plugin for the main Caliper instance:
 
 ```typescript
@@ -20,18 +21,18 @@ const caliper = init();
 caliper.use(
   CaliperBridge({
     enabled: true,
-    wsPort: 9876
+    wsPort: 9876,
   })
 );
 ```
 
 ## Configuration 🛠️
 
-| Option | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `enabled` | `boolean` | No | Set to `true` to activate the bridge (default: `false`) |
-| `wsPort` | `number` | No | WebSocket port for the MCP relay (default: `9876`) |
-| `onStateChange` | `(state: CaliperAgentState) => void` | No | Callback for real-time state synchronization |
+| Option          | Type                                 | Required | Description                                             |
+| :-------------- | :----------------------------------- | :------- | :------------------------------------------------------ |
+| `enabled`       | `boolean`                            | No       | Set to `true` to activate the bridge (default: `false`) |
+| `wsPort`        | `number`                             | No       | WebSocket port for the MCP relay (default: `9876`)      |
+| `onStateChange` | `(state: CaliperAgentState) => void` | No       | Callback for real-time state synchronization            |
 
 ## Pro-Tip: Stable Markers 🎯
 
@@ -39,12 +40,12 @@ To help AI agents reliably rediscover elements after code changes or re-renders,
 
 ```tsx
 export function caliperProps(marker: string) {
-    if (typeof process !== "undefined" && process.env.NODE_ENV === "production") {
-        return {};
-    }
-    return {
-        "data-caliper-marker": marker,
-    };
+  if (typeof process !== "undefined" && process.env.NODE_ENV === "production") {
+    return {};
+  }
+  return {
+    "data-caliper-marker": marker,
+  };
 }
 ```
 

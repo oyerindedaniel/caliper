@@ -1,4 +1,3 @@
-
 export const MAX_FRAME_TIMES = 30;
 export const DEFAULT_READ_INTERVAL = 16; // ~60fps
 
@@ -19,10 +18,10 @@ export const OVERLAY_CONTAINER_ID = "caliper-overlay-root";
 export const MAX_SAFE_Z_INDEX = 2147483647;
 
 export const RUNTIME_CLASS_IGNORE_PREFIXES = [
-    "caliper-",
-    "is-",
-    "has-",
-    "js-",
-    "framer-",
-    "motion-",
+  "caliper-",
+  "is-",
+  "has-",
+  "js-",
+  "framer-",
+  "motion-",
 ];

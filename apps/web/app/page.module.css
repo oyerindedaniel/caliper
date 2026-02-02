@@ -68,7 +68,6 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
@@ -319,11 +318,11 @@
   gap: 8px;
 }
 
-.subHeader+.subHeader {
+.subHeader + .subHeader {
   margin-top: 0;
 }
 
-.sectionHeader+.subHeader {
+.sectionHeader + .subHeader {
   margin-top: 0;
 }
 
@@ -420,7 +419,6 @@
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 1;

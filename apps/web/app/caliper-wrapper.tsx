@@ -7,7 +7,7 @@ import { useConfig } from "./contexts/config-context";
 
 export function CaliperWrapper() {
   const { getCaliperConfig } = useConfig();
-  const config = getCaliperConfig()
+  const config = getCaliperConfig();
   const configHash = JSON.stringify(config);
 
   useEffect(() => {

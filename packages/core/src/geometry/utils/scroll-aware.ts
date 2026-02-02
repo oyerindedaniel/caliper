@@ -145,7 +145,7 @@ export function getTotalScrollDelta(
     const s = hierarchy[i];
     if (!s) continue;
 
-    // Check if THIS container is fixed. 
+    // Check if THIS container is fixed.
     // If it is, any scroll above it doesn't move it relative to viewport.
     const style = window.getComputedStyle(s.element);
     const isFixed = style.position === "fixed";
@@ -187,7 +187,7 @@ export function getTotalScrollDelta(
     }
   }
 
-  // If we finished loop and we are effectively fixed but the fixed anchor wasn't 
+  // If we finished loop and we are effectively fixed but the fixed anchor wasn't
   // a "scroll container" itself, we still need window pinning.
   if (position === "fixed" && !hasContainingBlock) {
     deltaX += initWinX - window.scrollX;
@@ -463,15 +463,17 @@ function getInheritedPositionMode(element: Element): {
 
     // Capture the first ancestor that establishes a containing block for our element
     // NOTE: An element does not establish a containing block for itself in the 'fixed' sense
-    if (curr !== element && !containingBlock && (
-      style.transform !== "none" ||
-      style.filter !== "none" ||
-      style.perspective !== "none" ||
-      style.contain === "paint" ||
-      style.contain === "layout" ||
-      style.willChange === "transform" ||
-      style.willChange === "filter"
-    )) {
+    if (
+      curr !== element &&
+      !containingBlock &&
+      (style.transform !== "none" ||
+        style.filter !== "none" ||
+        style.perspective !== "none" ||
+        style.contain === "paint" ||
+        style.contain === "layout" ||
+        style.willChange === "transform" ||
+        style.willChange === "filter")
+    ) {
       containingBlock = curr as HTMLElement;
     }
 

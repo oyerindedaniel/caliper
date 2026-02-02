@@ -3,20 +3,20 @@ import type {
   MeasurementLine as BaseMeasurementLine,
   MeasurementResult as BaseMeasurementResult,
 } from "@oyerinde/caliper-schema";
-import {
-  type ScrollState,
-  getTotalScrollDelta,
-} from "../../geometry/utils/scroll-aware.js";
+import { type ScrollState, getTotalScrollDelta } from "../../geometry/utils/scroll-aware.js";
 
 export type MeasurementLine = BaseMeasurementLine;
 
-export type MeasurementResult = Remap<BaseMeasurementResult, {
-  primary: DOMRect;
-  secondary: DOMRect | null;
-  primaryHierarchy: ScrollState[];
-  secondaryHierarchy: ScrollState[];
-  secondaryElement: Element | null;
-}>;
+export type MeasurementResult = Remap<
+  BaseMeasurementResult,
+  {
+    primary: DOMRect;
+    secondary: DOMRect | null;
+    primaryHierarchy: ScrollState[];
+    secondaryHierarchy: ScrollState[];
+    secondaryElement: Element | null;
+  }
+>;
 
 /**
  * Create measurement lines based on context

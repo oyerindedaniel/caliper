@@ -8,8 +8,8 @@
 export function CaliperBridge(): unknown {
   return {
     name: "agent-bridge",
-    install: () => { },
-    dispose: () => { },
+    install: () => {},
+    dispose: () => {},
   };
 }
 

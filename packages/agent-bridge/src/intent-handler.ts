@@ -1,5 +1,18 @@
-import { createMeasurementBetween, deduceGeometry, filterRuntimeClasses, getElementDirectText, waitPostRaf, type CaliperCoreSystems } from "@caliper/core";
-import { sanitizeSelection, sanitizeMeasurement, parseComputedStyles, getContextMetrics, findElementByFingerprint } from "./utils.js";
+import {
+  createMeasurementBetween,
+  deduceGeometry,
+  filterRuntimeClasses,
+  getElementDirectText,
+  waitPostRaf,
+  type CaliperCoreSystems,
+} from "@caliper/core";
+import {
+  sanitizeSelection,
+  sanitizeMeasurement,
+  parseComputedStyles,
+  getContextMetrics,
+  findElementByFingerprint,
+} from "./utils.js";
 import { walkAndMeasure } from "./harness/walk-engine.js";
 import type {
   CaliperIntent,
@@ -22,8 +35,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       try {
         const info = JSON.parse(selector) as CaliperSelectorInput;
         return findElementByFingerprint(info);
-      } catch (e) {
-      }
+      } catch (e) {}
     }
 
     if (selector.startsWith("caliper-")) {
@@ -86,7 +98,8 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         resolve({
           success: false,
           method: "CALIPER_MEASURE",
-          error: `Elements not found: ${!primaryElement ? primarySelector : ""} ${!secondaryElement ? secondarySelector : ""}`.trim(),
+          error:
+            `Elements not found: ${!primaryElement ? primarySelector : ""} ${!secondaryElement ? secondarySelector : ""}`.trim(),
           timestamp: Date.now(),
         });
         return;
@@ -177,7 +190,6 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
     });
   }
 
-
   async function handleWalkDom(params: CaliperWalkDomPayload): Promise<CaliperActionResult> {
     const { selector } = params;
     const element = resolveElement(selector);
@@ -214,7 +226,6 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       };
     });
   }
-
 
   async function dispatch(intent: CaliperIntent): Promise<CaliperActionResult> {
     stateStore.setAgentLock(true);
@@ -256,13 +267,10 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         case "CALIPER_WALK_AND_MEASURE":
           try {
             const walkResult = await waitPostRaf(() =>
-              walkAndMeasure(
-                intent.params.selector,
-                {
-                  maxDepth: intent.params.maxDepth ?? DEFAULT_WALK_DEPTH,
-                  visualize: true
-                }
-              )
+              walkAndMeasure(intent.params.selector, {
+                maxDepth: intent.params.maxDepth ?? DEFAULT_WALK_DEPTH,
+                visualize: true,
+              })
             );
 
             const { root, ...stats } = walkResult;

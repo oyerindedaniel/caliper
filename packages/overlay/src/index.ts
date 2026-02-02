@@ -1,6 +1,11 @@
 import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
-import type { OverlayConfig, CaliperCoreSystems as Systems, OverlayInstance, CaliperPlugin } from "@caliper/core";
+import type {
+  OverlayConfig,
+  CaliperCoreSystems as Systems,
+  OverlayInstance,
+  CaliperPlugin,
+} from "@caliper/core";
 import {
   applyTheme,
   mergeCommands,
@@ -29,10 +34,10 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => { },
-      dispose: () => { },
+      mount: () => {},
+      dispose: () => {},
       getSystems: () => null,
-      waitForSystems: () => new Promise(() => { }),
+      waitForSystems: () => new Promise(() => {}),
       use: () => instance,
       mounted: false,
     };

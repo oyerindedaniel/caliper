@@ -7,7 +7,6 @@ import { useConfig, type CommandConfig } from "./contexts/config-context";
 import { ColorPicker } from "./components/color-picker";
 import { useIsClient } from "./hooks/use-is-client";
 
-
 const ShortcutField = ({
   label,
   value,

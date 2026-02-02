@@ -83,8 +83,4 @@ export { filterRuntimeClasses } from "./shared/utils/class-filter.js";
 export { buildSelectorInfo, caliperProps } from "./shared/utils/selector.js";
 export { waitPostRaf } from "./shared/utils/raf.js";
 export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";
-export {
-  getNormalizedModifiers,
-  getLogicalKey,
-  isKeyMatch,
-} from "./shared/utils/keyboard.js";
+export { getNormalizedModifiers, getLogicalKey, isKeyMatch } from "./shared/utils/keyboard.js";

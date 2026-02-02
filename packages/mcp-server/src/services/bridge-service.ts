@@ -1,6 +1,12 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
-import { BridgeMessageSchema, type CaliperActionResult, type CaliperMethod, type CaliperAgentState, BitBridge } from "@oyerinde/caliper-schema";
+import {
+  BridgeMessageSchema,
+  type CaliperActionResult,
+  type CaliperMethod,
+  type CaliperAgentState,
+  BitBridge,
+} from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { generateId } from "../utils/id.js";
@@ -21,7 +27,7 @@ export class BridgeService {
   >();
   private startupError: string | null = null;
 
-  constructor() { }
+  constructor() {}
 
   async start(port: number = DEFAULT_BRIDGE_PORT, retries: number = 3): Promise<void> {
     if (this.wss) return;
@@ -44,17 +50,22 @@ export class BridgeService {
               const attemptNum = retries - remaining + 1;
               const delay = getExponentialBackoff(attemptNum - 1, 500);
 
-              logger.warn(`Port ${currentPort} is currently in use. Retrying in ${delay}ms... (Attempt ${attemptNum}/${retries})`);
+              logger.warn(
+                `Port ${currentPort} is currently in use. Retrying in ${delay}ms... (Attempt ${attemptNum}/${retries})`
+              );
               server.close();
               server.removeAllListeners();
 
               setTimeout(() => {
-                attemptStart(currentPort, remaining - 1).then(resolve).catch(reject);
+                attemptStart(currentPort, remaining - 1)
+                  .then(resolve)
+                  .catch(reject);
               }, delay);
             } else {
-              const errorMessage = err.code === "EADDRINUSE"
-                ? `Port ${currentPort} is already in use by another process. Please close the other instance of Caliper or use a different port.`
-                : `WebSocket server error: ${String(error)}`;
+              const errorMessage =
+                err.code === "EADDRINUSE"
+                  ? `Port ${currentPort} is already in use by another process. Please close the other instance of Caliper or use a different port.`
+                  : `WebSocket server error: ${String(error)}`;
 
               logger.error(errorMessage);
               this.startupError = errorMessage;
@@ -141,7 +152,11 @@ export class BridgeService {
                 if (message.result) {
                   let finalResult = message.result as CaliperActionResult;
 
-                  if (finalResult.success && finalResult.method === "CALIPER_WALK_AND_MEASURE" && binaryPayload) {
+                  if (
+                    finalResult.success &&
+                    finalResult.method === "CALIPER_WALK_AND_MEASURE" &&
+                    binaryPayload
+                  ) {
                     try {
                       const root = BitBridge.deserialize(binaryPayload);
                       finalResult = {
@@ -151,7 +166,9 @@ export class BridgeService {
                           root,
                         },
                       };
-                      logger.info(`Bit-Bridge: Reconstructed tree from ${binaryPayload.byteLength} bytes.`);
+                      logger.info(
+                        `Bit-Bridge: Reconstructed tree from ${binaryPayload.byteLength} bytes.`
+                      );
                     } catch (e) {
                       logger.error("Bit-Bridge reconstruction failed:", e);
                     }
@@ -193,7 +210,9 @@ export class BridgeService {
 
     const tab = tabManager.getActiveTab();
     if (!tab) {
-      throw new Error("No active browser tab connected to Caliper Bridge. Ensure the browser is open with Caliper enabled.");
+      throw new Error(
+        "No active browser tab connected to Caliper Bridge. Ensure the browser is open with Caliper enabled."
+      );
     }
 
     const callWithTimeout = async (attempt: number): Promise<T> => {
@@ -234,7 +253,8 @@ export class BridgeService {
         return await callWithTimeout(i);
       } catch (err) {
         lastError = err as Error;
-        const isRetryable = lastError instanceof BridgeTimeoutError || lastError instanceof BridgeValidationError;
+        const isRetryable =
+          lastError instanceof BridgeTimeoutError || lastError instanceof BridgeValidationError;
 
         if (!isRetryable) {
           throw lastError;
@@ -243,7 +263,7 @@ export class BridgeService {
         if (i < retries) {
           const delay = getExponentialBackoff(i, 300);
           logger.warn(`${lastError.message}. Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
     }

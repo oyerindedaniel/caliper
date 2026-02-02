@@ -35,7 +35,7 @@ const DEFAULT_OPTIONS: Options = {
   clean: true,
   outDir: "./dist",
   treeshake: true,
-  target: "esnext"
+  target: "esnext",
 };
 
 export default defineConfig([

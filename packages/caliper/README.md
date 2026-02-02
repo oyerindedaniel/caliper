@@ -170,6 +170,7 @@ export function Root() {
 The Agent Bridge enables AI agents (like Claude or Cursor) to communicate with Caliper. It is available as a sub-export of the main package.
 
 ### 1. Vite & Module Bundlers
+
 If you've installed `@oyerinde/caliper` via npm, you can initialize the bridge using the plugin pattern:
 
 ```typescript
@@ -187,11 +188,12 @@ caliper.use(
 ```
 
 ### 2. Standalone (CDN/IIFE)
+
 If you are using the global script tag, the bridge is automatically included in the default bundle. Use the **minified lite** version if you don't need bridge support:
 
 ```html
 <!-- Full version (Includes Agent Bridge) -->
-<script 
+<script
   src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
   data-config='{"bridge": {"enabled": true}}'
 ></script>
@@ -201,13 +203,14 @@ If you are using the global script tag, the bridge is automatically included in 
 ```
 
 ### 3. Next.js (App Router)
+
 Enable the bridge directly in your configuration block:
 
 ```tsx
 <Script
   src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-  data-config={JSON.stringify({ 
-    bridge: { enabled: true } 
+  data-config={JSON.stringify({
+    bridge: { enabled: true },
   })}
   strategy="afterInteractive"
 />
@@ -224,38 +227,45 @@ import { init } from "@oyerinde/caliper";
 
 init({
   theme: {
-    primary: "#18A0FB",         // Main brand color
-    secondary: "#F24E1E",       // Accent color (for highlights)
-    calcBg: "rgba(30,30,30,0.95)", 
+    primary: "#18A0FB", // Main brand color
+    secondary: "#F24E1E", // Accent color (for highlights)
+    calcBg: "rgba(30,30,30,0.95)",
     calcShadow: "rgba(0,0,0,0.5)",
     calcOpHighlight: "#18A0FB", // Operator pulse color
     calcText: "#FFFFFF",
     text: "#FFFFFF",
-    projection: "#9B51E4",      // Edge projection lines
-    ruler: "#18A0FB"            // Ruler/guideline color
+    projection: "#9B51E4", // Edge projection lines
+    ruler: "#18A0FB", // Ruler/guideline color
   },
   commands: {
-    activate: "Alt",            // Reveal overlay
-    freeze: " ",                // Key to lock lines
-    select: "Control",          // Key to select (held)
-    clear: "Escape",            // Clear measurements
-    ruler: "r",                 // Ruler (Shift+r)
+    activate: "Alt", // Reveal overlay
+    freeze: " ", // Key to lock lines
+    select: "Control", // Key to select (held)
+    clear: "Escape", // Clear measurements
+    ruler: "r", // Ruler (Shift+r)
     selectionHoldDuration: 250, // Select hold-time (ms)
     calculator: {
-      top: "t", right: "r", bottom: "b", left: "l", distance: "g"
+      top: "t",
+      right: "r",
+      bottom: "b",
+      left: "l",
+      distance: "g",
     },
     projection: {
-      top: "w", left: "a", bottom: "s", right: "d"
-    }
+      top: "w",
+      left: "a",
+      bottom: "s",
+      right: "d",
+    },
   },
   animation: {
-    enabled: true,              // Smooth hover box
-    lerpFactor: 0.25            // Fluidity (low = slower)
+    enabled: true, // Smooth hover box
+    lerpFactor: 0.25, // Fluidity (low = slower)
   },
   bridge: {
-    enabled: true,              // Connect to AI Agents
-    wsPort: 9876                // Port for MCP relay
-  }
+    enabled: true, // Connect to AI Agents
+    wsPort: 9876, // Port for MCP relay
+  },
 });
 ```
 
@@ -278,16 +288,17 @@ For AI agents to reliably rediscover elements across re-renders (like HMR), we r
  * A helper function for developers to add stable markers to their components.
  */
 export function caliperProps(marker: string) {
-    if (typeof process !== "undefined" && process.env.NODE_ENV === "production") {
-        return {};
-    }
-    return {
-        "data-caliper-marker": marker,
-    };
+  if (typeof process !== "undefined" && process.env.NODE_ENV === "production") {
+    return {};
+  }
+  return {
+    "data-caliper-marker": marker,
+  };
 }
 ```
 
 **Usage:**
+
 ```tsx
 <div {...caliperProps("main-sidebar")}>...</div>
 ```

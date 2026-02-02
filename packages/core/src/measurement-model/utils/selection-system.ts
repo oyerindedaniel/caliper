@@ -11,11 +11,14 @@ import type { Remap } from "../../shared/types/index.js";
 /**
  * Selection system for tracking selected elements
  */
-export type SelectionMetadata = Remap<BaseSelectionMetadata, {
-  element: Element | null;
-  rect: DOMRect | null;
-  scrollHierarchy: ScrollState[];
-}>;
+export type SelectionMetadata = Remap<
+  BaseSelectionMetadata,
+  {
+    element: Element | null;
+    rect: DOMRect | null;
+    scrollHierarchy: ScrollState[];
+  }
+>;
 
 export interface SelectionSystem {
   select: (element: Element | null) => void;

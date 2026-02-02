@@ -17,8 +17,7 @@ try {
   if (__dirname.endsWith("dist")) {
     packageJsonPath = join(__dirname, "../package.json");
   }
-} catch (_) {
-}
+} catch (_) {}
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
@@ -86,7 +85,9 @@ export class CaliperMcpServer {
       {
         description: "Get full geometry and computed visibility for an element.",
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
+          selector: z
+            .string()
+            .describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
         }),
       },
       async ({ selector }) => {
@@ -95,7 +96,12 @@ export class CaliperMcpServer {
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Error inspecting element: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Error inspecting element: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -107,8 +113,12 @@ export class CaliperMcpServer {
       {
         description: "Perform a high-precision measurement between two elements.",
         inputSchema: z.object({
-          primarySelector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector for the primary element"),
-          secondarySelector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector for the target element"),
+          primarySelector: z
+            .string()
+            .describe("Caliper ID, JSON Fingerprint, or CSS selector for the primary element"),
+          secondarySelector: z
+            .string()
+            .describe("Caliper ID, JSON Fingerprint, or CSS selector for the target element"),
         }),
       },
       async ({ primarySelector, secondarySelector }) => {
@@ -120,7 +130,12 @@ export class CaliperMcpServer {
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Error performing measurement: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Error performing measurement: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -139,7 +154,12 @@ export class CaliperMcpServer {
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Error clearing UI: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Error clearing UI: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -149,9 +169,12 @@ export class CaliperMcpServer {
     this.server.registerTool(
       "caliper_walk_dom",
       {
-        description: "Get the semantic context of an element by traversing its parents and children. Useful for understanding component hierarchy.",
+        description:
+          "Get the semantic context of an element by traversing its parents and children. Useful for understanding component hierarchy.",
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
+          selector: z
+            .string()
+            .describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
         }),
       },
       async ({ selector }) => {
@@ -160,7 +183,12 @@ export class CaliperMcpServer {
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `DOM Walk failed: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `DOM Walk failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -186,7 +214,9 @@ The output includes:
 - maxDepthReached: Deepest level reached
 - walkDurationMs: Time taken to complete the walk`,
         inputSchema: z.object({
-          selector: z.string().describe("Caliper ID, JSON Fingerprint, or CSS selector of the root element to walk"),
+          selector: z
+            .string()
+            .describe("Caliper ID, JSON Fingerprint, or CSS selector of the root element to walk"),
           maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
         }),
       },
@@ -194,12 +224,17 @@ The output includes:
         try {
           const result = await bridgeService.call("CALIPER_WALK_AND_MEASURE", {
             selector,
-            maxDepth: maxDepth ?? 5
+            maxDepth: maxDepth ?? 5,
           });
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Walk and Measure failed: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Walk and Measure failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -209,7 +244,8 @@ The output includes:
     this.server.registerTool(
       "caliper_get_context",
       {
-        description: "Get comprehensive window, viewport, and accessibility metrics from the current browser tab.",
+        description:
+          "Get comprehensive window, viewport, and accessibility metrics from the current browser tab.",
         inputSchema: z.object({}),
       },
       async () => {
@@ -218,7 +254,12 @@ The output includes:
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Get Context failed: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Get Context failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -236,8 +277,12 @@ Returns the contrast ratio (1-21) and pass/fail status for:
 - AAA Normal Text (7:1)
 - AAA Large Text (4.5:1)`,
         inputSchema: z.object({
-          foreground: z.string().describe("Foreground color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
-          background: z.string().describe("Background color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
+          foreground: z
+            .string()
+            .describe("Foreground color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
+          background: z
+            .string()
+            .describe("Background color (any CSS format: hex, rgb, hsl, oklch, etc.)"),
         }),
       },
       async ({ foreground, background }) => {
@@ -247,22 +292,33 @@ Returns the contrast ratio (1-21) and pass/fail status for:
           const ratio = calculateContrastRatio(fg, bg);
 
           return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                foreground,
-                background,
-                ratio: Number(ratio.toFixed(2)),
-                passAA: ratio >= 4.5,
-                passAALarge: ratio >= 3,
-                passAAA: ratio >= 7,
-                passAAALarge: ratio >= 4.5,
-              }, null, 2)
-            }]
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    foreground,
+                    background,
+                    ratio: Number(ratio.toFixed(2)),
+                    passAA: ratio >= 4.5,
+                    passAALarge: ratio >= 3,
+                    passAAA: ratio >= 7,
+                    passAAALarge: ratio >= 4.5,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
           };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Contrast check failed: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Contrast check failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -299,19 +355,30 @@ Returns the Delta E value and a human-readable interpretation:
           else interpretation = "Very different (> 0.3)";
 
           return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                color1,
-                color2,
-                deltaE: Number(deltaE.toFixed(4)),
-                interpretation,
-              }, null, 2)
-            }]
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    color1,
+                    color2,
+                    deltaE: Number(deltaE.toFixed(4)),
+                    interpretation,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
           };
         } catch (error) {
           return {
-            content: [{ type: "text", text: `Delta E calculation failed: ${error instanceof Error ? error.message : String(error)}` }],
+            content: [
+              {
+                type: "text",
+                text: `Delta E calculation failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
             isError: true,
           };
         }
@@ -348,7 +415,8 @@ Returns the Delta E value and a human-readable interpretation:
     this.server.registerPrompt(
       "caliper-selector-audit",
       {
-        description: "Perform a comprehensive, structured audit of a specific selector: from source discovery to precision styling analysis.",
+        description:
+          "Perform a comprehensive, structured audit of a specific selector: from source discovery to precision styling analysis.",
         argsSchema: {
           selector: z.string().describe("The Caliper Selector (Agent ID) or CSS selector to audit"),
         },
@@ -388,13 +456,25 @@ BEGIN PHASE 1 NOW. Do not skip any steps.`,
     this.server.registerPrompt(
       "caliper-selectors-compare",
       {
-        description: "Compare two selections (A and B) to learn from A and fix B. Supports cross-tab comparisons.",
+        description:
+          "Compare two selections (A and B) to learn from A and fix B. Supports cross-tab comparisons.",
         argsSchema: {
-          selectorA: z.string().describe("Caliper Selector for the REFERENCE element (the 'good' one to learn from)"),
-          selectorB: z.string().describe("Caliper Selector for the TARGET element (the one to fix)"),
-          tabIdA: z.string().optional().describe("Tab ID containing Selection A (use caliper_list_tabs to find IDs)"),
-          tabIdB: z.string().optional().describe("Tab ID containing Selection B (defaults to same tab as A)"),
-          properties: z.array(z.enum(["spacing", "typography", "colors", "layout", "all"]))
+          selectorA: z
+            .string()
+            .describe("Caliper Selector for the REFERENCE element (the 'good' one to learn from)"),
+          selectorB: z
+            .string()
+            .describe("Caliper Selector for the TARGET element (the one to fix)"),
+          tabIdA: z
+            .string()
+            .optional()
+            .describe("Tab ID containing Selection A (use caliper_list_tabs to find IDs)"),
+          tabIdB: z
+            .string()
+            .optional()
+            .describe("Tab ID containing Selection B (defaults to same tab as A)"),
+          properties: z
+            .array(z.enum(["spacing", "typography", "colors", "layout", "all"]))
             .default(["all"])
             .describe("Which properties to compare"),
         },
@@ -418,22 +498,30 @@ You are comparing TWO elements to understand the styling of one (A) and apply co
 
 ### IMPORTANT: TAB MANAGEMENT
 
-${tabIdA || tabIdB ? `
+${
+  tabIdA || tabIdB
+    ? `
 You are working across multiple tabs. The agent-ID is **tab-specific** - if you send a command to the wrong tab, it will fail.
 
 **Before Each Command:**
 1. Use \`caliper_list_tabs\` to see all connected tabs
 2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
-` : `
+`
+    : `
 Both selections are on the SAME tab. No tab switching required.
-`}
+`
+}
 
 ### PHASE 1: WALK SELECTION A (REFERENCE)
 
-${tabIdA ? `1. **Switch to Tab A**
+${
+  tabIdA
+    ? `1. **Switch to Tab A**
    Call \`caliper_switch_tab\` with tabId: "${tabIdA}"
 
-2. ` : "1. "}**Walk and Measure A**
+2. `
+    : "1. "
+}**Walk and Measure A**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorA}"
    - maxDepth: 3
@@ -446,17 +534,21 @@ ${tabIdA ? `1. **Switch to Tab A**
 
 ### PHASE 2: WALK SELECTION B (TARGET)
 
-${tabIdB ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
+${
+  tabIdB
+    ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
    Call \`caliper_switch_tab\` with tabId: "${tabIdB}"
 
-${tabIdA ? "4" : "3"}. ` : `${tabIdA ? "3" : "2"}. `}**Walk and Measure B**
+${tabIdA ? "4" : "3"}. `
+    : `${tabIdA ? "3" : "2"}. `
+}**Walk and Measure B**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorB}"
    - maxDepth: 3
 
 ### PHASE 3: COMPARE AND ANALYZE
 
-${tabIdB ? (tabIdA ? "5" : "4") : (tabIdA ? "4" : "3")}. **Generate Comparison Report**
+${tabIdB ? (tabIdA ? "5" : "4") : tabIdA ? "4" : "3"}. **Generate Comparison Report**
    For each property category, list:
    - Property name
    - Value in A (REFERENCE)
@@ -468,14 +560,14 @@ ${tabIdB ? (tabIdA ? "5" : "4") : (tabIdA ? "4" : "3")}. **Generate Comparison R
 
 ### PHASE 4: FIND SOURCE FOR B
 
-${tabIdB ? (tabIdA ? "6" : "5") : (tabIdA ? "5" : "4")}. **Locate B's Source**
+${tabIdB ? (tabIdA ? "6" : "5") : tabIdA ? "5" : "4"}. **Locate B's Source**
    ${tabIdB ? `Switch back to Tab B if needed.` : ""}
    Use internal agent search (grep) with B's best anchor.
    Get the exact file path and line number.
 
 ### PHASE 5: APPLY FIXES TO B
 
-${tabIdB ? (tabIdA ? "7" : "6") : (tabIdA ? "6" : "5")}. **Generate CSS Fixes**
+${tabIdB ? (tabIdA ? "7" : "6") : tabIdA ? "6" : "5"}. **Generate CSS Fixes**
    Create CSS rules that will make B match A:
    \`\`\`css
    ${selectorB.startsWith("#") ? selectorB : `.${selectorB}`} {
@@ -483,10 +575,10 @@ ${tabIdB ? (tabIdA ? "7" : "6") : (tabIdA ? "6" : "5")}. **Generate CSS Fixes**
    }
    \`\`\`
 
-${tabIdB ? (tabIdA ? "8" : "7") : (tabIdA ? "7" : "6")}. **Edit Source File**
+${tabIdB ? (tabIdA ? "8" : "7") : tabIdA ? "7" : "6"}. **Edit Source File**
    Apply the CSS fixes to B's source file.
 
-${tabIdB ? (tabIdA ? "9" : "8") : (tabIdA ? "8" : "7")}. **Verify**
+${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
    Re-run \`caliper_walk_and_measure\` on B to confirm the fix.
 
 ---
@@ -520,4 +612,3 @@ ${tabIdB ? (tabIdA ? "9" : "8") : (tabIdA ? "8" : "7")}. **Verify**
     logger.info("Server stopped.");
   }
 }
-

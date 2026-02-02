@@ -92,9 +92,7 @@ export function SelectionLabel(props: SelectionLabelProps) {
                 </span>
               }
             >
-              <span class={`${PREFIX}selection-label-content`}>
-                Copied!
-              </span>
+              <span class={`${PREFIX}selection-label-content`}>Copied!</span>
             </Show>
           </div>
         </Portal>

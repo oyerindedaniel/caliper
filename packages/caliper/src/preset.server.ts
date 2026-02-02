@@ -6,51 +6,51 @@
  */
 
 export interface OverlayInstance {
-    mount: () => void;
-    dispose: () => void;
-    getSystems: () => unknown;
-    waitForSystems: () => Promise<unknown>;
-    use: (plugin: CaliperPlugin) => OverlayInstance;
-    mounted: boolean;
+  mount: () => void;
+  dispose: () => void;
+  getSystems: () => unknown;
+  waitForSystems: () => Promise<unknown>;
+  use: (plugin: CaliperPlugin) => OverlayInstance;
+  mounted: boolean;
 }
 
 export interface CaliperPlugin {
-    name: string;
-    install: (instance: OverlayInstance) => void;
-    dispose?: () => void;
+  name: string;
+  install: (instance: OverlayInstance) => void;
+  dispose?: () => void;
 }
 
 export interface OverlayConfig {
-    theme?: Record<string, string>;
-    commands?: Record<string, unknown>;
-    animation?: Record<string, unknown>;
-    bridge?: Record<string, unknown>;
+  theme?: Record<string, string>;
+  commands?: Record<string, unknown>;
+  animation?: Record<string, unknown>;
+  bridge?: Record<string, unknown>;
 }
 
 /**
  * CaliperBridge stub for server-side execution.
  */
 export function CaliperBridge(_configuration?: Record<string, unknown>): CaliperPlugin {
-    return {
-        name: "agent-bridge-stub",
-        install: () => { },
-        dispose: () => { },
-    };
+  return {
+    name: "agent-bridge-stub",
+    install: () => {},
+    dispose: () => {},
+  };
 }
 
 /**
  * server-side stub for the preset initialization.
  */
 export async function init(
-    _configuration?: OverlayConfig,
-    _extensions: Array<(instance: OverlayInstance) => void> = []
+  _configuration?: OverlayConfig,
+  _extensions: Array<(instance: OverlayInstance) => void> = []
 ): Promise<OverlayInstance> {
-    return {
-        mount: () => { },
-        dispose: () => { },
-        getSystems: () => null,
-        waitForSystems: () => new Promise(() => { }),
-        use: () => ({} as OverlayInstance),
-        mounted: false,
-    };
+  return {
+    mount: () => {},
+    dispose: () => {},
+    getSystems: () => null,
+    waitForSystems: () => new Promise(() => {}),
+    use: () => ({}) as OverlayInstance,
+    mounted: false,
+  };
 }

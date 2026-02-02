@@ -74,7 +74,10 @@ export function Root(config: RootConfig) {
   const [activeInputFocus, setActiveInputFocus] = createSignal<"calculator" | "projection">(
     "calculator"
   );
-  const [pinnedCalculatorPos, setPinnedCalculatorPos] = createSignal<{ x: number; y: number } | null>(null);
+  const [pinnedCalculatorPos, setPinnedCalculatorPos] = createSignal<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
@@ -296,15 +299,20 @@ export function Root(config: RootConfig) {
         e.preventDefault();
         e.stopImmediatePropagation();
 
-        const selectorInfo = JSON.stringify(buildSelectorInfo(selectedElement, selectionMetadata()));
-        navigator.clipboard.writeText(selectorInfo).then(() => {
-          if (copyTimeoutId) clearTimeout(copyTimeoutId);
-          setIsCopied(true);
-          copyTimeoutId = window.setTimeout(() => {
-            setIsCopied(false);
-            copyTimeoutId = null;
-          }, 1500);
-        }).catch(() => { });
+        const selectorInfo = JSON.stringify(
+          buildSelectorInfo(selectedElement, selectionMetadata())
+        );
+        navigator.clipboard
+          .writeText(selectorInfo)
+          .then(() => {
+            if (copyTimeoutId) clearTimeout(copyTimeoutId);
+            setIsCopied(true);
+            copyTimeoutId = window.setTimeout(() => {
+              setIsCopied(false);
+              copyTimeoutId = null;
+            }, 1500);
+          })
+          .catch(() => {});
         return;
       }
 
@@ -415,7 +423,12 @@ export function Root(config: RootConfig) {
         setIsSelectKeyDown(true);
       }
 
-      if (getLogicalKey(e).toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem && !isAgentActive()) {
+      if (
+        getLogicalKey(e).toLowerCase() === commands.ruler.toLowerCase() &&
+        e.shiftKey &&
+        rulerSystem &&
+        !isAgentActive()
+      ) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));

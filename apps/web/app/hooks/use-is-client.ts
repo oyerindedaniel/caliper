@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 
 export function useIsClient() {
-    const [isClient, setIsClient] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-    useEffect(() => {
-        setIsClient(true);
-    }, []);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
-    return isClient && process.env.NODE_ENV === "development";
+  return isClient && process.env.NODE_ENV === "development";
 }

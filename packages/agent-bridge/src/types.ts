@@ -1,10 +1,7 @@
-import type {
-    CaliperIntent,
-    CaliperActionResult,
-} from "@oyerinde/caliper-schema";
+import type { CaliperIntent, CaliperActionResult } from "@oyerinde/caliper-schema";
 
 declare global {
-    interface Window {
-        dispatchCaliperIntent?: (intent: CaliperIntent) => Promise<CaliperActionResult>;
-    }
+  interface Window {
+    dispatchCaliperIntent?: (intent: CaliperIntent) => Promise<CaliperActionResult>;
+  }
 }
