@@ -91,30 +91,32 @@ describe("WalkEngine Verification", () => {
       return createDOMRect(entry ? entry.rect : BASE_RECT);
     };
 
-    vi.spyOn(window, "getComputedStyle").mockImplementation((element: Element): CSSStyleDeclaration => {
-      const entry = layoutStore.get(element);
+    vi.spyOn(window, "getComputedStyle").mockImplementation(
+      (element: Element): CSSStyleDeclaration => {
+        const entry = layoutStore.get(element);
 
-      const tag = element.tagName.toUpperCase();
-      const isNoRender = ["STYLE", "SCRIPT", "HEAD", "META", "LINK", "TEMPLATE"].includes(tag);
+        const tag = element.tagName.toUpperCase();
+        const isNoRender = ["STYLE", "SCRIPT", "HEAD", "META", "LINK", "TEMPLATE"].includes(tag);
 
-      const mergedStyles: CSSDictionary = {
-        ...BASE_STYLE,
-        ...(isNoRender ? { display: "none" } : {}),
-        ...(entry?.styles || {}),
-      };
+        const mergedStyles: CSSDictionary = {
+          ...BASE_STYLE,
+          ...(isNoRender ? { display: "none" } : {}),
+          ...(entry?.styles || {}),
+        };
 
-      return {
-        ...mergedStyles,
-        getPropertyValue: (propertyName: string): string => {
-          const camel = propertyName.replace(/-([a-z])/g, (match) => match[1]!.toUpperCase());
-          const val = mergedStyles[camel] || mergedStyles[propertyName];
-          return val || "0px";
-        },
-        item: (index: number) => "",
-        length: 0,
-        parentRule: null,
-      } as unknown as CSSStyleDeclaration;
-    });
+        return {
+          ...mergedStyles,
+          getPropertyValue: (propertyName: string): string => {
+            const camel = propertyName.replace(/-([a-z])/g, (match) => match[1]!.toUpperCase());
+            const val = mergedStyles[camel] || mergedStyles[propertyName];
+            return val || "0px";
+          },
+          item: (index: number) => "",
+          length: 0,
+          parentRule: null,
+        } as unknown as CSSStyleDeclaration;
+      }
+    );
 
     return () => {
       Element.prototype.getBoundingClientRect = originalGetBCR;
@@ -225,8 +227,13 @@ describe("WalkEngine Verification", () => {
 
     // Root (1), Container (2), Target (3), Visible (4)
     expect(result.nodeCount).toBe(4);
-    expect(result.root.children.map((childNode: CaliperNode) => childNode.selector)).toContain("#visible");
-    expect(result.root.children.find((childNode: CaliperNode) => childNode.htmlId === "container")?.styles.visibility).toBe("hidden");
+    expect(result.root.children.map((childNode: CaliperNode) => childNode.selector)).toContain(
+      "#visible"
+    );
+    expect(
+      result.root.children.find((childNode: CaliperNode) => childNode.htmlId === "container")
+        ?.styles.visibility
+    ).toBe("hidden");
   });
 
   it("should strictly prune display:none branches", async () => {
@@ -396,7 +403,7 @@ describe("WalkEngine Verification", () => {
         throw new Error("Element detached during walk");
       });
 
-      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const result = await walkAndMeasure("#root");
 
@@ -535,7 +542,11 @@ describe("WalkEngine Verification", () => {
 
       // Simulating a container that has 0 size but its children are visible due to overflow
       setElementLayout("#root", { top: 0, left: 0, width: 500, height: 500 });
-      setElementLayout("#zero-size", { top: 0, left: 0, width: 0, height: 0 }, { overflow: "visible" });
+      setElementLayout(
+        "#zero-size",
+        { top: 0, left: 0, width: 0, height: 0 },
+        { overflow: "visible" }
+      );
       setElementLayout("#overflow-child", { top: 0, left: 0, width: 100, height: 100 });
 
       const result = await walkAndMeasure("#root");

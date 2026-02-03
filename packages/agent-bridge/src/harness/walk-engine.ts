@@ -1,10 +1,5 @@
 import type { CaliperNode, CaliperComputedStyles, BoxEdges } from "@oyerinde/caliper-schema";
-import {
-  isVisible,
-  filterRuntimeClasses,
-  getElementDirectText,
-  generateId,
-} from "@caliper/core";
+import { isVisible, filterRuntimeClasses, getElementDirectText, generateId } from "@caliper/core";
 import { DEFAULT_WALK_DEPTH } from "../constants.js";
 import { parseComputedStyles } from "../utils.js";
 import {
@@ -13,23 +8,7 @@ import {
   showChildBoundary,
   cleanupWalkVisualizer,
 } from "./walk-visualizer.js";
-
-export interface WalkResult {
-  root: CaliperNode;
-  nodeCount: number;
-  maxDepthReached: number;
-  walkDurationMs: number;
-  hasMore: boolean;
-  continuationToken?: string;
-  batchInstructions?: string;
-}
-
-export interface WalkOptions {
-  maxDepth?: number;
-  maxNodes?: number;
-  continueFrom?: string;
-  visualize?: boolean;
-}
+import type { WalkResult, WalkOptions, ParsedSelection } from "../types.js";
 
 function pruneBoxEdges(edges: BoxEdges): BoxEdges | undefined {
   if (edges.top === 0 && edges.right === 0 && edges.bottom === 0 && edges.left === 0) {
@@ -322,7 +301,9 @@ export async function walkAndMeasure(
           queue.push({ element: childElement, node: childNode });
           visibleIdx++;
         } catch (error) {
-          console.warn(`[Caliper] Failed to snapshot node at index ${domIdx}. Skipping.`, error);
+          if (process.env.NODE_ENV === "development") {
+            console.warn(`[Caliper] Failed to snapshot node at index ${domIdx}. Skipping.`, error);
+          }
           continue;
         }
       }
@@ -335,10 +316,15 @@ export async function walkAndMeasure(
 
     function pruneTreeStyles(node: CaliperNode): void {
       node.styles = pruneStyles(node.styles);
-      node.children = node.children.filter((child) => processedNodes.has(child.agentId));
+
+      const validChildren: CaliperNode[] = [];
       for (const child of node.children) {
-        pruneTreeStyles(child);
+        if (processedNodes.has(child.agentId)) {
+          pruneTreeStyles(child);
+          validChildren.push(child);
+        }
       }
+      node.children = validChildren;
     }
     pruneTreeStyles(rootNode);
 
@@ -362,17 +348,6 @@ export async function walkAndMeasure(
       }, 2000);
     }
   }
-}
-
-export interface ParsedSelection {
-  selector: string;
-  tag: string;
-  id?: string;
-  text?: string;
-  classes: string[];
-  timestamp: number;
-  isValid: boolean;
-  errorMessage?: string;
 }
 
 export function parseSelection(jsonString: string): ParsedSelection {

@@ -23,7 +23,7 @@ export function isVisible(element: Element): boolean {
     return false;
   }
 
-  // We include visibility: hidden and opacity: 0 elements because they 
+  // We include visibility: hidden and opacity: 0 elements because they
   // still occupy space in the layout and are relevant for geometric audits.
   // The walk engine and picker will handle the "hidden" state via computed styles.
   return true;

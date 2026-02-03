@@ -285,8 +285,7 @@ export function getCommonVisibilityWindow(
     for (let index = scrollHierarchy.length - 1; index >= 0; index--) {
       const item = scrollHierarchy[index];
       if (item && item.element) {
-        sumsX[index] =
-          (sumsX[index + 1] ?? 0) + (item.element.scrollLeft - item.initialScrollLeft);
+        sumsX[index] = (sumsX[index + 1] ?? 0) + (item.element.scrollLeft - item.initialScrollLeft);
         sumsY[index] = (sumsY[index + 1] ?? 0) + (item.element.scrollTop - item.initialScrollTop);
       } else if (item) {
         sumsX[index] = sumsX[index + 1] ?? 0;
@@ -409,10 +408,7 @@ export function getLiveGeometry(
       vMaxY = clipTop + (scrollState.element?.clientHeight ?? containerRect.height);
     } else {
       vMinX = Math.max(vMinX, clipLeft);
-      vMaxX = Math.min(
-        vMaxX,
-        clipLeft + (scrollState.element?.clientWidth ?? containerRect.width)
-      );
+      vMaxX = Math.min(vMaxX, clipLeft + (scrollState.element?.clientWidth ?? containerRect.width));
       vMinY = Math.max(vMinY, clipTop);
       vMaxY = Math.min(
         vMaxY,
@@ -441,7 +437,9 @@ export function getLiveGeometry(
     width,
     height,
     clipPath:
-      vMinX === -Infinity ? "none" : `inset(${topClip}px ${rightClip}px ${bottomClip}px ${leftClip}px)`,
+      vMinX === -Infinity
+        ? "none"
+        : `inset(${topClip}px ${rightClip}px ${bottomClip}px ${leftClip}px)`,
     isHidden,
     visibleMinX: vMinX,
     visibleMaxX: vMaxX,
@@ -522,11 +520,7 @@ function getDistanceFromContainer(targetElement: HTMLElement, containerElement: 
   let offsetY = 0;
   let currentElement = targetElement;
 
-  while (
-    currentElement &&
-    currentElement !== containerElement &&
-    currentElement.offsetParent
-  ) {
+  while (currentElement && currentElement !== containerElement && currentElement.offsetParent) {
     offsetX += currentElement.offsetLeft;
     offsetY += currentElement.offsetTop;
 
@@ -552,19 +546,14 @@ export function deduceGeometry(element: Element): DeducedGeometry {
   const initialWindowX = window.scrollX;
   const initialWindowY = window.scrollY;
 
-  const {
-    positionMode,
-    scrollAnchor,
-    containingBlock,
-    treeDepth,
-  } = getInheritedPositionMode(element);
+  const { positionMode, scrollAnchor, containingBlock, treeDepth } =
+    getInheritedPositionMode(element);
 
   let stickyConfig;
   if (positionMode === "sticky" && scrollAnchor) {
     const style = window.getComputedStyle(scrollAnchor);
 
-    const parentElement =
-      getScrollHierarchy(scrollAnchor)[0]?.element || document.documentElement;
+    const parentElement = getScrollHierarchy(scrollAnchor)[0]?.element || document.documentElement;
     const isDoc = parentElement === document.documentElement;
 
     const anchorRect = scrollAnchor.getBoundingClientRect();
