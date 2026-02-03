@@ -4,6 +4,9 @@ import {
   type ScrollState as CoreScrollState,
   type MeasurementLine as CoreMeasurementLine,
   filterRuntimeClasses,
+  getElementDirectText,
+  getLiveGeometry,
+  type ScrollState,
 } from "@caliper/core";
 import {
   type SelectionMetadata as BridgeSelectionMetadata,
@@ -14,6 +17,7 @@ import {
   type MeasurementLine as BridgeMeasurementLine,
   type ContextMetrics,
   type CaliperSelectorInput,
+  type SourceHints,
   MAX_DESCENDANT_COUNT,
 } from "@oyerinde/caliper-schema";
 
@@ -147,9 +151,10 @@ export function parseComputedStyles(styles: CSSStyleDeclaration): CaliperCompute
   const parseNumber = (value: string): number => parseFloat(value) || 0;
 
   return {
-    display: styles.display,
-    position: styles.position,
-    boxSizing: styles.boxSizing,
+    display: styles.display || styles.getPropertyValue("display"),
+    visibility: styles.visibility || styles.getPropertyValue("visibility"),
+    position: styles.position || styles.getPropertyValue("position"),
+    boxSizing: styles.boxSizing || styles.getPropertyValue("box-sizing"),
 
     padding: {
       top: parseNumber(styles.paddingTop),
@@ -194,6 +199,7 @@ export function parseComputedStyles(styles: CSSStyleDeclaration): CaliperCompute
     overflow: styles.overflow,
     overflowX: styles.overflowX,
     overflowY: styles.overflowY,
+    contentVisibility: styles.contentVisibility || styles.getPropertyValue("content-visibility") || "visible",
   };
 }
 
@@ -242,13 +248,32 @@ export function findElementByFingerprint(info: CaliperSelectorInput): HTMLElemen
     if (idEl && idEl.tagName.toLowerCase() === info.tag) return idEl;
   }
 
-  // 4. Try semantic rediscovery using coordinates and tag (Option 1)
+  // 4. Try semantic rediscovery using coordinates and tag
   if (info.x !== undefined && info.y !== undefined) {
-    // Find elements at the point (adjusting for scroll)
-    const elementsAtPoint = document.elementsFromPoint(
-      info.x - window.scrollX,
-      info.y - window.scrollY
-    );
+    let searchX = info.x - (info.initialWindowX || window.scrollX);
+    let searchY = info.y - (info.initialWindowY || window.scrollY);
+
+    if (info.rect && info.scrollHierarchy) {
+      const live = getLiveGeometry(
+        info.rect as DOMRect,
+        info.scrollHierarchy as ScrollState[],
+        info.position || "static",
+        info.stickyConfig,
+        info.initialWindowX || 0,
+        info.initialWindowY || 0,
+        info.hasContainingBlock || false
+      );
+
+      if (live) {
+        searchX = live.left - (typeof window !== "undefined" ? window.scrollX : 0);
+        searchY = live.top - (typeof window !== "undefined" ? window.scrollY : 0);
+      }
+    } else {
+      searchX = info.x - window.scrollX;
+      searchY = info.y - window.scrollY;
+    }
+
+    const elementsAtPoint = document.elementsFromPoint(searchX, searchY);
 
     for (const el of elementsAtPoint) {
       if (el.tagName.toLowerCase() === info.tag) {
@@ -282,4 +307,123 @@ export function countDescendants(
   }
 
   return { count, isTruncated: false };
+}
+
+/** Regex patterns for detecting hashed/generated class names */
+const HASHED_CLASS_PATTERNS = [
+  /__[a-z0-9]{5,}$/i, // CSS Modules: component__abc123
+  /^css-[a-z0-9]+$/i, // Emotion: css-abc123
+  /^sc-[a-z]+$/i, // styled-components: sc-abc
+  /^_[a-z0-9]{6,}$/i, // Generic hash: _abc123xyz
+  /^[a-z]+-module_[a-z]+__[a-z0-9]+$/i, // Next.js CSS Modules: page-module_name__hash
+];
+
+
+function isHashedClass(className: string): boolean {
+  return HASHED_CLASS_PATTERNS.some((pattern) => pattern.test(className));
+}
+
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function generateSourceHints(element: HTMLElement): SourceHints {
+  const tagName = element.tagName.toLowerCase();
+  const stableAnchors: string[] = [];
+  const unstableClasses: string[] = [];
+
+  // Priority 1: data-caliper-marker (developer-placed, most stable)
+  const marker = element.getAttribute("data-caliper-marker");
+  if (marker) {
+    stableAnchors.push(`data-caliper-marker="${marker}"`);
+  }
+
+  // Priority 2: data-testid (common testing convention)
+  const testId = element.getAttribute("data-testid");
+  if (testId) {
+    stableAnchors.push(`data-testid="${testId}"`);
+  }
+
+  // Priority 3: id (if not auto-generated)
+  const id = element.id;
+  if (id && !id.startsWith("radix-") && !id.startsWith(":r") && !/^[a-z0-9]{8,}$/i.test(id)) {
+    stableAnchors.push(`id="${id}"`);
+  }
+
+  // Priority 4: aria-label
+  const ariaLabel = element.getAttribute("aria-label");
+  if (ariaLabel) {
+    stableAnchors.push(`aria-label="${ariaLabel}"`);
+  }
+
+  // Priority 5: name (for form elements)
+  const name = element.getAttribute("name");
+  if (name) {
+    stableAnchors.push(`name="${name}"`);
+  }
+
+  // Priority 6: role (if explicit)
+  const role = element.getAttribute("role");
+  if (role) {
+    stableAnchors.push(`role="${role}"`);
+  }
+
+  // Priority 7: other data-* attributes (excluding caliper internals)
+  for (const attr of Array.from(element.attributes)) {
+    if (
+      attr.name.startsWith("data-") &&
+      !attr.name.startsWith("data-caliper-") &&
+      !attr.name.startsWith("data-radix-") &&
+      attr.name !== "data-testid"
+    ) {
+      stableAnchors.push(`${attr.name}="${attr.value}"`);
+    }
+  }
+
+  // Classify classes as stable or hashed
+  const classes = filterRuntimeClasses(element.classList);
+  for (const cls of classes) {
+    if (isHashedClass(cls)) {
+      unstableClasses.push(cls);
+    } else if (cls.length > 2 && !stableAnchors.some((a) => a.includes(cls))) {
+      // Short classes like "p" or "m" are not useful for grep
+      stableAnchors.push(`className="${cls}"`);
+    }
+  }
+
+  // Get text content (truncated)
+  let textContent = getElementDirectText(element, 50);
+  if (textContent && textContent.length === 50) {
+    textContent = textContent + "...";
+  }
+
+  // Get accessible name (aria-label or aria-labelledby resolved)
+  let accessibleName: string | undefined = ariaLabel || undefined;
+  if (!accessibleName) {
+    const labelledBy = element.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const labelEl = document.getElementById(labelledBy);
+      if (labelEl) {
+        accessibleName = labelEl.textContent?.trim().slice(0, 50) || undefined;
+      }
+    }
+  }
+
+  // Determine best suggested grep pattern
+  let suggestedGrep: string | undefined;
+  if (stableAnchors.length > 0) {
+    suggestedGrep = escapeRegex(stableAnchors[0]!);
+  } else if (textContent) {
+    // Use text content as fallback
+    suggestedGrep = escapeRegex(textContent);
+  }
+
+  return {
+    stableAnchors,
+    suggestedGrep,
+    textContent,
+    accessibleName,
+    unstableClasses,
+    tagName,
+  };
 }

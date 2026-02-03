@@ -1,10 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import {
-  MAX_DESCENDANT_COUNT,
-  RECOMMENDED_PAGINATION_THRESHOLD
-} from "@oyerinde/caliper-schema";
+import { MAX_DESCENDANT_COUNT, RECOMMENDED_PAGINATION_THRESHOLD } from "@oyerinde/caliper-schema";
 import { bridgeService } from "./bridge-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -96,6 +93,11 @@ Returns comprehensive element data including:
 - immediateChildCount: Direct children count
 - descendantCount: Total descendants (capped at ${MAX_DESCENDANT_COUNT})
 - descendantsTruncated: True if descendant count was capped
+- sourceHints: Metadata for code discovery. Includes:
+    * suggestedGrep: A reliable pattern for finding this element in the codebase.
+    * stableAnchors: Prioritized list of stable attributes (data-testid, id, etc.).
+    * textContent: Truncated direct text content.
+    * unstableClasses: Classes that look like generated/hashed strings (to be ignored).
 
 Use descendantCount to decide whether to paginate caliper_walk_and_measure.
 If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated is true, use maxNodes parameter.`,
@@ -225,6 +227,7 @@ Use this BEFORE making any code changes to gather complete context.
 
 STYLE PRUNING: To reduce payload size, default styles are omitted. If a style is missing, assume:
 - display: "block"
+- visibility: "visible"
 - position: "static"
 - boxSizing: "border-box"
 - padding/margin/border: { top: 0, right: 0, bottom: 0, left: 0 }
@@ -488,9 +491,9 @@ Returns the Delta E value and a human-readable interpretation:
 You are about to perform a structured, comprehensive audit of the element '${selector}'. Follow these phases precisely.
 
 ### PHASE 1: CONTEXT GATHERING
-1. **Deep Inspection**: Call 'caliper_inspect' to get all computed styles, colors, and typography.
+1. **Deep Inspection**: Call 'caliper_inspect' to get all computed styles, colors, typography, and **sourceHints**.
 2. **Hierarchy Walk**: Call 'caliper_walk_and_measure' with maxDepth: 5 to understand its position in the tree, its children, and the spacing (gaps) to its neighbors.
-3. **Stable Discovery**: Identify a STABLE identifier (ID, data-testid, unique text, or stable class) and use internal agent search (grep) to locate the exact source file and line number.
+3. **Source Discovery**: Use the \`suggestedGrep\` from \`sourceHints\` (or another stable anchor) to locate the exact source file and line number in the codebase.
 
 ### PHASE 2: ANALYSIS & CONSISTENCY
 4. **Spacing Check**: Analyze if padding, margins, and gaps follow a consistent scale (e.g., multiples of 4px/8px).

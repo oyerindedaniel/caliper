@@ -17,23 +17,15 @@ export function isVisible(element: Element): boolean {
   }
 
   const style = window.getComputedStyle(element);
+  const contentVisibility = style.contentVisibility || style.getPropertyValue("content-visibility");
 
-  // Check display
-  if (style.display === "none") {
+  if (style.display === "none" || contentVisibility === "hidden") {
     return false;
   }
 
-  // Check visibility
-  if (style.visibility === "hidden") {
-    return false;
-  }
-
-  // Check opacity
-  const opacity = style.opacity;
-  if (opacity !== "" && parseFloat(opacity) === 0) {
-    return false;
-  }
-
+  // We include visibility: hidden and opacity: 0 elements because they 
+  // still occupy space in the layout and are relevant for geometric audits.
+  // The walk engine and picker will handle the "hidden" state via computed styles.
   return true;
 }
 

@@ -105,8 +105,10 @@ const numberOrStringSerializer = (defaultValue: string | number = ""): StyleSeri
         context.offset += 2;
     },
     deserialize: (context) => {
-        const strValue = context.stringList[context.view.getUint16(context.offset)];
+        const id = context.view.getUint16(context.offset);
+        const strValue = context.stringList[id];
         context.offset += 2;
+        if (!strValue && id === 0) return defaultValue;
         if (!strValue) return undefined;
         const numValue = parseFloat(strValue);
         return isNaN(numValue) ? strValue : numValue;
@@ -130,6 +132,7 @@ const nullableNumberOrStringSerializer = (): StyleSerializerEntry<number | strin
 
 const STYLE_SERIALIZERS = {
     display: stringSerializer(),
+    visibility: stringSerializer(),
     position: stringSerializer(),
     boxSizing: stringSerializer(),
     padding: boxEdgesSerializer(),
@@ -156,6 +159,7 @@ const STYLE_SERIALIZERS = {
     overflow: stringSerializer("visible"),
     overflowX: stringSerializer("visible"),
     overflowY: stringSerializer("visible"),
+    contentVisibility: stringSerializer("visible"),
 } satisfies StyleSerializerMap;
 
 const STYLE_KEYS = Object.keys(STYLE_SERIALIZERS) as (keyof CaliperComputedStyles)[];
@@ -178,7 +182,6 @@ export class BitBridge {
             return id;
         };
 
-        // First pass: collect all strings for the dictionary
         const stack: CaliperNode[] = [root];
         while (stack.length > 0) {
             const node = stack.pop()!;
@@ -190,7 +193,6 @@ export class BitBridge {
             getStringId(node.marker);
             node.classes?.forEach(className => getStringId(className));
 
-            // Collect strings from styles using the serializer registry
             for (const key of STYLE_KEYS) {
                 const serializer = STYLE_SERIALIZERS[key];
                 (serializer.collectStrings as (v: CaliperComputedStyles[typeof key], c: (s: string | null | undefined) => void) => void)(
@@ -206,7 +208,6 @@ export class BitBridge {
             }
         }
 
-        // Build buffer
         const encoder = new TextEncoder();
         const encodedStrings = stringList.map(rawString => encoder.encode(rawString));
         let dictSize = 8; // MAGIC (4) + COUNT (4)
@@ -225,7 +226,6 @@ export class BitBridge {
             offset += bytes.length;
         });
 
-        // Second pass: serialize nodes
         const nodeStack: CaliperNode[] = [root];
         while (nodeStack.length > 0) {
             const node = nodeStack.pop()!;
@@ -236,6 +236,7 @@ export class BitBridge {
             view.setUint16(offset, getStringId(node.htmlId)); offset += 2;
             view.setUint16(offset, getStringId(node.textContent)); offset += 2;
             view.setUint16(offset, getStringId(node.marker)); offset += 2;
+            view.setUint8(offset, node.ariaHidden ? 1 : 0); offset += 1;
 
             const classes = node.classes || [];
             view.setUint16(offset, classes.length); offset += 2;
@@ -252,7 +253,6 @@ export class BitBridge {
             view.setFloat32(offset, node.viewportRect.top); offset += 4;
             view.setFloat32(offset, node.viewportRect.left); offset += 4;
 
-            // Serialize styles using the registry
             const ctx: SerializeContext = { view, offset, getStringId };
             for (const key of STYLE_KEYS) {
                 const serializer = STYLE_SERIALIZERS[key];
@@ -333,6 +333,7 @@ export class BitBridge {
         const htmlId = stringList[view.getUint16(offset)] || undefined; offset += 2;
         const textContent = stringList[view.getUint16(offset)] || undefined; offset += 2;
         const marker = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const ariaHidden = view.getUint8(offset) === 1; offset += 1;
 
         const classCount = view.getUint16(offset); offset += 2;
         const classes: string[] = [];
@@ -354,7 +355,6 @@ export class BitBridge {
         const vTop = view.getFloat32(offset); offset += 4;
         const vLeft = view.getFloat32(offset); offset += 4;
 
-        // Deserialize styles using the registry
         const ctx: DeserializeContext = { view, offset, stringList };
         const styles = {} as CaliperComputedStyles;
         for (const key of STYLE_KEYS) {
@@ -372,6 +372,7 @@ export class BitBridge {
             depth, childCount, children: [],
             styles,
             marker,
+            ariaHidden,
             measurements: {
                 toParent: { top: 0, left: 0, bottom: 0, right: 0 },
                 toPreviousSibling: null, toNextSibling: null,

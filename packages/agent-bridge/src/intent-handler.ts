@@ -13,6 +13,7 @@ import {
   getContextMetrics,
   findElementByFingerprint,
   countDescendants,
+  generateSourceHints,
 } from "./utils.js";
 import { walkAndMeasure } from "./harness/walk-engine.js";
 import type {
@@ -36,7 +37,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       try {
         const info = JSON.parse(selector) as CaliperSelectorInput;
         return findElementByFingerprint(info);
-      } catch (error) { }
+      } catch (_) { }
     }
 
     if (selector.startsWith("caliper-")) {
@@ -190,6 +191,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         immediateChildCount: element.children.length,
         descendantCount: descendants.count,
         descendantsTruncated: descendants.isTruncated,
+        sourceHints: generateSourceHints(element),
         timestamp: Date.now(),
       };
     });

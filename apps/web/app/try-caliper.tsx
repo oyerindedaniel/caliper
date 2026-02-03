@@ -379,7 +379,7 @@ export function TryCaliper() {
                   borderRadius: 4,
                   display: "flex",
                   alignItems: "center",
-                  gap: 4,
+                  gap: 6,
                   fontSize: 12,
                   fontWeight: 500,
                   fontFamily: "inherit",
@@ -393,10 +393,10 @@ export function TryCaliper() {
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.25 }}
                   style={{
-                    background: "rgba(255,255,255,0.1)",
-                    padding: "0 6px",
+                    background: theme.calcOpHighlight,
+                    padding: 4,
                     height: 20,
-                    borderRadius: 3,
+                    borderRadius: 2,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -469,35 +469,39 @@ export function TryCaliper() {
                   style={{
                     position: "absolute",
                     top: b1y,
-                    y: -32, // Positioned slightly above the element
+                    y: -38, // Adjusted for 28px height + 10px margin
                     left: b1x,
                     background: theme.calcBg,
-                    border: `1px solid ${theme.projection}`,
-                    boxShadow: `0 2px 8px ${theme.calcShadow}`,
-                    padding: "0 6px",
-                    height: 24,
+                    border: `1px solid ${theme.primary}`,
+                    borderLeft: `3px solid ${theme.projection}`,
+                    boxShadow: `0 4px 12px ${theme.calcShadow}`,
+                    padding: "0 8px",
+                    height: 28,
                     display: "flex",
                     alignItems: "center",
-                    gap: 4,
-                    borderRadius: 3,
-                    fontSize: 11,
+                    gap: 6,
+                    borderRadius: 4,
+                    fontSize: 12,
                     fontWeight: 500,
                     color: theme.calcText,
                   }}
                 >
                   <span
                     style={{
-                      background: theme.projection,
-                      color: "#fff",
-                      fontSize: 9,
-                      padding: "0 4px",
+                      background: theme.projection.replace("1)", "0.2)"),
+                      color: theme.projection,
+                      fontSize: 10,
+                      padding: "2px 4px",
                       borderRadius: 2,
                       textTransform: "uppercase",
+                      fontWeight: 700,
                     }}
                   >
                     top
                   </span>
-                  <motion.span>{projectLabelVal}</motion.span>
+                  <motion.span style={{ color: theme.projection, fontWeight: "bold" }}>
+                    {projectLabelVal}
+                  </motion.span>
                 </motion.div>
 
                 <motion.div
@@ -510,10 +514,10 @@ export function TryCaliper() {
                     left: projectLabelX,
                     background: theme.projection,
                     color: "#fff",
-                    padding: "1px 5px",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    borderRadius: 2,
+                    padding: "2px 6px",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    borderRadius: 3,
                   }}
                 >
                   <motion.span>{projectLabelVal}</motion.span>

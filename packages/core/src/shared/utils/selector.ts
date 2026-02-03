@@ -59,6 +59,13 @@ export function buildSelectorInfo(
     y,
     depth,
     marker,
+    scrollHierarchy: metadata?.scrollHierarchy,
+    position: metadata?.position,
+    stickyConfig: metadata?.stickyConfig,
+    initialWindowX: metadata?.initialWindowX,
+    initialWindowY: metadata?.initialWindowY,
+    hasContainingBlock: metadata?.hasContainingBlock,
+    rect: metadata?.rect || undefined,
   };
 
   if (id) info.id = id;

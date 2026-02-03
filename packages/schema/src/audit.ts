@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RectSchema } from "./core.js";
+import { RectSchema, ScrollStateSchema, PositionModeSchema, StickyConfigSchema } from "./core.js";
 
 /**
  * The input data structure for a Caliper selection copy.
@@ -17,6 +17,15 @@ export const CaliperSelectorInputSchema = z.object({
     y: z.number().optional(),
     depth: z.number().optional(),
     marker: z.string().optional(), // data-caliper-marker value
+
+    // Geometry Context for re-discovery
+    scrollHierarchy: z.array(ScrollStateSchema).optional(),
+    position: PositionModeSchema.optional(),
+    stickyConfig: StickyConfigSchema.optional(),
+    initialWindowX: z.number().optional(),
+    initialWindowY: z.number().optional(),
+    hasContainingBlock: z.boolean().optional(),
+    rect: RectSchema.optional(),
 });
 
 export type CaliperSelectorInput = z.infer<typeof CaliperSelectorInputSchema>;
@@ -38,6 +47,7 @@ export const BoxEdgesSchema = z.object({
 export const CaliperComputedStylesSchema = z.object({
     // Box Model
     display: z.string().optional(),
+    visibility: z.string().optional(),
     position: z.string().optional(),
     boxSizing: z.string().optional(),
 
@@ -74,6 +84,7 @@ export const CaliperComputedStylesSchema = z.object({
     overflow: z.string().optional(),
     overflowX: z.string().optional(),
     overflowY: z.string().optional(),
+    contentVisibility: z.string().optional(),
 });
 
 // ============================================================================
@@ -148,6 +159,7 @@ export const CaliperNodeSchema: z.ZodType<CaliperNode> = z.lazy(() =>
         childCount: z.number(),
         children: z.array(CaliperNodeSchema),
         marker: z.string().optional(),
+        ariaHidden: z.boolean().optional(),
     })
 );
 
@@ -167,6 +179,7 @@ export interface CaliperNode {
     childCount: number;
     children: CaliperNode[];
     marker?: string;
+    ariaHidden?: boolean;
 }
 
 export type BoxEdges = z.infer<typeof BoxEdgesSchema>;

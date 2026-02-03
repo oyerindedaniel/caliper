@@ -39,6 +39,16 @@ export const CaliperMethodSchema = z.enum([
     "CALIPER_GET_CONTEXT",
 ]);
 
+
+export const SourceHintsSchema = z.object({
+    stableAnchors: z.array(z.string()),
+    suggestedGrep: z.string().optional(),
+    textContent: z.string().optional(),
+    accessibleName: z.string().optional(),
+    unstableClasses: z.array(z.string()),
+    tagName: z.string(),
+});
+
 export type CaliperMethod = z.infer<typeof CaliperMethodSchema>;
 
 export const CaliperActionResultSchema = z.union([
@@ -58,6 +68,10 @@ export const CaliperActionResultSchema = z.union([
         }),
         computedStyles: CaliperComputedStylesSchema,
         selection: SelectionMetadataSchema,
+        immediateChildCount: z.number().optional(),
+        descendantCount: z.number().optional(),
+        descendantsTruncated: z.boolean().optional(),
+        sourceHints: SourceHintsSchema.optional(),
         timestamp: z.number()
     }),
     z.object({ success: z.literal(true), method: z.literal("CALIPER_FREEZE"), timestamp: z.number() }),
@@ -82,6 +96,9 @@ export const CaliperActionResultSchema = z.union([
             nodeCount: z.number(),
             maxDepthReached: z.number(),
             walkDurationMs: z.number(),
+            hasMore: z.boolean().optional(),
+            batchInstructions: z.string().optional(),
+            continuationToken: z.string().optional(),
         }),
         timestamp: z.number(),
         binaryPayload: z.custom<Uint8Array>().optional(),
@@ -101,6 +118,8 @@ export const CaliperActionResultSchema = z.union([
         binaryPayload: z.custom<Uint8Array>().optional(),
     }),
 ]);
+
+export type SourceHints = z.infer<typeof SourceHintsSchema>;
 
 export const CaliperAgentStateSchema = z.object({
     viewport: ViewportSchema,
