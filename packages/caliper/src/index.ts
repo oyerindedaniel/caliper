@@ -11,7 +11,7 @@
  */
 
 export { createOverlay as init } from "@caliper/overlay";
-export { setConfig, getConfig, applyTheme, caliperProps } from "@caliper/core";
+export { setConfig, getConfig, caliperProps } from "@caliper/core";
 export type {
   OverlayConfig,
   OverlayInstance,

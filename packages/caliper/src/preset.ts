@@ -1,9 +1,11 @@
-import type { OverlayConfig, OverlayInstance } from "@caliper/core";
+import type { OverlayConfig, OverlayInstance, CaliperPlugin } from "@caliper/core";
 import { init as initCaliper } from "./index.js";
 import { CaliperBridge } from "@oyerinde/caliper-bridge";
-import { caliperProps, applyTheme } from "@caliper/core";
+import { caliperProps } from "@caliper/core";
 
-export { CaliperBridge, caliperProps, applyTheme };
+export { CaliperBridge, caliperProps };
+
+type Extension = ((instance: OverlayInstance) => void) | CaliperPlugin;
 
 /**
  * streamlined initialization for development and agentic modes.
@@ -14,13 +16,17 @@ export { CaliperBridge, caliperProps, applyTheme };
  */
 export async function init(
   configuration?: OverlayConfig,
-  extensions: Array<(instance: OverlayInstance) => void> = []
+  extensions: Array<Extension> = []
 ) {
   const caliperInstance = initCaliper(configuration);
 
   if (extensions && Array.isArray(extensions)) {
     extensions.forEach((extension) => {
-      extension(caliperInstance);
+      if (typeof extension === "function") {
+        extension(caliperInstance);
+      } else if (extension && typeof extension.install === "function") {
+        caliperInstance.use(extension);
+      }
     });
   }
 
