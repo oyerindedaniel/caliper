@@ -147,6 +147,7 @@ export const CaliperNodeSchema: z.ZodType<CaliperNode> = z.lazy(() =>
         parentAgentId: z.string().optional(),
         childCount: z.number(),
         children: z.array(CaliperNodeSchema),
+        marker: z.string().optional(),
     })
 );
 
@@ -165,6 +166,7 @@ export interface CaliperNode {
     parentAgentId?: string;
     childCount: number;
     children: CaliperNode[];
+    marker?: string;
 }
 
 export type BoxEdges = z.infer<typeof BoxEdgesSchema>;

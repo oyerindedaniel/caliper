@@ -17,7 +17,7 @@ try {
   if (__dirname.endsWith("dist")) {
     packageJsonPath = join(__dirname, "../package.json");
   }
-} catch (_) {}
+} catch (_) { }
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
@@ -208,25 +208,64 @@ This is the HARNESS tool for comprehensive audits. It:
 
 Use this BEFORE making any code changes to gather complete context.
 
+STYLE PRUNING: To reduce payload size, default styles are omitted. If a style is missing, assume:
+- display: "block"
+- position: "static"
+- boxSizing: "border-box"
+- padding/margin/border: { top: 0, right: 0, bottom: 0, left: 0 }
+- gap: 0
+- flexDirection: "row" (flex only)
+- justifyContent: "normal" (flex only)
+- alignItems: "normal" (flex only)
+- lineHeight: "normal"
+- letterSpacing: "normal"
+- backgroundColor: "rgba(0, 0, 0, 0)" (transparent)
+- borderRadius: "0px"
+- boxShadow: "none"
+- opacity: 1
+- overflow/overflowX/overflowY: "visible"
+
 The output includes:
 - root: The full measured tree (recursive CaliperNode structure)
 - nodeCount: Total nodes captured
 - maxDepthReached: Deepest level reached
-- walkDurationMs: Time taken to complete the walk`,
+- walkDurationMs: Time taken to complete the walk
+- hasMore: Whether tree was truncated (pagination)
+- continuationToken: Selector to resume from (if hasMore is true)
+- batchInstructions: Guidance for next batch call (if hasMore is true)`,
         inputSchema: z.object({
           selector: z
             .string()
             .describe("Caliper ID, JSON Fingerprint, or CSS selector of the root element to walk"),
           maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
+          maxNodes: z
+            .number()
+            .optional()
+            .describe("Maximum nodes to return per batch (default: unlimited). Use for large trees."),
+          continueFrom: z
+            .string()
+            .optional()
+            .describe("Continuation token from previous call to resume pagination"),
         }),
       },
-      async ({ selector, maxDepth }) => {
+      async ({ selector, maxDepth, maxNodes, continueFrom }) => {
         try {
           const result = await bridgeService.call("CALIPER_WALK_AND_MEASURE", {
             selector,
             maxDepth: maxDepth ?? 5,
+            maxNodes,
+            continueFrom,
           });
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+          const walkResult = result as {
+            walkResult?: { hasMore?: boolean; batchInstructions?: string };
+          };
+          let responseText = JSON.stringify(result);
+
+          if (walkResult.walkResult?.hasMore && walkResult.walkResult?.batchInstructions) {
+            responseText = `${walkResult.walkResult.batchInstructions}\n\n${responseText}`;
+          }
+
+          return { content: [{ type: "text", text: responseText }] };
         } catch (error) {
           return {
             content: [
@@ -433,7 +472,7 @@ You are about to perform a structured, comprehensive audit of the element '${sel
 
 ### PHASE 1: CONTEXT GATHERING
 1. **Deep Inspection**: Call 'caliper_inspect' to get all computed styles, colors, and typography.
-2. **Hierarchy Walk**: Call 'caliper_walk_and_measure' with maxDepth: 3 to understand its position in the tree, its children, and the spacing (gaps) to its neighbors.
+2. **Hierarchy Walk**: Call 'caliper_walk_and_measure' with maxDepth: 5 to understand its position in the tree, its children, and the spacing (gaps) to its neighbors.
 3. **Stable Discovery**: Identify a STABLE identifier (ID, data-testid, unique text, or stable class) and use internal agent search (grep) to locate the exact source file and line number.
 
 ### PHASE 2: ANALYSIS & CONSISTENCY
@@ -498,33 +537,31 @@ You are comparing TWO elements to understand the styling of one (A) and apply co
 
 ### IMPORTANT: TAB MANAGEMENT
 
-${
-  tabIdA || tabIdB
-    ? `
+${tabIdA || tabIdB
+                  ? `
 You are working across multiple tabs. The agent-ID is **tab-specific** - if you send a command to the wrong tab, it will fail.
 
 **Before Each Command:**
 1. Use \`caliper_list_tabs\` to see all connected tabs
 2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
 `
-    : `
+                  : `
 Both selections are on the SAME tab. No tab switching required.
 `
-}
+                }
 
 ### PHASE 1: WALK SELECTION A (REFERENCE)
 
-${
-  tabIdA
-    ? `1. **Switch to Tab A**
+${tabIdA
+                  ? `1. **Switch to Tab A**
    Call \`caliper_switch_tab\` with tabId: "${tabIdA}"
 
 2. `
-    : "1. "
-}**Walk and Measure A**
+                  : "1. "
+                }**Walk and Measure A**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorA}"
-   - maxDepth: 3
+   - maxDepth: 5
 
    Record A's styles as the REFERENCE:
    ${properties.includes("all") || properties.includes("spacing") ? "- padding, margin, gap values" : ""}
@@ -534,17 +571,16 @@ ${
 
 ### PHASE 2: WALK SELECTION B (TARGET)
 
-${
-  tabIdB
-    ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
+${tabIdB
+                  ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
    Call \`caliper_switch_tab\` with tabId: "${tabIdB}"
 
 ${tabIdA ? "4" : "3"}. `
-    : `${tabIdA ? "3" : "2"}. `
-}**Walk and Measure B**
+                  : `${tabIdA ? "3" : "2"}. `
+                }**Walk and Measure B**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorB}"
-   - maxDepth: 3
+   - maxDepth: 5
 
 ### PHASE 3: COMPARE AND ANALYZE
 

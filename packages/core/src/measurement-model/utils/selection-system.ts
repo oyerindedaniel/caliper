@@ -67,7 +67,7 @@ export function createSelectionSystem(): SelectionSystem {
 
     if (element) {
       waitPostRaf(() => {
-        if (selectedElement === element) {
+        if (selectedElement === element && document.contains(element)) {
           const geometry = deduceGeometry(element);
           selectedRect = geometry.rect;
           scrollHierarchy = geometry.scrollHierarchy;

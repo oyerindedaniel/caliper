@@ -42,7 +42,19 @@ const slideUp: Variants = {
 
 const CalculatorIcons = {
   "+": () => (
-    <svg viewBox="0 0 24 24" style={{ width: 12, height: 12, strokeWidth: 2.5, stroke: "currentColor", fill: "none", strokeLinecap: "round", strokeLinejoin: "round", display: "block" }}>
+    <svg
+      viewBox="0 0 24 24"
+      style={{
+        width: 12,
+        height: 12,
+        strokeWidth: 2.5,
+        stroke: "currentColor",
+        fill: "none",
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        display: "block",
+      }}
+    >
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
@@ -122,8 +134,9 @@ export function TryCaliper() {
     return () => clearTimeout(timer);
   }, [phase, isPaused]);
 
-
-  const gap = useTransform([b1x, b1w, b2x], ([x1, w1, x2]) => Math.round(Number(x2) - (Number(x1) + Number(w1))));
+  const gap = useTransform([b1x, b1w, b2x], ([x1, w1, x2]) =>
+    Math.round(Number(x2) - (Number(x1) + Number(w1)))
+  );
   const b1MidY = useTransform([b1y, b1h], ([y, h]) => Number(y) + Number(h) / 2);
   const b1Right = useTransform([b1x, b1w], ([x, w]) => Number(x) + Number(w));
   const b1MidX = useTransform([b1x, b1w], ([x, w]) => Number(x) + Number(w) / 2);
@@ -150,20 +163,34 @@ export function TryCaliper() {
 
   const phaseDescription = useMemo(() => {
     switch (phase) {
-      case "idle": return "Ready to audit...";
-      case "select": return "Select elements with precision.";
-      case "measure": return "Measure gaps and relative distances.";
-      case "calc": return "Perform arithmetic on layout values.";
-      case "project": return "Project edges to page boundaries.";
-      case "ruler": return "Place and nudge alignment guides.";
-      default: return "";
+      case "idle":
+        return "Ready to audit...";
+      case "select":
+        return "Select elements with precision.";
+      case "measure":
+        return "Measure gaps and relative distances.";
+      case "calc":
+        return "Perform arithmetic on layout values.";
+      case "project":
+        return "Project edges to page boundaries.";
+      case "ruler":
+        return "Place and nudge alignment guides.";
+      default:
+        return "";
     }
   }, [phase]);
 
   return (
     <section className={`${styles.section} ${styles.trySection} ${inter.className}`}>
       <div className={styles.tryHeader}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
           <span className={styles.tryBadge}>Live Audit Playground</span>
           <button
             onClick={() => setIsPaused(!isPaused)}
@@ -206,11 +233,7 @@ export function TryCaliper() {
         style={{ position: "relative", overflow: "visible" }}
       >
         <div className={styles.playgroundRow}>
-          <div
-            ref={box1Ref}
-            className={styles.playgroundBox}
-            style={{ width: 120, height: 48 }}
-          >
+          <div ref={box1Ref} className={styles.playgroundBox} style={{ width: 120, height: 48 }}>
             <span className={styles.boxLabel}>Target A</span>
           </div>
           <div
@@ -279,7 +302,13 @@ export function TryCaliper() {
 
           <AnimatePresence mode="wait">
             {phase === "measure" && (
-              <motion.div key="measure" variants={fadeIn} initial="hidden" animate="visible" exit="exit">
+              <motion.div
+                key="measure"
+                variants={fadeIn}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
                 <motion.div
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: 1 }}
@@ -395,7 +424,13 @@ export function TryCaliper() {
             )}
 
             {phase === "project" && (
-              <motion.div key="project" variants={fadeIn} initial="hidden" animate="visible" exit="exit">
+              <motion.div
+                key="project"
+                variants={fadeIn}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
                 <motion.div
                   initial={{ scaleX: 0 }}
                   animate={{ scaleX: 1 }}
@@ -450,14 +485,18 @@ export function TryCaliper() {
                     color: theme.calcText,
                   }}
                 >
-                  <span style={{
-                    background: theme.projection,
-                    color: "#fff",
-                    fontSize: 9,
-                    padding: "0 4px",
-                    borderRadius: 2,
-                    textTransform: "uppercase"
-                  }}>top</span>
+                  <span
+                    style={{
+                      background: theme.projection,
+                      color: "#fff",
+                      fontSize: 9,
+                      padding: "0 4px",
+                      borderRadius: 2,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    top
+                  </span>
                   <motion.span>{projectLabelVal}</motion.span>
                 </motion.div>
 
@@ -483,7 +522,13 @@ export function TryCaliper() {
             )}
 
             {phase === "ruler" && (
-              <motion.div key="ruler" variants={fadeIn} initial="hidden" animate="visible" exit="exit">
+              <motion.div
+                key="ruler"
+                variants={fadeIn}
+                initial="hidden"
+                animate="visible"
+                exit="exit"
+              >
                 <motion.div
                   initial={{ y: 200 }}
                   animate={{ y: 0 }}

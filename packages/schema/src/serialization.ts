@@ -187,6 +187,7 @@ export class BitBridge {
             getStringId(node.agentId);
             getStringId(node.htmlId);
             getStringId(node.textContent);
+            getStringId(node.marker);
             node.classes?.forEach(className => getStringId(className));
 
             // Collect strings from styles using the serializer registry
@@ -234,6 +235,7 @@ export class BitBridge {
             view.setUint16(offset, getStringId(node.agentId)); offset += 2;
             view.setUint16(offset, getStringId(node.htmlId)); offset += 2;
             view.setUint16(offset, getStringId(node.textContent)); offset += 2;
+            view.setUint16(offset, getStringId(node.marker)); offset += 2;
 
             const classes = node.classes || [];
             view.setUint16(offset, classes.length); offset += 2;
@@ -330,6 +332,7 @@ export class BitBridge {
         const agentId = stringList[view.getUint16(offset)] || ""; offset += 2;
         const htmlId = stringList[view.getUint16(offset)] || undefined; offset += 2;
         const textContent = stringList[view.getUint16(offset)] || undefined; offset += 2;
+        const marker = stringList[view.getUint16(offset)] || undefined; offset += 2;
 
         const classCount = view.getUint16(offset); offset += 2;
         const classes: string[] = [];
@@ -368,6 +371,7 @@ export class BitBridge {
             rect, viewportRect: { top: vTop, left: vLeft },
             depth, childCount, children: [],
             styles,
+            marker,
             measurements: {
                 toParent: { top: 0, left: 0, bottom: 0, right: 0 },
                 toPreviousSibling: null, toNextSibling: null,

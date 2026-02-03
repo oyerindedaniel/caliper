@@ -78,6 +78,12 @@ function pruneStyles(styles: CaliperComputedStyles): CaliperComputedStyles {
 }
 
 function generateStableSelector(element: Element, domIndex?: number): string {
+  const marker = element.getAttribute("data-caliper-marker");
+  if (marker) return `[data-caliper-marker="${marker}"]`;
+
+  const agentId = element.getAttribute("data-caliper-agent-id");
+  if (agentId) return `[data-caliper-agent-id="${agentId}"]`;
+
   if (element.id) return `#${element.id}`;
 
   const testId = element.getAttribute("data-testid");
@@ -90,9 +96,6 @@ function generateStableSelector(element: Element, domIndex?: number): string {
     const selector = cssClasses ? `${tag}.${cssClasses}` : tag;
     return `${selector}:nth-child(${domIndex + 1})`;
   }
-
-  const agentId = element.getAttribute("data-caliper-agent-id");
-  if (agentId) return `[data-caliper-agent-id="${agentId}"]`;
 
   return cssClasses ? `${tag}.${cssClasses}` : tag;
 }
@@ -146,6 +149,7 @@ function createNodeSnapshot(
     depth,
     childCount: htmlElement.children.length,
     children: [],
+    marker: htmlElement.getAttribute("data-caliper-marker") || undefined,
   };
 }
 
@@ -154,10 +158,15 @@ export interface WalkResult {
   nodeCount: number;
   maxDepthReached: number;
   walkDurationMs: number;
+  hasMore: boolean;
+  continuationToken?: string;
+  batchInstructions?: string;
 }
 
 export interface WalkOptions {
   maxDepth?: number;
+  maxNodes?: number;
+  continueFrom?: string;
   visualize?: boolean;
 }
 
@@ -171,6 +180,8 @@ export async function walkAndMeasure(
       : maxDepthOrOptions;
 
   const maxDepth = options.maxDepth ?? DEFAULT_WALK_DEPTH;
+  const maxNodes = options.maxNodes ?? Infinity;
+  const continueFrom = options.continueFrom;
   const visualize = options.visualize ?? false;
 
   const startTime = performance.now();
@@ -197,11 +208,38 @@ export async function walkAndMeasure(
 
     let nodeCount = 0;
     let maxDepthReached = 0;
+    let hasMore = false;
+    let continuationToken: string | undefined;
+    let shouldStop = false;
+    let finishingParent: CaliperNode | null = null;
+    let skipUntilFound = !!continueFrom;
 
     while (queue.length > 0) {
       const { element, node } = queue.shift()!;
+
+      if (skipUntilFound) {
+        if (node.agentId === continueFrom || node.selector === continueFrom) {
+          skipUntilFound = false;
+        } else {
+          continue;
+        }
+      }
+
       nodeCount++;
       maxDepthReached = Math.max(maxDepthReached, node.depth);
+
+      if (!shouldStop && nodeCount >= maxNodes) {
+        shouldStop = true;
+        finishingParent = node;
+      }
+
+      if (shouldStop && finishingParent && node.parentAgentId !== finishingParent.agentId && node !== finishingParent) {
+        continuationToken = node.agentId;
+        hasMore = true;
+        queue.unshift({ element, node });
+        nodeCount--;
+        break;
+      }
 
       if (visualize) {
         showWalkBoundary(element, node.agentId, true);
@@ -258,6 +296,11 @@ export async function walkAndMeasure(
       }
     }
 
+    if (!hasMore && queue.length > 0) {
+      hasMore = true;
+      continuationToken = queue[0]!.node.agentId;
+    }
+
     function pruneTreeStyles(node: CaliperNode): void {
       node.styles = pruneStyles(node.styles);
       for (const child of node.children) {
@@ -266,11 +309,18 @@ export async function walkAndMeasure(
     }
     pruneTreeStyles(rootNode);
 
+    const batchInstructions = hasMore
+      ? `Tree truncated at ${nodeCount} nodes. To continue, call caliper_walk_and_measure with continueFrom: "${continuationToken}"`
+      : undefined;
+
     return {
       root: rootNode,
       nodeCount,
       maxDepthReached,
       walkDurationMs: performance.now() - startTime,
+      hasMore,
+      continuationToken,
+      batchInstructions,
     };
   } finally {
     if (visualize) {
