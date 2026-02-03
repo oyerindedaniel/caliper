@@ -5,15 +5,16 @@ import {
   type MeasurementLine as CoreMeasurementLine,
   filterRuntimeClasses,
 } from "@caliper/core";
-import type {
-  SelectionMetadata as BridgeSelectionMetadata,
-  MeasurementResult as BridgeMeasurementResult,
-  ScrollState as BridgeScrollState,
-  CaliperComputedStyles,
-  Rect,
-  MeasurementLine as BridgeMeasurementLine,
-  ContextMetrics,
-  CaliperSelectorInput,
+import {
+  type SelectionMetadata as BridgeSelectionMetadata,
+  type MeasurementResult as BridgeMeasurementResult,
+  type ScrollState as BridgeScrollState,
+  type CaliperComputedStyles,
+  type Rect,
+  type MeasurementLine as BridgeMeasurementLine,
+  type ContextMetrics,
+  type CaliperSelectorInput,
+  MAX_DESCENDANT_COUNT,
 } from "@oyerinde/caliper-schema";
 
 export function sanitizeSelection(
@@ -30,17 +31,17 @@ export function sanitizeSelection(
     depth: metadata.depth,
     stickyConfig: metadata.stickyConfig
       ? {
-          top: metadata.stickyConfig.top,
-          bottom: metadata.stickyConfig.bottom,
-          left: metadata.stickyConfig.left,
-          right: metadata.stickyConfig.right,
-          naturalTop: metadata.stickyConfig.naturalTop,
-          naturalLeft: metadata.stickyConfig.naturalLeft,
-          containerWidth: metadata.stickyConfig.containerWidth,
-          containerHeight: metadata.stickyConfig.containerHeight,
-          elementWidth: metadata.stickyConfig.elementWidth,
-          elementHeight: metadata.stickyConfig.elementHeight,
-        }
+        top: metadata.stickyConfig.top,
+        bottom: metadata.stickyConfig.bottom,
+        left: metadata.stickyConfig.left,
+        right: metadata.stickyConfig.right,
+        naturalTop: metadata.stickyConfig.naturalTop,
+        naturalLeft: metadata.stickyConfig.naturalLeft,
+        containerWidth: metadata.stickyConfig.containerWidth,
+        containerHeight: metadata.stickyConfig.containerHeight,
+        elementWidth: metadata.stickyConfig.elementWidth,
+        elementHeight: metadata.stickyConfig.elementHeight,
+      }
       : undefined,
     hasContainingBlock: metadata.hasContainingBlock,
   };
@@ -100,31 +101,31 @@ export function sanitizeMeasurement(
     secondaryWinY: result.secondaryWinY,
     primarySticky: result.primarySticky
       ? {
-          top: result.primarySticky.top,
-          bottom: result.primarySticky.bottom,
-          left: result.primarySticky.left,
-          right: result.primarySticky.right,
-          naturalTop: result.primarySticky.naturalTop,
-          naturalLeft: result.primarySticky.naturalLeft,
-          containerWidth: result.primarySticky.containerWidth,
-          containerHeight: result.primarySticky.containerHeight,
-          elementWidth: result.primarySticky.elementWidth,
-          elementHeight: result.primarySticky.elementHeight,
-        }
+        top: result.primarySticky.top,
+        bottom: result.primarySticky.bottom,
+        left: result.primarySticky.left,
+        right: result.primarySticky.right,
+        naturalTop: result.primarySticky.naturalTop,
+        naturalLeft: result.primarySticky.naturalLeft,
+        containerWidth: result.primarySticky.containerWidth,
+        containerHeight: result.primarySticky.containerHeight,
+        elementWidth: result.primarySticky.elementWidth,
+        elementHeight: result.primarySticky.elementHeight,
+      }
       : undefined,
     secondarySticky: result.secondarySticky
       ? {
-          top: result.secondarySticky.top,
-          bottom: result.secondarySticky.bottom,
-          left: result.secondarySticky.left,
-          right: result.secondarySticky.right,
-          naturalTop: result.secondarySticky.naturalTop,
-          naturalLeft: result.secondarySticky.naturalLeft,
-          containerWidth: result.secondarySticky.containerWidth,
-          containerHeight: result.secondarySticky.containerHeight,
-          elementWidth: result.secondarySticky.elementWidth,
-          elementHeight: result.secondarySticky.elementHeight,
-        }
+        top: result.secondarySticky.top,
+        bottom: result.secondarySticky.bottom,
+        left: result.secondarySticky.left,
+        right: result.secondarySticky.right,
+        naturalTop: result.secondarySticky.naturalTop,
+        naturalLeft: result.secondarySticky.naturalLeft,
+        containerWidth: result.secondarySticky.containerWidth,
+        containerHeight: result.secondarySticky.containerHeight,
+        elementWidth: result.secondarySticky.elementWidth,
+        elementHeight: result.secondarySticky.elementHeight,
+      }
       : undefined,
     primaryHasContainingBlock: result.primaryHasContainingBlock,
     secondaryHasContainingBlock: result.secondaryHasContainingBlock,
@@ -262,4 +263,23 @@ export function findElementByFingerprint(info: CaliperSelectorInput): HTMLElemen
   }
 
   return null;
+}
+
+export function countDescendants(
+  element: Element,
+  maxCount = MAX_DESCENDANT_COUNT
+): { count: number; isTruncated: boolean } {
+  let count = 0;
+  const stack: Element[] = [element];
+
+  while (stack.length > 0 && count < maxCount) {
+    const el = stack.pop()!;
+    for (let i = el.children.length - 1; i >= 0; i--) {
+      count++;
+      if (count >= maxCount) return { count, isTruncated: true };
+      stack.push(el.children[i]!);
+    }
+  }
+
+  return { count, isTruncated: false };
 }

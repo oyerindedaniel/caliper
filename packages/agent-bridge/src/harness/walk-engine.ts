@@ -233,7 +233,12 @@ export async function walkAndMeasure(
         finishingParent = node;
       }
 
-      if (shouldStop && finishingParent && node.parentAgentId !== finishingParent.agentId && node !== finishingParent) {
+      if (
+        shouldStop &&
+        finishingParent &&
+        node.parentAgentId !== finishingParent.agentId &&
+        node !== finishingParent
+      ) {
         continuationToken = node.agentId;
         hasMore = true;
         queue.unshift({ element, node });

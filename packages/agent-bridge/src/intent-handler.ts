@@ -12,6 +12,7 @@ import {
   parseComputedStyles,
   getContextMetrics,
   findElementByFingerprint,
+  countDescendants,
 } from "./utils.js";
 import { walkAndMeasure } from "./harness/walk-engine.js";
 import type {
@@ -161,6 +162,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       const geometry = deduceGeometry(element);
       const rect = element.getBoundingClientRect();
       const computedStyle = window.getComputedStyle(element);
+      const descendants = countDescendants(element);
 
       return {
         success: true,
@@ -185,6 +187,9 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           initialWindowY: geometry.initialWindowY,
           depth: geometry.depth,
         })!,
+        immediateChildCount: element.children.length,
+        descendantCount: descendants.count,
+        descendantsTruncated: descendants.isTruncated,
         timestamp: Date.now(),
       };
     });

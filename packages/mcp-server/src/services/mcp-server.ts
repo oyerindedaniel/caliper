@@ -1,6 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import {
+  MAX_DESCENDANT_COUNT,
+  RECOMMENDED_PAGINATION_THRESHOLD
+} from "@oyerinde/caliper-schema";
 import { bridgeService } from "./bridge-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -83,7 +87,18 @@ export class CaliperMcpServer {
     this.server.registerTool(
       "caliper_inspect",
       {
-        description: "Get full geometry and computed visibility for an element.",
+        description: `Get full geometry and computed visibility for an element.
+
+Returns comprehensive element data including:
+- distances: Position relative to viewport edges
+- computedStyles: All CSS computed values
+- selection: Scroll hierarchy and sticky configuration
+- immediateChildCount: Direct children count
+- descendantCount: Total descendants (capped at ${MAX_DESCENDANT_COUNT})
+- descendantsTruncated: True if descendant count was capped
+
+Use descendantCount to decide whether to paginate caliper_walk_and_measure.
+If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated is true, use maxNodes parameter.`,
         inputSchema: z.object({
           selector: z
             .string()
@@ -241,7 +256,9 @@ The output includes:
           maxNodes: z
             .number()
             .optional()
-            .describe("Maximum nodes to return per batch (default: unlimited). Use for large trees."),
+            .describe(
+              "Maximum nodes to return per batch (default: unlimited). Use for large trees."
+            ),
           continueFrom: z
             .string()
             .optional()
