@@ -176,6 +176,7 @@ export async function walkAndMeasure(
   const maxNodes = options.maxNodes ?? Infinity;
   const continueFrom = options.continueFrom;
   const visualize = options.visualize ?? false;
+  const minElementSize = options.minElementSize ?? 0;
 
   const startTime = performance.now();
 
@@ -262,6 +263,11 @@ export async function walkAndMeasure(
       for (let domIdx = 0; domIdx < allChildren.length; domIdx++) {
         const childElement = allChildren[domIdx]!;
         if (!isVisible(childElement)) continue;
+
+        if (minElementSize > 0) {
+          const rect = childElement.getBoundingClientRect();
+          if (rect.width < minElementSize || rect.height < minElementSize) continue;
+        }
 
         try {
           const childNode = createNodeSnapshot(childElement, node.depth + 1, domIdx, visibleIdx);

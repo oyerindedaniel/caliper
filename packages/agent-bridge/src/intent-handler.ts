@@ -37,7 +37,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       try {
         const info = JSON.parse(selector) as CaliperSelectorInput;
         return findElementByFingerprint(info);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     if (selector.startsWith("caliper-")) {
@@ -278,6 +278,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
                 maxDepth: intent.params.maxDepth ?? DEFAULT_WALK_DEPTH,
                 maxNodes: intent.params.maxNodes,
                 continueFrom: intent.params.continueFrom,
+                minElementSize: intent.params.minElementSize,
                 visualize: true,
               })
             );

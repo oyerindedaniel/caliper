@@ -21,6 +21,7 @@ export interface WalkOptions {
   maxNodes?: number;
   continueFrom?: string;
   visualize?: boolean;
+  minElementSize?: number;
 }
 
 export interface ParsedSelection {

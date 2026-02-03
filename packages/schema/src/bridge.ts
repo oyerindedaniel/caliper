@@ -184,6 +184,7 @@ export const CaliperWalkAndMeasurePayloadSchema = z.object({
     maxDepth: z.number().optional(),
     maxNodes: z.number().optional(),
     continueFrom: z.string().optional(),
+    minElementSize: z.number().optional(),
 });
 
 export const CaliperGetContextPayloadSchema = z.object({});
