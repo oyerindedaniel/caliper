@@ -68,6 +68,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
@@ -318,11 +319,11 @@
   gap: 8px;
 }
 
-.subHeader + .subHeader {
+.subHeader+.subHeader {
   margin-top: 0;
 }
 
-.sectionHeader + .subHeader {
+.sectionHeader+.subHeader {
   margin-top: 0;
 }
 
@@ -419,6 +420,7 @@
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
@@ -681,7 +683,6 @@
 
 .btnPrimary:hover:not(:disabled) {
   background: var(--button-primary-hover);
-  transform: translateY(-1px);
 }
 
 .btnSecondary {
@@ -693,17 +694,22 @@
 .btnSecondary:hover:not(:disabled) {
   background: var(--gray-alpha-100);
   border-color: var(--gray-alpha-100);
-  transform: translateY(-1px);
 }
 
 .btnBase:active:not(:disabled) {
-  transform: scale(0.98);
   opacity: 0.8;
 }
 
 .btnBase:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.tryToggle {
+  height: 32px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+  gap: 6px !important;
 }
 
 .statusMessage {
