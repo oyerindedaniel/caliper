@@ -59,14 +59,25 @@ export function buildSelectorInfo(
     y,
     depth,
     marker,
-    scrollHierarchy: metadata?.scrollHierarchy,
-    position: metadata?.position,
-    stickyConfig: metadata?.stickyConfig,
-    initialWindowX: metadata?.initialWindowX,
-    initialWindowY: metadata?.initialWindowY,
-    hasContainingBlock: metadata?.hasContainingBlock,
-    rect: metadata?.rect || undefined,
   };
+
+  if (metadata?.scrollHierarchy) {
+    info.scrollHierarchy = metadata.scrollHierarchy.map((scrollStateItem) => {
+      const { element: _removedElement, ...serializableScrollState } =
+        scrollStateItem as typeof scrollStateItem & {
+          element?: unknown;
+        };
+      return serializableScrollState;
+    });
+  }
+
+  if (metadata?.position) info.position = metadata.position;
+  if (metadata?.stickyConfig) info.stickyConfig = metadata.stickyConfig;
+  if (metadata?.initialWindowX !== undefined) info.initialWindowX = metadata.initialWindowX;
+  if (metadata?.initialWindowY !== undefined) info.initialWindowY = metadata.initialWindowY;
+  if (metadata?.hasContainingBlock !== undefined)
+    info.hasContainingBlock = metadata.hasContainingBlock;
+  if (metadata?.rect) info.rect = metadata.rect;
 
   if (id) info.id = id;
   if (text) info.text = text;

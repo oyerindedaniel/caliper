@@ -102,107 +102,6 @@
   transform: scale(1.1);
 }
 
-@media (max-width: 768px) {
-  .page {
-    padding: 40px 16px;
-    padding-bottom: 80px;
-    gap: 32px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .main {
-    max-width: 100%;
-    align-items: flex-start;
-  }
-
-  .main p,
-  .instructionItem {
-    font-size: 13px;
-    line-height: 20px;
-    text-align: left;
-  }
-
-  /* Force table to collapse into a list on mobile */
-  .commandTable,
-  .commandTable thead,
-  .commandTable tbody,
-  .commandTable th,
-  .commandTable td,
-  .commandTable tr {
-    display: block;
-  }
-
-  .commandTable thead tr {
-    position: absolute;
-    top: -9999px;
-    left: -9999px;
-  }
-
-  .commandTable tr {
-    border: 1px solid var(--gray-alpha-200);
-    border-radius: 12px;
-    margin-bottom: 8px;
-    padding: 12px 16px;
-    background: var(--gray-alpha-100);
-    width: 100%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .commandTable td {
-    border: none;
-    padding: 0;
-    display: block;
-    width: auto;
-  }
-
-  .commandTable td:first-child {
-    font-weight: 600;
-    font-size: 12px;
-    opacity: 0.6;
-    text-transform: uppercase;
-    font-family: var(--font-geist-mono);
-  }
-
-  .commandTable td pre {
-    margin: 0;
-  }
-
-  .ctas {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .ctas a,
-  button.secondary {
-    min-width: auto !important;
-    width: 100%;
-  }
-
-  .footer {
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    font-size: 14px;
-    margin-top: 40px;
-    width: 100%;
-  }
-
-  .configuratorGrid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .logo {
-    filter: invert();
-  }
-}
-
 .clickableRow:hover {
   background: var(--gray-alpha-100);
 }
@@ -731,6 +630,8 @@
   margin-bottom: 32px;
   border-bottom: 1px solid var(--gray-alpha-200);
   padding-bottom: 12px;
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .navLink {
@@ -784,4 +685,221 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.faqList {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  width: 100%;
+}
+
+.faqItem {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  grid-template-rows: auto 1fr;
+  column-gap: 24px;
+  position: relative;
+}
+
+.faqNumber {
+  grid-area: 1 / 1;
+  width: 32px;
+  height: 32px;
+  border-radius: 100%;
+  border: 2px solid var(--caliper-primary, #18a0fb);
+  background: transparent;
+  color: var(--caliper-primary, #18a0fb);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 0 0 4px var(--gray-alpha-100);
+  z-index: 2;
+  margin-top: 4px;
+}
+
+.faqConnector {
+  grid-area: 2 / 1;
+  width: 50px;
+  height: 50%;
+  border-left: 2px solid var(--caliper-secondary, #f24e1e);
+  border-bottom: 2px solid var(--caliper-secondary, #f24e1e);
+  border-bottom-left-radius: 12px;
+  opacity: 0.2;
+  pointer-events: none;
+  margin-left: 15px;
+}
+
+.faqItem::after {
+  content: "";
+  position: absolute;
+  top: 40px;
+  bottom: -32px;
+  left: 15px;
+  width: 2px;
+  background: var(--caliper-primary, #11ff00);
+  opacity: 0.1;
+  z-index: 1;
+}
+
+.faqItem:last-child::after {
+  display: none;
+}
+
+.faqQuestion {
+  grid-area: 1 / 2;
+  font-family: var(--font-geist-sans);
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--gray-rgb);
+  line-height: 1.4;
+  padding-top: 8px;
+}
+
+p.faqAnswer {
+  grid-area: 2 / 2;
+  font-family: var(--font-geist-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  opacity: 0.7;
+  color: var(--gray-rgb);
+  padding-top: 8px;
+  padding-bottom: 16px;
+  padding-left: 32px;
+  max-width: 90%;
+}
+
+p.faqAnswer strong {
+  color: var(--foreground);
+  font-weight: 600;
+  background: var(--gray-alpha-100);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: var(--font-geist-mono);
+  font-size: 13px;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 40px 16px;
+    padding-bottom: 80px;
+    gap: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .main {
+    max-width: 100%;
+    align-items: flex-start;
+  }
+
+  .main p,
+  .instructionItem {
+    font-size: 13px;
+    line-height: 20px;
+    text-align: left;
+  }
+
+  /* Force table to collapse into a list on mobile */
+  .commandTable,
+  .commandTable thead,
+  .commandTable tbody,
+  .commandTable th,
+  .commandTable td,
+  .commandTable tr {
+    display: block;
+  }
+
+  .commandTable thead tr {
+    position: absolute;
+    top: -9999px;
+    left: -9999px;
+  }
+
+  .commandTable tr {
+    border: 1px solid var(--gray-alpha-200);
+    border-radius: 12px;
+    margin-bottom: 8px;
+    padding: 12px 16px;
+    background: var(--gray-alpha-100);
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .commandTable td {
+    border: none;
+    padding: 0;
+    display: block;
+    width: auto;
+  }
+
+  .commandTable td:first-child {
+    font-weight: 600;
+    font-size: 12px;
+    opacity: 0.6;
+    text-transform: uppercase;
+    font-family: var(--font-geist-mono);
+  }
+
+  .commandTable td pre {
+    margin: 0;
+  }
+
+  .ctas {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .ctas a,
+  button.secondary {
+    min-width: auto !important;
+    width: 100%;
+  }
+
+  .faqItem {
+    grid-template-columns: 32px 1fr;
+    column-gap: 16px;
+  }
+
+  .faqItem::after {
+    bottom: -32px;
+  }
+
+  .faqQuestion {
+    font-size: 16px;
+  }
+
+  .faqAnswer {
+    font-size: 14px;
+  }
+
+  .faqConnector {
+    width: 32px;
+  }
+
+  .configuratorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .footer {
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    font-size: 14px;
+    margin-top: 40px;
+    width: 100%;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .logo {
+    filter: invert();
+  }
 }

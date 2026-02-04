@@ -33,17 +33,24 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
   const { measurementSystem, selectionSystem } = systems;
 
   function resolveElement(selector: string): HTMLElement | null {
-    if (selector.trim().startsWith("{")) {
+    const trimmed = selector.trim();
+
+    if (trimmed.startsWith("{")) {
       try {
-        const info = JSON.parse(selector) as CaliperSelectorInput;
+        const info = JSON.parse(trimmed) as CaliperSelectorInput;
         return findElementByFingerprint(info);
       } catch (_) {}
     }
 
-    if (selector.startsWith("caliper-")) {
-      return document.querySelector(`[data-caliper-agent-id="${selector}"]`) as HTMLElement;
+    if (trimmed.startsWith("caliper-")) {
+      return document.querySelector(`[data-caliper-agent-id="${trimmed}"]`) as HTMLElement;
     }
-    return document.querySelector(selector) as HTMLElement;
+
+    try {
+      return document.querySelector(trimmed) as HTMLElement;
+    } catch (_) {
+      return null;
+    }
   }
 
   function handleSelect(params: CaliperSelectPayload): Promise<CaliperActionResult> {

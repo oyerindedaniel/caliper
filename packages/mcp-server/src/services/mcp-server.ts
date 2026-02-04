@@ -104,7 +104,9 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
         inputSchema: z.object({
           selector: z
             .string()
-            .describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
+            .describe(
+              "Element identifier. PRIORITIZE JSON Fingerprint or Caliper ID for maximum stabilization. Fallback to CSS only if necessary."
+            ),
         }),
       },
       async ({ selector }) => {
@@ -132,10 +134,14 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
         inputSchema: z.object({
           primarySelector: z
             .string()
-            .describe("Caliper ID, JSON Fingerprint, or CSS selector for the primary element"),
+            .describe(
+              "Identifier for the primary element. PRIORITIZE JSON Fingerprint or Caliper ID."
+            ),
           secondarySelector: z
             .string()
-            .describe("Caliper ID, JSON Fingerprint, or CSS selector for the target element"),
+            .describe(
+              "Identifier for the target element. PRIORITIZE JSON Fingerprint or Caliper ID."
+            ),
         }),
       },
       async ({ primarySelector, secondarySelector }) => {
@@ -191,7 +197,9 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
         inputSchema: z.object({
           selector: z
             .string()
-            .describe("Caliper ID, JSON Fingerprint, or CSS selector of the element"),
+            .describe(
+              "Element identifier. PRIORITIZE JSON Fingerprint or Caliper ID for maximum stabilization. Fallback to CSS only if necessary."
+            ),
         }),
       },
       async ({ selector }) => {
@@ -224,7 +232,9 @@ This is the HARNESS tool for comprehensive audits. It:
 - Returns a full tree structure ready for reconciliation with Figma
 
 Use this BEFORE making any code changes to gather complete context.
-
+ 
+SAFETY: Calling 'caliper_inspect' is REQUIRED before initiating an initial audit on a component. This provides the 'descendantCount' metrics needed to set 'maxNodes' and avoid timeouts. You may skip 'inspect' only when resuming an audit using a 'continuationToken'.
+ 
 STYLE PRUNING: To reduce payload size, default styles are omitted. If a style is missing, assume:
 - display: "block"
 - visibility: "visible"
@@ -254,7 +264,9 @@ The output includes:
         inputSchema: z.object({
           selector: z
             .string()
-            .describe("Caliper ID, JSON Fingerprint, or CSS selector of the root element to walk"),
+            .describe(
+              "Root element identifier. PRIORITIZE JSON Fingerprint for maximum rediscovery stability. Fallback to Caliper ID only if necessary."
+            ),
           maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
           maxNodes: z
             .number()
@@ -283,13 +295,13 @@ The output includes:
             continueFrom,
             minElementSize,
           });
-          const walkResult = result as {
+          const auditResponse = result as {
             walkResult?: { hasMore?: boolean; batchInstructions?: string };
           };
           let responseText = JSON.stringify(result);
 
-          if (walkResult.walkResult?.hasMore && walkResult.walkResult?.batchInstructions) {
-            responseText = `${walkResult.walkResult.batchInstructions}\n\n${responseText}`;
+          if (auditResponse.walkResult?.hasMore && auditResponse.walkResult?.batchInstructions) {
+            responseText = `${auditResponse.walkResult.batchInstructions}\n\n${responseText}`;
           }
 
           return { content: [{ type: "text", text: responseText }] };
@@ -484,7 +496,11 @@ Returns the Delta E value and a human-readable interpretation:
         description:
           "Perform a comprehensive, structured audit of a specific selector: from source discovery to precision styling analysis.",
         argsSchema: {
-          selector: z.string().describe("The Caliper Selector (Agent ID) or CSS selector to audit"),
+          selector: z
+            .string()
+            .describe(
+              "The Caliper Selector (JSON Fingerprint or Agent ID) to audit. PRIORITIZE JSON Fingerprint for maximum stabilization."
+            ),
         },
       },
       async ({ selector }) => ({
@@ -527,10 +543,14 @@ BEGIN PHASE 1 NOW. Do not skip any steps.`,
         argsSchema: {
           selectorA: z
             .string()
-            .describe("Caliper Selector for the REFERENCE element (the 'good' one to learn from)"),
+            .describe(
+              "Caliper Selector for the REFERENCE element. PRIORITIZE JSON Fingerprint for stabilization."
+            ),
           selectorB: z
             .string()
-            .describe("Caliper Selector for the TARGET element (the one to fix)"),
+            .describe(
+              "Caliper Selector for the TARGET element. PRIORITIZE JSON Fingerprint for stabilization."
+            ),
           tabIdA: z
             .string()
             .optional()

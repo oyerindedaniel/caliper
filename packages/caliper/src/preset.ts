@@ -14,10 +14,7 @@ type Extension = ((instance: OverlayInstance) => void) | CaliperPlugin;
  * @param configuration - Caliper core configuration
  * @param extensions - Array of functions that receive the caliper instance
  */
-export async function init(
-  configuration?: OverlayConfig,
-  extensions: Array<Extension> = []
-) {
+export async function init(configuration?: OverlayConfig, extensions: Array<Extension> = []) {
   const caliperInstance = initCaliper(configuration);
 
   if (extensions && Array.isArray(extensions)) {

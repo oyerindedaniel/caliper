@@ -12,13 +12,14 @@ export function CaliperWrapper() {
 
   useEffect(() => {
     const caliper = init(config);
-    if (config.theme?.primary) {
+    if (config.theme?.primary && config.theme?.secondary) {
       document.documentElement.style.setProperty("--caliper-primary", config.theme.primary);
+      document.documentElement.style.setProperty("--caliper-secondary", config.theme.secondary);
     }
 
     caliper.use(
       CaliperBridge({
-        enabled: true,
+        enabled: process.env.NODE_ENV === "development",
       })
     );
 

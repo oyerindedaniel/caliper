@@ -79,10 +79,11 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
   let systems: Systems | null = null;
   const plugins = new Map<string, CaliperPlugin>();
 
-  const pendingSystemsResolvers: ((s: Systems) => void)[] = [];
+  const pendingSystemsResolvers: { resolve: (s: Systems) => void; reject: (e: Error) => void }[] =
+    [];
   const waitForSystems = (): Promise<Systems> => {
     if (systems) return Promise.resolve(systems);
-    return new Promise((resolve) => pendingSystemsResolvers.push(resolve));
+    return new Promise((resolve, reject) => pendingSystemsResolvers.push({ resolve, reject }));
   };
 
   const instance: OverlayInstance = {
@@ -114,7 +115,7 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
               systems = readySystems;
               const currentResolvers = [...pendingSystemsResolvers];
               pendingSystemsResolvers.length = 0;
-              currentResolvers.forEach((resolve) => resolve(readySystems));
+              currentResolvers.forEach(({ resolve }) => resolve(readySystems));
             },
           }),
         overlayContainer
@@ -129,6 +130,8 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
 
         plugins.forEach((plugin) => plugin.dispose?.());
         plugins.clear();
+
+        pendingSystemsResolvers.forEach(({ reject }) => reject(new Error("Overlay disposed")));
         pendingSystemsResolvers.length = 0;
 
         if (activeInstance === instance) activeInstance = null;

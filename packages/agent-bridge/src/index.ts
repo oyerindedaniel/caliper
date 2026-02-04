@@ -37,10 +37,6 @@ import "./types.js";
 
 const logger = createLogger("agent-bridge");
 
-let intentHandler: ReturnType<typeof createIntentHandler> | null = null;
-let stateStore: ReturnType<typeof createStateStore> | null = null;
-let isInitialized = false;
-
 /**
  * CaliperBridge Plugin Factory
  * Enables AI agents to use Caliper's high-precision measurement engine.
@@ -49,12 +45,22 @@ let isInitialized = false;
  */
 export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
   let bridgeDispose: (() => void) | null = null;
+  let isDisposed = false;
+  let isInitialized = false;
+  let intentHandler: ReturnType<typeof createIntentHandler> | null = null;
+  let stateStore: ReturnType<typeof createStateStore> | null = null;
 
   return {
     name: "agent-bridge",
     install: (instance: OverlayInstance) => {
-      const clearGlobals = () => {
+      const cleanup = () => {
         delete window.dispatchCaliperIntent;
+        isInitialized = false;
+        intentHandler = null;
+        if (stateStore) {
+          stateStore.clear();
+          stateStore = null;
+        }
       };
 
       if (isInitialized) {
@@ -66,60 +72,67 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
 
       if (!enabled) {
         logger.info("Bridge is disabled via config.");
-        clearGlobals();
+        cleanup();
         return;
       }
 
-      instance.waitForSystems().then((systems: CaliperCoreSystems) => {
-        if (!systems.measurementSystem || !systems.selectionSystem) {
-          logger.error(
-            "Missing required systems. Provide measurementSystem and selectionSystem from @caliper/core."
-          );
-          clearGlobals();
-          return;
-        }
+      instance
+        .waitForSystems()
+        .then((systems: CaliperCoreSystems) => {
+          if (isDisposed) {
+            logger.info("Bridge disposed before initialization completed. Aborting.");
+            return;
+          }
 
-        stateStore = createStateStore();
-        intentHandler = createIntentHandler(systems, stateStore);
+          if (!systems.measurementSystem || !systems.selectionSystem) {
+            logger.error(
+              "Missing required systems. Provide measurementSystem and selectionSystem from @caliper/core."
+            );
+            cleanup();
+            return;
+          }
 
-        const wsPort = config.wsPort ?? DEFAULT_WS_PORT;
-        const wsUrl = `ws://localhost:${wsPort}`;
-        const wsBridge = createWSBridge({
-          onIntent: (intent) => intentHandler!.dispatch(intent),
-          wsUrl,
+          stateStore = createStateStore();
+          intentHandler = createIntentHandler(systems, stateStore);
+
+          const wsPort = config.wsPort ?? DEFAULT_WS_PORT;
+          const wsUrl = `ws://localhost:${wsPort}`;
+          const wsBridge = createWSBridge({
+            onIntent: (intent) => intentHandler!.dispatch(intent),
+            wsUrl,
+          });
+
+          window.dispatchCaliperIntent = async (
+            intent: CaliperIntent
+          ): Promise<CaliperActionResult> => {
+            if (!intentHandler) {
+              return {
+                success: false,
+                method: intent.method,
+                error: "Agent bridge not initialized",
+                timestamp: Date.now(),
+              };
+            }
+            return intentHandler.dispatch(intent);
+          };
+
+          isInitialized = true;
+          logger.info(`Initialized. MCP Relay enabled on port ${wsPort} (${wsUrl})`);
+
+          bridgeDispose = () => {
+            wsBridge.destroy();
+            cleanup();
+            logger.info("Bridge stopped. Connections closed.");
+          };
+        })
+        .catch((error) => {
+          if (isDisposed) return;
+          logger.error("Failed to initialize agent bridge:", error);
+          cleanup();
         });
-
-        window.dispatchCaliperIntent = async (
-          intent: CaliperIntent
-        ): Promise<CaliperActionResult> => {
-          if (!intentHandler) {
-            return {
-              success: false,
-              method: intent.method,
-              error: "Agent bridge not initialized",
-              timestamp: Date.now(),
-            };
-          }
-          return intentHandler.dispatch(intent);
-        };
-
-        isInitialized = true;
-        logger.info(`Initialized. MCP Relay enabled on port ${wsPort} (${wsUrl})`);
-
-        bridgeDispose = () => {
-          wsBridge.destroy();
-          clearGlobals();
-          intentHandler = null;
-          if (stateStore) {
-            stateStore.clear();
-            stateStore = null;
-          }
-          isInitialized = false;
-          logger.info("Bridge stopped. Connections closed.");
-        };
-      });
     },
     dispose: () => {
+      isDisposed = true;
       bridgeDispose?.();
     },
   };

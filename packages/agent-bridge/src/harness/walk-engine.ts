@@ -244,7 +244,7 @@ export async function walkAndMeasure(
 
       processedNodes.add(node.agentId);
 
-      if (visualize) {
+      if (visualize && !document.hidden) {
         showWalkBoundary(element, node.agentId, true);
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
@@ -307,9 +307,7 @@ export async function walkAndMeasure(
           queue.push({ element: childElement, node: childNode });
           visibleIdx++;
         } catch (error) {
-          if (process.env.NODE_ENV === "development") {
-            console.warn(`[Caliper] Failed to snapshot node at index ${domIdx}. Skipping.`, error);
-          }
+          console.warn(`[Caliper] Failed to snapshot node at index ${domIdx}. Skipping.`, error);
           continue;
         }
       }

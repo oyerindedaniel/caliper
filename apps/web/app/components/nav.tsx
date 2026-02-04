@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import styles from "../page.module.css";
+import { Suspense } from "react";
 
-export function Nav() {
+function NavContent() {
   const pathname = usePathname();
 
   if (pathname?.startsWith("/changelog")) {
@@ -20,10 +21,23 @@ export function Nav() {
       )}
       {pathname !== "/docs/agentic" && (
         <Link href="/docs/agentic" className={styles.navLink}>
-          <span>Agent</span>
+          <span>Agents</span>
           <span className={styles.newBadge}>Docs</span>
         </Link>
       )}
+      {pathname !== "/faq" && (
+        <Link href="/faq" className={styles.navLink}>
+          <span>FAQ</span>
+        </Link>
+      )}
     </nav>
+  );
+}
+
+export function Nav() {
+  return (
+    <Suspense fallback={null}>
+      <NavContent />
+    </Suspense>
   );
 }
