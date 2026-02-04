@@ -6,6 +6,8 @@ import {
   type CaliperMethod,
   type CaliperAgentState,
   BitBridge,
+  RpcFactory,
+  CALIPER_METHODS,
 } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -27,7 +29,7 @@ export class BridgeService {
   >();
   private startupError: string | null = null;
 
-  constructor() {}
+  constructor() { }
 
   async start(port: number = DEFAULT_BRIDGE_PORT, retries: number = 3): Promise<void> {
     if (this.wss) return;
@@ -73,8 +75,8 @@ export class BridgeService {
               reject(new Error(errorMessage));
             }
           });
-        } catch (err) {
-          reject(err);
+        } catch (error) {
+          reject(error);
         }
       });
     };
@@ -115,77 +117,78 @@ export class BridgeService {
           if (!result.success) {
             logger.error("Invalid WS message format:", z.treeifyError(result.error));
 
-            const msgObj = rawMessage as { id?: string };
-            if (msgObj?.id && typeof msgObj.id === "string") {
-              const resolve = this.pendingCalls.get(msgObj.id);
+            const msgObj = rawMessage as { id?: string | number };
+            if (msgObj?.id !== undefined && (typeof msgObj.id === "string" || typeof msgObj.id === "number")) {
+              const resolve = this.pendingCalls.get(String(msgObj.id));
               if (resolve) {
                 resolve({ error: new BridgeValidationError().message });
-                this.pendingCalls.delete(msgObj.id);
+                this.pendingCalls.delete(String(msgObj.id));
               }
             }
             return;
           }
 
+
           const message = result.data;
 
-          switch (message.type) {
-            case "REGISTER_TAB":
-              tabId = message.payload.tabId;
+          if ("id" in message) {
+            if ("result" in message) {
+              const resolve = this.pendingCalls.get(String(message.id));
+
+              if (resolve) {
+                const finalResult = message.result;
+
+                if (
+                  "success" in finalResult &&
+                  finalResult.success &&
+                  "method" in finalResult &&
+                  finalResult.method === CALIPER_METHODS.WALK_AND_MEASURE &&
+                  binaryPayload
+                ) {
+                  try {
+                    const root = BitBridge.deserialize(binaryPayload);
+                    if ("walkResult" in finalResult) {
+                      finalResult.walkResult.root = root;
+                    }
+                    logger.info(
+                      `Bit-Bridge: Reconstructed tree from ${binaryPayload.byteLength} bytes.`
+                    );
+                  } catch (error) {
+                    logger.error("Bit-Bridge reconstruction failed:", error);
+                  }
+                }
+                resolve(finalResult);
+                this.pendingCalls.delete(String(message.id));
+              }
+            } else if ("error" in message) {
+              if (message.id !== null) {
+                const resolve = this.pendingCalls.get(String(message.id));
+                if (resolve) {
+                  resolve({ error: message.error.message });
+                  this.pendingCalls.delete(String(message.id));
+                }
+              }
+            }
+          } else if ("method" in message) {
+            if (message.method === CALIPER_METHODS.REGISTER_TAB) {
+              const { tabId: newTabId, url, title, isFocused } = message.params;
+              tabId = newTabId;
               tabManager.registerTab({
                 id: tabId,
                 ws,
-                url: message.payload.url,
-                title: message.payload.title,
-                isFocused: message.payload.isFocused,
+                url,
+                title,
+                isFocused,
               });
-              break;
-
-            case "TAB_UPDATE":
+            } else if (message.method === CALIPER_METHODS.TAB_UPDATE) {
+              const { isFocused } = message.params;
               if (tabId) {
-                tabManager.updateTab(tabId, message.payload.isFocused);
+                tabManager.updateTab(tabId, isFocused);
               }
-              break;
-
-            case "TOOL_RESPONSE":
-              const resolve = this.pendingCalls.get(message.id);
-              if (resolve) {
-                if (message.result) {
-                  let finalResult = message.result as CaliperActionResult;
-
-                  if (
-                    finalResult.success &&
-                    finalResult.method === "CALIPER_WALK_AND_MEASURE" &&
-                    binaryPayload
-                  ) {
-                    try {
-                      const root = BitBridge.deserialize(binaryPayload);
-                      finalResult = {
-                        ...finalResult,
-                        walkResult: {
-                          ...finalResult.walkResult,
-                          root,
-                        },
-                      };
-                      logger.info(
-                        `Bit-Bridge: Reconstructed tree from ${binaryPayload.byteLength} bytes.`
-                      );
-                    } catch (e) {
-                      logger.error("Bit-Bridge reconstruction failed:", e);
-                    }
-                  }
-
-                  resolve(finalResult);
-                } else {
-                  resolve({ error: message.error || "Unknown bridge error" });
-                }
-                this.pendingCalls.delete(message.id);
-              } else {
-                logger.warn(`No pending call found for TOOL_RESPONSE id: ${message.id}`);
-              }
-              break;
+            }
           }
-        } catch (e: unknown) {
-          logger.error("WS Message Processing Error:", e);
+        } catch (error: unknown) {
+          logger.error("WS Message Processing Error:", error);
         }
       });
 
@@ -202,7 +205,7 @@ export class BridgeService {
   async call<T = CaliperActionResult>(
     method: CaliperMethod,
     params: Record<string, unknown>,
-    retries: number = 1
+    retries: number = 0
   ): Promise<T> {
     if (this.startupError) {
       throw new Error(`Caliper Bridge Unavailable: ${this.startupError}`);
@@ -238,11 +241,7 @@ export class BridgeService {
         });
 
         tab.ws.send(
-          JSON.stringify({
-            id: callId,
-            method,
-            params,
-          })
+          JSON.stringify(RpcFactory.request(method, params, callId))
         );
       });
     };

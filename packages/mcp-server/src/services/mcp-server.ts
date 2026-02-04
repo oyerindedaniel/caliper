@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { MAX_DESCENDANT_COUNT, RECOMMENDED_PAGINATION_THRESHOLD } from "@oyerinde/caliper-schema";
+import { MAX_DESCENDANT_COUNT, RECOMMENDED_PAGINATION_THRESHOLD, CALIPER_METHODS } from "@oyerinde/caliper-schema";
 import { bridgeService } from "./bridge-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -18,7 +18,7 @@ try {
   if (__dirname.endsWith("dist")) {
     packageJsonPath = join(__dirname, "../package.json");
   }
-} catch (_) {}
+} catch (_) { }
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
@@ -111,7 +111,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ selector }) => {
         try {
-          const result = await bridgeService.call("CALIPER_INSPECT", { selector });
+          const result = await bridgeService.call(CALIPER_METHODS.INSPECT, { selector });
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -146,7 +146,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ primarySelector, secondarySelector }) => {
         try {
-          const result = await bridgeService.call("CALIPER_MEASURE", {
+          const result = await bridgeService.call(CALIPER_METHODS.MEASURE, {
             primarySelector,
             secondarySelector,
           });
@@ -173,7 +173,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async () => {
         try {
-          const result = await bridgeService.call("CALIPER_CLEAR", {});
+          const result = await bridgeService.call(CALIPER_METHODS.CLEAR, {});
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -204,7 +204,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ selector }) => {
         try {
-          const result = await bridgeService.call("CALIPER_WALK_DOM", { selector });
+          const result = await bridgeService.call(CALIPER_METHODS.WALK_DOM, { selector });
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
@@ -288,7 +288,7 @@ The output includes:
       },
       async ({ selector, maxDepth, maxNodes, continueFrom, minElementSize }) => {
         try {
-          const result = await bridgeService.call("CALIPER_WALK_AND_MEASURE", {
+          const result = await bridgeService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
             selector,
             maxDepth: maxDepth ?? 5,
             maxNodes,
@@ -328,7 +328,7 @@ The output includes:
       },
       async () => {
         try {
-          const result = await bridgeService.call("CALIPER_GET_CONTEXT", {});
+          const result = await bridgeService.call(CALIPER_METHODS.GET_CONTEXT, {});
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
@@ -584,30 +584,28 @@ You are comparing TWO elements to understand the styling of one (A) and apply co
 
 ### IMPORTANT: TAB MANAGEMENT
 
-${
-  tabIdA || tabIdB
-    ? `
+${tabIdA || tabIdB
+                  ? `
 You are working across multiple tabs. The agent-ID is **tab-specific** - if you send a command to the wrong tab, it will fail.
 
 **Before Each Command:**
 1. Use \`caliper_list_tabs\` to see all connected tabs
 2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
 `
-    : `
+                  : `
 Both selections are on the SAME tab. No tab switching required.
 `
-}
+                }
 
 ### PHASE 1: WALK SELECTION A (REFERENCE)
 
-${
-  tabIdA
-    ? `1. **Switch to Tab A**
+${tabIdA
+                  ? `1. **Switch to Tab A**
    Call \`caliper_switch_tab\` with tabId: "${tabIdA}"
 
 2. `
-    : "1. "
-}**Walk and Measure A**
+                  : "1. "
+                }**Walk and Measure A**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorA}"
    - maxDepth: 5
@@ -620,14 +618,13 @@ ${
 
 ### PHASE 2: WALK SELECTION B (TARGET)
 
-${
-  tabIdB
-    ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
+${tabIdB
+                  ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
    Call \`caliper_switch_tab\` with tabId: "${tabIdB}"
 
 ${tabIdA ? "4" : "3"}. `
-    : `${tabIdA ? "3" : "2"}. `
-}**Walk and Measure B**
+                  : `${tabIdA ? "3" : "2"}. `
+                }**Walk and Measure B**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorB}"
    - maxDepth: 5

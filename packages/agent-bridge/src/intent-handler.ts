@@ -25,7 +25,7 @@ import type {
   CaliperWalkDomPayload,
   CaliperSelectorInput,
 } from "@oyerinde/caliper-schema";
-import { BitBridge } from "@oyerinde/caliper-schema";
+import { BitBridge, CALIPER_METHODS } from "@oyerinde/caliper-schema";
 import { DEFAULT_WALK_DEPTH } from "./constants.js";
 import type { CaliperStateStore } from "./state-store.js";
 
@@ -39,7 +39,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       try {
         const info = JSON.parse(trimmed) as CaliperSelectorInput;
         return findElementByFingerprint(info);
-      } catch (_) {}
+      } catch (_) { }
     }
 
     if (trimmed.startsWith("caliper-")) {
@@ -61,7 +61,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       if (!element) {
         resolve({
           success: false,
-          method: "CALIPER_SELECT",
+          method: CALIPER_METHODS.SELECT,
           selector,
           error: `Element not found: ${selector}`,
           timestamp: Date.now(),
@@ -74,7 +74,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         const metadata = selectionSystem.getMetadata();
         resolve({
           success: true,
-          method: "CALIPER_SELECT",
+          method: CALIPER_METHODS.SELECT,
           selector,
           selection: sanitizeSelection(metadata)!,
           timestamp: Date.now(),
@@ -86,7 +86,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         unsubscribe();
         resolve({
           success: true,
-          method: "CALIPER_SELECT",
+          method: CALIPER_METHODS.SELECT,
           selector,
           selection: sanitizeSelection(metadata)!,
           timestamp: Date.now(),
@@ -106,7 +106,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       if (!primaryElement || !secondaryElement) {
         resolve({
           success: false,
-          method: "CALIPER_MEASURE",
+          method: CALIPER_METHODS.MEASURE,
           error:
             `Elements not found: ${!primaryElement ? primarySelector : ""} ${!secondaryElement ? secondarySelector : ""}`.trim(),
           timestamp: Date.now(),
@@ -119,7 +119,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       if (!measurement) {
         resolve({
           success: false,
-          method: "CALIPER_MEASURE",
+          method: CALIPER_METHODS.MEASURE,
           error: "Failed to create measurement",
           timestamp: Date.now(),
         });
@@ -135,7 +135,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       if (!sanitized) {
         resolve({
           success: false,
-          method: "CALIPER_MEASURE",
+          method: CALIPER_METHODS.MEASURE,
           error: "Failed to sanitize measurement result",
           timestamp: Date.now(),
         });
@@ -144,7 +144,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
 
       resolve({
         success: true,
-        method: "CALIPER_MEASURE",
+        method: CALIPER_METHODS.MEASURE,
         selector: primarySelector,
         measurement: sanitized,
         timestamp: Date.now(),
@@ -159,7 +159,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
     if (!element) {
       return {
         success: false,
-        method: "CALIPER_INSPECT",
+        method: CALIPER_METHODS.INSPECT,
         selector,
         error: `Element not found: ${selector}`,
         timestamp: Date.now(),
@@ -174,7 +174,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
 
       return {
         success: true,
-        method: "CALIPER_INSPECT",
+        method: CALIPER_METHODS.INSPECT,
         selector,
         distances: {
           top: rect.top,
@@ -211,7 +211,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
     if (!element) {
       return {
         success: false,
-        method: "CALIPER_WALK_DOM",
+        method: CALIPER_METHODS.WALK_DOM,
         selector,
         error: `Element not found: ${selector}`,
         timestamp: Date.now(),
@@ -229,7 +229,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
 
       return {
         success: true,
-        method: "CALIPER_WALK_DOM",
+        method: CALIPER_METHODS.WALK_DOM,
         selector,
         domContext: {
           element: getElSummary(element),
@@ -248,37 +248,37 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
 
     try {
       switch (intent.method) {
-        case "CALIPER_SELECT":
+        case CALIPER_METHODS.SELECT:
           result = await handleSelect(intent.params);
           break;
-        case "CALIPER_MEASURE":
+        case CALIPER_METHODS.MEASURE:
           result = await handleMeasure(intent.params);
           break;
-        case "CALIPER_INSPECT":
+        case CALIPER_METHODS.INSPECT:
           result = await handleInspect(intent.params);
           break;
-        case "CALIPER_WALK_DOM":
+        case CALIPER_METHODS.WALK_DOM:
           result = await handleWalkDom(intent.params);
           break;
 
-        case "CALIPER_FREEZE":
+        case CALIPER_METHODS.FREEZE:
           measurementSystem.freeze();
           result = {
             success: true,
-            method: "CALIPER_FREEZE",
+            method: CALIPER_METHODS.FREEZE,
             timestamp: Date.now(),
           };
           break;
-        case "CALIPER_CLEAR":
+        case CALIPER_METHODS.CLEAR:
           measurementSystem.abort();
           selectionSystem.clear();
           result = {
             success: true,
-            method: "CALIPER_CLEAR",
+            method: CALIPER_METHODS.CLEAR,
             timestamp: Date.now(),
           };
           break;
-        case "CALIPER_WALK_AND_MEASURE":
+        case CALIPER_METHODS.WALK_AND_MEASURE:
           try {
             const walkResult = await waitPostRaf(() =>
               walkAndMeasure(intent.params.selector, {
@@ -295,7 +295,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
 
             result = {
               success: true,
-              method: "CALIPER_WALK_AND_MEASURE",
+              method: CALIPER_METHODS.WALK_AND_MEASURE,
               selector: intent.params.selector,
               walkResult: stats,
               binaryPayload,
@@ -304,17 +304,17 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           } catch (walkError) {
             result = {
               success: false,
-              method: "CALIPER_WALK_AND_MEASURE",
+              method: CALIPER_METHODS.WALK_AND_MEASURE,
               selector: intent.params.selector,
               error: walkError instanceof Error ? walkError.message : String(walkError),
               timestamp: Date.now(),
             };
           }
           break;
-        case "CALIPER_GET_CONTEXT":
+        case CALIPER_METHODS.GET_CONTEXT:
           result = {
             success: true,
-            method: "CALIPER_GET_CONTEXT",
+            method: CALIPER_METHODS.GET_CONTEXT,
             context: getContextMetrics(),
             timestamp: Date.now(),
           };

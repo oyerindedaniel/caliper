@@ -27,7 +27,7 @@ const FAQ_ITEMS = [
     ),
   },
   {
-    question: "What is the 'Agent Bridge'?",
+    question: "What is the Agent Bridge?",
     answer: (
       <>
         The <strong>Agent Bridge</strong> connects Caliper to AI coding agents like Cursor or

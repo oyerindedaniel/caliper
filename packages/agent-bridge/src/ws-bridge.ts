@@ -1,7 +1,11 @@
-import type { CaliperActionResult, CaliperIntent, ToolCallMessage } from "@oyerinde/caliper-schema";
+import {
+  CaliperActionResult,
+  CaliperIntent,
+  RpcFactory,
+  JsonRpcRequest,
+} from "@oyerinde/caliper-schema";
 import { BitBridge } from "@oyerinde/caliper-schema";
 import { createLogger, BRIDGE_TAB_ID_KEY } from "@caliper/core";
-
 import { DEFAULT_WS_PORT } from "./constants.js";
 
 const logger = createLogger("bridge");
@@ -36,54 +40,47 @@ export function createWSBridge(options: BridgeOptions) {
         reconnectAttempts = 0;
 
         socket.send(
-          JSON.stringify({
-            type: "REGISTER_TAB",
-            payload: {
+          JSON.stringify(
+            RpcFactory.notification("caliper/registerTab", {
               tabId,
               url: window.location.href,
               title: document.title,
               isFocused: !document.hidden,
-            },
-          })
+            })
+          )
         );
       };
 
       socket.onmessage = async (event) => {
-        let messageId: string | undefined;
+        let messageId: string | number | undefined;
         try {
-          const message = JSON.parse(event.data) as ToolCallMessage;
+          const message = JSON.parse(event.data) as JsonRpcRequest;
           messageId = message.id;
 
-          const result = await onIntent(message);
+          const result = await onIntent(message as CaliperIntent);
 
           if (socket.readyState === WebSocket.OPEN) {
+            const id = messageId ?? null;
+
             if ("binaryPayload" in result && result.binaryPayload instanceof Uint8Array) {
               const { binaryPayload, ...metadata } = result;
-              const json = JSON.stringify({
-                type: "TOOL_RESPONSE",
-                id: messageId,
-                result: metadata,
-              });
+              const json = JSON.stringify(RpcFactory.response(id, metadata));
               socket.send(BitBridge.packEnvelope(json, binaryPayload));
             } else {
-              socket.send(
-                JSON.stringify({
-                  type: "TOOL_RESPONSE",
-                  id: messageId,
-                  result,
-                })
-              );
+              socket.send(JSON.stringify(RpcFactory.response(id, result)));
             }
           }
         } catch (error) {
           logger.error("Failed to handle MCP message:", error);
           if (messageId && socket.readyState === WebSocket.OPEN) {
             socket.send(
-              JSON.stringify({
-                type: "TOOL_RESPONSE",
-                id: messageId,
-                error: error instanceof Error ? error.message : String(error),
-              })
+              JSON.stringify(
+                RpcFactory.error(
+                  messageId,
+                  -32603,
+                  error instanceof Error ? error.message : String(error)
+                )
+              )
             );
           }
         }
@@ -123,12 +120,11 @@ export function createWSBridge(options: BridgeOptions) {
   function sendUpdate() {
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       activeSocket.send(
-        JSON.stringify({
-          type: "TAB_UPDATE",
-          payload: {
+        JSON.stringify(
+          RpcFactory.notification("caliper/tabUpdate", {
             isFocused: !document.hidden,
-          },
-        })
+          })
+        )
       );
     }
   }
