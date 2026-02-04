@@ -28,6 +28,7 @@ The AI agent gains "layout eyes" and can perform high-precision audits, measurem
 - **Viewport Rulers**: Draggable guidelines with magnetic snapping and chained distance measurements (Shift + R).
 - **Integrated Calculator**: Precise spatial math for complex component spacing (T/R/B/L/G).
 - **Agent Bridge**: Built-in support for AI-driven audits and programmatic UI inspection.
+- **Agent State Sync**: Real-time "passive observation" synchronization with AI agents, providing stable JSON fingerprints for seamless tool-based hand-off.
 - **Full Customization**: Fully configurable shortcuts and theme colors.
 
 ---

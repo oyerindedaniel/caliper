@@ -1,10 +1,12 @@
 import {
-  CaliperActionResult,
-  CaliperIntent,
+  type CaliperActionResult,
+  type CaliperIntent,
+  type NullableId,
   RpcFactory,
-  JsonRpcRequest,
+  type JsonRpcRequest,
+  CALIPER_METHODS,
+  BitBridge, type CaliperAgentState
 } from "@oyerinde/caliper-schema";
-import { BitBridge } from "@oyerinde/caliper-schema";
 import { createLogger, BRIDGE_TAB_ID_KEY } from "@caliper/core";
 import { DEFAULT_WS_PORT } from "./constants.js";
 
@@ -41,7 +43,7 @@ export function createWSBridge(options: BridgeOptions) {
 
         socket.send(
           JSON.stringify(
-            RpcFactory.notification("caliper/registerTab", {
+            RpcFactory.notification(CALIPER_METHODS.REGISTER_TAB, {
               tabId,
               url: window.location.href,
               title: document.title,
@@ -52,7 +54,7 @@ export function createWSBridge(options: BridgeOptions) {
       };
 
       socket.onmessage = async (event) => {
-        let messageId: string | number | undefined;
+        let messageId: NullableId = null;
         try {
           const message = JSON.parse(event.data) as JsonRpcRequest;
           messageId = message.id;
@@ -121,7 +123,7 @@ export function createWSBridge(options: BridgeOptions) {
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       activeSocket.send(
         JSON.stringify(
-          RpcFactory.notification("caliper/tabUpdate", {
+          RpcFactory.notification(CALIPER_METHODS.TAB_UPDATE, {
             isFocused: !document.hidden,
           })
         )
@@ -133,6 +135,16 @@ export function createWSBridge(options: BridgeOptions) {
 
   connect();
 
+  function sendStateUpdate(state: CaliperAgentState) {
+    if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
+      activeSocket.send(
+        JSON.stringify(
+          RpcFactory.notification(CALIPER_METHODS.STATE_UPDATE, state)
+        )
+      );
+    }
+  }
+
   return {
     destroy: () => {
       document.removeEventListener("visibilitychange", sendUpdate);
@@ -142,5 +154,6 @@ export function createWSBridge(options: BridgeOptions) {
         activeSocket = null;
       }
     },
+    sendStateUpdate,
   };
 }

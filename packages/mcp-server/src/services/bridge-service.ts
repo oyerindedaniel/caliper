@@ -8,6 +8,10 @@ import {
   BitBridge,
   RpcFactory,
   CALIPER_METHODS,
+  type Id,
+  isId,
+  type CaliperParams,
+  isCaliperActionResult,
 } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -15,13 +19,16 @@ import { generateId } from "../utils/id.js";
 import { BridgeTimeoutError, BridgeValidationError } from "../utils/errors.js";
 import { DEFAULT_BRIDGE_PORT, BRIDGE_REQUEST_TIMEOUT_MS } from "../shared/constants.js";
 
+import { EventEmitter } from "events";
+import { BRIDGE_EVENTS } from "../shared/events.js";
+
 const logger = createLogger("mcp-bridge");
 
 function getExponentialBackoff(attempt: number, baseDelay: number): number {
   return Math.pow(2, attempt) * baseDelay;
 }
 
-export class BridgeService {
+export class BridgeService extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private pendingCalls = new Map<
     string,
@@ -29,7 +36,9 @@ export class BridgeService {
   >();
   private startupError: string | null = null;
 
-  constructor() { }
+  constructor() {
+    super();
+  }
 
   async start(port: number = DEFAULT_BRIDGE_PORT, retries: number = 3): Promise<void> {
     if (this.wss) return;
@@ -117,8 +126,11 @@ export class BridgeService {
           if (!result.success) {
             logger.error("Invalid WS message format:", z.treeifyError(result.error));
 
-            const msgObj = rawMessage as { id?: string | number };
-            if (msgObj?.id !== undefined && (typeof msgObj.id === "string" || typeof msgObj.id === "number")) {
+            const msgObj = rawMessage as { id?: Id };
+            if (
+              msgObj?.id !== undefined &&
+              isId(msgObj.id)
+            ) {
               const resolve = this.pendingCalls.get(String(msgObj.id));
               if (resolve) {
                 resolve({ error: new BridgeValidationError().message });
@@ -127,7 +139,6 @@ export class BridgeService {
             }
             return;
           }
-
 
           const message = result.data;
 
@@ -138,26 +149,29 @@ export class BridgeService {
               if (resolve) {
                 const finalResult = message.result;
 
-                if (
-                  "success" in finalResult &&
-                  finalResult.success &&
-                  "method" in finalResult &&
-                  finalResult.method === CALIPER_METHODS.WALK_AND_MEASURE &&
-                  binaryPayload
-                ) {
-                  try {
-                    const root = BitBridge.deserialize(binaryPayload);
-                    if ("walkResult" in finalResult) {
-                      finalResult.walkResult.root = root;
+                if (isCaliperActionResult(finalResult)) {
+                  if (
+                    finalResult.success &&
+                    finalResult.method === CALIPER_METHODS.WALK_AND_MEASURE &&
+                    binaryPayload
+                  ) {
+                    try {
+                      const root = BitBridge.deserialize(binaryPayload);
+                      if ("walkResult" in finalResult) {
+                        finalResult.walkResult.root = root;
+                      }
+                    } catch (error) {
+                      logger.error("Bit-Bridge reconstruction failed:", error);
                     }
-                    logger.info(
-                      `Bit-Bridge: Reconstructed tree from ${binaryPayload.byteLength} bytes.`
-                    );
-                  } catch (error) {
-                    logger.error("Bit-Bridge reconstruction failed:", error);
                   }
+                  resolve(finalResult);
+                } else if (finalResult && typeof finalResult === "object" && "error" in finalResult) {
+                  resolve(finalResult as { error: string });
+                } else {
+                  // If we reach here, we have a result that doesn't match our specific schemas but is valid JSON-RPC.
+                  // Since we expect strict types, we treat this as a validation error or unexpected type.
+                  resolve({ error: "Unexpected result format received from bridge" });
                 }
-                resolve(finalResult);
                 this.pendingCalls.delete(String(message.id));
               }
             } else if ("error" in message) {
@@ -185,6 +199,9 @@ export class BridgeService {
               if (tabId) {
                 tabManager.updateTab(tabId, isFocused);
               }
+            } else if (message.method === CALIPER_METHODS.STATE_UPDATE) {
+              const state = message.params;
+              this.emit(BRIDGE_EVENTS.STATE, state);
             }
           }
         } catch (error: unknown) {
@@ -202,9 +219,9 @@ export class BridgeService {
     logger.info(`WebSocket Relay initialized on port ${this.wss.options.port}`);
   }
 
-  async call<T = CaliperActionResult>(
-    method: CaliperMethod,
-    params: Record<string, unknown>,
+  async call<M extends CaliperMethod, T = CaliperActionResult>(
+    method: M,
+    params: CaliperParams<M>,
     retries: number = 0
   ): Promise<T> {
     if (this.startupError) {
@@ -240,9 +257,7 @@ export class BridgeService {
           }
         });
 
-        tab.ws.send(
-          JSON.stringify(RpcFactory.request(method, params, callId))
-        );
+        tab.ws.send(JSON.stringify(RpcFactory.request(method, params, callId)));
       });
     };
 

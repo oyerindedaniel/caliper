@@ -111,6 +111,7 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 ## Resources 📚
 
 - `caliper://tabs`: Live list of connected browser windows.
+- `caliper://state`: Real-time state of the active browser tab (Active Selection, Measurements, and Stable JSON Fingerprints for seamless tool-based hand-off).
 
 ## License ⚖️
 

@@ -131,6 +131,41 @@ export default function AgenticDocsPage() {
         </section>
 
         <section className={styles.section}>
+          <h2 className={styles.sectionHeader}>Resources</h2>
+          <p className="mb-18 op-8">
+            Agents can subscribe to these resources for real-time state observation:
+          </p>
+          <div className={styles.tableContainer}>
+            <table className={styles.commandTable}>
+              <thead>
+                <tr>
+                  <th>Resource</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <code>caliper://tabs</code>
+                  </td>
+                  <td>Live list of all connected browser windows/tabs.</td>
+                </tr>
+                <tr>
+                  <td>
+                    <code>caliper://state</code>
+                  </td>
+                  <td>
+                    Real-time passive observation of the active tab. Includes selection metadata,
+                    measurement results, and stable <strong>JSON Fingerprints</strong> that allow agents
+                    to immediately "hand-off" manual focus to inspection tools (like <code>caliper_inspect</code>).
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className={styles.section}>
           <h2 className={styles.sectionHeader}>Stable Selectors</h2>
           <p className="mb-18 op-8">
             AI agents often need to rediscover elements after triggering code changes. While Caliper

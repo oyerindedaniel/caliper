@@ -2,10 +2,6 @@
  * @caliper/agent-bridge
  * Enables AI agents to use Caliper's high-precision measurement engine
  *
- * This bridge integrates with @caliper/core systems to provide:
- * - Passive state observation
- * - Active intent dispatching
- *
  * @example
  * ```typescript
  * import { createMeasurementSystem, createSelectionSystem } from "@oyerinde/caliper/core";
@@ -32,7 +28,7 @@ import type {
 } from "@caliper/core";
 import { createLogger } from "@caliper/core";
 import { DEFAULT_WS_PORT } from "./constants.js";
-import { createStateStore } from "./state-store.js";
+import { createStateStore, initStateSync } from "./state-store.js";
 import "./types.js";
 
 const logger = createLogger("agent-bridge");
@@ -97,9 +93,15 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
 
           const wsPort = config.wsPort ?? DEFAULT_WS_PORT;
           const wsUrl = `ws://localhost:${wsPort}`;
+
           const wsBridge = createWSBridge({
             onIntent: (intent) => intentHandler!.dispatch(intent),
             wsUrl,
+          });
+
+          const disposeSync = initStateSync(stateStore, systems, (state) => {
+            wsBridge.sendStateUpdate(state);
+            config.onStateChange?.(state);
           });
 
           window.dispatchCaliperIntent = async (
@@ -120,6 +122,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
           logger.info(`Initialized. MCP Relay enabled on port ${wsPort} (${wsUrl})`);
 
           bridgeDispose = () => {
+            disposeSync();
             wsBridge.destroy();
             cleanup();
             logger.info("Bridge stopped. Connections closed.");

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ContextMetricsSchema, MeasurementResultSchema, SelectionMetadataSchema } from "./core.js";
-import { CaliperComputedStylesSchema, CaliperNodeSchema } from "./audit.js";
+import { CaliperComputedStylesSchema, CaliperNodeSchema, CaliperSelectorInputSchema } from "./audit.js";
 import {
     JSONRPCRequestSchema,
     JSONRPCNotificationSchema,
@@ -52,6 +52,7 @@ export const CALIPER_METHODS = {
     GET_CONTEXT: "CALIPER_GET_CONTEXT",
     REGISTER_TAB: "caliper/registerTab",
     TAB_UPDATE: "caliper/tabUpdate",
+    STATE_UPDATE: "caliper/stateUpdate",
 } as const;
 
 export const CaliperMethodSchema = z.enum([
@@ -63,6 +64,9 @@ export const CaliperMethodSchema = z.enum([
     CALIPER_METHODS.WALK_DOM,
     CALIPER_METHODS.WALK_AND_MEASURE,
     CALIPER_METHODS.GET_CONTEXT,
+    CALIPER_METHODS.REGISTER_TAB,
+    CALIPER_METHODS.TAB_UPDATE,
+    CALIPER_METHODS.STATE_UPDATE,
 ]);
 
 
@@ -149,12 +153,17 @@ export type SourceHints = z.infer<typeof SourceHintsSchema>;
 
 export const CaliperAgentStateSchema = z.object({
     viewport: ViewportSchema,
-    pageGeometry: z.record(z.string(), ElementGeometrySchema),
     activeSelection: SelectionMetadataSchema.nullable(),
+    selectionFingerprint: CaliperSelectorInputSchema.nullable(),
     lastMeasurement: MeasurementResultSchema.nullable(),
-    lastActionResult: CaliperActionResultSchema.nullable(),
+    measurementFingerprint: CaliperSelectorInputSchema.nullable(),
     lastUpdated: z.number(),
 });
+
+export const IdSchema = z.union([z.string(), z.number()]);
+
+export type Id = z.infer<typeof IdSchema>;
+export type NullableId<T extends Id = Id> = T | null;
 
 export type JsonRpcRequest = JSONRPCRequest;
 export type JsonRpcResponse = JSONRPCResponse;
@@ -169,34 +178,42 @@ export {
 
 export class RpcFactory {
     static request<T extends Record<string, unknown>>(
-        method: string,
+        method: CaliperMethod,
         params: T,
-        id: string | number
+        id: Id
     ): JsonRpcRequest {
         return JSONRPCRequestSchema.parse({ jsonrpc: "2.0", method, params, id }) as JsonRpcRequest;
     }
 
-    static response<T extends Record<string, unknown>>(id: string | number | null, result: T): JsonRpcResponse {
+    static response<T extends Record<string, unknown>>(id: NullableId, result: T): JsonRpcResponse {
         return JSONRPCResultResponseSchema.parse({ jsonrpc: "2.0", id, result }) as JsonRpcResponse;
     }
 
-    static error(id: string | number | null, code: number, message: string, data?: unknown): JsonRpcResponse {
+    static error(id: NullableId, code: number, message: string, data?: unknown): JsonRpcResponse {
         return JSONRPCErrorResponseSchema.parse({ jsonrpc: "2.0", id, error: { code, message, data } }) as JsonRpcResponse;
     }
 
     static notification<T extends Record<string, unknown>>(
-        method: string,
+        method: CaliperMethod,
         params: T
     ): JsonRpcNotification {
         return JSONRPCNotificationSchema.parse({ jsonrpc: "2.0", method, params }) as JsonRpcNotification;
     }
 }
 
+export const isId = (value: unknown): value is Id => {
+    return typeof value === "string" || typeof value === "number";
+};
+
+export const isCaliperActionResult = (value: unknown): value is CaliperActionResult => {
+    return CaliperActionResultSchema.safeParse(value).success;
+};
+
 export const CaliperResponseSchema = z.union([
     z.object({
         jsonrpc: z.literal("2.0"),
-        id: z.union([z.string(), z.number()]),
-        result: z.union([CaliperActionResultSchema, CaliperAgentStateSchema]),
+        id: IdSchema,
+        result: CaliperActionResultSchema,
     }),
     JSONRPCErrorResponseSchema,
 ]);
@@ -219,12 +236,17 @@ export const CaliperNotificationSchema = z.union([
             isFocused: z.boolean(),
         }),
     }),
+    z.object({
+        jsonrpc: z.literal("2.0"),
+        method: z.literal(CALIPER_METHODS.STATE_UPDATE),
+        params: CaliperAgentStateSchema,
+    })
 ]);
 
 export const BridgeMessageSchema = z.union([
-    JSONRPCRequestSchema,
     CaliperResponseSchema,
     CaliperNotificationSchema,
+    JSONRPCResultResponseSchema,
 ]);
 
 export const CaliperSelectPayloadSchema = z.object({
@@ -254,6 +276,7 @@ export const CaliperWalkAndMeasurePayloadSchema = z.object({
 });
 
 export const CaliperGetContextPayloadSchema = z.object({});
+
 export type ViewportState = z.infer<typeof ViewportSchema>;
 export type ElementGeometry = z.infer<typeof ElementGeometrySchema>;
 export type CaliperActionResult = z.infer<typeof CaliperActionResultSchema>;
@@ -276,6 +299,8 @@ export type CaliperIntent = JsonRpcRequest & (
     | { method: typeof CALIPER_METHODS.WALK_AND_MEASURE; params: CaliperWalkAndMeasurePayload }
     | { method: typeof CALIPER_METHODS.GET_CONTEXT; params: CaliperGetContextPayload }
 );
+
+export type CaliperParams<M extends CaliperMethod> = Extract<CaliperIntent, { method: M }>["params"];
 
 export type BridgeMessageUnion =
     | JsonRpcRequest

@@ -25,6 +25,7 @@ export interface MeasurementSystem {
   cleanup: () => void;
   getState: () => MeasurementState;
   getCurrentResult: () => MeasurementResult | null;
+  getSecondaryElement: () => Element | null;
   getCalculator: () => CalculatorIntegration;
   getProjection: () => ProjectionSystem;
   getRuler: () => RulerSystem;
@@ -143,6 +144,10 @@ export function createMeasurementSystem(): MeasurementSystem {
     return currentResult;
   }
 
+  function getSecondaryElement(): Element | null {
+    return previousElement;
+  }
+
   function getCalculator(): CalculatorIntegration {
     return calculator;
   }
@@ -213,6 +218,7 @@ export function createMeasurementSystem(): MeasurementSystem {
     cleanup,
     getState,
     getCurrentResult,
+    getSecondaryElement,
     getCalculator,
     getProjection,
     getRuler,

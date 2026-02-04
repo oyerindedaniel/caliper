@@ -1,12 +1,18 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { MAX_DESCENDANT_COUNT, RECOMMENDED_PAGINATION_THRESHOLD, CALIPER_METHODS } from "@oyerinde/caliper-schema";
+import {
+  MAX_DESCENDANT_COUNT,
+  RECOMMENDED_PAGINATION_THRESHOLD,
+  CALIPER_METHODS,
+  type CaliperAgentState,
+} from "@oyerinde/caliper-schema";
 import { bridgeService } from "./bridge-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { parseColor, calculateDeltaE, calculateContrastRatio } from "../utils/color-utils.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
+import { BRIDGE_EVENTS } from "../shared/events.js";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -27,6 +33,7 @@ const logger = createLogger("mcp-server");
 export class CaliperMcpServer {
   private server: McpServer;
   private port: number;
+  private lastState: CaliperAgentState | null = null;
 
   constructor(port: number = DEFAULT_BRIDGE_PORT) {
     this.port = port;
@@ -487,6 +494,40 @@ Returns the Delta E value and a human-readable interpretation:
         };
       }
     );
+
+    this.server.registerResource(
+      "caliper-state",
+      "caliper://state",
+      {
+        description: `Provides a real-time stream of the active browser environment. This is your primary source for "listening" to what the user is doing. 
+        
+        It contains:
+        - viewport: Current scroll positions and dimensions.
+        - activeSelection: Visual metadata of the currently selected element.
+        - selectionFingerprint: A stable JSON identifier (agentId, tag, text content) for the active selection. Use the 'selector' property from this object as input for 'caliper_inspect' or 'caliper_walk_and_measure' to perform high-precision audits on what the user just picked.
+        - lastMeasurement & measurementFingerprint: Context for the most recent distance measurement between two elements.
+        
+        USE CASE: When you receive a notification that this resource has updated, read it to understand the user's current focus. If a 'selectionFingerprint' is present, you can immediately offer to 'Inspect' or 'Audit' that element without asking the user for a selector.`
+      },
+      async () => {
+        return {
+          contents: [
+            {
+              uri: "caliper://state",
+              mimeType: "application/json",
+              text: JSON.stringify(this.lastState, null, 2),
+            },
+          ],
+        };
+      }
+    );
+
+    bridgeService.on(BRIDGE_EVENTS.STATE, (state: CaliperAgentState) => {
+      this.lastState = state;
+      this.server.server.sendResourceUpdated({ uri: "caliper://state" }).catch((error) => {
+        logger.warn("Failed to notify resource update", error);
+      });
+    });
   }
 
   private registerPrompts() {

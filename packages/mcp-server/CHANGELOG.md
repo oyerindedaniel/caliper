@@ -10,6 +10,6 @@ All notable changes to this project will be documented in this file.
 - **MCP tools**: `caliper_list_tabs`, `caliper_get_context`, `caliper_switch_tab`, `caliper_inspect`, `caliper_measure`, `caliper_clear`, `caliper_walk_dom`, and `caliper_walk_and_measure` (supports semantic rediscovery via JSON fingerprints).
 - **Accessibility Tools**: `caliper_check_contrast` for WCAG 2.1 contrast audits and `caliper_delta_e` for perceptual color difference.
 - **MCP prompts**: `caliper-selector-audit` and `caliper-selectors-compare`.
-- **MCP resources**: `caliper://tabs`.
+- **MCP resources**: `caliper://tabs` and `caliper://state` (provides real-time selection and fingerprint data for seamless tool-based hand-off to inspection tools).
 - CLI support for dynamic port assignment via `--port/-p`.
 - Zero-dependency runtime.

@@ -1,4 +1,5 @@
 import type { CaliperNode, BoxEdges, CaliperComputedStyles } from "./audit.js";
+import { type Id } from "./bridge.js";
 
 type StyleSerializerEntry<T> = {
     collectStrings: (value: T, collect: (strVal: string | null | undefined) => void) => void;
@@ -98,7 +99,7 @@ const nullableNumberSerializer = (): StyleSerializerEntry<number | null | undefi
     },
 });
 
-const numberOrStringSerializer = (defaultValue: string | number = ""): StyleSerializerEntry<number | string | undefined> => ({
+const numberOrStringSerializer = (defaultValue: Id = ""): StyleSerializerEntry<number | string | undefined> => ({
     collectStrings: (value, collect) => collect(value == null ? undefined : String(value)),
     serialize: (value, context) => {
         context.view.setUint16(context.offset, context.getStringId(value == null ? undefined : String(value)));

@@ -39,7 +39,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       try {
         const info = JSON.parse(trimmed) as CaliperSelectorInput;
         return findElementByFingerprint(info);
-      } catch (_) { }
+      } catch (_) {}
     }
 
     if (trimmed.startsWith("caliper-")) {
