@@ -8,10 +8,9 @@
 
   display: grid;
   grid-template-rows: auto 1fr auto;
-  align-items: center;
-  justify-items: center;
+  grid-template-columns: 1fr var(--content-max-width) 1fr;
   min-height: 100svh;
-  padding: 80px;
+  padding: 80px 0;
   gap: 64px;
   font-synthesis: none;
   width: 100%;
@@ -32,8 +31,10 @@
   display: flex;
   flex-direction: column;
   grid-row-start: 2;
+  grid-column: 2;
   width: 100%;
-  max-width: 600px;
+  max-width: var(--content-max-width);
+  justify-self: center;
 }
 
 .main p {
@@ -49,6 +50,7 @@
 .footer {
   font-family: var(--font-geist-sans);
   grid-row-start: 3;
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

@@ -174,7 +174,7 @@ if (process.env.NODE_ENV === "development") {
   };
 
   return (
-    <section className={styles.section}>
+    <section id="installation" className={styles.section}>
       <h2 className={styles.sectionHeader}>Installation</h2>
 
       <div className="mb-32">

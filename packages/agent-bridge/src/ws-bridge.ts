@@ -5,7 +5,8 @@ import {
   RpcFactory,
   type JsonRpcRequest,
   CALIPER_METHODS,
-  BitBridge, type CaliperAgentState
+  BitBridge,
+  type CaliperAgentState,
 } from "@oyerinde/caliper-schema";
 import { createLogger, BRIDGE_TAB_ID_KEY } from "@caliper/core";
 import { DEFAULT_WS_PORT } from "./constants.js";
@@ -138,9 +139,7 @@ export function createWSBridge(options: BridgeOptions) {
   function sendStateUpdate(state: CaliperAgentState) {
     if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
       activeSocket.send(
-        JSON.stringify(
-          RpcFactory.notification(CALIPER_METHODS.STATE_UPDATE, state)
-        )
+        JSON.stringify(RpcFactory.notification(CALIPER_METHODS.STATE_UPDATE, state))
       );
     }
   }

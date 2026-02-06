@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ContextMetricsSchema, MeasurementResultSchema, SelectionMetadataSchema } from "./core.js";
-import { CaliperComputedStylesSchema, CaliperNodeSchema, CaliperSelectorInputSchema } from "./audit.js";
+import { CaliperComputedStylesSchema, CaliperNodeSchema, CaliperSelectorInputSchema, WalkOptionsSchema, type WalkOptionsBase } from "./audit.js";
 import {
     JSONRPCRequestSchema,
     JSONRPCNotificationSchema,
@@ -156,7 +156,10 @@ export const CaliperAgentStateSchema = z.object({
     activeSelection: SelectionMetadataSchema.nullable(),
     selectionFingerprint: CaliperSelectorInputSchema.nullable(),
     lastMeasurement: MeasurementResultSchema.nullable(),
-    measurementFingerprint: CaliperSelectorInputSchema.nullable(),
+    measurementFingerprint: z.object({
+        primary: CaliperSelectorInputSchema,
+        secondary: CaliperSelectorInputSchema,
+    }).nullable(),
     lastUpdated: z.number(),
 });
 
@@ -267,12 +270,8 @@ export const CaliperWalkDomPayloadSchema = z.object({
     depth: z.number().optional(),
 });
 
-export const CaliperWalkAndMeasurePayloadSchema = z.object({
+export const CaliperWalkAndMeasurePayloadSchema = WalkOptionsSchema.extend({
     selector: z.string(),
-    maxDepth: z.number().optional(),
-    maxNodes: z.number().optional(),
-    continueFrom: z.string().optional(),
-    minElementSize: z.number().optional(),
 });
 
 export const CaliperGetContextPayloadSchema = z.object({});

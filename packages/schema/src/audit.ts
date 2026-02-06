@@ -182,6 +182,16 @@ export interface CaliperNode {
     ariaHidden?: boolean;
 }
 
+export const WalkOptionsSchema = z.object({
+    maxDepth: z.number().optional(),
+    maxNodes: z.number().optional(),
+    continueFrom: z.string().optional(),
+    minElementSize: z.number().optional(),
+    ignoreSelectors: z.array(z.string()).optional(),
+});
+
+export type WalkOptionsBase = z.infer<typeof WalkOptionsSchema>;
+
 export type BoxEdges = z.infer<typeof BoxEdgesSchema>;
 export type CaliperComputedStyles = z.infer<typeof CaliperComputedStylesSchema>;
 export type ParentGap = z.infer<typeof ParentGapSchema>;

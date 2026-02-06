@@ -9,20 +9,27 @@ import type {
 } from "@oyerinde/caliper-schema";
 import { isRenderable } from "../../shared/utils/dom-utils.js";
 
-export interface ScrollState extends Omit<BaseScrollState, "containerRect"> {
+export interface ScrollState extends BaseScrollState {
   element?: HTMLElement;
-  containerRect: DOMRect | null; // In document coordinates (can be null in serialized state)
+  containerRect: DOMRect | null; // In document coordinates
 }
 
 export type PositionMode = BasePositionMode;
 
 export type StickyConfig = BaseStickyConfig;
 
-export interface DeducedGeometry extends Omit<BaseSelectionMetadata, "scrollHierarchy" | "rect"> {
+export interface DeducedGeometry extends Omit<
+  BaseSelectionMetadata,
+  "scrollHierarchy" | "rect" | "stickyConfig"
+> {
   rect: DOMRect;
   scrollHierarchy: ScrollState[];
+  stickyConfig?: StickyConfig;
   depth: number;
   containingBlock: HTMLElement | null;
+  position: PositionMode;
+  initialWindowX: number;
+  initialWindowY: number;
 }
 
 export interface LiveGeometry {
@@ -47,29 +54,142 @@ export function getScrollAwareRect(elementRect: DOMRect): DOMRect {
   );
 }
 
-export function isScrollContainer(element: Element): boolean {
-  if (!isRenderable(element)) return false;
-  const style = window.getComputedStyle(element);
-  return /(auto|scroll|clip)/.test(style.overflow + style.overflowY + style.overflowX);
+/** True if overflow/overflowX/overflowY indicate a clipping or scrolling box (auto, scroll, hidden, clip). */
+function overflowIndicatesClipping(style: CSSStyleDeclaration): boolean {
+  return /(auto|scroll|hidden|clip)/.test(style.overflow + style.overflowY + style.overflowX);
 }
 
-export function getScrollHierarchy(element: Element): ScrollState[] {
-  const hierarchy: ScrollState[] = [];
-  let parent = element.parentElement;
+export function isScrollContainer(element: Element): boolean {
+  if (!isRenderable(element)) return false;
+  if (element.tagName.toLowerCase() === "svg") return false;
+  const style = window.getComputedStyle(element);
+  // Broad definition: scroll or clip.
+  return overflowIndicatesClipping(style);
+}
 
-  while (parent && parent !== document.documentElement) {
-    if (isScrollContainer(parent)) {
-      const containerElement = parent as HTMLElement;
-      hierarchy.push({
+/**
+ * Returns true if an element establishes a scrolling box (can have scrollTop/Left).
+ * 'overflow: clip' does NOT establish a scrolling box.
+ */
+function establishesScrollingBox(element: Element): boolean {
+  const style = window.getComputedStyle(element);
+  return /(auto|scroll|hidden)/.test(style.overflow + style.overflowY + style.overflowX);
+}
+
+interface FullHierarchyResult {
+  scrollHierarchy: ScrollState[];
+  positionMode: PositionMode;
+  scrollAnchor: HTMLElement | null;
+  containingBlock: HTMLElement | null;
+  treeDepth: number;
+  anchorAbsoluteDepth: number;
+}
+
+/**
+ * Build scroll hierarchy and inherited position mode (fixed/sticky) from element to document.
+ * Depth from document root is computed per ancestor during the same walk.
+ */
+function getFullHierarchy(element: Element): FullHierarchyResult {
+  const ancestors: Element[] = [];
+  let current: Element | null = element;
+  while (current) {
+    ancestors.push(current);
+    if (current === document.documentElement) break;
+    current = current.parentElement;
+  }
+  const n = ancestors.length;
+  if (n <= 1) {
+    return {
+      scrollHierarchy: [],
+      positionMode: "static",
+      scrollAnchor: null,
+      containingBlock: null,
+      treeDepth: 0,
+      anchorAbsoluteDepth: -1,
+    };
+  }
+
+  const styles: CSSStyleDeclaration[] = [];
+  for (let i = 0; i < n; i++) {
+    const node = ancestors[i];
+    if (node !== undefined) styles.push(window.getComputedStyle(node));
+  }
+
+  const hasStickyAbove: boolean[] = [];
+  hasStickyAbove[n - 1] = false;
+  for (let i = n - 2; i >= 0; i--) {
+    const nextStyle = styles[i + 1];
+    hasStickyAbove[i] =
+      (nextStyle !== undefined && nextStyle.position === "sticky") ||
+      (hasStickyAbove[i + 1] ?? false);
+  }
+
+  const scrollHierarchy: ScrollState[] = [];
+  let positionMode: PositionMode = "static";
+  let scrollAnchor: HTMLElement | null = null;
+  let containingBlock: HTMLElement | null = null;
+  let anchorAbsoluteDepth = -1;
+
+  for (let i = 0; i < n; i++) {
+    const ancestor = ancestors[i];
+    if (ancestor === undefined || ancestor === document.documentElement) break;
+    if (!isRenderable(ancestor)) continue;
+
+    const style = styles[i];
+    if (style === undefined) continue;
+    const depthFromRoot = n - 1 - i;
+
+    if (positionMode === "static") {
+      if (style.position === "fixed") {
+        positionMode = "fixed";
+        scrollAnchor = ancestor as HTMLElement;
+        anchorAbsoluteDepth = depthFromRoot;
+      } else if (style.position === "sticky") {
+        positionMode = "sticky";
+        scrollAnchor = ancestor as HTMLElement;
+        anchorAbsoluteDepth = depthFromRoot;
+      }
+    }
+
+    if (
+      ancestor !== element &&
+      !containingBlock &&
+      (style.transform !== "none" ||
+        style.filter !== "none" ||
+        style.perspective !== "none" ||
+        style.contain === "paint" ||
+        style.contain === "layout" ||
+        style.willChange === "transform" ||
+        style.willChange === "filter")
+    ) {
+      containingBlock = ancestor as HTMLElement;
+    }
+
+    if (i >= 1 && overflowIndicatesClipping(style)) {
+      const containerElement = ancestor as HTMLElement;
+      scrollHierarchy.push({
         element: containerElement,
         initialScrollTop: containerElement.scrollTop,
         initialScrollLeft: containerElement.scrollLeft,
         containerRect: getScrollAwareRect(containerElement.getBoundingClientRect()),
+        absoluteDepth: depthFromRoot,
+        hasStickyAncestor: hasStickyAbove[i] ?? false,
       });
     }
-    parent = parent.parentElement;
   }
-  return hierarchy;
+
+  return {
+    scrollHierarchy,
+    positionMode,
+    scrollAnchor,
+    containingBlock,
+    treeDepth: n - 1,
+    anchorAbsoluteDepth,
+  };
+}
+
+export function getScrollHierarchy(element: Element): ScrollState[] {
+  return getFullHierarchy(element).scrollHierarchy;
 }
 
 /**
@@ -84,13 +204,29 @@ function calculateStickyRef(
   isOppositeMode: boolean
 ): number {
   const staticRelationship = naturalPosition - scrollOffset;
+
+  // Check if containerDimension is negative (indicates cross-container capping mode)
+  const isCrossContainerMode = containerDimension < 0;
+  const absContainerDim = Math.abs(containerDimension);
+
   if (!isOppositeMode) {
     let stuck = Math.max(staticRelationship, threshold);
-    stuck = Math.min(stuck, containerDimension - elementDimension);
+
+    if (isCrossContainerMode) {
+      // Cross-container capping: distance from element to container bottom
+      // Max viewport pos = (naturalPos + distance) - elementDim - scrollOffset
+      const maxViewportPos = naturalPosition + absContainerDim - elementDimension - scrollOffset;
+      stuck = Math.min(stuck, maxViewportPos);
+    } else {
+      // Same-container capping: total container height
+      stuck = Math.min(stuck, absContainerDim - elementDimension);
+    }
+
     return stuck;
   } else {
-    let stuck = Math.min(staticRelationship, containerDimension - elementDimension - threshold);
+    let stuck = Math.min(staticRelationship, absContainerDim - elementDimension - threshold);
     stuck = Math.max(stuck, 0);
+
     return stuck;
   }
 }
@@ -112,7 +248,7 @@ function calculateStickyDelta(
   const startRef = calculateStickyRef(
     initialScroll,
     naturalPosition,
-    threshold,
+    threshold ?? -Infinity,
     containerDimension,
     elementDimension,
     isOppositeMode
@@ -121,7 +257,7 @@ function calculateStickyDelta(
   const endRef = calculateStickyRef(
     currentScroll,
     naturalPosition,
-    threshold,
+    threshold ?? -Infinity,
     containerDimension,
     elementDimension,
     isOppositeMode
@@ -130,96 +266,198 @@ function calculateStickyDelta(
   return startRef - endRef;
 }
 
+/**
+ * Calculates the total scroll offset required to sync an overlay element
+ * with its DOM target.
+ *
+ * UNIFIED COORDINATE MODEL (Document-Space Shift):
+ * To keep a fixed-root overlay synced with a moving target element, we calculate
+ * how much the target has moved in Document Space since the selection was captured.
+ *
+ * Shift = InitialDocumentPosition - CurrentDocumentPosition
+ *
+ * 1. Internal Scrollers: Movement of child relative to container parent.
+ * 2. Window Scroller: Movement of the entire document relative to the viewport.
+ *
+ * By accumulating (Initial - Current) across the entire hierarchy, we get the exact
+ * negative displacement needed to "counter-act" the move and stay glued to the target.
+ */
 export function getTotalScrollDelta(
   hierarchy: ScrollState[],
   position: PositionMode = "static",
   sticky?: StickyConfig,
-  initWinX = 0,
-  initWinY = 0,
+  initialWindowX = 0,
+  initialWindowY = 0,
   hasContainingBlock = false
 ) {
-  let deltaX = 0;
-  let deltaY = 0;
+  let totalDeltaX = 0;
+  let totalDeltaY = 0;
+  let stickyApplied = false;
 
   for (let index = 0; index < hierarchy.length; index++) {
     const scrollState = hierarchy[index];
     if (!scrollState) continue;
 
-    // Check if THIS container is fixed.
-    // If it is, any scroll above it doesn't move it relative to viewport.
-    const isFixed = scrollState.element
-      ? window.getComputedStyle(scrollState.element).position === "fixed"
-      : false;
+    const element = scrollState.element!;
+    const style = window.getComputedStyle(element);
+    const isFixed = style.position === "fixed";
+    const isScrollingBox = establishesScrollingBox(element);
 
-    let stepDeltaX = scrollState.element
-      ? scrollState.element.scrollLeft - scrollState.initialScrollLeft
-      : 0;
-    let stepDeltaY = scrollState.element
-      ? scrollState.element.scrollTop - scrollState.initialScrollTop
-      : 0;
+    if (isScrollingBox) {
+      /**
+       * Depth-Aware Sticky Logic:
+       * Only apply sticky pinning thresholds if the current scroller is at or above
+       * the sticky anchor's depth in the tree. This prevents "sticky leakage"
+       * where internal scrollers inside a sticky element incorrectly attempt to pin.
+       */
+      const isDescendantOfStickyAnchor =
+        sticky && scrollState.absoluteDepth > sticky.anchorAbsoluteDepth;
 
-    // Apply sticking behavior to the nearest container scroll
-    if (index === 0 && position === "sticky" && sticky && scrollState.element) {
-      stepDeltaX = calculateStickyDelta(
-        scrollState.element.scrollLeft,
-        scrollState.initialScrollLeft,
-        sticky.naturalLeft,
-        sticky.left,
-        sticky.containerWidth,
-        sticky.elementWidth
-      );
-      stepDeltaY = calculateStickyDelta(
-        scrollState.element.scrollTop,
-        scrollState.initialScrollTop,
-        sticky.naturalTop,
-        sticky.top,
-        sticky.containerHeight,
-        sticky.elementHeight
-      );
-    }
+      let thresholdX = null;
+      let thresholdY = null;
+      let isOppX = false;
+      let isOppY = false;
 
-    deltaX += stepDeltaX;
-    deltaY += stepDeltaY;
+      if (!stickyApplied && position === "sticky" && sticky && !isDescendantOfStickyAnchor) {
+        if (sticky.top !== null) {
+          thresholdY = sticky.top;
+        } else if (sticky.bottom !== null) {
+          thresholdY = sticky.bottom;
+          isOppY = true;
+        }
 
-    if (isFixed) {
-      // We've hit the fixed horizon. Stop adding ancestor scroll.
-      // Add the window scroll counter (unless captured by a containing block)
-      if (!hasContainingBlock) {
-        deltaX += initWinX - window.scrollX;
-        deltaY += initWinY - window.scrollY;
+        if (sticky.left !== null) {
+          thresholdX = sticky.left;
+        } else if (sticky.right !== null) {
+          thresholdX = sticky.right;
+          isOppX = true;
+        }
       }
-      return { deltaX, deltaY };
+
+      /**
+       * Internal Document Shift:
+       * calculateStickyDelta returns (InitialRef - CurrentRef), which handles
+       * both static scrolling and sticky pinning within this specific box.
+       */
+      totalDeltaX += calculateStickyDelta(
+        element.scrollLeft,
+        scrollState.initialScrollLeft,
+        sticky?.naturalLeft ?? 0,
+        thresholdX,
+        sticky?.containerWidth ?? 0,
+        sticky?.elementWidth ?? 0,
+        isOppX
+      );
+      totalDeltaY += calculateStickyDelta(
+        element.scrollTop,
+        scrollState.initialScrollTop,
+        sticky?.naturalTop ?? 0,
+        thresholdY,
+        sticky?.containerHeight ?? 0,
+        sticky?.elementHeight ?? 0,
+        isOppY
+      );
+
+      if (thresholdX !== null || thresholdY !== null) {
+        stickyApplied = true;
+      }
+    }
+
+    /**
+     * Terminate hierarchy at fixed elements (unless portaled/constrained).
+     * Since 'fixed' elements are pinned to the viewport, when the window scrolls,
+     * their Document Position changes by exactly (InitialWindowScroll - CurrentWindowScroll).
+     */
+    if (isFixed && !hasContainingBlock) {
+      totalDeltaX += initialWindowX - window.scrollX;
+      totalDeltaY += initialWindowY - window.scrollY;
+      return { deltaX: totalDeltaX, deltaY: totalDeltaY };
     }
   }
 
-  // If we finished loop and we are effectively fixed but the fixed anchor wasn't
-  // a "scroll container" itself, we still need window pinning.
-  if (position === "fixed" && !hasContainingBlock) {
-    deltaX += initWinX - window.scrollX;
-    deltaY += initWinY - window.scrollY;
+  /**
+   * Window Scroll Fallback:
+   * After processing all internal scrollers, handle positioning relative to the window.
+   *
+   * CRITICAL INSIGHT:
+   * - For STATIC elements: Document position is INVARIANT with window scroll.
+   *   stableRect is already in document coords, so NO window delta is needed.
+   * - For FIXED elements: They pin to viewport, so document position shifts by
+   *   (currentWindowScroll - initialWindowScroll). Our delta = (initial - current).
+   * - For STICKY elements: Apply sticky clamping formula to get the delta from
+   *   captured position to current live position.
+   */
+  if (!hasContainingBlock) {
+    if (position === "fixed") {
+      // Fixed elements: viewport-pinned, document position changes inversely with scroll
+      totalDeltaX += initialWindowX - window.scrollX;
+      totalDeltaY += initialWindowY - window.scrollY;
+    } else if (position === "sticky" && sticky && !stickyApplied) {
+      // Sticky elements: clamped pinning at window level
+      //
+      // DERIVATION:
+      // liveDoc = liveViewport + currentScroll
+      // stableDoc = captureViewport + captureScroll
+      // deltaY = stableDoc - liveDoc
+      //        = (captureViewport - liveViewport) + (captureScroll - currentScroll)
+      //        = stickyViewportDelta + (initWinY - window.scrollY)
+      //
+      // Where:
+      //   stickyViewportDelta = captureViewport - liveViewport
+      //                       = stickyRef(initWinY, ...) - stickyRef(window.scrollY, ...)
+      //                       = calculateStickyDelta(window.scrollY, initWinY, ...)
+      //   scrollDelta = initWinY - window.scrollY
+      //
+      const scrollDeltaX = initialWindowX - window.scrollX;
+      const scrollDeltaY = initialWindowY - window.scrollY;
+
+      let thresholdX = null;
+      let thresholdY = null;
+      let isOppX = false;
+      let isOppY = false;
+
+      if (sticky.top !== null) {
+        thresholdY = sticky.top;
+      } else if (sticky.bottom !== null) {
+        thresholdY = sticky.bottom;
+        isOppY = true;
+      }
+
+      if (sticky.left !== null) {
+        thresholdX = sticky.left;
+      } else if (sticky.right !== null) {
+        thresholdX = sticky.right;
+        isOppX = true;
+      }
+
+      const stickyViewportDeltaX = calculateStickyDelta(
+        window.scrollX,
+        initialWindowX,
+        sticky.naturalLeft,
+        thresholdX,
+        sticky.containerWidth,
+        sticky.elementWidth,
+        isOppX
+      );
+      const stickyViewportDeltaY = calculateStickyDelta(
+        window.scrollY,
+        initialWindowY,
+        sticky.naturalTop,
+        thresholdY,
+        sticky.containerHeight,
+        sticky.elementHeight,
+        isOppY
+      );
+
+      // deltaY = stickyViewportDelta + scrollDelta
+      totalDeltaX += stickyViewportDeltaX + scrollDeltaX;
+      totalDeltaY += stickyViewportDeltaY + scrollDeltaY;
+    }
+
+    // For STATIC: No window delta needed. Document position is invariant.
   }
 
-  // Handle Window Sticky (when hierarchy is empty or no scroll-containers above stick)
-  if (hierarchy.length === 0 && position === "sticky" && sticky) {
-    deltaX += calculateStickyDelta(
-      window.scrollX,
-      initWinX,
-      sticky.naturalLeft,
-      sticky.left,
-      window.innerWidth,
-      sticky.elementWidth
-    );
-    deltaY += calculateStickyDelta(
-      window.scrollY,
-      initWinY,
-      sticky.naturalTop,
-      sticky.top,
-      window.innerHeight,
-      sticky.elementHeight
-    );
-  }
-
-  return { deltaX, deltaY };
+  return { deltaX: totalDeltaX, deltaY: totalDeltaY };
 }
 
 /**
@@ -384,7 +622,10 @@ export function getLiveGeometry(
     }
   }
 
-  // Clipping logic remains document-space relative
+  // Clipping logic - calculate each container's live document position
+  // For sticky containers, their doc position changes with window scroll
+  // Semantics: initWinX/Y = capture-time scroll, window.scrollX/Y = current scroll
+
   for (let index = 0; index < hierarchyLength; index++) {
     const scrollState = hierarchy[index];
     if (!scrollState) continue;
@@ -395,8 +636,39 @@ export function getLiveGeometry(
     const ancestorDeltaX = suffixSumsX[index + 1] ?? 0;
     const ancestorDeltaY = suffixSumsY[index + 1] ?? 0;
 
-    const containerLiveLeft = containerRect.left - ancestorDeltaX;
-    const containerLiveTop = containerRect.top - ancestorDeltaY;
+    let windowScrollAdjustmentX = 0;
+    let windowScrollAdjustmentY = 0;
+
+    let hasStickyAncestorFlag: boolean;
+    if (typeof scrollState.hasStickyAncestor === "boolean") {
+      hasStickyAncestorFlag = scrollState.hasStickyAncestor;
+    } else if (scrollState.element) {
+      let checkElement: Element | null = scrollState.element;
+      hasStickyAncestorFlag = false;
+      while (checkElement && checkElement !== document.documentElement) {
+        const checkStyle = window.getComputedStyle(checkElement);
+        if (checkStyle.position === "sticky") {
+          hasStickyAncestorFlag = true;
+          break;
+        }
+        // Fixed elements break the chain - their children don't move with window scroll
+        if (checkStyle.position === "fixed") break;
+        checkElement = checkElement.parentElement;
+      }
+    } else {
+      hasStickyAncestorFlag = false;
+    }
+
+    if (hasStickyAncestorFlag) {
+      // For containers with sticky ancestors: they move with the sticky element,
+      // so their document position changes with window scroll.
+      // liveDoc = capturedDoc + (currentScroll - captureScroll)
+      windowScrollAdjustmentX = window.scrollX - initWinX;
+      windowScrollAdjustmentY = window.scrollY - initWinY;
+    }
+
+    const containerLiveLeft = containerRect.left - ancestorDeltaX + windowScrollAdjustmentX;
+    const containerLiveTop = containerRect.top - ancestorDeltaY + windowScrollAdjustmentY;
 
     const clipLeft = containerLiveLeft + (scrollState.element?.clientLeft ?? 0);
     const clipTop = containerLiveTop + (scrollState.element?.clientTop ?? 0);
@@ -454,110 +726,176 @@ function parseStickyOffset(rawValue: string): number | null {
   return isNaN(parsed) ? null : parsed;
 }
 
-/**
- * Finds effectively inherited positioning mode (fixed/sticky) from ancestors.
- */
-function getInheritedPositionMode(element: Element): {
+/** Finds effectively inherited positioning mode (fixed/sticky) from ancestors. */
+export function getInheritedPositionMode(element: Element): {
   positionMode: PositionMode;
   scrollAnchor: HTMLElement | null;
   containingBlock: HTMLElement | null;
   treeDepth: number;
+  anchorAbsoluteDepth: number;
 } {
-  let currentElement: Element | null = element;
-  let positionMode: PositionMode = "static";
-  let scrollAnchor: HTMLElement | null = null;
-  let containingBlock: HTMLElement | null = null;
-  let treeDepth = 0;
+  const full = getFullHierarchy(element);
+  return {
+    positionMode: full.positionMode,
+    scrollAnchor: full.scrollAnchor,
+    containingBlock: full.containingBlock,
+    treeDepth: full.treeDepth,
+    anchorAbsoluteDepth: full.anchorAbsoluteDepth,
+  };
+}
 
-  while (currentElement) {
-    if (!isRenderable(currentElement)) {
-      currentElement = currentElement.parentElement;
-      continue;
+function getRootOffset(element: Element): { top: number; left: number } {
+  let top = 0;
+  let left = 0;
+  let curr: Element | null = element;
+  while (curr instanceof HTMLElement) {
+    top += curr.offsetTop;
+    left += curr.offsetLeft;
+    const parent: Element | null = curr.offsetParent;
+    if (parent instanceof HTMLElement) {
+      top += parent.clientTop || 0;
+      left += parent.clientLeft || 0;
     }
+    curr = parent;
+  }
+  return { top, left };
+}
 
-    const style = window.getComputedStyle(currentElement);
-
-    // Identify effective positioning mode (nearest positioned ancestor in fixed/sticky track)
-    if (positionMode === "static") {
-      if (style.position === "fixed") {
-        positionMode = "fixed";
-        scrollAnchor = currentElement as HTMLElement;
-      } else if (style.position === "sticky") {
-        positionMode = "sticky";
-        scrollAnchor = currentElement as HTMLElement;
+function collectStickyOnPath(
+  from: HTMLElement,
+  to: Element
+): Array<{ element: HTMLElement; originalPosition: string }> {
+  const out: Array<{ element: HTMLElement; originalPosition: string }> = [];
+  let current: Element | null = from;
+  while (current) {
+    if (current instanceof HTMLElement) {
+      const style = window.getComputedStyle(current);
+      if (style.position === "sticky") {
+        out.push({ element: current, originalPosition: current.style.position });
       }
     }
-
-    // Capture the first ancestor that establishes a containing block for our element
-    // NOTE: An element does not establish a containing block for itself in the 'fixed' sense
-    if (
-      currentElement !== element &&
-      !containingBlock &&
-      (style.transform !== "none" ||
-        style.filter !== "none" ||
-        style.perspective !== "none" ||
-        style.contain === "paint" ||
-        style.contain === "layout" ||
-        style.willChange === "transform" ||
-        style.willChange === "filter")
-    ) {
-      containingBlock = currentElement as HTMLElement;
-    }
-
-    if (currentElement === document.documentElement) break;
-    currentElement = currentElement.parentElement;
-    treeDepth++;
+    if (current === to) break;
+    if (current === document.documentElement) break;
+    current = current.parentElement;
   }
-
-  return { positionMode, scrollAnchor, containingBlock, treeDepth };
+  return out;
 }
 
 /**
  * Calculates the exact layout offset of an element relative to a container.
+ * Sticky elements on the path are temporarily set to static so the offset chain is consistent, then restored.
  */
 function getDistanceFromContainer(targetElement: HTMLElement, containerElement: Element) {
-  let offsetX = 0;
-  let offsetY = 0;
-  let currentElement = targetElement;
-
-  while (currentElement && currentElement !== containerElement && currentElement.offsetParent) {
-    offsetX += currentElement.offsetLeft;
-    offsetY += currentElement.offsetTop;
-
-    const parentContainer = currentElement.offsetParent as HTMLElement;
-    offsetX += parentContainer.clientLeft || 0;
-    offsetY += parentContainer.clientTop || 0;
-
-    currentElement = parentContainer;
+  const stickyElements = collectStickyOnPath(targetElement, containerElement);
+  for (const { element } of stickyElements) element.style.position = "static";
+  try {
+    const targetOffset = getRootOffset(targetElement);
+    const containerOffset = getRootOffset(containerElement);
+    return {
+      offsetX: targetOffset.left - containerOffset.left,
+      offsetY: targetOffset.top - containerOffset.top,
+    };
+  } finally {
+    for (const { element, originalPosition } of stickyElements) {
+      element.style.position = originalPosition || "sticky";
+    }
   }
+}
 
-  if (containerElement instanceof HTMLElement) {
-    offsetX -= containerElement.clientLeft || 0;
-    offsetY -= containerElement.clientTop || 0;
+/**
+ * Compute natural position (anchor to scroller) and optionally capping position (capping to scroller)
+ * with sticky set to static along both paths, then restore.
+ */
+function getDistancesWithSingleToggle(
+  scrollAnchor: HTMLElement,
+  scrollingContainer: Element,
+  cappingContainer: HTMLElement | null
+): {
+  naturalPosition: { offsetX: number; offsetY: number };
+  cappingNaturalPosition: { offsetX: number; offsetY: number } | null;
+} {
+  const seen = new Set<HTMLElement>();
+  const list: Array<{ element: HTMLElement; originalPosition: string }> = [];
+  for (const { element, originalPosition } of collectStickyOnPath(
+    scrollAnchor,
+    scrollingContainer
+  )) {
+    if (!seen.has(element)) {
+      seen.add(element);
+      list.push({ element, originalPosition });
+    }
   }
-
-  return { offsetX, offsetY };
+  if (cappingContainer && cappingContainer !== scrollAnchor) {
+    for (const { element, originalPosition } of collectStickyOnPath(
+      cappingContainer,
+      scrollingContainer
+    )) {
+      if (!seen.has(element)) {
+        seen.add(element);
+        list.push({ element, originalPosition });
+      }
+    }
+  }
+  for (const { element } of list) element.style.position = "static";
+  try {
+    const scrollOffset = getRootOffset(scrollingContainer as HTMLElement);
+    const anchorOffset = getRootOffset(scrollAnchor);
+    const naturalPosition = {
+      offsetX: anchorOffset.left - scrollOffset.left,
+      offsetY: anchorOffset.top - scrollOffset.top,
+    };
+    let cappingNaturalPosition: { offsetX: number; offsetY: number } | null = null;
+    if (cappingContainer && cappingContainer !== scrollingContainer) {
+      const capOffset = getRootOffset(cappingContainer);
+      cappingNaturalPosition = {
+        offsetX: capOffset.left - scrollOffset.left,
+        offsetY: capOffset.top - scrollOffset.top,
+      };
+    }
+    return { naturalPosition, cappingNaturalPosition };
+  } finally {
+    for (const { element, originalPosition } of list) {
+      element.style.position = originalPosition || "sticky";
+    }
+  }
 }
 
 export function deduceGeometry(element: Element): DeducedGeometry {
   const rect = element.getBoundingClientRect();
-  const scrollHierarchy = getScrollHierarchy(element);
-
   const initialWindowX = window.scrollX;
   const initialWindowY = window.scrollY;
 
-  const { positionMode, scrollAnchor, containingBlock, treeDepth } =
-    getInheritedPositionMode(element);
+  const {
+    scrollHierarchy,
+    positionMode,
+    scrollAnchor,
+    containingBlock,
+    treeDepth,
+    anchorAbsoluteDepth,
+  } = getFullHierarchy(element);
 
   let stickyConfig;
   if (positionMode === "sticky" && scrollAnchor) {
     const style = window.getComputedStyle(scrollAnchor);
 
-    const parentElement = getScrollHierarchy(scrollAnchor)[0]?.element || document.documentElement;
-    const isDoc = parentElement === document.documentElement;
+    let scrollingContainer: Element = document.documentElement;
+    let currentParent = scrollAnchor.parentElement;
+    while (currentParent && currentParent !== document.documentElement) {
+      if (establishesScrollingBox(currentParent)) {
+        scrollingContainer = currentParent;
+        break;
+      }
+      currentParent = currentParent.parentElement;
+    }
+
+    const cappingContainer = scrollAnchor.parentElement || document.documentElement;
+    const isDocLevelCapping =
+      cappingContainer === document.documentElement || cappingContainer === document.body;
+    const cappingStyle =
+      cappingContainer instanceof HTMLElement ? window.getComputedStyle(cappingContainer) : null;
+    const isCappingContainerSticky = cappingStyle?.position === "sticky";
 
     const anchorRect = scrollAnchor.getBoundingClientRect();
-
     const childRelTop = rect.top - anchorRect.top;
     const childRelLeft = rect.left - anchorRect.left;
     const childRelBottom = anchorRect.bottom - rect.bottom;
@@ -568,7 +906,57 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     const leftSticky = parseStickyOffset(style.left);
     const rightSticky = parseStickyOffset(style.right);
 
-    const naturalPosition = getDistanceFromContainer(scrollAnchor, parentElement);
+    const needCappingDistance =
+      !isDocLevelCapping && cappingContainer !== scrollingContainer && !isCappingContainerSticky;
+
+    let naturalPosition: { offsetX: number; offsetY: number };
+    let cappingNaturalPosition: { offsetX: number; offsetY: number } | null = null;
+    if (needCappingDistance) {
+      const dist = getDistancesWithSingleToggle(
+        scrollAnchor,
+        scrollingContainer,
+        cappingContainer as HTMLElement
+      );
+      naturalPosition = dist.naturalPosition;
+      cappingNaturalPosition = dist.cappingNaturalPosition;
+    } else {
+      naturalPosition = getDistanceFromContainer(scrollAnchor, scrollingContainer);
+    }
+
+    let containerHeight: number;
+    let containerWidth: number;
+    const isWindowLevel = scrollingContainer === document.documentElement;
+
+    if (isDocLevelCapping) {
+      containerHeight = window.innerHeight;
+      containerWidth = window.innerWidth;
+    } else if (cappingContainer === scrollingContainer || isCappingContainerSticky) {
+      containerHeight = (scrollingContainer as HTMLElement).clientHeight;
+      containerWidth = (scrollingContainer as HTMLElement).clientWidth;
+    } else if (isWindowLevel && cappingNaturalPosition) {
+      const cappingHeight = (cappingContainer as HTMLElement).clientHeight;
+      const cappingWidth = (cappingContainer as HTMLElement).clientWidth;
+      const parentTrackHeight =
+        cappingNaturalPosition.offsetY + cappingHeight - naturalPosition.offsetY;
+      const parentTrackWidth =
+        cappingNaturalPosition.offsetX + cappingWidth - naturalPosition.offsetX;
+      containerHeight = -parentTrackHeight;
+      containerWidth = -parentTrackWidth;
+    } else if (cappingNaturalPosition) {
+      const scrollerHeight = (scrollingContainer as HTMLElement).clientHeight;
+      const scrollerWidth = (scrollingContainer as HTMLElement).clientWidth;
+      const cappingHeight = (cappingContainer as HTMLElement).clientHeight;
+      const cappingWidth = (cappingContainer as HTMLElement).clientWidth;
+      const parentTrackHeight =
+        cappingNaturalPosition.offsetY + cappingHeight - naturalPosition.offsetY;
+      const parentTrackWidth =
+        cappingNaturalPosition.offsetX + cappingWidth - naturalPosition.offsetX;
+      containerHeight = parentTrackHeight < scrollerHeight ? -parentTrackHeight : scrollerHeight;
+      containerWidth = parentTrackWidth < scrollerWidth ? -parentTrackWidth : scrollerWidth;
+    } else {
+      containerHeight = (scrollingContainer as HTMLElement).clientHeight;
+      containerWidth = (scrollingContainer as HTMLElement).clientWidth;
+    }
 
     stickyConfig = {
       top: topSticky === null ? null : topSticky + childRelTop,
@@ -577,10 +965,11 @@ export function deduceGeometry(element: Element): DeducedGeometry {
       right: rightSticky === null ? null : rightSticky + childRelRight,
       naturalTop: naturalPosition.offsetY + childRelTop,
       naturalLeft: naturalPosition.offsetX + childRelLeft,
-      containerWidth: isDoc ? window.innerWidth : (parentElement as HTMLElement).clientWidth,
-      containerHeight: isDoc ? window.innerHeight : (parentElement as HTMLElement).clientHeight,
+      containerWidth,
+      containerHeight,
       elementWidth: anchorRect.width,
       elementHeight: anchorRect.height,
+      anchorAbsoluteDepth: anchorAbsoluteDepth,
     };
   }
 

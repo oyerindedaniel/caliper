@@ -8,12 +8,13 @@ import { Installation } from "../../installation";
 import { McpSetup } from "../../components/mcp-setup";
 import { CodeBlock } from "../../components/code-block";
 
+import { OnThisPage } from "../../components/on-this-page";
+
 export default function AgenticDocsPage() {
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <Nav />
-
         <div className="flex flex-col gap-12">
           <div className={styles.logoWrapper}>
             <Image
@@ -39,7 +40,7 @@ export default function AgenticDocsPage() {
 
         <Installation mode="agentic" />
 
-        <section className={styles.section}>
+        <section id="mcp-server" className={styles.section}>
           <h2 className={styles.sectionHeader}>MCP Server</h2>
           <p className="mb-18 op-8">
             The Model Context Protocol (MCP) server acts as a relay between your browser (the
@@ -51,7 +52,7 @@ export default function AgenticDocsPage() {
           <McpSetup />
         </section>
 
-        <section className={styles.section}>
+        <section id="core-tools" className={styles.section}>
           <h2 className={styles.sectionHeader}>Core Tools</h2>
           <p className="mb-18 op-8">
             The MCP server exposes these tools to agents for interactive auditing:
@@ -130,7 +131,7 @@ export default function AgenticDocsPage() {
           </div>
         </section>
 
-        <section className={styles.section}>
+        <section id="resources" className={styles.section}>
           <h2 className={styles.sectionHeader}>Resources</h2>
           <p className="mb-18 op-8">
             Agents can subscribe to these resources for real-time state observation:
@@ -156,8 +157,9 @@ export default function AgenticDocsPage() {
                   </td>
                   <td>
                     Real-time passive observation of the active tab. Includes selection metadata,
-                    measurement results, and stable <strong>JSON Fingerprints</strong> that allow agents
-                    to immediately "hand-off" manual focus to inspection tools (like <code>caliper_inspect</code>).
+                    measurement results, and stable <strong>JSON Fingerprints</strong> that allow
+                    agents to immediately "hand-off" manual focus to inspection tools (like{" "}
+                    <code>caliper_inspect</code>).
                   </td>
                 </tr>
               </tbody>
@@ -165,7 +167,7 @@ export default function AgenticDocsPage() {
           </div>
         </section>
 
-        <section className={styles.section}>
+        <section id="stable-selectors" className={styles.section}>
           <h2 className={styles.sectionHeader}>Stable Selectors</h2>
           <p className="mb-18 op-8">
             AI agents often need to rediscover elements after triggering code changes. While Caliper
@@ -176,7 +178,7 @@ export default function AgenticDocsPage() {
           <CodeBlock code={`<div {...caliperProps("main-cta")}>Click Me</div>`} language="tsx" />
         </section>
 
-        <section className={styles.section}>
+        <section id="agent-prompts" className={styles.section}>
           <h2 className={styles.sectionHeader}>Agent Prompts</h2>
           <p className="mb-18 op-8">
             Built-in playbooks that guide agents through complex design reconciliation tasks:
@@ -207,6 +209,7 @@ export default function AgenticDocsPage() {
           </div>
         </section>
       </main>
+      <OnThisPage />
       <Footer />
     </div>
   );

@@ -69,7 +69,7 @@ export function Configuration() {
   };
 
   return (
-    <section className={styles.section}>
+    <section id="configuration" className={styles.section}>
       <h2 className={styles.sectionHeader}>Configuration</h2>
       <div className={`${styles.tabs} flex flex-wrap gap-8`}>
         <button

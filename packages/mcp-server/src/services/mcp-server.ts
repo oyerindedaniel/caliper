@@ -24,7 +24,7 @@ try {
   if (__dirname.endsWith("dist")) {
     packageJsonPath = join(__dirname, "../package.json");
   }
-} catch (_) { }
+} catch (_) {}
 
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
@@ -112,7 +112,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
           selector: z
             .string()
             .describe(
-              "Element identifier. PRIORITIZE JSON Fingerprint or Caliper ID for maximum stabilization. Fallback to CSS only if necessary."
+              "Element identifier. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for maximum stabilization."
             ),
         }),
       },
@@ -142,12 +142,12 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
           primarySelector: z
             .string()
             .describe(
-              "Identifier for the primary element. PRIORITIZE JSON Fingerprint or Caliper ID."
+              "Identifier for the primary element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector."
             ),
           secondarySelector: z
             .string()
             .describe(
-              "Identifier for the target element. PRIORITIZE JSON Fingerprint or Caliper ID."
+              "Identifier for the target element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector."
             ),
         }),
       },
@@ -205,7 +205,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
           selector: z
             .string()
             .describe(
-              "Element identifier. PRIORITIZE JSON Fingerprint or Caliper ID for maximum stabilization. Fallback to CSS only if necessary."
+              "Element identifier. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for maximum stabilization."
             ),
         }),
       },
@@ -272,7 +272,7 @@ The output includes:
           selector: z
             .string()
             .describe(
-              "Root element identifier. PRIORITIZE JSON Fingerprint for maximum rediscovery stability. Fallback to Caliper ID only if necessary."
+              "Root element identifier. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for maximum stabilization."
             ),
           maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
           maxNodes: z
@@ -291,27 +291,32 @@ The output includes:
             .describe(
               "Minimum element size (width/height) to include in the walk (default: 0). Use to filter out icons or tiny decorative elements."
             ),
+          ignoreSelectors: z
+            .array(z.string())
+            .optional()
+            .describe("List of CSS selectors or Agent IDs to skip during the walk."),
         }),
       },
-      async ({ selector, maxDepth, maxNodes, continueFrom, minElementSize }) => {
+      async ({ selector, maxDepth, maxNodes, continueFrom, minElementSize, ignoreSelectors }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
+          const auditResult = await bridgeService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
             selector,
             maxDepth: maxDepth ?? 5,
             maxNodes,
             continueFrom,
             minElementSize,
+            ignoreSelectors,
           });
-          const auditResponse = result as {
+          const auditResponse = auditResult as {
             walkResult?: { hasMore?: boolean; batchInstructions?: string };
           };
-          let responseText = JSON.stringify(result);
+          let reportContent = JSON.stringify(auditResult);
 
           if (auditResponse.walkResult?.hasMore && auditResponse.walkResult?.batchInstructions) {
-            responseText = `${auditResponse.walkResult.batchInstructions}\n\n${responseText}`;
+            reportContent = `${auditResponse.walkResult.batchInstructions}\n\n${reportContent}`;
           }
 
-          return { content: [{ type: "text", text: responseText }] };
+          return { content: [{ type: "text", text: reportContent }] };
         } catch (error) {
           return {
             content: [
@@ -507,7 +512,7 @@ Returns the Delta E value and a human-readable interpretation:
         - selectionFingerprint: A stable JSON identifier (agentId, tag, text content) for the active selection. Use the 'selector' property from this object as input for 'caliper_inspect' or 'caliper_walk_and_measure' to perform high-precision audits on what the user just picked.
         - lastMeasurement & measurementFingerprint: Context for the most recent distance measurement between two elements.
         
-        USE CASE: When you receive a notification that this resource has updated, read it to understand the user's current focus. If a 'selectionFingerprint' is present, you can immediately offer to 'Inspect' or 'Audit' that element without asking the user for a selector.`
+        USE CASE: When you receive a notification that this resource has updated, read it to understand the user's current focus. If a 'selectionFingerprint' is present, you can immediately offer to 'Inspect' or 'Audit' that element without asking the user for a selector.`,
       },
       async () => {
         return {
@@ -540,7 +545,7 @@ Returns the Delta E value and a human-readable interpretation:
           selector: z
             .string()
             .describe(
-              "The Caliper Selector (JSON Fingerprint or Agent ID) to audit. PRIORITIZE JSON Fingerprint for maximum stabilization."
+              "The Caliper Selector (JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector) to audit. PRIORITIZE JSON Fingerprint for maximum stabilization."
             ),
         },
       },
@@ -585,12 +590,12 @@ BEGIN PHASE 1 NOW. Do not skip any steps.`,
           selectorA: z
             .string()
             .describe(
-              "Caliper Selector for the REFERENCE element. PRIORITIZE JSON Fingerprint for stabilization."
+              "Caliper Selector for the REFERENCE element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for stabilization."
             ),
           selectorB: z
             .string()
             .describe(
-              "Caliper Selector for the TARGET element. PRIORITIZE JSON Fingerprint for stabilization."
+              "Caliper Selector for the TARGET element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for stabilization."
             ),
           tabIdA: z
             .string()
@@ -625,28 +630,30 @@ You are comparing TWO elements to understand the styling of one (A) and apply co
 
 ### IMPORTANT: TAB MANAGEMENT
 
-${tabIdA || tabIdB
-                  ? `
+${
+  tabIdA || tabIdB
+    ? `
 You are working across multiple tabs. The agent-ID is **tab-specific** - if you send a command to the wrong tab, it will fail.
 
 **Before Each Command:**
 1. Use \`caliper_list_tabs\` to see all connected tabs
 2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
 `
-                  : `
+    : `
 Both selections are on the SAME tab. No tab switching required.
 `
-                }
+}
 
 ### PHASE 1: WALK SELECTION A (REFERENCE)
 
-${tabIdA
-                  ? `1. **Switch to Tab A**
+${
+  tabIdA
+    ? `1. **Switch to Tab A**
    Call \`caliper_switch_tab\` with tabId: "${tabIdA}"
 
 2. `
-                  : "1. "
-                }**Walk and Measure A**
+    : "1. "
+}**Walk and Measure A**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorA}"
    - maxDepth: 5
@@ -659,13 +666,14 @@ ${tabIdA
 
 ### PHASE 2: WALK SELECTION B (TARGET)
 
-${tabIdB
-                  ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
+${
+  tabIdB
+    ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
    Call \`caliper_switch_tab\` with tabId: "${tabIdB}"
 
 ${tabIdA ? "4" : "3"}. `
-                  : `${tabIdA ? "3" : "2"}. `
-                }**Walk and Measure B**
+    : `${tabIdA ? "3" : "2"}. `
+}**Walk and Measure B**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorB}"
    - maxDepth: 5

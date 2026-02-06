@@ -4,7 +4,7 @@ import { useState } from "react";
 import styles from "../page.module.css";
 import { CodeBlock } from "./code-block";
 
-type Tool = "cursor" | "claude" | "antigravity";
+type Tool = "cursor" | "claude-code" | "antigravity";
 
 export function McpSetup() {
   const [tool, setTool] = useState<Tool>("cursor");
@@ -31,7 +31,7 @@ export function McpSetup() {
     switch (tool) {
       case "cursor":
         return JSON.stringify(cursorConfig, null, 2);
-      case "claude":
+      case "claude-code":
         return `claude mcp add @oyerinde/caliper-mcp -- npx -y @oyerinde/caliper-mcp --port 9876`;
       case "antigravity":
         return JSON.stringify(antigravityConfig, null, 2);
@@ -39,7 +39,7 @@ export function McpSetup() {
   };
 
   const getLanguage = () => {
-    return tool === "claude" ? "bash" : "json";
+    return tool === "claude-code" ? "bash" : "json";
   };
 
   return (
@@ -52,8 +52,8 @@ export function McpSetup() {
           Cursor
         </button>
         <button
-          className={`${styles.tab} ${tool === "claude" ? styles.activeTab : ""}`}
-          onClick={() => setTool("claude")}
+          className={`${styles.tab} ${tool === "claude-code" ? styles.activeTab : ""}`}
+          onClick={() => setTool("claude-code")}
         >
           Claude Code
         </button>
@@ -75,7 +75,7 @@ export function McpSetup() {
           </>
         )}
 
-        {tool === "claude" && (
+        {tool === "claude-code" && (
           <>
             <p className="mb-12 op-8">Run this command in your terminal:</p>
             <CodeBlock code={getCode()} language={getLanguage()} />

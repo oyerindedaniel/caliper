@@ -3,7 +3,11 @@ import type {
   MeasurementLine as BaseMeasurementLine,
   MeasurementResult as BaseMeasurementResult,
 } from "@oyerinde/caliper-schema";
-import { type ScrollState, getTotalScrollDelta } from "../../geometry/utils/scroll-aware.js";
+import {
+  type ScrollState,
+  type StickyConfig,
+  getTotalScrollDelta,
+} from "../../geometry/utils/scroll-aware.js";
 
 export type MeasurementLine = BaseMeasurementLine;
 

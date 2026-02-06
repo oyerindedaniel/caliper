@@ -5,7 +5,7 @@ export function Instructions() {
   const { getControlKey, getAltKey } = useOS();
 
   return (
-    <section className={styles.section}>
+    <section id="how-to-use" className={styles.section}>
       <h2 className={styles.sectionHeader}>How to Use</h2>
 
       <h3 className={styles.subHeader}>Core Measurement</h3>

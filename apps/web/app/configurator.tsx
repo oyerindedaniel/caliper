@@ -179,7 +179,7 @@ export function Configurator() {
   if (!isClient) return null;
 
   return (
-    <section className={styles.section}>
+    <section id="configurator" className={styles.section}>
       <h2 className={styles.sectionHeader}>Shortcut Configurator</h2>
       <p
         className={styles.instructionItem}

@@ -5,35 +5,35 @@ import { getContextMetrics, sanitizeSelection, sanitizeMeasurement } from "./uti
 const AGENT_LOCK_EVENT = "caliper:agent-lock-change";
 
 export function createStateStore() {
-  let state: CaliperAgentState | null = null;
-  let isAgentActive = false;
+  let activeState: CaliperAgentState | null = null;
+  let isAgentActiveFlag = false;
 
   return {
-    getState: (): CaliperAgentState | null => state,
-    setState: (newState: CaliperAgentState) => {
-      state = newState;
+    getState: (): CaliperAgentState | null => activeState,
+    setState: (newFullState: CaliperAgentState) => {
+      activeState = newFullState;
     },
-    updateState: (patch: Partial<CaliperAgentState>) => {
-      if (state) {
-        state = { ...state, ...patch };
+    updateState: (statePatch: Partial<CaliperAgentState>) => {
+      if (activeState) {
+        activeState = { ...activeState, ...statePatch };
       }
     },
     clear: () => {
-      state = null;
+      activeState = null;
     },
-    setAgentLock: (locked: boolean) => {
-      if (isAgentActive !== locked) {
-        isAgentActive = locked;
+    setAgentLock: (isLocked: boolean) => {
+      if (isAgentActiveFlag !== isLocked) {
+        isAgentActiveFlag = isLocked;
         if (typeof window !== "undefined") {
           window.dispatchEvent(
             new CustomEvent(AGENT_LOCK_EVENT, {
-              detail: { locked },
+              detail: { locked: isLocked },
             })
           );
         }
       }
     },
-    isAgentActive: () => isAgentActive,
+    isAgentActive: () => isAgentActiveFlag,
   };
 }
 
@@ -42,7 +42,6 @@ export function initStateSync(
   systems: CaliperCoreSystems,
   updateCallback: (state: CaliperAgentState) => void
 ) {
-
   const initialContext = getContextMetrics();
   stateStore.setState({
     viewport: {
@@ -72,18 +71,27 @@ export function initStateSync(
   });
 
   const unsubMeasurement = systems.measurementSystem.onStateChange(() => {
-    const result = systems.measurementSystem.getCurrentResult();
+    const measurementResult = systems.measurementSystem.getCurrentResult();
+    const primaryElement = systems.selectionSystem.getSelected();
     const secondaryElement = systems.measurementSystem.getSecondaryElement();
 
+    let measurementFingerprint = null;
+    if (primaryElement && secondaryElement) {
+      measurementFingerprint = {
+        primary: buildSelectorInfo(primaryElement),
+        secondary: buildSelectorInfo(secondaryElement),
+      };
+    }
+
     stateStore.updateState({
-      lastMeasurement: sanitizeMeasurement(result),
-      measurementFingerprint: secondaryElement ? buildSelectorInfo(secondaryElement) : null,
+      lastMeasurement: sanitizeMeasurement(measurementResult),
+      measurementFingerprint,
       lastUpdated: Date.now(),
     });
 
-    const currentState = stateStore.getState();
-    if (currentState) {
-      updateCallback(currentState);
+    const activeState = stateStore.getState();
+    if (activeState) {
+      updateCallback(activeState);
     }
   });
 

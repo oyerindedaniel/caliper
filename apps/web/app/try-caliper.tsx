@@ -181,7 +181,10 @@ export function TryCaliper() {
   }, [phase]);
 
   return (
-    <section className={`${styles.section} ${styles.trySection} ${inter.className}`}>
+    <section
+      id="playground"
+      className={`${styles.section} ${styles.trySection} ${inter.className}`}
+    >
       <div className={styles.tryHeader}>
         <div
           style={{

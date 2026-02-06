@@ -1,7 +1,7 @@
 import type { CaliperNode, CaliperComputedStyles, BoxEdges } from "@oyerinde/caliper-schema";
 import { isVisible, filterRuntimeClasses, getElementDirectText, generateId } from "@caliper/core";
 import { DEFAULT_WALK_DEPTH } from "../constants.js";
-import { parseComputedStyles } from "../utils.js";
+import { parseComputedStyles, resolveElements, resolveElement } from "../utils.js";
 import {
   initWalkVisualizer,
   showWalkBoundary,
@@ -177,12 +177,11 @@ export async function walkAndMeasure(
   const continueFrom = options.continueFrom;
   const visualize = options.visualize ?? false;
   const minElementSize = options.minElementSize ?? 0;
+  const ignoreSelectors = options.ignoreSelectors ?? [];
 
   const startTime = performance.now();
 
-  const rootElement = rootSelector.startsWith("caliper-")
-    ? document.querySelector(`[data-caliper-agent-id="${rootSelector}"]`)
-    : document.querySelector(rootSelector);
+  const rootElement = resolveElement(rootSelector);
 
   if (!rootElement) throw new Error(`Root element not found: ${rootSelector}`);
 
@@ -190,6 +189,18 @@ export async function walkAndMeasure(
     if (visualize) {
       initWalkVisualizer();
     }
+
+    const ignoredElements = new Set<Element>();
+    for (const targetSelector of ignoreSelectors) {
+      const resolvedElements = resolveElements(targetSelector);
+      for (const targetElement of resolvedElements) {
+        ignoredElements.add(targetElement);
+      }
+    }
+
+    const checkIsIgnored = (targetElement: Element): boolean => {
+      return ignoredElements.has(targetElement);
+    };
 
     const rootNode = createNodeSnapshot(rootElement, 0);
     const queue: Array<{ element: Element; node: CaliperNode }> = [
@@ -211,10 +222,14 @@ export async function walkAndMeasure(
     const processedNodes = new Set<string>();
 
     while (queue.length > 0) {
-      const { element, node } = queue.shift()!;
+      const { element: currentElement, node: currentNode } = queue.shift()!;
+
+      if (checkIsIgnored(currentElement)) {
+        continue;
+      }
 
       if (skipUntilFound) {
-        if (node.agentId === continueFrom || node.selector === continueFrom) {
+        if (currentNode.agentId === continueFrom || currentNode.selector === continueFrom) {
           skipUntilFound = false;
         } else {
           continue;
@@ -222,42 +237,42 @@ export async function walkAndMeasure(
       }
 
       nodeCount++;
-      maxDepthReached = Math.max(maxDepthReached, node.depth);
+      maxDepthReached = Math.max(maxDepthReached, currentNode.depth);
 
       if (!shouldStop && nodeCount >= maxNodes) {
         shouldStop = true;
-        finishingParent = node;
+        finishingParent = currentNode;
       }
 
       if (
         shouldStop &&
         finishingParent &&
-        node.parentAgentId !== finishingParent.parentAgentId &&
-        node !== finishingParent
+        currentNode.parentAgentId !== finishingParent.parentAgentId &&
+        currentNode !== finishingParent
       ) {
-        continuationToken = node.agentId;
+        continuationToken = currentNode.agentId;
         hasMore = true;
-        queue.unshift({ element, node });
+        queue.unshift({ element: currentElement, node: currentNode });
         nodeCount--;
         break;
       }
 
-      processedNodes.add(node.agentId);
+      processedNodes.add(currentNode.agentId);
 
       if (visualize && !document.hidden) {
-        showWalkBoundary(element, node.agentId, true);
-        await new Promise((resolve) => requestAnimationFrame(resolve));
+        showWalkBoundary(currentElement, currentNode.agentId, true);
+        await new Promise((resolveAnimationFrame) => requestAnimationFrame(resolveAnimationFrame));
       }
 
-      if (node.depth >= maxDepth) continue;
+      if (currentNode.depth >= maxDepth) continue;
 
-      const allChildren = [...Array.from(element.children)];
-      if (element.shadowRoot) {
-        allChildren.push(...Array.from(element.shadowRoot.children));
+      const allChildren = [...Array.from(currentElement.children)];
+      if (currentElement.shadowRoot) {
+        allChildren.push(...Array.from(currentElement.shadowRoot.children));
       }
 
       const visibleChildren = allChildren.filter(isVisible);
-      node.measurements.siblingCount = visibleChildren.length;
+      currentNode.measurements.siblingCount = visibleChildren.length;
 
       let visibleIdx = 0;
       for (let domIdx = 0; domIdx < allChildren.length; domIdx++) {
@@ -265,20 +280,30 @@ export async function walkAndMeasure(
         if (!isVisible(childElement)) continue;
 
         if (minElementSize > 0) {
-          const rect = childElement.getBoundingClientRect();
-          if (rect.width < minElementSize || rect.height < minElementSize) continue;
+          const childRect = childElement.getBoundingClientRect();
+          if (childRect.width < minElementSize || childRect.height < minElementSize) continue;
         }
 
         try {
-          const childNode = createNodeSnapshot(childElement, node.depth + 1, domIdx, visibleIdx);
-          childNode.parentAgentId = node.agentId;
+          const childNode = createNodeSnapshot(
+            childElement,
+            currentNode.depth + 1,
+            domIdx,
+            visibleIdx
+          );
+          childNode.parentAgentId = currentNode.agentId;
 
           if (visualize) {
             showChildBoundary(childElement, childNode.agentId);
           }
 
-          const parentPadding = node.styles.padding || { top: 0, right: 0, bottom: 0, left: 0 };
-          const parentRect = node.rect;
+          const parentPadding = currentNode.styles.padding || {
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+          };
+          const parentRect = currentNode.rect;
           childNode.measurements.toParent = {
             top: childNode.rect.top - (parentRect.top + parentPadding.top),
             left: childNode.rect.left - (parentRect.left + parentPadding.left),
@@ -287,27 +312,33 @@ export async function walkAndMeasure(
           };
 
           if (visibleIdx > 0) {
-            const prevNode = node.children[visibleIdx - 1]!;
-            const isVertical = childNode.rect.top >= prevNode.rect.bottom;
+            const prevNode = currentNode.children[visibleIdx - 1]!;
+            const isVerticalOrientation = childNode.rect.top >= prevNode.rect.bottom;
 
-            const distance = isVertical
+            const gapDistance = isVerticalOrientation
               ? childNode.rect.top - prevNode.rect.bottom
               : childNode.rect.left - prevNode.rect.right;
 
-            const direction = isVertical ? ("above" as const) : ("left" as const);
+            const gapDirection = isVerticalOrientation ? ("above" as const) : ("left" as const);
 
-            childNode.measurements.toPreviousSibling = { distance, direction };
+            childNode.measurements.toPreviousSibling = {
+              distance: gapDistance,
+              direction: gapDirection,
+            };
             prevNode.measurements.toNextSibling = {
-              distance,
-              direction: isVertical ? ("below" as const) : ("right" as const),
+              distance: gapDistance,
+              direction: isVerticalOrientation ? ("below" as const) : ("right" as const),
             };
           }
 
-          node.children.push(childNode);
+          currentNode.children.push(childNode);
           queue.push({ element: childElement, node: childNode });
           visibleIdx++;
-        } catch (error) {
-          console.warn(`[Caliper] Failed to snapshot node at index ${domIdx}. Skipping.`, error);
+        } catch (nodeSnapshotError) {
+          console.warn(
+            `[Caliper] Failed to snapshot node at index ${domIdx}. Skipping.`,
+            nodeSnapshotError
+          );
           continue;
         }
       }

@@ -42,7 +42,7 @@ export function CommandTable() {
   ];
 
   return (
-    <section className={styles.section}>
+    <section id="commands" className={styles.section}>
       <h2 className={`${styles.sectionHeader}`}>Command Palette</h2>
       <table className={styles.commandTable}>
         <thead>

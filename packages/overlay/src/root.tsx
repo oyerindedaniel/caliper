@@ -290,34 +290,56 @@ export function Root(config: RootConfig) {
         }
       }
     };
-    const handleContextMenu = (e: MouseEvent) => {
+    const handleContextMenu = (contextEvent: MouseEvent) => {
       if (isAgentActive()) return;
 
       const selectedElement = selectionMetadata().element;
+      const measurementResult = result();
 
-      if (selectedElement) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
+      if (selectedElement || measurementResult) {
+        contextEvent.preventDefault();
+        contextEvent.stopImmediatePropagation();
 
-        const selectorInfo = JSON.stringify(
-          buildSelectorInfo(selectedElement, selectionMetadata())
-        );
-        navigator.clipboard
-          .writeText(selectorInfo)
-          .then(() => {
-            if (copyTimeoutId) clearTimeout(copyTimeoutId);
-            setIsCopied(true);
-            copyTimeoutId = window.setTimeout(() => {
-              setIsCopied(false);
-              copyTimeoutId = null;
-            }, 1500);
-          })
-          .catch(() => {});
+        let clipboardContent = "";
+
+        if (contextEvent.shiftKey && selectedElement) {
+          // Mode 1: Copy ONLY the Agent ID string
+          clipboardContent = selectedElement.getAttribute("data-caliper-agent-id") || "";
+        } else if (measurementResult && system && selectionSystem) {
+          // Mode 2: Copy dual-fingerprint for measurements
+          const primaryElement = selectionSystem.getSelected();
+          const secondaryElement = system.getSecondaryElement();
+          if (primaryElement && secondaryElement) {
+            clipboardContent = JSON.stringify({
+              primary: buildSelectorInfo(primaryElement),
+              secondary: buildSelectorInfo(secondaryElement),
+            });
+          }
+        } else if (selectedElement) {
+          // Mode 3: Copy full selection fingerprint (default)
+          clipboardContent = JSON.stringify(
+            buildSelectorInfo(selectedElement, selectionMetadata())
+          );
+        }
+
+        if (clipboardContent) {
+          navigator.clipboard
+            .writeText(clipboardContent)
+            .then(() => {
+              if (copyTimeoutId) clearTimeout(copyTimeoutId);
+              setIsCopied(true);
+              copyTimeoutId = window.setTimeout(() => {
+                setIsCopied(false);
+                copyTimeoutId = null;
+              }, 1500);
+            })
+            .catch(() => {});
+        }
         return;
       }
 
-      if (isCommandActive(e)) {
-        e.preventDefault();
+      if (isCommandActive(contextEvent)) {
+        contextEvent.preventDefault();
       }
     };
 

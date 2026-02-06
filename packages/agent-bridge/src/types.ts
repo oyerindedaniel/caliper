@@ -1,4 +1,9 @@
-import type { CaliperIntent, CaliperActionResult, CaliperNode } from "@oyerinde/caliper-schema";
+import type {
+  CaliperIntent,
+  CaliperActionResult,
+  CaliperNode,
+  WalkOptionsBase,
+} from "@oyerinde/caliper-schema";
 
 declare global {
   interface Window {
@@ -16,12 +21,8 @@ export interface WalkResult {
   batchInstructions?: string;
 }
 
-export interface WalkOptions {
-  maxDepth?: number;
-  maxNodes?: number;
-  continueFrom?: string;
+export interface WalkOptions extends WalkOptionsBase {
   visualize?: boolean;
-  minElementSize?: number;
 }
 
 export interface ParsedSelection {

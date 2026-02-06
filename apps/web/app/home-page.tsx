@@ -11,6 +11,7 @@ import { TryCaliper } from "./try-caliper";
 import { Footer } from "./components/footer";
 import { FocusProvider } from "./contexts/focus-context";
 import { Nav } from "./components/nav";
+import { OnThisPage } from "./components/on-this-page";
 
 export default function HomePage() {
   return (
@@ -18,7 +19,6 @@ export default function HomePage() {
       <div className={styles.page}>
         <main className={styles.main}>
           <Nav />
-
           <div className="flex flex-col gap-12">
             <Image
               src="/caliper_logo.svg"
@@ -42,6 +42,7 @@ export default function HomePage() {
           <CommandTable />
           <Configurator />
         </main>
+        <OnThisPage />
         <Footer />
       </div>
     </FocusProvider>

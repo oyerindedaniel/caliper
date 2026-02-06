@@ -127,10 +127,7 @@ export class BridgeService extends EventEmitter {
             logger.error("Invalid WS message format:", z.treeifyError(result.error));
 
             const msgObj = rawMessage as { id?: Id };
-            if (
-              msgObj?.id !== undefined &&
-              isId(msgObj.id)
-            ) {
+            if (msgObj?.id !== undefined && isId(msgObj.id)) {
               const resolve = this.pendingCalls.get(String(msgObj.id));
               if (resolve) {
                 resolve({ error: new BridgeValidationError().message });
@@ -165,7 +162,11 @@ export class BridgeService extends EventEmitter {
                     }
                   }
                   resolve(finalResult);
-                } else if (finalResult && typeof finalResult === "object" && "error" in finalResult) {
+                } else if (
+                  finalResult &&
+                  typeof finalResult === "object" &&
+                  "error" in finalResult
+                ) {
                   resolve(finalResult as { error: string });
                 } else {
                   // If we reach here, we have a result that doesn't match our specific schemas but is valid JSON-RPC.

@@ -67,10 +67,12 @@ describe("Scroll-Aware Geometry", () => {
         display: "block",
         ...mock,
       };
-      return {
+      const style = {
         ...merged,
-        getPropertyValue: (p: string) => merged[p] || "",
-      } as unknown as CSSStyleDeclaration;
+        getPropertyValue: (p: string) => (merged as Record<string, string>)[p] || "",
+      };
+
+      return style as unknown as CSSStyleDeclaration;
     });
   });
 
@@ -342,6 +344,7 @@ describe("Scroll-Aware Geometry", () => {
         initialScrollLeft: 0,
         initialScrollTop: 0,
         containerRect: new DOMRect(0, 0, 100, 100),
+        absoluteDepth: 0,
       };
 
       const stableRect = new DOMRect(0, 99, 100, 100);
@@ -387,6 +390,7 @@ describe("Scroll-Aware Geometry", () => {
         initialScrollLeft: 0,
         initialScrollTop: 0,
         containerRect: new DOMRect(0, 0, 800, 800),
+        absoluteDepth: 0,
       };
 
       const h1 = [
@@ -395,6 +399,7 @@ describe("Scroll-Aware Geometry", () => {
           initialScrollLeft: 0,
           initialScrollTop: 0,
           containerRect: new DOMRect(10, 10, 100, 100),
+          absoluteDepth: 1,
         },
         mainState,
       ];
@@ -404,6 +409,7 @@ describe("Scroll-Aware Geometry", () => {
           initialScrollLeft: 0,
           initialScrollTop: 0,
           containerRect: new DOMRect(200, 200, 100, 100),
+          absoluteDepth: 1,
         },
         mainState,
       ];
@@ -428,6 +434,7 @@ describe("Scroll-Aware Geometry", () => {
           initialScrollLeft: 0,
           initialScrollTop: 0,
           containerRect: new DOMRect(0, 0, 500, 500),
+          absoluteDepth: 0,
         },
       ];
       const h2 = [...h1];
@@ -460,6 +467,270 @@ describe("Scroll-Aware Geometry", () => {
       // Expected: Clamped to visibleMin/Max (10)
       expect(result.x).toBe(10);
       expect(result.y).toBe(10);
+    });
+  });
+
+  describe("Root Overflow & Sticky", () => {
+    it("should correctly handle sticking when body is overflow: clip", () => {
+      styleStore.set(document.body, { overflow: "clip" });
+
+      const header = document.createElement("header");
+      document.body.appendChild(header);
+
+      setupSpatialSimulation(header, {
+        offsetTop: 50,
+        offsetParent: document.body,
+        rect: { top: 50, left: 0, width: 1000, height: 50 },
+        styles: { position: "sticky", top: "0px" },
+      });
+
+      const geo = deduceGeometry(header);
+
+      Object.defineProperty(window, "scrollY", { value: 100, writable: true });
+
+      const live = getLiveGeometry(
+        geo.rect,
+        geo.scrollHierarchy,
+        geo.position,
+        geo.stickyConfig,
+        0,
+        0
+      );
+
+      expect(live?.top).toBe(100);
+    });
+
+    it("should correctly handle non-sticking when body is overflow: hidden", () => {
+      styleStore.set(document.body, { overflow: "hidden" });
+
+      const header = document.createElement("header");
+      document.body.appendChild(header);
+
+      setupSpatialSimulation(header, {
+        offsetTop: 50,
+        offsetParent: document.body,
+        rect: { top: 50, left: 0, width: 1000, height: 50 },
+        styles: { position: "sticky", top: "0px" },
+      });
+
+      const geo = deduceGeometry(header);
+
+      Object.defineProperty(window, "scrollY", { value: 100, writable: true });
+
+      const live = getLiveGeometry(
+        geo.rect,
+        geo.scrollHierarchy,
+        geo.position,
+        geo.stickyConfig,
+        0,
+        0
+      );
+
+      expect(live?.top).toBe(50);
+    });
+  });
+
+  describe("Nested Scrolling", () => {
+    it("should correctly handle sticky elements inside a scrolling container", () => {
+      const container = document.createElement("div");
+      const sticky = document.createElement("div");
+      const target = document.createElement("div");
+
+      sticky.appendChild(target);
+      container.appendChild(sticky);
+      document.body.appendChild(container);
+
+      setupSpatialSimulation(container, {
+        styles: { overflow: "auto", position: "relative" },
+        rect: { top: 0, left: 0, width: 100, height: 200 },
+      });
+
+      // Setup sticky with naturalTop 50 and threshold 20
+      setupSpatialSimulation(sticky, {
+        styles: { position: "sticky", top: "20px" },
+        offsetTop: 50,
+        offsetParent: container,
+        rect: { top: 50, left: 0, width: 100, height: 50 },
+      });
+
+      setupSpatialSimulation(target, {
+        rect: { top: 50, left: 0, width: 100, height: 50 },
+      });
+
+      const geo = deduceGeometry(target);
+
+      // Scroll container by 100px.
+      // InitialDoc = 50.
+      // CurrentDoc = 20 (thresholded).
+      // DeltaY = 50 - 20 = 30.
+      Object.defineProperty(container, "scrollTop", { value: 100, writable: true });
+      vi.spyOn(sticky, "getBoundingClientRect").mockReturnValue({
+        top: 20,
+        left: 0,
+        width: 100,
+        height: 50,
+        bottom: 70,
+        right: 100,
+        x: 0,
+        y: 20,
+        toJSON: () => "",
+      } as DOMRect);
+
+      const live = getLiveGeometry(
+        geo.rect,
+        geo.scrollHierarchy,
+        geo.position,
+        geo.stickyConfig,
+        0,
+        0
+      );
+      expect(live?.top).toBe(20);
+    });
+
+    it("should correctly handle static elements inside a scrolling container", () => {
+      const container = document.createElement("div");
+      const staticEl = document.createElement("div");
+
+      container.appendChild(staticEl);
+      document.body.appendChild(container);
+
+      setupSpatialSimulation(container, {
+        styles: { overflow: "auto" },
+        rect: { top: 0, left: 0, width: 100, height: 200 },
+      });
+
+      setupSpatialSimulation(staticEl, {
+        offsetTop: 100,
+        offsetParent: container,
+        rect: { top: 100, left: 0, width: 100, height: 50 },
+      });
+
+      const geo = deduceGeometry(staticEl);
+
+      Object.defineProperty(container, "scrollTop", { value: 100, writable: true });
+      // Current position 0px from viewport top
+      vi.spyOn(staticEl, "getBoundingClientRect").mockReturnValue({
+        top: 0,
+        left: 0,
+        width: 100,
+        height: 50,
+        bottom: 50,
+        right: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => "",
+      } as DOMRect);
+
+      const live = getLiveGeometry(
+        geo.rect,
+        geo.scrollHierarchy,
+        geo.position,
+        geo.stickyConfig,
+        0,
+        0
+      );
+      expect(live?.top).toBe(0);
+    });
+
+    it("should maintain secondary measurement pinning when parent selection is sticky and has internal scroller", () => {
+      const toc = document.createElement("div");
+      const navContainer = document.createElement("div");
+      const navItem = document.createElement("div");
+
+      navContainer.appendChild(navItem);
+      toc.appendChild(navContainer);
+      document.body.appendChild(toc);
+
+      setupSpatialSimulation(toc, {
+        styles: { position: "sticky", top: "144px" },
+        offsetTop: 500,
+        offsetParent: document.body,
+        rect: { top: 500, left: 800, width: 200, height: 400 },
+      });
+
+      setupSpatialSimulation(navContainer, {
+        styles: { overflow: "auto" },
+        offsetTop: 20,
+        offsetParent: toc,
+        rect: { top: 520, left: 800, width: 200, height: 300 },
+      });
+
+      setupSpatialSimulation(navItem, {
+        offsetTop: 50,
+        offsetParent: navContainer,
+        rect: { top: 570, left: 810, width: 180, height: 20 },
+      });
+
+      const primaryDeduction = deduceGeometry(toc);
+      const secondaryDeduction = deduceGeometry(navItem);
+
+      Object.defineProperty(window, "scrollY", { value: 500, writable: true });
+      vi.spyOn(toc, "getBoundingClientRect").mockReturnValue({
+        top: 144,
+        left: 800,
+        width: 200,
+        height: 400,
+        bottom: 544,
+        right: 1000,
+        x: 800,
+        y: 144,
+        toJSON: () => "",
+      } as DOMRect);
+      vi.spyOn(navContainer, "getBoundingClientRect").mockReturnValue({
+        top: 164,
+        left: 800,
+        width: 200,
+        height: 300,
+        bottom: 464,
+        right: 1000,
+        x: 800,
+        y: 164,
+        toJSON: () => "",
+      } as DOMRect);
+      vi.spyOn(navItem, "getBoundingClientRect").mockReturnValue({
+        top: 214,
+        left: 810,
+        width: 180,
+        height: 20,
+        bottom: 234,
+        right: 990,
+        x: 810,
+        y: 214,
+        toJSON: () => "",
+      } as DOMRect);
+
+      const livePrimary = getLiveGeometry(
+        primaryDeduction.rect,
+        primaryDeduction.scrollHierarchy,
+        primaryDeduction.position,
+        primaryDeduction.stickyConfig,
+        0,
+        0
+      );
+      expect(livePrimary?.top).toBe(644);
+
+      Object.defineProperty(navContainer, "scrollTop", { value: 50, writable: true });
+      vi.spyOn(navItem, "getBoundingClientRect").mockReturnValue({
+        top: 164,
+        left: 810,
+        width: 180,
+        height: 20,
+        bottom: 184,
+        right: 990,
+        x: 810,
+        y: 164,
+        toJSON: () => "",
+      } as DOMRect);
+
+      const liveSecondary = getLiveGeometry(
+        secondaryDeduction.rect,
+        secondaryDeduction.scrollHierarchy,
+        secondaryDeduction.position,
+        secondaryDeduction.stickyConfig,
+        0,
+        0
+      );
+      expect(liveSecondary?.top).toBe(664);
     });
   });
 });

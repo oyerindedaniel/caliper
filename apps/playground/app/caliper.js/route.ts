@@ -13,7 +13,7 @@ export async function GET() {
       "packages",
       "caliper",
       "dist",
-      "index.global.min.js"
+      "index.global.js"
     );
 
     const content = await readFile(filePath, "utf8");

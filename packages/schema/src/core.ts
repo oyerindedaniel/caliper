@@ -19,6 +19,8 @@ export const ScrollStateSchema = z.object({
     initialScrollTop: z.number(),
     initialScrollLeft: z.number(),
     containerRect: RectSchema.nullable(),
+    absoluteDepth: z.number(),
+    hasStickyAncestor: z.boolean().optional(),
 });
 
 export const MeasurementLineSchema = z.object({
@@ -41,6 +43,7 @@ export const StickyConfigSchema = z.object({
     containerHeight: z.number(),
     elementWidth: z.number(),
     elementHeight: z.number(),
+    anchorAbsoluteDepth: z.number(),
 });
 
 export const MeasurementResultSchema = z.object({

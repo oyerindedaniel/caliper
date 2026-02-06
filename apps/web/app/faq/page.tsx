@@ -30,8 +30,8 @@ const FAQ_ITEMS = [
     question: "What is the Agent Bridge?",
     answer: (
       <>
-        The <strong>Agent Bridge</strong> connects Caliper to AI coding agents like Cursor or
-        Claude. It allows the AI to "see" your local UI, perform audits, and verify its own CSS
+        The <strong>Agent Bridge</strong> connects Caliper to AI coding agents like Cursor or Claude
+        Code. It allows the AI to "see" your local UI, perform audits, and verify its own CSS
         changes visually, rather than just guessing based on code.
       </>
     ),

@@ -11,9 +11,9 @@ import {
   sanitizeMeasurement,
   parseComputedStyles,
   getContextMetrics,
-  findElementByFingerprint,
   countDescendants,
   generateSourceHints,
+  resolveElement,
 } from "./utils.js";
 import { walkAndMeasure } from "./harness/walk-engine.js";
 import type {
@@ -32,74 +32,53 @@ import type { CaliperStateStore } from "./state-store.js";
 export function createIntentHandler(systems: CaliperCoreSystems, stateStore: CaliperStateStore) {
   const { measurementSystem, selectionSystem } = systems;
 
-  function resolveElement(selector: string): HTMLElement | null {
-    const trimmed = selector.trim();
-
-    if (trimmed.startsWith("{")) {
-      try {
-        const info = JSON.parse(trimmed) as CaliperSelectorInput;
-        return findElementByFingerprint(info);
-      } catch (_) {}
-    }
-
-    if (trimmed.startsWith("caliper-")) {
-      return document.querySelector(`[data-caliper-agent-id="${trimmed}"]`) as HTMLElement;
-    }
-
-    try {
-      return document.querySelector(trimmed) as HTMLElement;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function handleSelect(params: CaliperSelectPayload): Promise<CaliperActionResult> {
+  function handleSelect(selectParams: CaliperSelectPayload): Promise<CaliperActionResult> {
     return new Promise((resolve) => {
-      const { selector } = params;
-      const element = resolveElement(selector);
+      const { selector: targetSelector } = selectParams;
+      const targetElement = resolveElement(targetSelector);
 
-      if (!element) {
+      if (!targetElement) {
         resolve({
           success: false,
           method: CALIPER_METHODS.SELECT,
-          selector,
-          error: `Element not found: ${selector}`,
+          selector: targetSelector,
+          error: `Element not found: ${targetSelector}`,
           timestamp: Date.now(),
         });
         return;
       }
 
-      const currentSelected = selectionSystem.getSelected();
-      if (currentSelected === element) {
-        const metadata = selectionSystem.getMetadata();
+      const currentSelectedElement = selectionSystem.getSelected();
+      if (currentSelectedElement === targetElement) {
+        const selectionMetadataValue = selectionSystem.getMetadata();
         resolve({
           success: true,
           method: CALIPER_METHODS.SELECT,
-          selector,
-          selection: sanitizeSelection(metadata)!,
+          selector: targetSelector,
+          selection: sanitizeSelection(selectionMetadataValue)!,
           timestamp: Date.now(),
         });
         return;
       }
 
-      const unsubscribe = selectionSystem.onUpdate((metadata) => {
-        unsubscribe();
+      const unsubscribeFromUpdates = selectionSystem.onUpdate((selectionMetadataValue) => {
+        unsubscribeFromUpdates();
         resolve({
           success: true,
           method: CALIPER_METHODS.SELECT,
-          selector,
-          selection: sanitizeSelection(metadata)!,
+          selector: targetSelector,
+          selection: sanitizeSelection(selectionMetadataValue)!,
           timestamp: Date.now(),
         });
       });
 
-      selectionSystem.select(element);
+      selectionSystem.select(targetElement);
     });
   }
 
-  function handleMeasure(params: CaliperMeasurePayload): Promise<CaliperActionResult> {
+  function handleMeasure(measureParams: CaliperMeasurePayload): Promise<CaliperActionResult> {
     return new Promise((resolve) => {
-      const { primarySelector, secondarySelector } = params;
+      const { primarySelector, secondarySelector } = measureParams;
       const primaryElement = resolveElement(primarySelector);
       const secondaryElement = resolveElement(secondarySelector);
 
@@ -114,9 +93,9 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         return;
       }
 
-      const measurement = createMeasurementBetween(primaryElement, secondaryElement);
+      const measurementResult = createMeasurementBetween(primaryElement, secondaryElement);
 
-      if (!measurement) {
+      if (!measurementResult) {
         resolve({
           success: false,
           method: CALIPER_METHODS.MEASURE,
@@ -128,11 +107,11 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
 
       selectionSystem.select(primaryElement);
 
-      measurementSystem.applyResult(measurement.result);
+      measurementSystem.applyResult(measurementResult.result);
       measurementSystem.freeze();
 
-      const sanitized = sanitizeMeasurement(measurement.result);
-      if (!sanitized) {
+      const sanitizedMeasurementResult = sanitizeMeasurement(measurementResult.result);
+      if (!sanitizedMeasurementResult) {
         resolve({
           success: false,
           method: CALIPER_METHODS.MEASURE,
@@ -146,95 +125,99 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         success: true,
         method: CALIPER_METHODS.MEASURE,
         selector: primarySelector,
-        measurement: sanitized,
+        measurement: sanitizedMeasurementResult,
         timestamp: Date.now(),
       });
     });
   }
 
-  async function handleInspect(params: CaliperInspectPayload): Promise<CaliperActionResult> {
-    const { selector } = params;
-    const element = resolveElement(selector);
+  async function handleInspect(inspectParams: CaliperInspectPayload): Promise<CaliperActionResult> {
+    const { selector: targetSelector } = inspectParams;
+    const targetElement = resolveElement(targetSelector);
 
-    if (!element) {
+    if (!targetElement) {
       return {
         success: false,
         method: CALIPER_METHODS.INSPECT,
-        selector,
-        error: `Element not found: ${selector}`,
+        selector: targetSelector,
+        error: `Element not found: ${targetSelector}`,
         timestamp: Date.now(),
       };
     }
 
     return waitPostRaf(() => {
-      const geometry = deduceGeometry(element);
-      const rect = element.getBoundingClientRect();
-      const computedStyle = window.getComputedStyle(element);
-      const descendants = countDescendants(element);
+      const elementGeometry = deduceGeometry(targetElement);
+      const boundingClientRect = targetElement.getBoundingClientRect();
+      const computedStyleDeclaration = window.getComputedStyle(targetElement);
+      const descendantStats = countDescendants(targetElement);
 
       return {
         success: true,
         method: CALIPER_METHODS.INSPECT,
-        selector,
+        selector: targetSelector,
         distances: {
-          top: rect.top,
-          left: rect.left,
-          bottom: document.documentElement.clientHeight - rect.bottom,
-          right: document.documentElement.clientWidth - rect.right,
-          horizontal: rect.width,
-          vertical: rect.height,
+          top: boundingClientRect.top,
+          left: boundingClientRect.left,
+          bottom: document.documentElement.clientHeight - boundingClientRect.bottom,
+          right: document.documentElement.clientWidth - boundingClientRect.right,
+          horizontal: boundingClientRect.width,
+          vertical: boundingClientRect.height,
         },
-        computedStyles: parseComputedStyles(computedStyle),
+        computedStyles: parseComputedStyles(computedStyleDeclaration),
         selection: sanitizeSelection({
-          element,
-          rect: geometry.rect,
-          scrollHierarchy: geometry.scrollHierarchy,
-          position: geometry.position,
-          stickyConfig: geometry.stickyConfig,
-          initialWindowX: geometry.initialWindowX,
-          initialWindowY: geometry.initialWindowY,
-          depth: geometry.depth,
+          element: targetElement,
+          rect: elementGeometry.rect,
+          scrollHierarchy: elementGeometry.scrollHierarchy,
+          position: elementGeometry.position,
+          stickyConfig: elementGeometry.stickyConfig,
+          initialWindowX: elementGeometry.initialWindowX,
+          initialWindowY: elementGeometry.initialWindowY,
+          depth: elementGeometry.depth,
         })!,
-        immediateChildCount: element.children.length,
-        descendantCount: descendants.count,
-        descendantsTruncated: descendants.isTruncated,
-        sourceHints: generateSourceHints(element),
+        immediateChildCount: targetElement.children.length,
+        descendantCount: descendantStats.count,
+        descendantsTruncated: descendantStats.isTruncated,
+        sourceHints: generateSourceHints(targetElement),
         timestamp: Date.now(),
       };
     });
   }
 
-  async function handleWalkDom(params: CaliperWalkDomPayload): Promise<CaliperActionResult> {
-    const { selector } = params;
-    const element = resolveElement(selector);
+  async function handleWalkDom(walkDomParams: CaliperWalkDomPayload): Promise<CaliperActionResult> {
+    const { selector: targetSelector } = walkDomParams;
+    const targetElement = resolveElement(targetSelector);
 
-    if (!element) {
+    if (!targetElement) {
       return {
         success: false,
         method: CALIPER_METHODS.WALK_DOM,
-        selector,
-        error: `Element not found: ${selector}`,
+        selector: targetSelector,
+        error: `Element not found: ${targetSelector}`,
         timestamp: Date.now(),
       };
     }
 
     return waitPostRaf(() => {
-      const getElSummary = (element: Element) => ({
-        tagName: element.tagName.toLowerCase(),
-        id: element.id || undefined,
-        classList: filterRuntimeClasses(element.classList),
-        agentId: element.getAttribute("data-caliper-agent-id") || undefined,
-        text: getElementDirectText(element, 100),
+      const getElementSummary = (summaryElement: Element) => ({
+        tagName: summaryElement.tagName.toLowerCase(),
+        id: summaryElement.id || undefined,
+        classList: filterRuntimeClasses(summaryElement.classList),
+        agentId: summaryElement.getAttribute("data-caliper-agent-id") || undefined,
+        text: getElementDirectText(summaryElement, 100),
       });
 
       return {
         success: true,
         method: CALIPER_METHODS.WALK_DOM,
-        selector,
+        selector: targetSelector,
         domContext: {
-          element: getElSummary(element),
-          parent: element.parentElement ? getElSummary(element.parentElement) : null,
-          children: Array.from(element.children).map((child) => getElSummary(child)),
+          element: getElementSummary(targetElement),
+          parent: targetElement.parentElement
+            ? getElementSummary(targetElement.parentElement)
+            : null,
+          children: Array.from(targetElement.children).map((childElement) =>
+            getElementSummary(childElement)
+          ),
         },
         timestamp: Date.now(),
       };
@@ -325,7 +308,6 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       }
 
       stateStore.updateState({
-        lastActionResult: result,
         lastUpdated: Date.now(),
       });
     } catch (error) {
