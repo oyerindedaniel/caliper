@@ -20,7 +20,6 @@ export function CaliperWrapper() {
     if (!caliper) return;
 
     if (window.__CALIPER_IS_BOOTED__) {
-      console.log("Mounting caliper");
       caliper.mount();
     }
 
@@ -30,7 +29,6 @@ export function CaliperWrapper() {
     }
 
     window.__CALIPER_IS_BOOTED__ = true;
-    console.log("Caliper is booted");
 
     return () => {
       caliper.dispose();
