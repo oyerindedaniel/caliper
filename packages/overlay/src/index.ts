@@ -34,10 +34,10 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => {},
-      dispose: () => {},
+      mount: () => { },
+      dispose: () => { },
       getSystems: () => null,
-      waitForSystems: () => new Promise(() => {}),
+      waitForSystems: () => new Promise(() => { }),
       use: () => instance,
       mounted: false,
     };
@@ -79,8 +79,10 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
   let systems: Systems | null = null;
   const plugins = new Map<string, CaliperPlugin>();
 
-  const pendingSystemsResolvers: { resolve: (s: Systems) => void; reject: (e: Error) => void }[] =
-    [];
+  const pendingSystemsResolvers: {
+    resolve: (systems: Systems) => void;
+    reject: (error: Error) => void;
+  }[] = [];
   const waitForSystems = (): Promise<Systems> => {
     if (systems) return Promise.resolve(systems);
     return new Promise((resolve, reject) => pendingSystemsResolvers.push({ resolve, reject }));

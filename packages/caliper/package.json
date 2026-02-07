@@ -6,6 +6,9 @@
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "caliper": "./dist/mcp.js"
+  },
   "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
   "homepage": "https://github.com/oyerindedaniel/caliper#readme",
   "repository": {
@@ -99,8 +102,12 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.25.3",
+    "ws": "8.19.0",
+    "zod": "4.3.5",
     "@babel/core": "^7.24.0",
     "@babel/preset-typescript": "^7.28.5",
+    "@oyerinde/caliper-schema": "workspace:*",
     "@caliper/core": "workspace:*",
     "@caliper/overlay": "workspace:*",
     "@microsoft/api-extractor": "^7.55.2",

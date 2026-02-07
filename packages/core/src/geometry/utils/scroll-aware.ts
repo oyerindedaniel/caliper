@@ -927,7 +927,8 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     const cappingContainer = scrollAnchor.parentElement || document.documentElement;
     const isDocLevelCapping =
       cappingContainer === document.documentElement || cappingContainer === document.body;
-    const cappingStyle = cappingContainer instanceof HTMLElement ? getScrollGeometryStyle(cappingContainer) : null;
+    const cappingStyle =
+      cappingContainer instanceof HTMLElement ? getScrollGeometryStyle(cappingContainer) : null;
     const isCappingContainerSticky = cappingStyle?.position === "sticky";
 
     const anchorRect = scrollAnchor.getBoundingClientRect();

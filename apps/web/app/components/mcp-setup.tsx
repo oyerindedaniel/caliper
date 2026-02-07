@@ -13,7 +13,7 @@ export function McpSetup() {
     mcpServers: {
       caliper: {
         command: "npx",
-        args: ["-y", "@oyerinde/caliper-mcp", "--port", "9876"],
+        args: ["-y", "@oyerinde/caliper", "--port", "9876"],
       },
     },
   };
@@ -22,7 +22,7 @@ export function McpSetup() {
     mcpServers: {
       caliper: {
         command: "npx",
-        args: ["-y", "@oyerinde/caliper-mcp", "--port", "9876"],
+        args: ["-y", "@oyerinde/caliper", "--port", "9876"],
       },
     },
   };
@@ -32,7 +32,7 @@ export function McpSetup() {
       case "cursor":
         return JSON.stringify(cursorConfig, null, 2);
       case "claude-code":
-        return `claude mcp add @oyerinde/caliper-mcp -- npx -y @oyerinde/caliper-mcp --port 9876`;
+        return `claude mcp add @oyerinde/caliper -- npx -y @oyerinde/caliper --port 9876`;
       case "antigravity":
         return JSON.stringify(antigravityConfig, null, 2);
     }

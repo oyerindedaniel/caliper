@@ -31,7 +31,7 @@ Cursor supports MCP via built-in settings. Add the server through the UI or by d
   "mcpServers": {
     "caliper": {
       "command": "npx",
-      "args": ["-y", "@oyerinde/caliper-mcp", "--port", "9876"]
+      "args": ["-y", "@oyerinde/caliper", "--port", "9876"]
     }
   }
 }
@@ -41,14 +41,14 @@ Cursor supports MCP via built-in settings. Add the server through the UI or by d
 2. Click **+ Add New MCP Server**.
 3. Name: `Caliper`
 4. Type: `command`
-5. Command: `npx -y @oyerinde/caliper-mcp --port 9876`
+5. Command: `npx -y @oyerinde/caliper --port 9876`
 
 #### Claude Code
 
 Add to your Claude configuration:
 
 ```bash
-claude mcp add @oyerinde/caliper-mcp -- npx -y @oyerinde/caliper-mcp --port 9876
+claude mcp add @oyerinde/caliper -- npx -y @oyerinde/caliper --port 9876
 ```
 
 #### Antigravity
@@ -60,7 +60,7 @@ Antigravity uses a configuration file named `mcp_config.json`. Add the caliper s
   "mcpServers": {
     "caliper": {
       "command": "npx",
-      "args": ["-y", "@oyerinde/caliper-mcp", "--port", "9876"]
+      "args": ["-y", "@oyerinde/caliper", "--port", "9876"]
     }
   }
 }

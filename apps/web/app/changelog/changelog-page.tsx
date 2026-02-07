@@ -3,7 +3,6 @@
 import Image from "next/image";
 import Link from "next/link";
 import styles from "../page.module.css";
-import { Footer } from "../components/footer";
 import type { ParsedChangelog } from "./parse-changelog";
 
 interface ChangelogPageProps {
@@ -49,63 +48,48 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
 
 export default function ChangelogPage({ changelog }: ChangelogPageProps) {
   return (
-    <div className={styles.page} data-caliper-ignore>
-      <main className={styles.main}>
-        <div className="mb-32">
-          <Link
-            href="/"
-            className="flex items-center gap-4 op-6 fs-14"
-            style={{
-              color: "var(--gray-rgb)",
-              textDecoration: "none",
-              transition: "opacity 0.2s",
-              fontFamily: "var(--font-geist-sans)",
-            }}
-            onMouseOver={(e) => (e.currentTarget.style.opacity = "1")}
-            onMouseOut={(e) => (e.currentTarget.style.opacity = "0.6")}
-          >
-            ← Back to Home
-          </Link>
+    <div data-caliper-ignore>
+      <div className="mb-32">
+        <Link href="/" className={styles.link}>
+          ← Back to Home
+        </Link>
+      </div>
+
+      <div className="flex justify-center mb-20">
+        <Image
+          src="/caliper_logo.svg"
+          alt="Caliper logo"
+          width={172}
+          height={50}
+          className="h-auto"
+          priority
+          unoptimized
+        />
+      </div>
+
+      <h1 className={styles.pageTitle}>{changelog.title}</h1>
+      <p className={`${styles.instructionItem} mb-24`}>{changelog.description}</p>
+
+      {changelog.versions.map((version) => (
+        <div key={version.version}>
+          <h2 className={`${styles.subHeader} ${styles.subHeaderPlain}`}>
+            [{version.version}] — {version.date}
+          </h2>
+
+          {version.sections.map((section) => (
+            <div key={section.title}>
+              <h3 className={styles.subHeader}>{section.title}</h3>
+              <ul className={styles.instructionList}>
+                {section.items.map((item, idx) => (
+                  <li key={idx} className={styles.instructionItem}>
+                    - {renderInlineMarkdown(item.text)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
-
-        <div className="flex justify-center mb-20">
-          <Image
-            src="/caliper_logo.svg"
-            alt="Caliper logo"
-            width={172}
-            height={50}
-            className="h-auto"
-            priority
-            unoptimized
-          />
-        </div>
-
-        <h1 className={styles.pageTitle}>{changelog.title}</h1>
-        <p className={`${styles.instructionItem} mb-24`}>{changelog.description}</p>
-
-        {changelog.versions.map((version) => (
-          <div key={version.version}>
-            <h2 className={`${styles.subHeader} ${styles.subHeaderLarge}`}>
-              [{version.version}] — {version.date}
-            </h2>
-
-            {version.sections.map((section) => (
-              <div key={section.title}>
-                <h3 className={styles.subHeader}>{section.title}</h3>
-                <ul className={styles.instructionList}>
-                  {section.items.map((item, idx) => (
-                    <li key={idx} className={styles.instructionItem}>
-                      - {renderInlineMarkdown(item.text)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        ))}
-      </main>
-
-      <Footer />
+      ))}
     </div>
   );
 }

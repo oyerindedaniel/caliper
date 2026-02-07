@@ -25,8 +25,8 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 
 Caliper is "AI-Native". It can be connected to AI agents (like Cursor, Claude Code, or Antigravity) via the **Model Context Protocol (MCP)**, allowing agents to perform pixel-perfect audits of your UI.
 
-1. **Install Bridge**: `pnpm add @oyerinde/caliper-bridge` ([Bridge Docs](./packages/agent-bridge/README.md))
-2. **Run Server**: `npx -y @oyerinde/caliper-mcp` ([MCP Docs](./packages/mcp-server/README.md))
+1. **Install Bridge**: `pnpm add @oyerinde/caliper` ([Bridge Docs](./packages/agent-bridge/README.md))
+2. **Run Server**: `npx @oyerinde/caliper` ([MCP Docs](./packages/mcp-server/README.md))
 3. **Connect**: Add the MCP server to your editor on the default port **9876**.
 
 The AI agent gained "layout eyes" and can perform high-precision audits, measurements, and alignment checks directly in your browser.

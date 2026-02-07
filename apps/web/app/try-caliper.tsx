@@ -41,14 +41,14 @@ const slideUp: Variants = {
 };
 
 const CalculatorIcons = {
-  "+": () => (
+  "+": ({ color }: { color?: string }) => (
     <svg
       viewBox="0 0 24 24"
       style={{
         width: 12,
         height: 12,
         strokeWidth: 2.5,
-        stroke: "currentColor",
+        stroke: color || "currentColor",
         fill: "none",
         strokeLinecap: "round",
         strokeLinejoin: "round",
@@ -65,7 +65,7 @@ const PlusIcon = CalculatorIcons["+"];
 
 export function TryCaliper() {
   const { getAltKey, getControlKey } = useOS();
-  const { theme } = useConfig();
+  const { theme, commands } = useConfig();
   const [phase, setPhase] = useState<Phase>("idle");
   const [isPaused, setIsPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -210,22 +210,59 @@ export function TryCaliper() {
           <strong>{getAltKey()}</strong> and hover to measure. Press <strong>Space</strong> to
           freeze, then use the calculator.
         </p>
-        <div>
-          <AnimatePresence mode="wait">
-            <motion.p
+        <div style={{ height: 24, overflow: "hidden" }}>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
               key={phase}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 0.5, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
+              initial={{ y: 12, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: -12, opacity: 0 }}
+              transition={{
+                duration: 0.6,
+                ease: [0.19, 1, 0.22, 1]
+              }}
               style={{
                 fontSize: 12,
                 fontFamily: "var(--font-geist-mono)",
                 margin: 0,
-                color: theme.primary,
+                color: "var(--caliper-primary, #18a0fb)",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                height: "100%"
               }}
             >
-              {phaseDescription}
-            </motion.p>
+              <span style={{ opacity: 0.9 }}>{phaseDescription}</span>
+              {phase !== "idle" && (
+                <div style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "color-mix(in srgb, var(--caliper-primary, #18a0fb), transparent 90%)",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  border: "1px solid color-mix(in srgb, var(--caliper-primary, #18a0fb), transparent 80%)",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--caliper-primary, #18a0fb)"
+                }}>
+                  <span style={{ opacity: 0.9 }}>CMD:</span>
+                  <span style={{ opacity: 0.9 }}>
+                    {(() => {
+                      const displayKey = (k: string) => k === " " ? "SPACE" : k;
+                      if (phase === "select") return displayKey(commands.select);
+                      if (phase === "measure") return displayKey(commands.activate);
+                      if (phase === "calc") return displayKey(commands.freeze);
+                      if (phase === "project") return `${commands.projTop}${commands.projLeft}${commands.projBottom}${commands.projRight}`.toUpperCase();
+                      if (phase === "ruler") return displayKey(commands.ruler);
+                      return "";
+                    })()}
+                  </span>
+                </div>
+              )}
+            </motion.div>
           </AnimatePresence>
         </div>
       </div>
@@ -386,27 +423,28 @@ export function TryCaliper() {
                   fontSize: 12,
                   fontWeight: 500,
                   fontFamily: "inherit",
-                  boxShadow: `0 4px 12px ${theme.calcShadow}`,
+                  boxShadow: `0 0 0 2px color-mix(in srgb, ${theme.primary}, transparent 50%), 0 4px 12px ${theme.calcShadow}`,
                   border: `1px solid ${theme.primary}`,
+                  userSelect: "none",
                 }}
               >
-                <motion.span>{b1wRound}</motion.span>
+                <motion.span style={{ opacity: 0.7 }}>{b1wRound}</motion.span>
                 <motion.span
                   initial={{ opacity: 0, scale: 1.3 }}
                   animate={{ opacity: 1, scale: 1 }}
                   transition={{ delay: 0.25 }}
                   style={{
-                    background: theme.calcOpHighlight,
+                    backgroundColor: theme.calcOpHighlight,
                     padding: 4,
                     height: 20,
                     borderRadius: 2,
-                    display: "flex",
+                    display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
                     color: theme.primary,
                   }}
                 >
-                  <PlusIcon />
+                  <PlusIcon color="#fff" />
                 </motion.span>
                 <motion.span
                   initial={{ opacity: 0 }}
@@ -419,7 +457,7 @@ export function TryCaliper() {
                   initial={{ opacity: 0, x: -6 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.85 }}
-                  style={{ color: theme.primary, fontWeight: 700 }}
+                  style={{ color: theme.primary, fontWeight: "bold" }}
                 >
                   = <motion.span>{calcResultVal}</motion.span>
                 </motion.span>
@@ -596,6 +634,6 @@ export function TryCaliper() {
           ))}
         </div>
       </div>
-    </section>
+    </section >
   );
 }

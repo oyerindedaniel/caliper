@@ -2,8 +2,6 @@
 
 import styles from "../page.module.css";
 import Image from "next/image";
-import { Nav } from "../components/nav";
-import { Footer } from "../components/footer";
 
 const FAQ_ITEMS = [
   {
@@ -69,44 +67,39 @@ const FAQ_ITEMS = [
 
 export default function FAQPage() {
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Nav />
-
-        <div className="flex flex-col gap-12 mb-24">
-          <div className={styles.logoWrapper}>
-            <Image
-              src="/caliper_logo.svg"
-              alt="Caliper logo"
-              width={172}
-              height={50}
-              className="h-auto"
-              priority
-              unoptimized
-            />
-          </div>
-
-          <div>
-            <h1 className="sr-only">FAQ</h1>
-            <p className="op-8">
-              Common questions about integration, features, and the philosophy behind precision
-              tooling.
-            </p>
-          </div>
+    <>
+      <div className="flex flex-col gap-12 mb-24">
+        <div className={styles.logoWrapper}>
+          <Image
+            src="/caliper_logo.svg"
+            alt="Caliper logo"
+            width={172}
+            height={50}
+            className="h-auto"
+            priority
+            unoptimized
+          />
         </div>
 
-        <div className={styles.faqList}>
-          {FAQ_ITEMS.map((item, idx) => (
-            <div key={idx} className={styles.faqItem}>
-              <div className={styles.faqNumber}>{idx + 1}</div>
-              <h3 className={styles.faqQuestion}>{item.question}</h3>
-              <div className={styles.faqConnector} />
-              <p className={styles.faqAnswer}>{item.answer}</p>
-            </div>
-          ))}
+        <div>
+          <h1 className="sr-only">FAQ</h1>
+          <p className="op-8">
+            Common questions about integration, features, and the philosophy behind precision
+            tooling.
+          </p>
         </div>
-      </main>
-      <Footer />
-    </div>
+      </div>
+
+      <div className={styles.faqList}>
+        {FAQ_ITEMS.map((item, idx) => (
+          <div key={idx} className={styles.faqItem}>
+            <div className={styles.faqNumber}>{idx + 1}</div>
+            <h3 className={styles.faqQuestion}>{item.question}</h3>
+            <div className={styles.faqConnector} />
+            <p className={styles.faqAnswer}>{item.answer}</p>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
