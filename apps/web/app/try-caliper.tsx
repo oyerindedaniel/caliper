@@ -83,6 +83,7 @@ export function TryCaliper() {
   const b2h = useMotionValue(0);
 
   const containerHeight = useMotionValue(200);
+  const containerWidth = useMotionValue(0);
 
   const updatePositions = useCallback(() => {
     const container = containerRef.current;
@@ -105,7 +106,8 @@ export function TryCaliper() {
     b2h.set(b2Rect.height);
 
     containerHeight.set(container.offsetHeight);
-  }, [b1x, b1y, b1w, b1h, b2x, b2y, b2w, b2h, containerHeight]);
+    containerWidth.set(container.offsetWidth);
+  }, [b1x, b1y, b1w, b1h, b2x, b2y, b2w, b2h, containerHeight, containerWidth]);
 
   useLayoutEffect(() => {
     const container = containerRef.current;
@@ -158,8 +160,10 @@ export function TryCaliper() {
   const calcResultVal = useTransform(b1w, (w) => Math.round(Number(w)) + 12);
 
   const b1wRound = useTransform(b1w, (w) => Math.round(Number(w)));
-  const rulerLineY = useTransform([containerHeight], (h) => Number(h) * 0.6);
-  const rulerLabelY = useTransform([rulerLineY], (y) => Number(y) + 6);
+  const rulerLineY = useTransform(containerHeight, (h) => Number(h) * 0.6);
+  const rulerLabelY = useTransform(rulerLineY, (y) => Number(y) + 6);
+  const rulerX = useTransform(containerWidth, (w) => Number(w) * 0.6);
+  const rulerLabelX = useTransform(rulerX, (x) => Number(x) + 6);
 
   const phaseDescription = useMemo(() => {
     switch (phase) {
@@ -210,7 +214,7 @@ export function TryCaliper() {
           <strong>{getAltKey()}</strong> and hover to measure. Press <strong>Space</strong> to
           freeze, then use the calculator.
         </p>
-        <div style={{ height: 24, overflow: "hidden" }}>
+        <div style={{ overflow: "hidden" }}>
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={phase}
@@ -580,7 +584,7 @@ export function TryCaliper() {
                 exit="exit"
               >
                 <motion.div
-                  initial={{ y: 200 }}
+                  initial={{ y: containerHeight.get() * 0.4 }}
                   animate={{ y: 0 }}
                   transition={{ type: "spring", stiffness: 200, damping: 20 }}
                   style={{
@@ -594,8 +598,8 @@ export function TryCaliper() {
                   }}
                 />
                 <motion.div
-                  initial={{ x: 400 }}
-                  animate={{ x: 200 }}
+                  initial={{ x: containerWidth.get() * 0.4 }}
+                  animate={{ x: 0 }}
                   transition={{ type: "spring", stiffness: 200, damping: 20, delay: 0.1 }}
                   style={{
                     position: "absolute",
@@ -604,6 +608,7 @@ export function TryCaliper() {
                     width: 1,
                     background: theme.ruler,
                     boxShadow: `0 0 6px ${theme.ruler}`,
+                    left: rulerX,
                   }}
                 />
                 <motion.div
@@ -613,7 +618,7 @@ export function TryCaliper() {
                   style={{
                     position: "absolute",
                     top: rulerLabelY,
-                    left: 206,
+                    left: rulerLabelX,
                     background: theme.primary,
                     color: "#fff",
                     padding: "2px 6px",

@@ -84,7 +84,7 @@ export default function AgenticDocsPage() {
           The MCP server exposes these tools to agents for interactive auditing:
         </p>
         <div className={styles.tableContainer}>
-          <table className={styles.commandTable}>
+          <table className={`${styles.commandTable} ${styles.mobileStack}`}>
             <thead>
               <tr>
                 <th>Tool</th>
@@ -163,7 +163,7 @@ export default function AgenticDocsPage() {
           Agents can subscribe to these resources for real-time state observation:
         </p>
         <div className={styles.tableContainer}>
-          <table className={styles.commandTable}>
+          <table className={`${styles.commandTable} ${styles.mobileStack}`}>
             <thead>
               <tr>
                 <th>Resource</th>
@@ -210,7 +210,7 @@ export default function AgenticDocsPage() {
           Built-in playbooks that guide agents through complex design reconciliation tasks:
         </p>
         <div className={styles.tableContainer}>
-          <table className={styles.commandTable}>
+          <table className={`${styles.commandTable} ${styles.mobileStack}`}>
             <thead>
               <tr>
                 <th>Prompt</th>

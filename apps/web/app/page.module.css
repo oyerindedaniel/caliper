@@ -202,11 +202,11 @@
   gap: 8px;
 }
 
-.subHeader + .subHeader {
+.subHeader+.subHeader {
   margin-top: 0;
 }
 
-.sectionHeader + .subHeader {
+.sectionHeader+.subHeader {
   margin-top: 0;
 }
 
@@ -304,6 +304,7 @@
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
@@ -960,9 +961,21 @@ p.faqAnswer strong {
     margin-top: 40px;
     width: 100%;
   }
+
+  .mobileStack tr {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .mobileStack td {
+    width: 100%;
+  }
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
