@@ -39,8 +39,8 @@ export default function AgenticDocsPage() {
 
         <h3 className={styles.subHeader}>Step 1: Setup Bridge</h3>
         <p className="mb-12 op-8">
-          Complete the <a href="#installation">Installation</a> section to inject the Caliper
-          Bridge into your local development environment.
+          Complete the <a href="#installation">Installation</a> section to inject the Caliper Bridge
+          into your local development environment.
         </p>
 
         <h3 className={styles.subHeader}>Step 2: Connect Agent</h3>
@@ -51,8 +51,8 @@ export default function AgenticDocsPage() {
 
         <h3 className={styles.subHeader}>Step 3: Handoff Selection</h3>
         <p className="mb-12 op-8">
-          Use the Caliper UI to select an element, then use shortcuts to copy its metadata and
-          paste it directly into your IDE or TUI chat:
+          Use the Caliper UI to select an element, then use shortcuts to copy its metadata and paste
+          it directly into your IDE or TUI chat:
         </p>
         <ul className={styles.instructionList}>
           <li className={styles.instructionItem}>
@@ -69,8 +69,8 @@ export default function AgenticDocsPage() {
       <section id="mcp-server" className={styles.section}>
         <h2 className={styles.sectionHeader}>MCP Server</h2>
         <p className="mb-18 op-8">
-          The Model Context Protocol (MCP) server acts as a relay between your browser (the
-          Bridge) and agentic IDEs like <strong>Cursor</strong>, <strong>Claude Code</strong>, or{" "}
+          The Model Context Protocol (MCP) server acts as a relay between your browser (the Bridge)
+          and agentic IDEs like <strong>Cursor</strong>, <strong>Claude Code</strong>, or{" "}
           <strong>Antigravity</strong>.
         </p>
 

@@ -21,8 +21,8 @@ export default function HomePage() {
         unoptimized
       />
       <p>
-        Essential tooling for detail-obsessed design engineers. High-precision browser
-        measurements, projections, and layout auditing.
+        Essential tooling for detail-obsessed design engineers. High-precision browser measurements,
+        projections, and layout auditing.
       </p>
 
       <Installation />

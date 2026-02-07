@@ -123,7 +123,7 @@ export default defineConfig((options) => {
         "@caliper/core",
       ],
       dts: false,
-      shims: true,
+      shims: false,
       minify: true,
       banner: {
         js: "#!/usr/bin/env node\n" + banner,

@@ -234,9 +234,15 @@ importers:
       '@microsoft/api-extractor':
         specifier: ^7.55.2
         version: 7.55.2(@types/node@24.10.9)
+      '@modelcontextprotocol/sdk':
+        specifier: 1.25.3
+        version: 1.25.3(hono@4.11.4)(zod@4.3.5)
       '@oyerinde/caliper-bridge':
         specifier: workspace:*
         version: link:../agent-bridge
+      '@oyerinde/caliper-schema':
+        specifier: workspace:*
+        version: link:../schema
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
@@ -270,6 +276,12 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      ws:
+        specifier: 8.19.0
+        version: 8.19.0
+      zod:
+        specifier: 4.3.5
+        version: 4.3.5
 
   packages/core:
     devDependencies:

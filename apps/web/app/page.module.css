@@ -196,11 +196,11 @@
   gap: 8px;
 }
 
-.subHeader+.subHeader {
+.subHeader + .subHeader {
   margin-top: 0;
 }
 
-.sectionHeader+.subHeader {
+.sectionHeader + .subHeader {
   margin-top: 0;
 }
 
@@ -298,7 +298,6 @@
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 1;
@@ -852,7 +851,6 @@ p.faqAnswer strong {
   font-size: 13px;
 }
 
-
 @media (max-width: 768px) {
   .page {
     padding: 40px 16px;
@@ -962,7 +960,6 @@ p.faqAnswer strong {
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
@@ -973,10 +970,8 @@ p.faqAnswer strong {
     fill: #ffd700;
   }
 
-
   .link:hover {
     opacity: 1;
     text-decoration: underline;
   }
-
 }

@@ -13,23 +13,8 @@ import { createLogger } from "../utils/logger.js";
 import { parseColor, calculateDeltaE, calculateContrastRatio } from "../utils/color-utils.js";
 import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
 import { BRIDGE_EVENTS } from "../shared/events.js";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-let packageJsonPath = join(__dirname, "../../package.json");
-try {
-  if (__dirname.endsWith("dist")) {
-    packageJsonPath = join(__dirname, "../package.json");
-  }
-} catch (_) {}
-
-const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
 const logger = createLogger("mcp-server");
-
 export class CaliperMcpServer {
   private server: McpServer;
   private port: number;
@@ -39,7 +24,7 @@ export class CaliperMcpServer {
     this.port = port;
     this.server = new McpServer({
       name: "caliper-mcp-server",
-      version: packageJson.version,
+      version: process.env.VERSION as string,
     });
 
     this.registerTools();
@@ -630,30 +615,28 @@ You are comparing TWO elements to understand the styling of one (A) and apply co
 
 ### IMPORTANT: TAB MANAGEMENT
 
-${
-  tabIdA || tabIdB
-    ? `
+${tabIdA || tabIdB
+                  ? `
 You are working across multiple tabs. The agent-ID is **tab-specific** - if you send a command to the wrong tab, it will fail.
 
 **Before Each Command:**
 1. Use \`caliper_list_tabs\` to see all connected tabs
 2. Use \`caliper_switch_tab\` to switch to the correct tab BEFORE calling walk/inspect
 `
-    : `
+                  : `
 Both selections are on the SAME tab. No tab switching required.
 `
-}
+                }
 
 ### PHASE 1: WALK SELECTION A (REFERENCE)
 
-${
-  tabIdA
-    ? `1. **Switch to Tab A**
+${tabIdA
+                  ? `1. **Switch to Tab A**
    Call \`caliper_switch_tab\` with tabId: "${tabIdA}"
 
 2. `
-    : "1. "
-}**Walk and Measure A**
+                  : "1. "
+                }**Walk and Measure A**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorA}"
    - maxDepth: 5
@@ -666,14 +649,13 @@ ${
 
 ### PHASE 2: WALK SELECTION B (TARGET)
 
-${
-  tabIdB
-    ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
+${tabIdB
+                  ? `${tabIdA ? "3" : "2"}. **Switch to Tab B**
    Call \`caliper_switch_tab\` with tabId: "${tabIdB}"
 
 ${tabIdA ? "4" : "3"}. `
-    : `${tabIdA ? "3" : "2"}. `
-}**Walk and Measure B**
+                  : `${tabIdA ? "3" : "2"}. `
+                }**Walk and Measure B**
    Call \`caliper_walk_and_measure\` with:
    - selector: "${selectorB}"
    - maxDepth: 5

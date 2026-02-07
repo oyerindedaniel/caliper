@@ -219,7 +219,7 @@ export function TryCaliper() {
               exit={{ y: -12, opacity: 0 }}
               transition={{
                 duration: 0.6,
-                ease: [0.19, 1, 0.22, 1]
+                ease: [0.19, 1, 0.22, 1],
               }}
               style={{
                 fontSize: 12,
@@ -229,33 +229,38 @@ export function TryCaliper() {
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
-                height: "100%"
+                height: "100%",
               }}
             >
               <span style={{ opacity: 0.9 }}>{phaseDescription}</span>
               {phase !== "idle" && (
-                <div style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  background: "color-mix(in srgb, var(--caliper-primary, #18a0fb), transparent 90%)",
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  border: "1px solid color-mix(in srgb, var(--caliper-primary, #18a0fb), transparent 80%)",
-                  fontSize: 10,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.06em",
-                  color: "var(--caliper-primary, #18a0fb)"
-                }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background:
+                      "color-mix(in srgb, var(--caliper-primary, #18a0fb), transparent 90%)",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    border:
+                      "1px solid color-mix(in srgb, var(--caliper-primary, #18a0fb), transparent 80%)",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--caliper-primary, #18a0fb)",
+                  }}
+                >
                   <span style={{ opacity: 0.9 }}>CMD:</span>
                   <span style={{ opacity: 0.9 }}>
                     {(() => {
-                      const displayKey = (k: string) => k === " " ? "SPACE" : k;
+                      const displayKey = (k: string) => (k === " " ? "SPACE" : k);
                       if (phase === "select") return displayKey(commands.select);
                       if (phase === "measure") return displayKey(commands.activate);
                       if (phase === "calc") return displayKey(commands.freeze);
-                      if (phase === "project") return `${commands.projTop}${commands.projLeft}${commands.projBottom}${commands.projRight}`.toUpperCase();
+                      if (phase === "project")
+                        return `${commands.projTop}${commands.projLeft}${commands.projBottom}${commands.projRight}`.toUpperCase();
                       if (phase === "ruler") return displayKey(commands.ruler);
                       return "";
                     })()}
@@ -634,6 +639,6 @@ export function TryCaliper() {
           ))}
         </div>
       </div>
-    </section >
+    </section>
   );
 }
