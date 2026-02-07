@@ -3,7 +3,6 @@ import {
   createMeasurementSystem,
   createSelectionSystem,
   createSuppressionDelegate,
-  createProjectionSystem,
   type MeasurementSystem,
   type SelectionSystem,
   type MeasurementResult,
@@ -15,7 +14,9 @@ import {
   getTopElementAtPoint,
   getLiveLineValue,
   getLiveGeometry,
-  createRulerSystem,
+  getNormalizedModifiers,
+  getLogicalKey,
+  isKeyMatch,
   type MeasurementLine,
   type DeepRequired,
   type ProjectionSystem,
@@ -23,6 +24,7 @@ import {
   type RulerSystem,
   type RulerState,
   RESIZE_THROTTLE_MS,
+  buildSelectorInfo,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -30,6 +32,10 @@ import { PREFIX } from "./css/styles.js";
 interface RootConfig {
   commands: DeepRequired<CommandsConfig>;
   animation: DeepRequired<AnimationConfig>;
+  onSystemsReady?: (systems: {
+    measurementSystem: MeasurementSystem;
+    selectionSystem: SelectionSystem;
+  }) => void;
 }
 
 export function Root(config: RootConfig) {
@@ -52,6 +58,7 @@ export function Root(config: RootConfig) {
     position: "static",
     initialWindowX: 0,
     initialWindowY: 0,
+    depth: 0,
   });
 
   const [calculatorState, setCalculatorState] = createSignal<CalculatorState | null>(null);
@@ -67,6 +74,10 @@ export function Root(config: RootConfig) {
   const [activeInputFocus, setActiveInputFocus] = createSignal<"calculator" | "projection">(
     "calculator"
   );
+  const [pinnedCalculatorPos, setPinnedCalculatorPos] = createSignal<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   let system: MeasurementSystem | null = null;
   let selectionSystem: SelectionSystem | null = null;
@@ -77,6 +88,10 @@ export function Root(config: RootConfig) {
 
   const [isActivatePressed, setIsActivatePressed] = createSignal(false);
   const [isFrozen, setIsFrozen] = createSignal(false);
+  const [isCopied, setIsCopied] = createSignal(false);
+  const [isAgentActive, setIsAgentActive] = createSignal(false);
+
+  let copyTimeoutId: number | null = null;
 
   const ignoredElements = new WeakSet<Element>();
 
@@ -86,9 +101,18 @@ export function Root(config: RootConfig) {
   let observedPrimary: Element | null = null;
   let observedSecondary: Element | null = null;
 
+  const resetCopyFeedback = () => {
+    if (copyTimeoutId) {
+      window.clearTimeout(copyTimeoutId);
+      copyTimeoutId = null;
+    }
+    setIsCopied(false);
+  };
+
   const resetCalculatorUI = () => {
     setCalculatorState(null);
     setActiveCalculatorLine(null);
+    setPinnedCalculatorPos(null);
     if (projectionState().direction !== null) {
       setActiveInputFocus("projection");
     }
@@ -107,7 +131,6 @@ export function Root(config: RootConfig) {
     if (state.operation) {
       setActiveCalculatorLine(null);
     }
-
   };
 
   const isActive = createMemo(() => {
@@ -141,7 +164,15 @@ export function Root(config: RootConfig) {
   onMount(() => {
     selectionSystem = createSelectionSystem();
     system = createMeasurementSystem();
-    projectionSystem = createProjectionSystem();
+    projectionSystem = system.getProjection();
+    rulerSystem = system.getRuler();
+
+    if (config.onSystemsReady) {
+      config.onSystemsReady({
+        measurementSystem: system,
+        selectionSystem,
+      });
+    }
 
     const unsubscribeProjection = projectionSystem.onUpdate((state) => {
       setProjectionState(state);
@@ -157,7 +188,6 @@ export function Root(config: RootConfig) {
       }
     });
 
-    rulerSystem = createRulerSystem();
     const unsubscribeRuler = rulerSystem.onUpdate((state) => {
       setRulerState(state);
     });
@@ -172,21 +202,25 @@ export function Root(config: RootConfig) {
       setSelectionMetadata(metadata);
     });
 
+    const handleAgentLockChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ locked: boolean }>;
+      setIsAgentActive(customEvent.detail.locked);
+    };
+
     let selectionTimeoutId: number | null = null;
     let lastPointerPos = { x: 0, y: 0 };
 
     const performSelection = (x: number, y: number) => {
+      if (isAgentActive()) return;
+
       const element = getTopElementAtPoint(x, y);
       if (element && selectionSystem) {
         if (system) {
           system.abort();
         }
 
-        if (projectionSystem) {
-          projectionSystem.clear();
-        }
-
         resetCalculatorUI();
+        resetCopyFeedback();
         setActiveInputFocus("calculator");
 
         lastHoveredElement = null;
@@ -197,29 +231,25 @@ export function Root(config: RootConfig) {
     };
 
     const isCommandActive = (e: MouseEvent | PointerEvent | KeyboardEvent): boolean => {
-      const { ctrlKey, metaKey, altKey, shiftKey } = e;
+      const mods = getNormalizedModifiers(e);
       const key = commands.select;
-      const modifiers: Record<string, boolean> = {
-        Control: ctrlKey,
-        Meta: metaKey,
-        Alt: altKey,
-        Shift: shiftKey,
-      };
 
-      if (key in modifiers) {
-        return Object.entries(modifiers).every(([name, value]) =>
+      if (key in mods) {
+        return Object.entries(mods).every(([name, value]) =>
           name === key ? value === true : value === false
         );
       }
 
-      return isSelectKeyDown() && !ctrlKey && !metaKey && !altKey && !shiftKey;
+      return isSelectKeyDown() && !mods.Control && !mods.Meta && !mods.Alt && !mods.Shift;
     };
 
     const isActivateActive = (e: KeyboardEvent): boolean => {
-      return e.key === commands.activate || (commands.activate === "Alt" && (e.key === "Alt" || e.key === "AltGraph"));
+      return isKeyMatch(commands.activate, e);
     };
 
     const handlePointerDown = (e: PointerEvent) => {
+      if (isAgentActive()) return;
+
       lastPointerPos = { x: e.clientX, y: e.clientY };
 
       if (isCommandActive(e)) {
@@ -236,6 +266,8 @@ export function Root(config: RootConfig) {
     };
 
     const handleClick = (e: MouseEvent) => {
+      if (isAgentActive()) return;
+
       if (isCommandActive(e)) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -258,10 +290,56 @@ export function Root(config: RootConfig) {
         }
       }
     };
+    const handleContextMenu = (contextEvent: MouseEvent) => {
+      if (isAgentActive()) return;
 
-    const handleContextMenu = (e: MouseEvent) => {
-      if (isCommandActive(e)) {
-        e.preventDefault();
+      const selectedElement = selectionMetadata().element;
+      const measurementResult = result();
+
+      if (selectedElement || measurementResult) {
+        contextEvent.preventDefault();
+        contextEvent.stopImmediatePropagation();
+
+        let clipboardContent = "";
+
+        if (contextEvent.shiftKey && selectedElement) {
+          // Mode 1: Copy ONLY the Agent ID string
+          clipboardContent = selectedElement.getAttribute("data-caliper-agent-id") || "";
+        } else if (measurementResult && system && selectionSystem) {
+          // Mode 2: Copy dual-fingerprint for measurements
+          const primaryElement = selectionSystem.getSelected();
+          const secondaryElement = system.getSecondaryElement();
+          if (primaryElement && secondaryElement) {
+            clipboardContent = JSON.stringify({
+              primary: buildSelectorInfo(primaryElement),
+              secondary: buildSelectorInfo(secondaryElement),
+            });
+          }
+        } else if (selectedElement) {
+          // Mode 3: Copy full selection fingerprint (default)
+          clipboardContent = JSON.stringify(
+            buildSelectorInfo(selectedElement, selectionMetadata())
+          );
+        }
+
+        if (clipboardContent) {
+          navigator.clipboard
+            .writeText(clipboardContent)
+            .then(() => {
+              if (copyTimeoutId) clearTimeout(copyTimeoutId);
+              setIsCopied(true);
+              copyTimeoutId = window.setTimeout(() => {
+                setIsCopied(false);
+                copyTimeoutId = null;
+              }, 1500);
+            })
+            .catch(() => {});
+        }
+        return;
+      }
+
+      if (isCommandActive(contextEvent)) {
+        contextEvent.preventDefault();
       }
     };
 
@@ -272,6 +350,7 @@ export function Root(config: RootConfig) {
     const selectionDelegate = createSuppressionDelegate((el: Element) => {
       if (selectionSystem?.getSelected() !== el) {
         system?.abort();
+        resetCopyFeedback();
       }
       lastHoveredElement = el;
       selectionSystem?.select(el);
@@ -288,6 +367,11 @@ export function Root(config: RootConfig) {
 
     const processMouseMove = () => {
       if (!lastMouseEvent || !selectionSystem) {
+        mouseMoveRafId = null;
+        return;
+      }
+
+      if (isAgentActive()) {
         mouseMoveRafId = null;
         return;
       }
@@ -331,7 +415,9 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === commands.clear) {
+      if (isAgentActive() && !isKeyMatch(commands.clear, e)) return;
+
+      if (isKeyMatch(commands.clear, e)) {
         if (!isActive()) return;
 
         e.preventDefault();
@@ -339,17 +425,10 @@ export function Root(config: RootConfig) {
 
         setIsActivatePressed(false);
         resetCalculatorUI();
+        resetCopyFeedback();
 
         if (system) {
           system.abort();
-        }
-
-        if (projectionSystem) {
-          projectionSystem.clear();
-        }
-
-        if (rulerSystem) {
-          rulerSystem.clear();
         }
 
         if (selectionSystem) {
@@ -362,11 +441,16 @@ export function Root(config: RootConfig) {
         return;
       }
 
-      if (e.key === commands.select) {
+      if (isKeyMatch(commands.select, e)) {
         setIsSelectKeyDown(true);
       }
 
-      if (e.key.toLowerCase() === commands.ruler.toLowerCase() && e.shiftKey && rulerSystem) {
+      if (
+        getLogicalKey(e).toLowerCase() === commands.ruler.toLowerCase() &&
+        e.shiftKey &&
+        rulerSystem &&
+        !isAgentActive()
+      ) {
         e.preventDefault();
         const vp = viewport();
         const x = Math.max(0, Math.min(cursor().x, vp.width));
@@ -385,14 +469,11 @@ export function Root(config: RootConfig) {
           if (system) {
             system.abort();
           }
-          if (projectionSystem) {
-            projectionSystem.clear();
-          }
           resetCalculatorUI();
         }
 
         setIsActivatePressed(true);
-      } else if (e.key === commands.freeze && system) {
+      } else if (isKeyMatch(commands.freeze, e) && system) {
         const state = system.getState();
 
         if (state === "FROZEN") {
@@ -405,7 +486,7 @@ export function Root(config: RootConfig) {
           system.freeze();
         }
       } else {
-        const key = e.key;
+        const key = getLogicalKey(e);
         const { calculator, projection } = commands;
         const isCalcActive = !!calculatorState();
         const isProjActive = projectionState().direction !== null;
@@ -555,7 +636,7 @@ export function Root(config: RootConfig) {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === commands.select) {
+      if (isKeyMatch(commands.select, e)) {
         setIsSelectKeyDown(false);
       }
 
@@ -589,9 +670,28 @@ export function Root(config: RootConfig) {
       window.focus();
     };
 
+    const handleDblClick = (e: MouseEvent) => {
+      if (!calculatorState()?.isActive) return;
+
+      const target = e.target as HTMLElement;
+      const isOnCalculator = target.closest(`.${PREFIX}calculator`);
+
+      if (isOnCalculator) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setPinnedCalculatorPos(null);
+      } else if (pinnedCalculatorPos() === null) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        setPinnedCalculatorPos({ x: e.clientX, y: e.clientY });
+      }
+    };
+
+    window.addEventListener("caliper:agent-lock-change", handleAgentLockChange);
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
     window.addEventListener("pointerup", handlePointerUp, { capture: true });
     window.addEventListener("click", handleClick, { capture: true });
+    window.addEventListener("dblclick", handleDblClick, { capture: true });
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("keydown", handleKeyDown, { capture: true });
     window.addEventListener("keyup", handleKeyUp, { capture: true });
@@ -600,9 +700,11 @@ export function Root(config: RootConfig) {
     window.addEventListener("focus", handleFocus);
 
     onCleanup(() => {
+      window.removeEventListener("caliper:agent-lock-change", handleAgentLockChange);
       window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
       window.removeEventListener("pointerup", handlePointerUp, { capture: true });
       window.removeEventListener("click", handleClick, { capture: true });
+      window.removeEventListener("dblclick", handleDblClick, { capture: true });
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("keydown", handleKeyDown, { capture: true });
       window.removeEventListener("keyup", handleKeyUp, { capture: true });
@@ -652,7 +754,11 @@ export function Root(config: RootConfig) {
     }
   });
 
-  const updateResizeObservations = (active: boolean, primaryEl: Element | null, secondaryEl: Element | null) => {
+  const updateResizeObservations = (
+    active: boolean,
+    primaryEl: Element | null,
+    secondaryEl: Element | null
+  ) => {
     if (!resizeObserver) return;
 
     if (active && !observedRoot) {
@@ -803,7 +909,6 @@ export function Root(config: RootConfig) {
     }
   });
 
-
   const handleLineClick = (line: MeasurementLine, liveValue: number) => {
     if (system) {
       const calc = system.getCalculator();
@@ -872,11 +977,10 @@ export function Root(config: RootConfig) {
     rulerSystem?.removeLine(id);
   };
 
-
   return (
     <Overlay
       result={result}
-      cursor={cursor}
+      cursor={() => pinnedCalculatorPos() ?? cursor()}
       selectionMetadata={selectionMetadata}
       isActivatePressed={isActivatePressed}
       isFrozen={isFrozen}
@@ -886,6 +990,7 @@ export function Root(config: RootConfig) {
       projectionState={projectionState}
       rulerState={rulerState}
       activeFocus={activeInputFocus}
+      isCopied={isCopied}
       onLineClick={handleLineClick}
       onRulerUpdate={handleRulerUpdate}
       onRulerRemove={handleRulerRemove}

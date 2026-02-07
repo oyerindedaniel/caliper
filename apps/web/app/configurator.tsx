@@ -1,10 +1,11 @@
 import { useState, useMemo, useRef } from "react";
 import styles from "./page.module.css";
-import { useFocus } from "./focus-context";
+import { useFocus } from "./contexts/focus-context";
 import { useCopy } from "./hooks/use-copy";
 import { useKeyCapture } from "./hooks/use-key-capture";
-import { useConfig, type CommandConfig } from "./config-context";
+import { useConfig, type CommandConfig } from "./contexts/config-context";
 import { ColorPicker } from "./components/color-picker";
+import { useIsClient } from "./hooks/use-is-client";
 
 const ShortcutField = ({
   label,
@@ -38,15 +39,15 @@ const ShortcutField = ({
     // Mapping for common keys
     const keyMap: Record<string, string> = {
       " ": "Space",
-      "Meta": "Cmd",
-      "Control": "Ctrl",
-      "AltGraph": "Alt",
-      "ArrowUp": "Up Arrow",
-      "ArrowDown": "Down Arrow",
-      "ArrowLeft": "Left Arrow",
-      "ArrowRight": "Right Arrow",
-      "Enter": "Return",
-      "Escape": "Esc",
+      Meta: "Cmd",
+      Control: "Ctrl",
+      AltGraph: "Alt",
+      ArrowUp: "Up Arrow",
+      ArrowDown: "Down Arrow",
+      ArrowLeft: "Left Arrow",
+      ArrowRight: "Right Arrow",
+      Enter: "Return",
+      Escape: "Esc",
     };
 
     if (value in keyMap) return keyMap[value];
@@ -60,7 +61,7 @@ const ShortcutField = ({
         <input
           ref={(el) => {
             registerInput(id, el);
-            (inputRef as any).current = el;
+            inputRef.current = el;
           }}
           type="text"
           readOnly
@@ -94,6 +95,7 @@ const ShortcutField = ({
 };
 
 export function Configurator() {
+  const isClient = useIsClient();
   const { copy } = useCopy();
   const [status, setStatus] = useState<"copied" | "tried" | null>(null);
   const { commands, updateCommand, theme, updateTheme, resetConfig, applyConfig } = useConfig();
@@ -174,8 +176,10 @@ export function Configurator() {
     updateCommand(key, value);
   };
 
+  if (!isClient) return null;
+
   return (
-    <section className={styles.section}>
+    <section id="configurator" className={styles.section}>
       <h2 className={styles.sectionHeader}>Shortcut Configurator</h2>
       <p
         className={styles.instructionItem}

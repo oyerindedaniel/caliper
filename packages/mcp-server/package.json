@@ -1,0 +1,42 @@
+{
+  "name": "@oyerinde/caliper-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Caliper UI auditing - enables AI agents to perform high-precision layout checks",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "caliper-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "pnpm run clean && cross-env NODE_ENV=production tsup",
+    "build:watch": "tsup --watch",
+    "start": "node dist/index.js",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.25.3",
+    "ws": "8.19.0",
+    "zod": "4.3.5"
+  },
+  "devDependencies": {
+    "@oyerinde/caliper-schema": "workspace:*",
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^24.10.9",
+    "@types/ws": "8.18.1",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.1",
+    "prettier": "^3.7.4",
+    "tsup": "^8.3.5",
+    "typescript": "5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

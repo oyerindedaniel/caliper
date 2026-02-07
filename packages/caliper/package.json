@@ -1,11 +1,14 @@
 {
   "name": "@oyerinde/caliper",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "High-precision browser measurements, projections, and layout auditing",
   "type": "module",
   "main": "dist/index.cjs",
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "caliper": "./dist/mcp.js"
+  },
   "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
   "homepage": "https://github.com/oyerindedaniel/caliper#readme",
   "repository": {
@@ -43,9 +46,23 @@
         }
       }
     },
-    "./iife": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.global.js"
+    "./bridge": {
+      "node": {
+        "import": "./dist/bridge.server.js",
+        "require": "./dist/bridge.server.cjs"
+      },
+      "types": "./dist/bridge.d.ts",
+      "import": "./dist/bridge.js",
+      "require": "./dist/bridge.cjs"
+    },
+    "./preset": {
+      "node": {
+        "import": "./dist/preset.server.js",
+        "require": "./dist/preset.server.cjs"
+      },
+      "types": "./dist/preset.d.ts",
+      "import": "./dist/preset.js",
+      "require": "./dist/preset.cjs"
     }
   },
   "files": [
@@ -85,13 +102,19 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.25.3",
+    "ws": "8.19.0",
+    "zod": "4.3.5",
     "@babel/core": "^7.24.0",
     "@babel/preset-typescript": "^7.28.5",
+    "@oyerinde/caliper-schema": "workspace:*",
     "@caliper/core": "workspace:*",
     "@caliper/overlay": "workspace:*",
+    "@microsoft/api-extractor": "^7.55.2",
+    "@oyerinde/caliper-bridge": "workspace:*",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
-    "@types/node": "^22.15.3",
+    "@types/node": "^24.10.9",
     "babel-preset-solid": "^1.9.10",
     "cross-env": "^10.1.0",
     "esbuild-plugin-babel": "^0.2.3",

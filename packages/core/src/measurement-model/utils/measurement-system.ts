@@ -9,6 +9,8 @@ import {
   createCalculatorIntegration,
   type CalculatorIntegration,
 } from "./calculator-integration.js";
+import { createProjectionSystem, type ProjectionSystem } from "./projection-system.js";
+import { createRulerSystem, type RulerSystem } from "../../ruler-model/utils/ruler-system.js";
 
 export type { MeasurementState };
 
@@ -23,10 +25,14 @@ export interface MeasurementSystem {
   cleanup: () => void;
   getState: () => MeasurementState;
   getCurrentResult: () => MeasurementResult | null;
+  getSecondaryElement: () => Element | null;
   getCalculator: () => CalculatorIntegration;
+  getProjection: () => ProjectionSystem;
+  getRuler: () => RulerSystem;
   onStateChange: (listener: MeasurementSystemListener) => () => void;
   updatePrimaryRect: (rect: DOMRect) => void;
   updateSecondaryRect: (rect: DOMRect) => void;
+  applyResult: (result: MeasurementResult) => void;
 }
 
 export function createMeasurementSystem(): MeasurementSystem {
@@ -34,6 +40,8 @@ export function createMeasurementSystem(): MeasurementSystem {
   const reader = createFrequencyControlledReader(baseReader);
   const stateMachine = createStateMachine();
   const calculator = createCalculatorIntegration();
+  const projection = createProjectionSystem();
+  const ruler = createRulerSystem();
   const listeners = new Set<MeasurementSystemListener>();
 
   let currentResult: MeasurementResult | null = null;
@@ -104,6 +112,8 @@ export function createMeasurementSystem(): MeasurementSystem {
     reader.cancel();
     stateMachine.transitionTo("IDLE");
     calculator.close();
+    projection.clear();
+    ruler.clear();
     currentResult = null;
     previousContext = null;
     previousElement = null;
@@ -134,8 +144,20 @@ export function createMeasurementSystem(): MeasurementSystem {
     return currentResult;
   }
 
+  function getSecondaryElement(): Element | null {
+    return previousElement;
+  }
+
   function getCalculator(): CalculatorIntegration {
     return calculator;
+  }
+
+  function getProjection(): ProjectionSystem {
+    return projection;
+  }
+
+  function getRuler(): RulerSystem {
+    return ruler;
   }
 
   function onStateChange(listener: MeasurementSystemListener) {
@@ -181,6 +203,12 @@ export function createMeasurementSystem(): MeasurementSystem {
     notifyListeners();
   }
 
+  function applyResult(result: MeasurementResult) {
+    currentResult = result;
+    stateMachine.transitionTo("MEASURING");
+    notifyListeners();
+  }
+
   return {
     measure,
     abort,
@@ -190,9 +218,13 @@ export function createMeasurementSystem(): MeasurementSystem {
     cleanup,
     getState,
     getCurrentResult,
+    getSecondaryElement,
     getCalculator,
+    getProjection,
+    getRuler,
     onStateChange,
     updatePrimaryRect,
     updateSecondaryRect,
+    applyResult,
   };
 }

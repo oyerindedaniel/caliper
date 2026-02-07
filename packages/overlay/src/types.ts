@@ -28,6 +28,7 @@ export interface OverlayProps {
   projectionState?: Accessor<ProjectionState>;
   rulerState?: Accessor<RulerState>;
   activeFocus?: Accessor<"calculator" | "projection">;
+  isCopied?: Accessor<boolean>;
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
   onRulerUpdate?: (id: string, position: number) => void;
   onRulerRemove?: (id: string) => void;

@@ -45,7 +45,9 @@ export function RulerOverlay(props: RulerOverlayProps) {
   const [hoveredId, setHoveredId] = createSignal<string | null>(null);
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set<string>());
 
-  const [rulerOrigins, setRulerOrigins] = createSignal<Map<string, { width: number; height: number }>>(new Map());
+  const [rulerOrigins, setRulerOrigins] = createSignal<
+    Map<string, { width: number; height: number }>
+  >(new Map());
 
   createEffect(() => {
     const lines = props.state().lines;
@@ -198,8 +200,8 @@ export function RulerOverlay(props: RulerOverlayProps) {
     if (activeLines.length === 0) return;
 
     let step = 1;
-    if (e.shiftKey) step = 10;
-    else if (e.altKey) step = 0.1;
+    if (e.ctrlKey || e.metaKey) step = 10;
+    else if (e.shiftKey) step = 0.1;
 
     const firstLine = activeLines[0];
     if (!firstLine) return;
@@ -568,9 +570,7 @@ function RulerLineItem(props: {
                 type: "distance",
                 value: pos,
                 start: isV ? { x: pos, y: 0 } : { x: 0, y: pos },
-                end: isV
-                  ? { x: pos, y: vp.height }
-                  : { x: vp.width, y: pos },
+                end: isV ? { x: pos, y: vp.height } : { x: vp.width, y: pos },
               },
               pos
             );

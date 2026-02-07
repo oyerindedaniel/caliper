@@ -1,6 +1,11 @@
 import { Show, createMemo } from "solid-js";
 import { Portal } from "solid-js/web";
-import { getLiveGeometry, getTotalScrollDelta, getCommonVisibilityWindow } from "@caliper/core";
+import {
+  getLiveGeometry,
+  getTotalScrollDelta,
+  getCommonVisibilityWindow,
+  getOverlayRoot,
+} from "@caliper/core";
 import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.jsx";
 import { MeasurementLabels } from "./render-labels.jsx";
 import { Calculator } from "./calculator.jsx";
@@ -27,11 +32,12 @@ export function Overlay(props: OverlayProps) {
       res.primaryPosition,
       res.primarySticky,
       res.primaryWinX,
-      res.primaryWinY
+      res.primaryWinY,
+      !!res.primaryHasContainingBlock
     );
     if (!primaryGeo) return null;
 
-    return {
+    const base = {
       primary: {
         geo: primaryGeo,
         delta: getTotalScrollDelta(
@@ -39,7 +45,8 @@ export function Overlay(props: OverlayProps) {
           res.primaryPosition,
           res.primarySticky,
           res.primaryWinX,
-          res.primaryWinY
+          res.primaryWinY,
+          !!res.primaryHasContainingBlock
         ),
       },
       secondary: {
@@ -49,14 +56,16 @@ export function Overlay(props: OverlayProps) {
           res.secondaryPosition,
           res.secondarySticky,
           res.secondaryWinX,
-          res.secondaryWinY
+          res.secondaryWinY,
+          !!res.secondaryHasContainingBlock
         ),
         delta: getTotalScrollDelta(
           res.secondaryHierarchy,
           res.secondaryPosition,
           res.secondarySticky,
           res.secondaryWinX,
-          res.secondaryWinY
+          res.secondaryWinY,
+          !!res.secondaryHasContainingBlock
         ),
       },
       common: getCommonVisibilityWindow(
@@ -65,15 +74,22 @@ export function Overlay(props: OverlayProps) {
         props.selectionMetadata().element!,
         res.secondaryElement!
       ),
-      isSameContext: !!(
-        (res.primaryPosition === res.secondaryPosition &&
-          res.primaryHierarchy.length === res.secondaryHierarchy.length &&
-          res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element)) ||
-        (res.primaryHierarchy.length > 0 &&
-          res.primaryHierarchy[0]?.element === res.secondaryElement) ||
-        (res.secondaryHierarchy.length > 0 &&
-          res.secondaryHierarchy[0]?.element === props.selectionMetadata().element)
-      ),
+    };
+
+    const hasSameStack =
+      res.primaryPosition === res.secondaryPosition &&
+      res.primaryHierarchy.length === res.secondaryHierarchy.length &&
+      res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element);
+
+    const isDirectParentChild =
+      (res.primaryHierarchy.length > 0 &&
+        res.primaryHierarchy[0]?.element === res.secondaryElement) ||
+      (res.secondaryHierarchy.length > 0 &&
+        res.secondaryHierarchy[0]?.element === props.selectionMetadata().element);
+
+    return {
+      ...base,
+      isSameContext: hasSameStack || isDirectParentChild,
     };
   });
 
@@ -90,10 +106,11 @@ export function Overlay(props: OverlayProps) {
       <SelectionLabel
         metadata={props.selectionMetadata()}
         isActivatePressed={props.isActivatePressed()}
+        isCopied={props.isCopied?.() ?? false}
         viewport={props.viewport()}
       />
       <Show when={(props.isActivatePressed() || props.isFrozen()) && resultData()}>
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <div class={`${PREFIX}overlay`}>
             <MeasurementLinesWithCalculator
               lines={props.result()!.lines}
@@ -111,10 +128,10 @@ export function Overlay(props: OverlayProps) {
         </Portal>
       </Show>
       <Show when={props.calculatorState && props.calculatorState() !== null}>
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <Calculator
             state={props.calculatorState!()!}
-            onClose={props.onCalculatorClose || (() => { })}
+            onClose={props.onCalculatorClose || (() => {})}
             position={{ x: props.cursor().x, y: props.cursor().y }}
             isFocused={props.activeFocus?.() === "calculator"}
           />
@@ -127,7 +144,7 @@ export function Overlay(props: OverlayProps) {
           props.projectionState()?.element === props.selectionMetadata().element
         }
       >
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <ProjectionOverlay
             projectionState={props.projectionState!}
             metadata={props.selectionMetadata}
@@ -138,15 +155,15 @@ export function Overlay(props: OverlayProps) {
         </Portal>
       </Show>
       <Show when={props.rulerState && props.rulerState().lines.length > 0}>
-        <Portal mount={document.body}>
+        <Portal mount={getOverlayRoot()}>
           <RulerOverlay
             state={props.rulerState!}
             viewport={props.viewport}
             projectionState={props.projectionState}
             metadata={props.selectionMetadata}
             result={props.result}
-            onUpdate={props.onRulerUpdate || (() => { })}
-            onRemove={props.onRulerRemove || (() => { })}
+            onUpdate={props.onRulerUpdate || (() => {})}
+            onRemove={props.onRulerRemove || (() => {})}
             onLineClick={props.onLineClick}
           />
         </Portal>

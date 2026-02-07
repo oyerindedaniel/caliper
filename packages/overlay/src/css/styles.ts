@@ -27,6 +27,7 @@ export const OVERLAY_STYLES = `
   --caliper-text: ${DEFAULT_THEME.text};
   --caliper-projection: ${DEFAULT_THEME.projection};
   --caliper-ruler: ${DEFAULT_THEME.ruler};
+  --caliper-success: rgba(74, 222, 128, 1);
 }
 
 #caliper-overlay-root {
@@ -37,7 +38,6 @@ export const OVERLAY_STYLES = `
   height: 100vh;
   pointer-events: none;
   overflow: visible;
-  z-index: 999999;
 }
 
 .${CALIPER_PREFIX}viewport-fixed {
@@ -114,16 +114,40 @@ export const OVERLAY_STYLES = `
   position: fixed;
   pointer-events: none;
   background: var(--caliper-primary);
-  color: var(--caliper-text);
-  padding: 2px 4px;
+  color: white;
+  padding: 2px 6px;
   border-radius: 2px;
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: Inter, system-ui, -apple-system, sans-serif;
   white-space: nowrap;
   z-index: 1000001;
-  will-change: transform, opacity;
-  transition: opacity 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  will-change: transform, opacity, background-color;
+  transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
+}
+
+.${CALIPER_PREFIX}selection-label-success {
+  background: var(--caliper-success);
+}
+
+.${CALIPER_PREFIX}selection-label-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: caliper-fade-in 0.15s forwards ease-in-out;
+}
+
+@keyframes caliper-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes caliper-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .${CALIPER_PREFIX}boundary-box {

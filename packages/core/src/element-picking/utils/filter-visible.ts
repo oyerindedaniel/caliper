@@ -1,29 +1,31 @@
+import { isRenderable } from "../../shared/utils/dom-utils.js";
+
 /**
  * Check if an element is visible
  * Elements are ignored if they are invisible or zero-size
  */
 export function isVisible(element: Element): boolean {
-  if (!(element instanceof HTMLElement || element instanceof SVGElement)) {
+  if (!isRenderable(element)) {
+    return false;
+  }
+
+  const tagName = element.tagName.toUpperCase();
+
+  // Explicitly ignore non-renderable metadata/structural tags
+  if (["STYLE", "SCRIPT", "NOSCRIPT", "TEMPLATE", "META", "LINK", "HEAD"].includes(tagName)) {
     return false;
   }
 
   const style = window.getComputedStyle(element);
+  const contentVisibility = style.contentVisibility || style.getPropertyValue("content-visibility");
 
-  // Check display
-  if (style.display === "none") {
+  if (style.display === "none" || contentVisibility === "hidden") {
     return false;
   }
 
-  // Check visibility
-  if (style.visibility === "hidden") {
-    return false;
-  }
-
-  // Check opacity
-  if (parseFloat(style.opacity) === 0) {
-    return false;
-  }
-
+  // We include visibility: hidden and opacity: 0 elements because they
+  // still occupy space in the layout and are relevant for geometric audits.
+  // The walk engine and picker will handle the "hidden" state via computed styles.
   return true;
 }
 
@@ -32,7 +34,7 @@ export function isVisible(element: Element): boolean {
  * Elements with zero width or height are ignored
  */
 export function hasSize(element: Element): boolean {
-  if (!(element instanceof HTMLElement || element instanceof SVGElement)) {
+  if (!isRenderable(element)) {
     return false;
   }
 

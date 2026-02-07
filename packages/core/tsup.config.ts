@@ -7,5 +7,7 @@ export default defineConfig({
   clean: true,
   splitting: false,
   sourcemap: true,
+  treeshake: false,
   external: [],
+  noExternal: ["@oyerinde/caliper-schema"],
 });

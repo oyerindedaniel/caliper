@@ -1,6 +1,11 @@
 import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
-import type { OverlayConfig } from "@caliper/core";
+import type {
+  OverlayConfig,
+  CaliperCoreSystems as Systems,
+  OverlayInstance,
+  CaliperPlugin,
+} from "@caliper/core";
 import {
   applyTheme,
   mergeCommands,
@@ -8,18 +13,15 @@ import {
   mergeTheme,
   getConfig,
   showVersionInfo,
+  OVERLAY_CONTAINER_ID,
+  MAX_SAFE_Z_INDEX,
 } from "@caliper/core";
+
 import { injectStyles, removeStyles } from "./style-injector/utils/inject-styles.js";
 
 const IS_BROWSER = typeof window !== "undefined";
 
 declare const process: { env: { VERSION: string } };
-
-export interface OverlayInstance {
-  mount: (container?: HTMLElement) => void;
-  dispose: () => void;
-  mounted: boolean;
-}
 
 declare global {
   interface Window {
@@ -32,8 +34,11 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => { },
-      dispose: () => { },
+      mount: () => {},
+      dispose: () => {},
+      getSystems: () => null,
+      waitForSystems: () => new Promise(() => {}),
+      use: () => instance,
       mounted: false,
     };
   }
@@ -71,33 +76,66 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
   const theme = mergeTheme(mergedConfig.theme);
 
   let cleanup: (() => void) | null = null;
+  let systems: Systems | null = null;
+  const plugins = new Map<string, CaliperPlugin>();
+
+  const pendingSystemsResolvers: {
+    resolve: (systems: Systems) => void;
+    reject: (error: Error) => void;
+  }[] = [];
+  const waitForSystems = (): Promise<Systems> => {
+    if (systems) return Promise.resolve(systems);
+    return new Promise((resolve, reject) => pendingSystemsResolvers.push({ resolve, reject }));
+  };
 
   const instance: OverlayInstance = {
     mounted: false,
     mount: (container?: HTMLElement) => {
       if (instance.mounted) return;
 
-      if (document.getElementById("caliper-overlay-root")) {
+      if (document.getElementById(OVERLAY_CONTAINER_ID)) {
         instance.mounted = true;
         return;
       }
 
-      applyTheme(theme);
-
-      const target = container || document.body;
+      const target = container || document.documentElement;
       injectStyles();
 
       const overlayContainer = document.createElement("div");
-      overlayContainer.id = "caliper-overlay-root";
+      overlayContainer.id = OVERLAY_CONTAINER_ID;
+      overlayContainer.style.zIndex = MAX_SAFE_Z_INDEX.toString();
       target.appendChild(overlayContainer);
 
-      const disposeRender = render(() => Root({ commands, animation }), overlayContainer);
+      applyTheme(theme, overlayContainer);
+
+      const disposeRender = render(
+        () =>
+          Root({
+            commands,
+            animation,
+            onSystemsReady: (readySystems) => {
+              systems = readySystems;
+              const currentResolvers = [...pendingSystemsResolvers];
+              pendingSystemsResolvers.length = 0;
+              currentResolvers.forEach(({ resolve }) => resolve(readySystems));
+            },
+          }),
+        overlayContainer
+      );
 
       cleanup = () => {
         disposeRender();
         overlayContainer.remove();
         removeStyles();
         instance.mounted = false;
+        systems = null;
+
+        plugins.forEach((plugin) => plugin.dispose?.());
+        plugins.clear();
+
+        pendingSystemsResolvers.forEach(({ reject }) => reject(new Error("Overlay disposed")));
+        pendingSystemsResolvers.length = 0;
+
         if (activeInstance === instance) activeInstance = null;
       };
 
@@ -108,6 +146,16 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
         cleanup();
         cleanup = null;
       }
+    },
+    getSystems: () => systems,
+    waitForSystems,
+    use: (plugin: CaliperPlugin) => {
+      if (plugins.has(plugin.name)) {
+        return instance;
+      }
+      plugins.set(plugin.name, plugin);
+      plugin.install(instance);
+      return instance;
     },
   };
 

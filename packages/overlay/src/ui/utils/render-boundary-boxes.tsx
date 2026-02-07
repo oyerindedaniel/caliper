@@ -8,6 +8,7 @@ import {
   getLiveGeometry,
   type LiveGeometry,
   type DeepRequired,
+  getOverlayRoot,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
@@ -173,7 +174,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
     <>
       <Show when={anchor()}>
         {(current) => (
-          <Portal mount={document.body}>
+          <Portal mount={getOverlayRoot()}>
             <div
               class={`${PREFIX}boundary-box ${PREFIX}boundary-box-selected`}
               style={{
@@ -190,7 +191,7 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
       </Show>
       <Show when={target()}>
         {(current) => (
-          <Portal mount={document.body}>
+          <Portal mount={getOverlayRoot()}>
             <div
               class={`${PREFIX}boundary-box ${PREFIX}boundary-box-secondary`}
               style={{

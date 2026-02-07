@@ -1,12 +1,14 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --content-max-width: 600px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --content-max-width: 600px;
   }
 }
 
@@ -18,12 +20,12 @@ html,
 body {
   width: 100%;
   min-height: 100%;
-  overflow-x: hidden;
   margin: 0;
   padding: 0;
 }
 
 body {
+  overflow-x: clip;
   color: var(--foreground);
   background: var(--background);
 }
@@ -55,4 +57,157 @@ a {
   .imgDark {
     display: unset;
   }
+}
+
+/* Utilities */
+.mt-0 {
+  margin-top: 0 !important;
+}
+
+.mt-8 {
+  margin-top: 8px !important;
+}
+
+.mt-12 {
+  margin-top: 12px !important;
+}
+
+.mt-16 {
+  margin-top: 16px !important;
+}
+
+.mt-24 {
+  margin-top: 24px !important;
+}
+
+.mt-32 {
+  margin-top: 32px !important;
+}
+
+.mb-8 {
+  margin-bottom: 8px !important;
+}
+
+.mb-12 {
+  margin-bottom: 12px !important;
+}
+
+.mb-16 {
+  margin-bottom: 16px !important;
+}
+
+.mb-18 {
+  margin-bottom: 18px !important;
+}
+
+.mb-24 {
+  margin-bottom: 24px !important;
+}
+
+.mb-32 {
+  margin-bottom: 32px !important;
+}
+
+.mb-48 {
+  margin-bottom: 48px !important;
+}
+
+.fs-11 {
+  font-size: 11px !important;
+}
+
+.fs-12 {
+  font-size: 12px !important;
+}
+
+.fs-13 {
+  font-size: 13px !important;
+}
+
+.fs-14 {
+  font-size: 14px !important;
+}
+
+.fs-18 {
+  font-size: 18px !important;
+}
+
+.op-5 {
+  opacity: 0.5 !important;
+}
+
+.op-6 {
+  opacity: 0.6 !important;
+}
+
+.op-7 {
+  opacity: 0.7 !important;
+}
+
+.op-8 {
+  opacity: 0.8 !important;
+}
+
+.op-9 {
+  opacity: 0.9 !important;
+}
+
+.flex {
+  display: flex !important;
+}
+
+.flex-col {
+  flex-direction: column !important;
+}
+
+.gap-12 {
+  gap: 12px !important;
+}
+
+.gap-24 {
+  gap: 24px !important;
+}
+
+.h-auto {
+  height: auto !important;
+}
+
+.flex-wrap {
+  flex-wrap: wrap !important;
+}
+
+.justify-center {
+  justify-content: center !important;
+}
+
+.items-center {
+  align-items: center !important;
+}
+
+.gap-4 {
+  gap: 4px !important;
+}
+
+.gap-8 {
+  gap: 8px !important;
+}
+
+.mb-20 {
+  margin-bottom: 20px !important;
+}
+
+.italic {
+  font-style: italic !important;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }

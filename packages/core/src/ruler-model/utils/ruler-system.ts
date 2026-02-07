@@ -1,5 +1,6 @@
 import { RulerLine, RulerState } from "../../shared/types/index.js";
 import { MAX_RULER_LINES } from "../../shared/constants/index.js";
+import { generateId } from "../../shared/utils/id.js";
 
 type RulerListener = (state: RulerState) => void;
 
@@ -32,12 +33,12 @@ export function createRulerSystem(): RulerSystem {
       if (state.lines.length >= MAX_RULER_LINES) return null;
 
       const hLine: RulerLine = {
-        id: `ruler-h-${Math.random().toString(36).slice(2, 9)}`,
+        id: generateId("ruler-h"),
         type: "horizontal",
         position: y,
       };
       const vLine: RulerLine = {
-        id: `ruler-v-${Math.random().toString(36).slice(2, 9)}`,
+        id: generateId("ruler-v"),
         type: "vertical",
         position: x,
       };

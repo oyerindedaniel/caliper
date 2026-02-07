@@ -1,51 +1,26 @@
-import type { CursorContext, SyncSource } from "../../shared/types/index.js";
+import type { SyncSource, CursorContext, Remap } from "../../shared/types/index.js";
+import type {
+  MeasurementLine as BaseMeasurementLine,
+  MeasurementResult as BaseMeasurementResult,
+} from "@oyerinde/caliper-schema";
 import {
   type ScrollState,
-  type PositionMode,
   type StickyConfig,
   getTotalScrollDelta,
 } from "../../geometry/utils/scroll-aware.js";
 
-/**
- * Pure data structure for measurement lines
- */
-export interface MeasurementLine {
-  type: "left" | "top" | "right" | "bottom" | "distance";
-  value: number;
-  start: { x: number; y: number };
-  end: { x: number; y: number };
-  // Which element each point should sync its scroll with
-  startSync?: SyncSource;
-  endSync?: SyncSource;
-}
+export type MeasurementLine = BaseMeasurementLine;
 
-/**
- * Pure data structure for measurement result
- */
-export interface MeasurementResult {
-  context: CursorContext;
-  lines: MeasurementLine[];
-  primary: DOMRect;
-  secondary: DOMRect | null;
-  timestamp: number;
-  primaryHierarchy: ScrollState[];
-  secondaryHierarchy: ScrollState[];
-  secondaryElement: Element | null;
-
-  // Position modes for precision sync
-  primaryPosition: PositionMode;
-  secondaryPosition: PositionMode;
-
-  // Sticky configs for precision sync
-  primarySticky?: StickyConfig;
-  secondarySticky?: StickyConfig;
-
-  // Initial window scrolls for precision sync
-  primaryWinX: number;
-  primaryWinY: number;
-  secondaryWinX: number;
-  secondaryWinY: number;
-}
+export type MeasurementResult = Remap<
+  BaseMeasurementResult,
+  {
+    primary: DOMRect;
+    secondary: DOMRect | null;
+    primaryHierarchy: ScrollState[];
+    secondaryHierarchy: ScrollState[];
+    secondaryElement: Element | null;
+  }
+>;
 
 /**
  * Create measurement lines based on context
@@ -275,7 +250,8 @@ export function getLiveLineValue(line: MeasurementLine, result: MeasurementResul
     result.primaryPosition,
     result.primarySticky,
     result.primaryWinX,
-    result.primaryWinY
+    result.primaryWinY,
+    !!result.primaryHasContainingBlock
   );
 
   const secondaryDelta = getTotalScrollDelta(
@@ -283,7 +259,8 @@ export function getLiveLineValue(line: MeasurementLine, result: MeasurementResul
     result.secondaryPosition,
     result.secondarySticky,
     result.secondaryWinX,
-    result.secondaryWinY
+    result.secondaryWinY,
+    !!result.secondaryHasContainingBlock
   );
 
   const startPoint = getLivePoint(line.start, line.startSync, line, primaryDelta, secondaryDelta);

@@ -4,7 +4,12 @@ export {
   type FrequencyControlledReader,
 } from "./scheduling/frequency-control.js";
 export { createSuppressionDelegate, type SuppressionOptions } from "./scheduling/suppression.js";
-export { isVisible, hasSize, isEligible, isEditable } from "./element-picking/utils/filter-visible.js";
+export {
+  isVisible,
+  hasSize,
+  isEligible,
+  isEditable,
+} from "./element-picking/utils/filter-visible.js";
 export {
   detectContext,
   resolveAmbiguousContext,
@@ -19,6 +24,10 @@ export {
   getLiveLineValue,
   getLivePoint,
 } from "./measurement-model/utils/measurement-result.js";
+export {
+  createMeasurement,
+  createMeasurementBetween,
+} from "./measurement-model/utils/create-measurement.js";
 export {
   createMeasurementSystem,
   type MeasurementSystem,
@@ -50,6 +59,9 @@ export type {
   ProjectionState,
   RulerLine,
   RulerState,
+  CaliperCoreSystems,
+  OverlayInstance,
+  CaliperPlugin,
 } from "./shared/types/index.js";
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";
@@ -64,4 +76,11 @@ export {
 } from "./shared/config/config-utils.js";
 export { showVersionInfo } from "./shared/utils/version-check.js";
 export { lerp, lerpRect } from "./shared/utils/math.js";
-export { diagnosticLogger, formatElement, formatRect } from "./shared/utils/logger.js";
+export { generateId } from "./shared/utils/id.js";
+export { getElementDirectText } from "./shared/utils/text-content.js";
+export { getOverlayRoot } from "./shared/utils/dom-utils.js";
+export { filterRuntimeClasses } from "./shared/utils/class-filter.js";
+export { buildSelectorInfo, caliperProps } from "./shared/utils/selector.js";
+export { waitPostRaf } from "./shared/utils/raf.js";
+export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";
+export { getNormalizedModifiers, getLogicalKey, isKeyMatch } from "./shared/utils/keyboard.js";

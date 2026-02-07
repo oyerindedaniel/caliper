@@ -1,6 +1,26 @@
-.next
-.next/**
+# Dependencies
 node_modules
+.pnp
+.pnp.js
+
+# Build outputs
 dist
 build
+.next/
+.next/**
 out
+.turbo
+
+# Generated files
+*.log
+*.tsbuildinfo
+
+# Package manager files
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Misc
+.DS_Store
+*.pem
+coverage

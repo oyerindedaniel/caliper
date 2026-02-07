@@ -7,7 +7,7 @@ import type {
 } from "./overlay-config.js";
 import { DEFAULT_COMMANDS, DEFAULT_ANIMATION, DEFAULT_THEME } from "./overlay-config.js";
 
-function parseNumber(value: any, defaultValue: number): number {
+function parseNumber(value: unknown, defaultValue: number): number {
   if (value === undefined || value === null || value === "") return defaultValue;
   const num = Number(value);
   return isFinite(num) && !isNaN(num) ? num : defaultValue;
@@ -19,7 +19,11 @@ function parseNumber(value: any, defaultValue: number): number {
 function withOpacity(color: string, opacity: number): string {
   if (color.startsWith("#")) {
     let hex = color.slice(1);
-    if (hex.length === 3) hex = hex.split("").map((c) => c + c).join("");
+    if (hex.length === 3)
+      hex = hex
+        .split("")
+        .map((c) => c + c)
+        .join("");
     const r = parseInt(hex.slice(0, 2), 16);
     const g = parseInt(hex.slice(2, 4), 16);
     const b = parseInt(hex.slice(4, 6), 16);
@@ -34,10 +38,10 @@ function withOpacity(color: string, opacity: number): string {
   return color;
 }
 
-export function applyTheme(theme?: ThemeConfig) {
-  if (!theme) return;
+export function applyTheme(theme?: ThemeConfig, target: HTMLElement = document.documentElement) {
+  if (!theme || !target) return;
 
-  const root = document.documentElement;
+  const root = target;
 
   if (theme.primary) {
     root.style.setProperty("--caliper-primary", theme.primary);
@@ -140,6 +144,7 @@ export function getConfig(): OverlayConfig {
           theme: { ...windowConfig.theme, ...parsed.theme },
           commands: { ...windowConfig.commands, ...parsed.commands },
           animation: { ...windowConfig.animation, ...parsed.animation },
+          bridge: { ...windowConfig.bridge, ...parsed.bridge },
         };
       } catch (e) {
         console.warn("[CALIPER] Failed to parse data-config attribute", e);

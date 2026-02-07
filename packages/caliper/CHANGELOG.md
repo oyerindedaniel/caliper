@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-02-08
+
+### Added
+
+- **Agent Bridge**: Support for AI agents and programmatic audits via `@oyerinde/caliper/bridge`.
+- **MCP Server**: Integrated MCP server for AI auditing (activate via `npx @oyerinde/caliper`).
+  - **MCP tools**: `caliper_list_tabs`, `caliper_get_context`, `caliper_switch_tab`, `caliper_inspect`, `caliper_measure`, `caliper_clear`, `caliper_walk_dom`, and `caliper_walk_and_measure`.
+  - **Accessibility Tools**: `caliper_check_contrast` and `caliper_delta_e`.
+  - **MCP prompts**: `caliper-selector-audit` and `caliper-selectors-compare`.
+  - **MCP resources**: `caliper://tabs` and `caliper://state`.
+- **Context Menu**: Right-click selected elements to copy metadata.
+
+### Fixed
+
+- **Geometry Engine**: Improved coordinate tracking for `fixed` and `sticky` elements and nested scroll containers.
+  - Fix: Precision tracking for sticky elements across complex DOM hierarchies.
+  - Fix: Deep scroll resolution for nested overflow containers.
+  - Fix: Real-time clipping path calculation for partially visible elements.
+
 ## [0.1.4] - 2026-01-16
 
 ### Fixed

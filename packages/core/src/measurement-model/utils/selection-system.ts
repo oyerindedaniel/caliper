@@ -1,23 +1,24 @@
+import type { SelectionMetadata as BaseSelectionMetadata } from "@oyerinde/caliper-schema";
 import {
   deduceGeometry,
   type ScrollState,
   type PositionMode,
   type StickyConfig,
 } from "../../geometry/utils/scroll-aware.js";
+import { waitPostRaf } from "../../shared/utils/raf.js";
+import type { Remap } from "../../shared/types/index.js";
 
 /**
  * Selection system for tracking selected elements
  */
-
-export interface SelectionMetadata {
-  element: Element | null;
-  rect: DOMRect | null;
-  scrollHierarchy: ScrollState[];
-  position: PositionMode;
-  stickyConfig?: StickyConfig;
-  initialWindowX: number;
-  initialWindowY: number;
-}
+export type SelectionMetadata = Remap<
+  BaseSelectionMetadata,
+  {
+    element: Element | null;
+    rect: DOMRect | null;
+    scrollHierarchy: ScrollState[];
+  }
+>;
 
 export interface SelectionSystem {
   select: (element: Element | null) => void;
@@ -37,6 +38,7 @@ export function createSelectionSystem(): SelectionSystem {
   let stickyConfig: StickyConfig | undefined;
   let initialWindowX = 0;
   let initialWindowY = 0;
+  let depth = 0;
 
   const updateListeners = new Set<(metadata: SelectionMetadata) => void>();
 
@@ -49,6 +51,7 @@ export function createSelectionSystem(): SelectionSystem {
       stickyConfig,
       initialWindowX,
       initialWindowY,
+      depth,
     };
   }
 
@@ -63,20 +66,19 @@ export function createSelectionSystem(): SelectionSystem {
     selectedElement = element;
 
     if (element) {
-      requestAnimationFrame(() => {
-        Promise.resolve().then(() => {
-          if (selectedElement === element) {
-            const geometry = deduceGeometry(element);
-            selectedRect = geometry.rect;
-            scrollHierarchy = geometry.scrollHierarchy;
-            position = geometry.position;
-            stickyConfig = geometry.stickyConfig;
-            initialWindowX = geometry.initialWindowX;
-            initialWindowY = geometry.initialWindowY;
+      waitPostRaf(() => {
+        if (selectedElement === element && document.contains(element)) {
+          const geometry = deduceGeometry(element);
+          selectedRect = geometry.rect;
+          scrollHierarchy = geometry.scrollHierarchy;
+          position = geometry.position;
+          stickyConfig = geometry.stickyConfig;
+          initialWindowX = geometry.initialWindowX;
+          initialWindowY = geometry.initialWindowY;
+          depth = geometry.depth;
 
-            notifyListeners();
-          }
-        });
+          notifyListeners();
+        }
       });
     } else {
       selectedRect = null;
@@ -85,6 +87,7 @@ export function createSelectionSystem(): SelectionSystem {
       stickyConfig = undefined;
       initialWindowX = 0;
       initialWindowY = 0;
+      depth = 0;
       notifyListeners();
     }
   }

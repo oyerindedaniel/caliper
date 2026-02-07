@@ -21,6 +21,20 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 
 ---
 
+## AI Agents & MCP 🤖
+
+Caliper is "AI-Native". It can be connected to AI agents (like Cursor, Claude Code, or Antigravity) via the **Model Context Protocol (MCP)**, allowing agents to perform pixel-perfect audits of your UI.
+
+1. **Install Bridge**: `pnpm add @oyerinde/caliper` ([Bridge Docs](./packages/agent-bridge/README.md))
+2. **Run Server**: `npx @oyerinde/caliper` ([MCP Docs](./packages/mcp-server/README.md))
+3. **Connect**: Add the MCP server to your editor on the default port **9876**.
+
+The AI agent gained "layout eyes" and can perform high-precision audits, measurements, and alignment checks directly in your browser.
+
+> **Tip**: You can also trigger actions manually from the browser console using `await dispatchCaliperIntent({ type: 'CALIPER_CLEAR' })`.
+
+---
+
 ## Installation 📦
 
 Caliper is designed to be side-effect-free in production and easy to integrate into any modern stack.
@@ -156,17 +170,37 @@ import { init } from "@oyerinde/caliper";
 
 init({
   theme: {
-    primary: "#18A0FB",    // Main brand color
-    ruler: "#AC2323",      // Guideline color
-    calcBg: "rgba(0,0,0,0.9)" 
+    primary: "#18A0FB",         // Main brand color
+    secondary: "#F24E1E",       // Accent color (for highlights)
+    calcBg: "rgba(30,30,30,0.95)", 
+    calcShadow: "rgba(0,0,0,0.5)",
+    calcOpHighlight: "#18A0FB", // Operator pulse color
+    calcText: "#FFFFFF",
+    text: "#FFFFFF",
+    projection: "#9B51E4",      // Edge projection lines
+    ruler: "#18A0FB"            // Ruler/guideline color
   },
   commands: {
-    activate: "Alt",       // Key to show overlay
-    freeze: " ",           // Key to lock lines
-    ruler: "r"             // Key for guideline (Shift+r)
+    activate: "Alt",            // Reveal overlay
+    freeze: " ",                // Key to lock lines
+    select: "Control",          // Key to select (held)
+    clear: "Escape",            // Clear measurements
+    ruler: "r",                 // Ruler (Shift+r)
+    selectionHoldDuration: 250, // Select hold-time (ms)
+    calculator: {
+      top: "t", right: "r", bottom: "b", left: "l", distance: "g"
+    },
+    projection: {
+      top: "w", left: "a", bottom: "s", right: "d"
+    }
   },
   animation: {
-    lerpFactor: 0.2        // Smoothness (0-1)
+    enabled: true,              // Smooth hover box
+    lerpFactor: 0.25            // Fluidity (low = slower)
+  },
+  bridge: {
+    enabled: true,              // Connect to AI Agents
+    wsPort: 9876                // Port for MCP relay
   }
 });
 ```
@@ -187,6 +221,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 
 ### Measurements
 - **Cmd/Ctrl + Click + Hold** (250ms) — Select an element.
+- **Right-Click** — Copy element metadata (selector, text, ID) when selected.
 - **Hover** — View relative distances to target.
 - **Option/Alt** — Hold to reveal the overlay.
 - **Space** — Freeze the current state.

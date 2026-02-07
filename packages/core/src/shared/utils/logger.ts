@@ -1,36 +1,60 @@
-class DeduplicatedLogger {
-  private lastMessage: string | null = null;
-  private count = 0;
+export type LogLevel = "debug" | "info" | "warn" | "error" | "none";
 
-  log(message: string) {
-    if (message === this.lastMessage) {
-      this.count++;
-      return;
-    }
+export interface LoggerOptions {
+  prefix?: string;
+  enabled?: boolean;
+}
 
-    if (this.lastMessage && this.count > 0) {
-      console.log(`[x${this.count + 1}] ^`);
-    }
+class Logger {
+  private prefix: string;
+  private enabled: boolean;
 
-    console.log(message);
-    this.lastMessage = message;
-    this.count = 0;
+  constructor(options: LoggerOptions = {}) {
+    this.prefix = options.prefix ? `[${options.prefix}]` : "[Caliper]";
+    this.enabled = options.enabled !== false;
   }
 
-  logSpatial(
-    label: string,
-    stable: { left: number; top: number },
-    delta: { x: number; y: number }
-  ) {
-    const liveX = stable.left - delta.x;
-    const liveY = stable.top - delta.y;
-    this.log(
-      `[Spatial:${label}] Stable:(${stable.left.toFixed(1)}, ${stable.top.toFixed(1)}) Delta:(${delta.x.toFixed(1)}, ${delta.y.toFixed(1)}) -> Live:(${liveX.toFixed(1)}, ${liveY.toFixed(1)})`
-    );
+  setEnabled(enabled: boolean) {
+    this.enabled = enabled;
+  }
+
+  debug(...args: any[]) {
+    if (!this.enabled) return;
+    console.debug(this.prefix, ...args);
+  }
+
+  info(...args: any[]) {
+    if (!this.enabled) return;
+    console.info(this.prefix, ...args);
+  }
+
+  warn(...args: any[]) {
+    if (!this.enabled) return;
+    console.warn(this.prefix, ...args);
+  }
+
+  error(...args: any[]) {
+    if (!this.enabled) return;
+    console.error(this.prefix, ...args);
+  }
+
+  log(...args: any[]) {
+    if (!this.enabled) return;
+    console.log(this.prefix, ...args);
   }
 }
 
-export const diagnosticLogger = new DeduplicatedLogger();
+/**
+ * Global logger instance
+ */
+export const logger = new Logger({ prefix: "Caliper" });
+
+/**
+ * Create a specialized logger for a specific module
+ */
+export function createLogger(prefix: string, enabled?: boolean) {
+  return new Logger({ prefix: `Caliper:${prefix}`, enabled });
+}
 
 /**
  * Format a DOMRect for logging

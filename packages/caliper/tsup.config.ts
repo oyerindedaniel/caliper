@@ -13,9 +13,9 @@ const getPackageVersion = (): string => {
 
 const version = process.env.NODE_ENV === "production" ? getPackageVersion() : "[DEV]";
 
-console.log("Version: ", version);
-
 const banner = `/**
+ * @name @oyerinde/caliper
+ * @author Daniel Oyerinde
  * @license MIT
  *
  * Caliper - Browser Measurement Tool
@@ -58,9 +58,7 @@ const getEsbuildPlugins = () => [
 ];
 
 export default defineConfig((options) => {
-  const isProd = process.env.NODE_ENV === "production";
-  const watch =
-    !isProd && options.watch ? ["src/**/*", "../overlay/src/**/*", "../core/src/**/*"] : false;
+  const otherNoExternal = ["@oyerinde/caliper-bridge"];
 
   return [
     {
@@ -68,29 +66,83 @@ export default defineConfig((options) => {
       entry: { index: "./src/auto.ts" },
       format: ["iife"],
       globalName: "Caliper",
+      minify: true,
       platform: "browser",
+      noExternal: [...DEFAULT_OPTIONS.noExternal!, ...otherNoExternal],
       esbuildPlugins: getEsbuildPlugins(),
-      watch,
+      dts: false,
     },
     {
       ...DEFAULT_OPTIONS,
-      entry: ["./src/index.ts"],
+      entry: { "index.global.min": "./src/auto-lite.ts" },
+      format: ["iife"],
+      globalName: "Caliper",
+      minify: true,
+      platform: "browser",
+      esbuildPlugins: getEsbuildPlugins(),
+      dts: false,
+      outExtension({ format }) {
+        return {
+          js: `.js`,
+        };
+      },
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: {
+        bridge: "../agent-bridge/src/index.ts",
+      },
+      format: ["cjs", "esm"],
+      platform: "browser",
+      noExternal: ["@caliper/core"],
+      splitting: true,
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: {
+        index: "./src/index.ts",
+        preset: "./src/preset.ts",
+      },
       format: ["cjs", "esm"],
       platform: "browser",
       splitting: true,
       esbuildPlugins: getEsbuildPlugins(),
-      watch,
     },
     {
       ...DEFAULT_OPTIONS,
-      entry: { "index.server": "./src/index.server.ts" },
+      entry: {
+        mcp: "../mcp-server/src/index.ts",
+      },
+      format: ["esm", "cjs"],
+      platform: "node",
+      noExternal: [
+        "@modelcontextprotocol/sdk",
+        "ws",
+        "zod",
+        "@oyerinde/caliper-schema",
+        "@caliper/core",
+      ],
+      dts: false,
+      shims: false,
+      minify: true,
+      banner: {
+        js: "#!/usr/bin/env node\n" + banner,
+      },
+      esbuildPlugins: [],
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: {
+        "index.server": "./src/index.server.ts",
+        "bridge.server": "../agent-bridge/src/index.server.ts",
+        "preset.server": "./src/preset.server.ts",
+      },
       format: ["cjs", "esm"],
       platform: "node",
       noExternal: [],
-      external: ["solid-js", "@caliper/core", "@caliper/overlay"],
+      external: [],
       esbuildPlugins: [],
       dts: false,
-      watch,
     },
   ] as Options[];
 });
