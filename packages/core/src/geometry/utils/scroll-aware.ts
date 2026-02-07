@@ -45,6 +45,42 @@ export interface LiveGeometry {
   visibleMaxY: number;
 }
 
+export type ScrollGeometryStyle = Pick<
+  CSSStyleDeclaration,
+  | "position"
+  | "overflow"
+  | "overflowX"
+  | "overflowY"
+  | "transform"
+  | "filter"
+  | "perspective"
+  | "contain"
+  | "willChange"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right"
+>;
+
+function getScrollGeometryStyle(element: Element): ScrollGeometryStyle {
+  const computedStyle = window.getComputedStyle(element);
+  return {
+    position: computedStyle.position,
+    overflow: computedStyle.overflow,
+    overflowX: computedStyle.overflowX,
+    overflowY: computedStyle.overflowY,
+    transform: computedStyle.transform,
+    filter: computedStyle.filter,
+    perspective: computedStyle.perspective,
+    contain: computedStyle.contain,
+    willChange: computedStyle.willChange,
+    top: computedStyle.top,
+    bottom: computedStyle.bottom,
+    left: computedStyle.left,
+    right: computedStyle.right,
+  };
+}
+
 export function getScrollAwareRect(elementRect: DOMRect): DOMRect {
   return new DOMRect(
     elementRect.left + window.scrollX,
@@ -55,14 +91,14 @@ export function getScrollAwareRect(elementRect: DOMRect): DOMRect {
 }
 
 /** True if overflow/overflowX/overflowY indicate a clipping or scrolling box (auto, scroll, hidden, clip). */
-function overflowIndicatesClipping(style: CSSStyleDeclaration): boolean {
+function overflowIndicatesClipping(style: ScrollGeometryStyle | CSSStyleDeclaration): boolean {
   return /(auto|scroll|hidden|clip)/.test(style.overflow + style.overflowY + style.overflowX);
 }
 
 export function isScrollContainer(element: Element): boolean {
   if (!isRenderable(element)) return false;
   if (element.tagName.toLowerCase() === "svg") return false;
-  const style = window.getComputedStyle(element);
+  const style = getScrollGeometryStyle(element);
   // Broad definition: scroll or clip.
   return overflowIndicatesClipping(style);
 }
@@ -72,7 +108,7 @@ export function isScrollContainer(element: Element): boolean {
  * 'overflow: clip' does NOT establish a scrolling box.
  */
 function establishesScrollingBox(element: Element): boolean {
-  const style = window.getComputedStyle(element);
+  const style = getScrollGeometryStyle(element);
   return /(auto|scroll|hidden)/.test(style.overflow + style.overflowY + style.overflowX);
 }
 
@@ -109,10 +145,10 @@ function getFullHierarchy(element: Element): FullHierarchyResult {
     };
   }
 
-  const styles: CSSStyleDeclaration[] = [];
+  const styles: ScrollGeometryStyle[] = [];
   for (let i = 0; i < n; i++) {
     const node = ancestors[i];
-    if (node !== undefined) styles.push(window.getComputedStyle(node));
+    if (node !== undefined) styles.push(getScrollGeometryStyle(node));
   }
 
   const hasStickyAbove: boolean[] = [];
@@ -299,7 +335,7 @@ export function getTotalScrollDelta(
     if (!scrollState) continue;
 
     const element = scrollState.element!;
-    const style = window.getComputedStyle(element);
+    const style = getScrollGeometryStyle(element);
     const isFixed = style.position === "fixed";
     const isScrollingBox = establishesScrollingBox(element);
 
@@ -646,7 +682,7 @@ export function getLiveGeometry(
       let checkElement: Element | null = scrollState.element;
       hasStickyAncestorFlag = false;
       while (checkElement && checkElement !== document.documentElement) {
-        const checkStyle = window.getComputedStyle(checkElement);
+        const checkStyle = getScrollGeometryStyle(checkElement);
         if (checkStyle.position === "sticky") {
           hasStickyAncestorFlag = true;
           break;
@@ -769,7 +805,7 @@ function collectStickyOnPath(
   let current: Element | null = from;
   while (current) {
     if (current instanceof HTMLElement) {
-      const style = window.getComputedStyle(current);
+      const style = getScrollGeometryStyle(current);
       if (style.position === "sticky") {
         out.push({ element: current, originalPosition: current.style.position });
       }
@@ -876,7 +912,7 @@ export function deduceGeometry(element: Element): DeducedGeometry {
 
   let stickyConfig;
   if (positionMode === "sticky" && scrollAnchor) {
-    const style = window.getComputedStyle(scrollAnchor);
+    const style = getScrollGeometryStyle(scrollAnchor);
 
     let scrollingContainer: Element = document.documentElement;
     let currentParent = scrollAnchor.parentElement;
@@ -891,8 +927,7 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     const cappingContainer = scrollAnchor.parentElement || document.documentElement;
     const isDocLevelCapping =
       cappingContainer === document.documentElement || cappingContainer === document.body;
-    const cappingStyle =
-      cappingContainer instanceof HTMLElement ? window.getComputedStyle(cappingContainer) : null;
+    const cappingStyle = cappingContainer instanceof HTMLElement ? getScrollGeometryStyle(cappingContainer) : null;
     const isCappingContainerSticky = cappingStyle?.position === "sticky";
 
     const anchorRect = scrollAnchor.getBoundingClientRect();
