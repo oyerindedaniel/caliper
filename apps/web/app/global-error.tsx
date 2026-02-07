@@ -27,20 +27,19 @@ export default function GlobalError({
                     alignItems: "center",
                     justifyContent: "center",
                     height: "100vh",
-                    fontFamily: "var(--font-geist-mono), ui-monospace, monospace"
+                    fontFamily: "var(--font-geist-mono), ui-monospace, monospace",
                 }}
             >
                 <div className={styles.notFound}>
-                    <div className={styles.errorCode} style={{ color: "#f24e1e" }}>FATAL_ERR</div>
+                    <div className={styles.errorCode} style={{ color: "#f24e1e" }}>
+                        FATAL_ERR
+                    </div>
                     <p className={styles.errorDescription}>
-                        <strong className={styles.strong}>CRITICAL_SYSTEM_HALT</strong>: A fatal error occurred in the root namespace.
-                        The application shell could not be initialized.
+                        <strong className={styles.strong}>CRITICAL_SYSTEM_HALT</strong>: A fatal error occurred
+                        in the root namespace. The application shell could not be initialized.
                     </p>
                     <div className={styles.errorAction}>
-                        <button
-                            onClick={() => reset()}
-                            className={styles.errorReset}
-                        >
+                        <button onClick={() => reset()} className={styles.errorReset}>
                             RESTART_SYSTEM
                         </button>
                     </div>

@@ -37,7 +37,7 @@
 }
 
 .footer {
-  font-family: var(--font-geist-sans);
+  font-family: var(--font-geist-mono);
   grid-row-start: 3;
   grid-column: 2;
   display: flex;
@@ -46,12 +46,18 @@
   justify-content: center;
   gap: 28px;
   width: 100%;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .footer a {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: inherit;
+  opacity: 0.6;
+  transition: opacity 0.2s;
 }
 
 .footer img {
@@ -196,11 +202,11 @@
   gap: 8px;
 }
 
-.subHeader + .subHeader {
+.subHeader+.subHeader {
   margin-top: 0;
 }
 
-.sectionHeader + .subHeader {
+.sectionHeader+.subHeader {
   margin-top: 0;
 }
 
@@ -298,6 +304,7 @@
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
@@ -832,13 +839,14 @@ p.faqAnswer strong {
   letter-spacing: 0.1em;
   padding: 0;
   opacity: 0.8;
-  font-size: 11px;
+  font-size: 12px;
   text-transform: uppercase;
 }
 
 .errorReset:hover {
   opacity: 1;
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .strong {
@@ -949,21 +957,19 @@ p.faqAnswer strong {
   }
 
   .footer {
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
     gap: 16px;
-    font-size: 14px;
     margin-top: 40px;
     width: 100%;
   }
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
-    text-underline-offset: 4px;
+    text-underline-offset: 3px;
+    opacity: 1;
   }
 
   .githubLink:hover .starIcon {
@@ -973,5 +979,6 @@ p.faqAnswer strong {
   .link:hover {
     opacity: 1;
     text-decoration: underline;
+    text-underline-offset: 3px;
   }
 }
