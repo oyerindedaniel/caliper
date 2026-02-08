@@ -15,9 +15,9 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className={styles.notFound}>
-      <div className={styles.errorCode}>ERR_CRASH</div>
-      <p className={styles.errorDescription}>
+    <div className={styles.statusContainer}>
+      <div className={styles.statusCode}>ERR_CRASH</div>
+      <p className={styles.description}>
         <strong className={styles.strong}>SYSTEM_AUDIT_FAILURE</strong>: An unexpected runtime
         exception occurred. The current execution context has been terminated. Error:{" "}
         {error.message || "Unknown internal failure"}

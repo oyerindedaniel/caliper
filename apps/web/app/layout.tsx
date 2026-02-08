@@ -114,7 +114,7 @@ export default function RootLayout({
             strategy="beforeInteractive"
           />
         )}
-        <Script
+        {/* <Script
           src={
             process.env.NODE_ENV === "production"
               ? "https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
@@ -125,10 +125,10 @@ export default function RootLayout({
           data-config={JSON.stringify({
             bridge: { enabled: process.env.NODE_ENV === "development" },
           })}
-        />
+        /> */}
         <ConfigProvider>
           <FocusProvider>
-            <CaliperWrapper />
+            {/* <CaliperWrapper /> */}
             <LogoTrail />
             <div className={styles.page}>
               <main className={styles.main}>

@@ -16,7 +16,7 @@ export default function AgenticDocsPage() {
             alt="Caliper logo"
             width={172}
             height={50}
-            className="h-auto "
+            className="h-auto"
             priority
             unoptimized
           />

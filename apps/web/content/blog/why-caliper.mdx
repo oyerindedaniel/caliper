@@ -1,0 +1,84 @@
+---
+title: "Why Caliper"
+date: "2026-02-08"
+author: "Daniel Oyerinde"
+coverImage: "/blog/cover2.png"
+excerpt: "You can't fix what you can't see. Caliper gives AI agents the power to perceive layouts with sub-pixel precision."
+---
+
+# Why Caliper
+
+**You can't fix what you can't see.**
+
+That sounds obvious. But when it comes to debugging frontend layouts, we've been collectively blind for decades. Our eyes tell us "something's off," but our tools struggle to quantify *exactly* what.
+
+## The Invisible Gap Problem
+
+Here's a scenario every frontend developer knows: You set a margin-bottom of `24px` on one element and a margin-top of `24px` on the next. You expect `48px` of separation. You get... something else.
+
+<MarginCollapseDemo />
+
+What happened? **Margin collapsing**. The browser silently merged your margins, producing a gap that exists nowhere in your code. Your DevTools will happily report the correct CSS values. The computed styles are *technically* accurate. But the actual, physical, on-screen distance? That's a different story.
+
+This is one of dozens of layout phenomena that slip through the cracks of traditional inspection tools. And it's precisely why Caliper exists.
+
+## Beyond the DevTools
+
+Browser DevTools are phenomenal for inspecting *declarations*—what you *told* the browser to do. But they're not designed to audit *outcomes*—what the browser actually rendered.
+
+Consider:
+- **Subpixel rounding**: Your `12.5px` becomes `12px` or `13px` depending on browser heuristics.
+- **Stacking Context Traps**: Your `z-index: 9999` is useless if a parent has `position: relative` without you realizing it.
+- **Flexbox Overflow**: A single `min-width: auto` default can blow out your entire mobile viewport.
+
+These aren't bugs. They're the accumulated complexity of a rendering engine doing exactly what it's supposed to do. But when you're trying to match a design spec pixel-for-pixel, they're invisible saboteurs.
+
+## Enter the Agentic Oracle
+
+Now imagine you're an AI agent tasked with auditing a UI. You can read CSS. You can reason about the DOM. But you have no *eyes*.
+
+Traditional AI approaches to frontend development hit a wall here. You can ask an LLM to "check if the layout matches the design," but it has no geometric awareness. It doesn't know that Element A is 16px from Element B—it only knows what the *code* says.
+
+<AgentReasoningDemo />
+
+Caliper changes this equation. It's a **perception layer** for AI agents, providing:
+
+1. **Absolute Distances**: Measure the actual rendered gap between any two elements.
+2. **Scroll-Aware Coordinates**: Track sticky elements as they transition between static and fixed positioning.
+3. **Edge-to-Edge Projections**: Calculate distances to viewport boundaries, accounting for every ancestor in the scroll hierarchy.
+
+When an LLM has access to Caliper's measurements, it stops guessing. It starts *knowing*.
+
+## The Margin Collapse Resolution
+
+Let's return to our margin collapse mystery. Here's how an AI agent equipped with Caliper would reason through it:
+
+<AgentTrace 
+  scenario="margin-collapse"
+  steps={[
+    { action: "MEASURE_GAP", result: "16px", thought: "I observe a vertical gap of 16px between Node A and Node B." },
+    { action: "INSPECT_CSS", target: "Node B", property: "margin-top", value: "24px", thought: "The CSS specifies 24px. There's an 8px discrepancy." },
+    { action: "INSPECT_CSS", target: "Node A", property: "margin-bottom", value: "24px", thought: "Node A also has 24px margin-bottom." },
+    { action: "IDENTIFY_CAUSE", result: "MARGIN_COLLAPSE", thought: "These margins are collapsing. The browser renders the larger of the two (24px), not the sum." },
+    { action: "PROPOSE_FIX", result: "Add padding or create a Block Formatting Context", thought: "Using padding instead of margin, or applying overflow: hidden to a parent, would prevent collapse." }
+  ]}
+/>
+
+No magic. No guesswork. The agent measured reality, compared it to intention, and diagnosed the root cause.
+
+## Who Is Caliper For?
+
+- **AI coding assistants** that need geometric awareness to provide accurate layout feedback.
+- **Design engineers** obsessed with achieving pixel-perfect implementations.
+- **QA automation** systems that compare rendered output against design specifications.
+- **You**, if you've ever stared at a UI and thought, "This looks 4 pixels off, but I can't prove it."
+
+## Try It
+
+Caliper is open-source and integrates directly into your development workflow. The npm package drops into any project. The MCP server connects directly to AI development tools.
+
+<CTA href="/docs/agentic">Get Started with Agentic Auditing →</CTA>
+
+---
+
+*"Measure twice, cut once" assumes you can measure accurately in the first place. Caliper ensures you can.*

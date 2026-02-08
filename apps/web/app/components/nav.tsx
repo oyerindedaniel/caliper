@@ -12,6 +12,7 @@ function NavContent() {
   const links = [
     { href: "/", label: "Home" },
     { href: "/docs/agentic", label: "Agents", badge: "Docs" },
+    { href: "/blog", label: "Blog" },
     { href: "/faq", label: "FAQ" },
   ];
 

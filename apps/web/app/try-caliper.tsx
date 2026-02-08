@@ -259,13 +259,14 @@ export function TryCaliper() {
                   <span style={{ opacity: 0.9 }}>CMD:</span>
                   <span style={{ opacity: 0.9 }}>
                     {(() => {
-                      const displayKey = (k: string) => (k === " " ? "SPACE" : k);
-                      if (phase === "select") return displayKey(commands.select);
+                      const displayKey = (key: string) => (key === " " ? "Space" : key);
+                      if (phase === "select") return `${getControlKey()} + Click + Hold`;
                       if (phase === "measure") return displayKey(commands.activate);
                       if (phase === "calc") return displayKey(commands.freeze);
                       if (phase === "project")
                         return `${commands.projTop}${commands.projLeft}${commands.projBottom}${commands.projRight}`.toUpperCase();
-                      if (phase === "ruler") return displayKey(commands.ruler);
+                      if (phase === "ruler")
+                        return `Shift + ${commands.ruler.replace("Shift + ", "")}`;
                       return "";
                     })()}
                   </span>

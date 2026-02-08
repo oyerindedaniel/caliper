@@ -21,10 +21,13 @@ export default function HomePage() {
           priority
           unoptimized
         />
-        <p>
-          Essential tooling for detail-obsessed design engineers. High-precision browser measurements,
-          projections, and layout auditing.
-        </p>
+        <div>
+          <h1 className="sr-only">Caliper</h1>
+          <p className="op-8">
+            Essential tooling for detail-obsessed design engineers. High-precision browser
+            measurements, projections, and layout auditing.
+          </p>
+        </div>
       </div>
 
       <Installation />
