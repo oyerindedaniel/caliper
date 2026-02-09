@@ -35,17 +35,18 @@ export function sanitizeSelection(
     depth: metadata.depth,
     stickyConfig: metadata.stickyConfig
       ? {
-          top: metadata.stickyConfig.top,
-          bottom: metadata.stickyConfig.bottom,
-          left: metadata.stickyConfig.left,
-          right: metadata.stickyConfig.right,
-          naturalTop: metadata.stickyConfig.naturalTop,
-          naturalLeft: metadata.stickyConfig.naturalLeft,
-          containerWidth: metadata.stickyConfig.containerWidth,
-          containerHeight: metadata.stickyConfig.containerHeight,
-          elementWidth: metadata.stickyConfig.elementWidth,
-          elementHeight: metadata.stickyConfig.elementHeight,
-        }
+        top: metadata.stickyConfig.top,
+        bottom: metadata.stickyConfig.bottom,
+        left: metadata.stickyConfig.left,
+        right: metadata.stickyConfig.right,
+        naturalTop: metadata.stickyConfig.naturalTop,
+        naturalLeft: metadata.stickyConfig.naturalLeft,
+        containerWidth: metadata.stickyConfig.containerWidth,
+        containerHeight: metadata.stickyConfig.containerHeight,
+        elementWidth: metadata.stickyConfig.elementWidth,
+        elementHeight: metadata.stickyConfig.elementHeight,
+        anchorAbsoluteDepth: metadata.stickyConfig.anchorAbsoluteDepth,
+      }
       : undefined,
     hasContainingBlock: metadata.hasContainingBlock,
   };
@@ -81,6 +82,8 @@ function sanitizeScrollState(state: CoreScrollState): BridgeScrollState {
     initialScrollTop: state.initialScrollTop,
     initialScrollLeft: state.initialScrollLeft,
     containerRect: sanitizeDOMRect(state.containerRect),
+    absoluteDepth: state.absoluteDepth,
+    hasStickyAncestor: state.hasStickyAncestor,
   };
 }
 
@@ -105,31 +108,33 @@ export function sanitizeMeasurement(
     secondaryWinY: result.secondaryWinY,
     primarySticky: result.primarySticky
       ? {
-          top: result.primarySticky.top,
-          bottom: result.primarySticky.bottom,
-          left: result.primarySticky.left,
-          right: result.primarySticky.right,
-          naturalTop: result.primarySticky.naturalTop,
-          naturalLeft: result.primarySticky.naturalLeft,
-          containerWidth: result.primarySticky.containerWidth,
-          containerHeight: result.primarySticky.containerHeight,
-          elementWidth: result.primarySticky.elementWidth,
-          elementHeight: result.primarySticky.elementHeight,
-        }
+        top: result.primarySticky.top,
+        bottom: result.primarySticky.bottom,
+        left: result.primarySticky.left,
+        right: result.primarySticky.right,
+        naturalTop: result.primarySticky.naturalTop,
+        naturalLeft: result.primarySticky.naturalLeft,
+        containerWidth: result.primarySticky.containerWidth,
+        containerHeight: result.primarySticky.containerHeight,
+        elementWidth: result.primarySticky.elementWidth,
+        elementHeight: result.primarySticky.elementHeight,
+        anchorAbsoluteDepth: result.primarySticky.anchorAbsoluteDepth,
+      }
       : undefined,
     secondarySticky: result.secondarySticky
       ? {
-          top: result.secondarySticky.top,
-          bottom: result.secondarySticky.bottom,
-          left: result.secondarySticky.left,
-          right: result.secondarySticky.right,
-          naturalTop: result.secondarySticky.naturalTop,
-          naturalLeft: result.secondarySticky.naturalLeft,
-          containerWidth: result.secondarySticky.containerWidth,
-          containerHeight: result.secondarySticky.containerHeight,
-          elementWidth: result.secondarySticky.elementWidth,
-          elementHeight: result.secondarySticky.elementHeight,
-        }
+        top: result.secondarySticky.top,
+        bottom: result.secondarySticky.bottom,
+        left: result.secondarySticky.left,
+        right: result.secondarySticky.right,
+        naturalTop: result.secondarySticky.naturalTop,
+        naturalLeft: result.secondarySticky.naturalLeft,
+        containerWidth: result.secondarySticky.containerWidth,
+        containerHeight: result.secondarySticky.containerHeight,
+        elementWidth: result.secondarySticky.elementWidth,
+        elementHeight: result.secondarySticky.elementHeight,
+        anchorAbsoluteDepth: result.secondarySticky.anchorAbsoluteDepth,
+      }
       : undefined,
     primaryHasContainingBlock: result.primaryHasContainingBlock,
     secondaryHasContainingBlock: result.secondaryHasContainingBlock,
@@ -304,7 +309,7 @@ export function resolveElement(targetSelector: string): HTMLElement | null {
     try {
       const fingerprintData = JSON.parse(trimmedSelector) as CaliperSelectorInput;
       return findElementByFingerprint(fingerprintData);
-    } catch (parseError) {}
+    } catch (parseError) { }
   }
 
   if (trimmedSelector.startsWith("caliper-")) {

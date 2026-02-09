@@ -1,5 +1,5 @@
 import Link from "next/link";
-import styles from "../../page.module.css";
+import styles from "@/app/page.module.css";
 
 interface CTAProps {
   href: string;
@@ -10,7 +10,10 @@ export function CTA({ href, children }: CTAProps) {
   return (
     <div className={styles.blogCTAContainer}>
       <Link href={href} className={styles.blogCTA}>
-        {children}
+        <span>{children}</span>
+        <span className={`${styles.ctaIcon} material-symbols-outlined`} style={{ fontSize: "20px" }} >
+          arrow_forward
+        </span>
       </Link>
     </div>
   );

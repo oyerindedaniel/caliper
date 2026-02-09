@@ -1,11 +1,11 @@
-import { getAllBlogPosts } from "../../lib/blog";
+import { getAllBlogPosts } from "@/lib/blog";
 import BlogList from "./blog-list";
-import styles from "../page.module.css";
+import styles from "@/app/page.module.css";
 import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Blog",
-  description: "Writing on design engineering, browser precision, and technical auditing.",
+  description: "Technical logs on Caliper's layout engine, browser precision, and solving layout discrepancies.",
 };
 
 export default async function BlogPage() {
@@ -15,9 +15,8 @@ export default async function BlogPage() {
     <div data-caliper-ignore>
       <header className="mb-48">
         <h1 className={styles.pageTitle}>Blog</h1>
-        <p className="op-8" style={{ maxWidth: "500px" }}>
-          Explorations in high-fidelity design engineering, layout auditing mechanics, and the
-          pursuit of the perfect pixel.
+        <p className="op-8">
+          Technical logs on Caliper's layout engine, browser geometric edge cases, and the mechanics of browser precision.
         </p>
       </header>
 

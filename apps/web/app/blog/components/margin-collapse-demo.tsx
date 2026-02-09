@@ -1,90 +1,55 @@
 "use client";
 
 import { motion } from "motion/react";
-import styles from "../../page.module.css";
+import styles from "@/app/page.module.css";
 
 export function MarginCollapseDemo() {
   return (
     <div className={styles.demoContainer}>
-      <div className={styles.demoLabel}>INTENDED: 48PX GAP (24 + 24)</div>
+      <div className={styles.demoLabel}>AUDIT: MARGIN_COLLAPSE_DISCREPANCY</div>
       <div className={styles.demoStage}>
-        <div
-          style={{
-            marginBottom: "24px",
-            background: "var(--gray-alpha-200)",
-            height: "40px",
-            width: "100%",
-            borderRadius: 4,
-            position: "relative",
-          }}
-        >
-          <span
-            style={{
-              position: "absolute",
-              bottom: -20,
-              left: 10,
-              fontSize: 10,
-              color: "var(--caliper-primary)",
-            }}
-          >
-            margin-bottom: 24px
-          </span>
+        <div className={styles.demoNode}>
+          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, opacity: 0.3 }}>NODE_A</span>
+          <div className={`${styles.marginLabel} ${styles.mbLabel}`}>
+            <span>mb: 24px</span>
+            <span style={{ fontSize: 12, lineHeight: 1 }}>↓</span>
+          </div>
         </div>
+        <div className={styles.marginGap}>
+          <div className={styles.measurementBracket}>
+            <div
+              style={{ width: 1, height: "100%", background: "var(--caliper-secondary)", opacity: 0.5 }}
+            />
+          </div>
 
-        {/* The Gap */}
-        <div
-          style={{
-            height: "24px",
-            background: "rgba(242, 78, 30, 0.1)",
-            borderLeft: "2px solid #f24e1e",
-            position: "relative",
-          }}
-        >
           <motion.span
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
             style={{
-              position: "absolute",
-              left: 10,
-              top: "50%",
-              transform: "translateY(-50%)",
-              fontSize: 12,
+              fontFamily: "var(--font-geist-mono)",
+              fontSize: 10,
               fontWeight: 700,
-              color: "#f24e1e",
+              color: "var(--caliper-secondary)",
+              letterSpacing: "0.05em",
+              textShadow: "0 0 10px rgba(242, 78, 30, 0.4)",
             }}
           >
-            OBSERVED: 24px (COLLAPSED)
+            OBSERVED: 24.0px
           </motion.span>
         </div>
 
-        <div
-          style={{
-            marginTop: "24px",
-            background: "var(--gray-alpha-200)",
-            height: "40px",
-            width: "100%",
-            borderRadius: 4,
-            position: "relative",
-          }}
-        >
-          <span
-            style={{
-              position: "absolute",
-              top: -20,
-              left: 10,
-              fontSize: 10,
-              color: "var(--caliper-primary)",
-            }}
-          >
-            margin-top: 24px
-          </span>
+        <div className={styles.demoNode}>
+          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, opacity: 0.3 }}>NODE_B</span>
+
+          <div className={`${styles.marginLabel} ${styles.mtLabel}`}>
+            <span style={{ fontSize: 12, lineHeight: 1 }}>↑</span>
+            <span>mt: 24px</span>
+          </div>
         </div>
       </div>
-      <p className={styles.demoCaption}>
-        The browser collapses the two 24px margins into a single 24px gap because they "touch"
-        without a border or padding separating them.
-      </p>
+      <div className={styles.demoCaption}>
+        <span style={{ color: "var(--caliper-primary)" }}>DIAGNOSIS:</span> Adjacent vertical margins have collapsed. Reality (24px) != Intent (24px + 24px).
+      </div>
     </div>
   );
 }

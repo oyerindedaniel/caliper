@@ -1,9 +1,12 @@
 import { notFound } from "next/navigation";
-import { getBlogPost, getAllBlogSlugs } from "../../../lib/blog";
+import Link from "next/link";
+import { getBlogPost, getAllBlogSlugs } from "@/lib/blog";
 import { MDXRemote } from "next-mdx-remote/rsc";
-import { MarginCollapseDemo, AgentReasoningDemo, AgentTrace, CTA } from "../components";
-import styles from "../../page.module.css";
+import { MarginCollapseDemo, AgentReasoningDemo, CTA, FlexStretchDemo, HashScroll, BuiltBy } from "../components";
+import styles from "@/app/page.module.css";
 import Image from "next/image";
+import { getShimmerDataUrl } from "@/lib/shimmer";
+import { ComponentPropsWithoutRef, Suspense } from "react";
 
 interface BlogPostProps {
   params: Promise<{
@@ -33,9 +36,40 @@ export async function generateMetadata({ params }: BlogPostProps) {
 
 const components = {
   MarginCollapseDemo,
+  FlexStretchDemo,
   AgentReasoningDemo,
-  AgentTrace,
   CTA,
+  BuiltBy,
+  Logo: () => (
+    <span style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '4px',
+      fontWeight: 600,
+      color: 'var(--foreground)',
+      verticalAlign: 'middle'
+    }}>
+      <Image src="/favicon.png" alt="Caliper Logo" width={18} height={18} className="rounded-sm" />
+      Caliper
+    </span>
+  ),
+  h2: (props: ComponentPropsWithoutRef<"h2">) => {
+    const id = props.children?.toString().toLowerCase().trim().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
+    return (
+      <h2 {...props} id={id}>
+        <a href={`#${id}`} className={styles.headerAnchor}>
+          {props.children}
+        </a>
+      </h2>
+    );
+  },
+  h3: (props: ComponentPropsWithoutRef<"h3">) => <h3 {...props} />,
+  p: (props: ComponentPropsWithoutRef<"p">) => <p {...props} />,
+  ul: (props: ComponentPropsWithoutRef<"ul">) => <ul {...props} />,
+  ol: (props: ComponentPropsWithoutRef<"ol">) => <ol {...props} />,
+  li: (props: ComponentPropsWithoutRef<"li">) => <li {...props} />,
+  blockquote: (props: ComponentPropsWithoutRef<"blockquote">) => <blockquote {...props} />,
+  hr: (props: ComponentPropsWithoutRef<"hr">) => <hr {...props} />,
 };
 
 export default async function BlogPostPage({ params }: BlogPostProps) {
@@ -48,6 +82,11 @@ export default async function BlogPostPage({ params }: BlogPostProps) {
 
   return (
     <article className={styles.blogPostContainer} data-caliper-ignore>
+      <div className="mb-32">
+        <Link href="/blog" className={styles.link}>
+          ← Back to Blog
+        </Link>
+      </div>
       <header className={styles.blogPostHeader}>
         <span className={styles.blogPostDate}>{post.date}</span>
         <h1 className={styles.blogPostTitle}>{post.title}</h1>
@@ -59,7 +98,8 @@ export default async function BlogPostPage({ params }: BlogPostProps) {
               fill
               className={styles.blogPostImage}
               priority
-              unoptimized
+              placeholder="blur"
+              blurDataURL={getShimmerDataUrl(1200, 675)}
             />
           </div>
         )}
@@ -68,6 +108,9 @@ export default async function BlogPostPage({ params }: BlogPostProps) {
       <div className={styles.mdxContent}>
         <MDXRemote source={post.content} components={components} />
       </div>
+      <Suspense fallback={null}>
+        <HashScroll />
+      </Suspense>
     </article>
   );
 }

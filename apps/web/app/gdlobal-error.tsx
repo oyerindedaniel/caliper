@@ -2,7 +2,7 @@
 
 import { useCopy } from "./hooks/use-copy";
 import localFont from "next/font/local";
-import styles from "./page.module.css";
+import styles from "@/app/page.module.css";
 
 const geistMono = localFont({
   src: "./fonts/GeistMonoVF.woff",
@@ -17,12 +17,6 @@ export default function GlobalError({
   reset: () => void;
 }) {
   const { copied, copy } = useCopy();
-
-  const handleCopy = () => {
-    if (error.digest) {
-      copy(error.digest);
-    }
-  };
 
   return (
     <html lang="en">
@@ -48,7 +42,7 @@ export default function GlobalError({
             in the root namespace. The application shell could not be initialized.
           </p>
           {error.digest && (
-            <p className={styles.errorDigest} onClick={handleCopy} title="Click to copy ID">
+            <p className={styles.errorDigest} onClick={() => copy(error.digest!)} title="Click to copy ID">
               {copied ? "ID_COPIED_TO_CLIPBOARD" : `SYSTEM_LOG_ID: ${error.digest}`}
             </p>
           )}

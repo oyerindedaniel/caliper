@@ -2,7 +2,7 @@
 
 import { HexColorPicker } from "react-colorful";
 import * as Popover from "@radix-ui/react-popover";
-import styles from "../page.module.css";
+import styles from "@/app/page.module.css";
 
 interface ColorPickerProps {
   color: string;

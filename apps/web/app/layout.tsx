@@ -5,13 +5,12 @@ import Script from "next/script";
 import { Analytics } from "@vercel/analytics/react";
 import { BASE_URL, STORAGE_KEY } from "./constants";
 import { LogoTrail } from "./components/logo-trail-canvas";
-import { CaliperWrapper } from "./caliper-wrapper";
 import { ConfigProvider } from "./contexts/config-context";
 import { Nav } from "./components/nav";
 import { Footer } from "./components/footer";
 import { OnThisPage } from "./components/on-this-page";
 import { FocusProvider } from "./contexts/focus-context";
-import styles from "./page.module.css";
+import styles from "@/app/page.module.css";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -107,14 +106,14 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
         />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body className={`${geistSans.className} ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
         {process.env.NODE_ENV === "development" && (
           <Script
             src="https://unpkg.com/react-scan/dist/auto.global.js"
             strategy="beforeInteractive"
           />
         )}
-        {/* <Script
+        <Script
           src={
             process.env.NODE_ENV === "production"
               ? "https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
@@ -123,12 +122,11 @@ export default function RootLayout({
           strategy="beforeInteractive"
           crossOrigin="anonymous"
           data-config={JSON.stringify({
-            bridge: { enabled: process.env.NODE_ENV === "development" },
+            bridge: { enabled: true },
           })}
-        /> */}
+        />
         <ConfigProvider>
           <FocusProvider>
-            {/* <CaliperWrapper /> */}
             <LogoTrail />
             <div className={styles.page}>
               <main className={styles.main}>

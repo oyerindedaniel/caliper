@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import styles from "./page.module.css";
+import styles from "@/app/page.module.css";
 import { useFocus } from "./contexts/focus-context";
 import { useCopy } from "./hooks/use-copy";
 import { useKeyCapture } from "./hooks/use-key-capture";
