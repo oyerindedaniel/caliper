@@ -117,9 +117,7 @@ export default function RootLayout({
           />
         )}
         <Script
-          src={
-            `/caliper.js`
-          }
+          src={`/caliper.js`}
           // src={
           //   process.env.NODE_ENV === "production"
           //     ? "https://unpkg.com/@oyerinde/caliper/dist/index.global.js"

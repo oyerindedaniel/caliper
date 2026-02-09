@@ -78,7 +78,6 @@ export default function AgenticDocsPage() {
         <McpSetup />
       </section>
 
-
       <section id="stable-selectors" className={styles.section}>
         <h2 className={styles.sectionHeader}>Stable Selectors</h2>
         <p className="mb-18 op-8">

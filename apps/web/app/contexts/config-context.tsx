@@ -2,7 +2,12 @@
 
 import { createContext, useContext, useState, ReactNode, useLayoutEffect } from "react";
 import { type OverlayConfig } from "@oyerinde/caliper";
-import { DEFAULT_COMMANDS, DEFAULT_THEME as CORE_THEME, applyTheme, OVERLAY_CONTAINER_ID } from "@caliper/core";
+import {
+  DEFAULT_COMMANDS,
+  DEFAULT_THEME as CORE_THEME,
+  applyTheme,
+  OVERLAY_CONTAINER_ID,
+} from "@caliper/core";
 import { STORAGE_KEY } from "@/app/constants";
 
 export interface CommandConfig {
