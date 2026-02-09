@@ -1,5 +1,5 @@
 import { useState } from "react";
-import styles from "./page.module.css";
+import styles from "@/app/page.module.css";
 import { CodeBlock } from "./components/code-block";
 
 type Framework = "next" | "vite" | "astro" | "nuxt" | "vue" | "tanstack" | "html";

@@ -1,9 +1,15 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode, useLayoutEffect } from "react";
-import { type OverlayConfig } from "@oyerinde/caliper";
+import { type OverlayConfig, type OverlayInstance } from "@oyerinde/caliper";
 import { DEFAULT_COMMANDS, DEFAULT_THEME as CORE_THEME } from "@caliper/core";
-import { STORAGE_KEY } from "../constants";
+import { STORAGE_KEY } from "@/app/constants";
+
+declare global {
+  interface Window {
+    __CALIPER__?: OverlayInstance;
+  }
+}
 
 export interface CommandConfig {
   activate: string;
@@ -120,10 +126,25 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const syncCaliper = (theme: ThemeConfig) => {
+    const caliper = window.__CALIPER__;
+    if (caliper) {
+      caliper.dispose();
+      caliper.mount();
+
+      if (theme.primary && theme.secondary) {
+        document.documentElement.style.setProperty("--caliper-primary", theme.primary);
+        document.documentElement.style.setProperty("--caliper-secondary", theme.secondary);
+        document.documentElement.style.setProperty("--caliper-projection", theme.projection);
+      }
+    }
+  };
+
   const applyConfig = () => {
     setAppliedConfig(config);
     if (typeof window !== "undefined") {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+      syncCaliper(config.theme);
     }
   };
 
@@ -133,6 +154,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     setAppliedConfig(reset);
     if (typeof window !== "undefined") {
       localStorage.removeItem(STORAGE_KEY);
+      syncCaliper(reset.theme);
     }
   };
 

@@ -28,6 +28,14 @@ body {
   overflow-x: clip;
   color: var(--foreground);
   background: var(--background);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+pre,
+code,
+kbd,
+samp {
+  font-family: var(--font-geist-mono), monospace;
 }
 
 * {

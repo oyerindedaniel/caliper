@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import styles from "../page.module.css";
+import styles from "@/app/page.module.css";
 import { CodeBlock } from "./code-block";
 
 type Tool = "cursor" | "claude-code" | "antigravity";

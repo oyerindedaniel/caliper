@@ -1,4 +1,4 @@
-import styles from "./page.module.css";
+import styles from "@/app/page.module.css";
 import { useFocus } from "./contexts/focus-context";
 import { useOS } from "./hooks/use-os";
 import { useConfig, type CommandConfig } from "./contexts/config-context";

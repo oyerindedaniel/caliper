@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import styles from "../page.module.css";
+import styles from "@/app/page.module.css";
 import { Suspense } from "react";
 import { motion } from "motion/react";
 
@@ -12,6 +12,7 @@ function NavContent() {
   const links = [
     { href: "/", label: "Home" },
     { href: "/docs/agentic", label: "Agents", badge: "Docs" },
+    { href: "/blog", label: "Blog" },
     { href: "/faq", label: "FAQ" },
   ];
 

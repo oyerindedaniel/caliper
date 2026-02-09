@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, Suspense } from "react";
 import { usePathname } from "next/navigation";
-import { useIsClient } from "../hooks/use-is-client";
+import { useIsClient } from "@/app/hooks/use-is-client";
 import styles from "./on-this-page.module.css";
 
 interface TocItem {
@@ -35,17 +35,23 @@ function OnThisPageContent() {
   const [activeId, setActiveId] = useState<string>("");
   const [pillTop, setPillTop] = useState(0);
 
-  if (pathname === "/changelog") {
-    return null;
-  }
   const itemRefs = useRef<Record<string, HTMLElement | null>>({});
 
   useEffect(() => {
-    const contentSections = document.querySelectorAll("section[id]");
-    const foundTocItems = Array.from(contentSections).map((currentSection) => ({
-      id: currentSection.id,
-      label: currentSection.querySelector("h2")?.textContent || currentSection.id,
-    }));
+    const contentSections = document.querySelectorAll("section[id], h2[id]");
+    const foundTocItems = Array.from(contentSections)
+      .filter((el) => {
+        // Only include h2 if it's inside an article or has a specific class if needed
+        // For now, let's just include all h2[id]
+        return el.id && (el.tagName === "SECTION" || el.tagName === "H2");
+      })
+      .map((currentSection) => ({
+        id: currentSection.id,
+        label:
+          (currentSection.tagName === "H2"
+            ? currentSection.textContent
+            : currentSection.querySelector("h2")?.textContent) || currentSection.id,
+      }));
     setTocItems(foundTocItems);
 
     const initialActive = Array.from(contentSections).find((section) => {
@@ -64,15 +70,29 @@ function OnThisPageContent() {
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            setActiveId(entry.target.id);
+            const id = entry.target.id;
+            setActiveId(id);
+            if (window.location.hash !== `#${id}`) {
+              window.history.replaceState(null, "", `#${id}`);
+            }
           }
         });
       },
       { rootMargin: "-10% 0px -70% 0px", threshold: 0 }
     );
 
+    const resizeObserver = new ResizeObserver(() => {
+      contentSections.forEach((currentSection) => intersectionObserver.observe(currentSection));
+    });
+
+    resizeObserver.observe(document.body);
+
     contentSections.forEach((currentSection) => intersectionObserver.observe(currentSection));
-    return () => intersectionObserver.disconnect();
+
+    return () => {
+      intersectionObserver.disconnect();
+      resizeObserver.disconnect();
+    };
   }, [pathname]);
 
   useEffect(() => {
@@ -90,6 +110,9 @@ function OnThisPageContent() {
       const scrollTargetTop =
         targetSectionElement.getBoundingClientRect().top + window.pageYOffset - 80;
       window.scrollTo({ top: scrollTargetTop, behavior: "smooth" });
+      // Update hash immediately for responsiveness
+      window.history.replaceState(null, "", `#${sectionId}`);
+      setActiveId(sectionId);
     }
   };
 

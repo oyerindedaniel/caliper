@@ -10,8 +10,13 @@ export const metadata: Metadata = {
 
 async function getChangelog() {
   const changelogPath = path.join(process.cwd(), "..", "..", "packages", "caliper", "CHANGELOG.md");
-  const content = await fs.readFile(changelogPath, "utf-8");
-  return parseChangelog(content);
+  try {
+    const content = await fs.readFile(changelogPath, "utf-8");
+    return parseChangelog(content);
+  } catch (err) {
+    console.error("Failed to read changelog at:", changelogPath);
+    throw err;
+  }
 }
 
 export default async function Changelog() {

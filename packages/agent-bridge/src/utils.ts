@@ -45,6 +45,7 @@ export function sanitizeSelection(
           containerHeight: metadata.stickyConfig.containerHeight,
           elementWidth: metadata.stickyConfig.elementWidth,
           elementHeight: metadata.stickyConfig.elementHeight,
+          anchorAbsoluteDepth: metadata.stickyConfig.anchorAbsoluteDepth,
         }
       : undefined,
     hasContainingBlock: metadata.hasContainingBlock,
@@ -81,6 +82,8 @@ function sanitizeScrollState(state: CoreScrollState): BridgeScrollState {
     initialScrollTop: state.initialScrollTop,
     initialScrollLeft: state.initialScrollLeft,
     containerRect: sanitizeDOMRect(state.containerRect),
+    absoluteDepth: state.absoluteDepth,
+    hasStickyAncestor: state.hasStickyAncestor,
   };
 }
 
@@ -115,6 +118,7 @@ export function sanitizeMeasurement(
           containerHeight: result.primarySticky.containerHeight,
           elementWidth: result.primarySticky.elementWidth,
           elementHeight: result.primarySticky.elementHeight,
+          anchorAbsoluteDepth: result.primarySticky.anchorAbsoluteDepth,
         }
       : undefined,
     secondarySticky: result.secondarySticky
@@ -129,6 +133,7 @@ export function sanitizeMeasurement(
           containerHeight: result.secondarySticky.containerHeight,
           elementWidth: result.secondarySticky.elementWidth,
           elementHeight: result.secondarySticky.elementHeight,
+          anchorAbsoluteDepth: result.secondarySticky.anchorAbsoluteDepth,
         }
       : undefined,
     primaryHasContainingBlock: result.primaryHasContainingBlock,

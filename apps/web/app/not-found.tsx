@@ -1,11 +1,11 @@
 import Link from "next/link";
-import styles from "./page.module.css";
+import styles from "@/app/page.module.css";
 
 export default function NotFound() {
   return (
-    <div className={styles.notFound}>
-      <div className={styles.errorCode}>404</div>
-      <p className={styles.errorDescription}>
+    <div className={styles.statusContainer}>
+      <div className={styles.statusCode}>404</div>
+      <p className={styles.description}>
         <strong className={styles.strong}>ERROR_NOT_FOUND</strong>: The requested resource could not
         be mapped within the Caliper namespace. Please verify the URL or return to the landing base.
       </p>

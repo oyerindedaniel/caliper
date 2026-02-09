@@ -2,8 +2,8 @@
 
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { useCopy } from "../hooks/use-copy";
-import styles from "../page.module.css";
+import { useCopy } from "@/app/hooks/use-copy";
+import styles from "@/app/page.module.css";
 
 interface CodeBlockProps {
   code: string;

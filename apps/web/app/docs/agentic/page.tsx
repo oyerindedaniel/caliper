@@ -1,10 +1,10 @@
 "use client";
 
-import styles from "../../page.module.css";
+import styles from "@/app/page.module.css";
 import Image from "next/image";
-import { Installation } from "../../installation";
-import { McpSetup } from "../../components/mcp-setup";
-import { CodeBlock } from "../../components/code-block";
+import { Installation } from "@/app/installation";
+import { McpSetup } from "@/app/components/mcp-setup";
+import { CodeBlock } from "@/app/components/code-block";
 
 export default function AgenticDocsPage() {
   return (
@@ -16,7 +16,7 @@ export default function AgenticDocsPage() {
             alt="Caliper logo"
             width={172}
             height={50}
-            className="h-auto "
+            className="h-auto"
             priority
             unoptimized
           />
