@@ -148,11 +148,11 @@ export function TryCaliper() {
   const calcTop = useTransform([b1y, b1h], ([y, h]) => Number(y) + Number(h) + 10);
   const projectHeight = useTransform([b1y], ([y]) => Number(y));
 
-  // / 2 - 9: Halfway point minus half label height (approx 18px / 2) to center the label
-  const projectMidY = useTransform([b1y], ([y]) => Number(y) / 2 - 9);
+  // Halfway point of the projection line
+  const projectMidY = useTransform([b1y], ([y]) => Number(y) / 2);
 
-  // + 8: Horizontal offset to place the label to the right of the projection line
-  const projectLabelX = useTransform([b1MidX], ([midX]) => Number(midX) + 8);
+  // Centered on the projection line
+  const projectLabelX = useTransform([b1MidX], ([midX]) => Number(midX));
 
   const projectLabelVal = useTransform(b1y, (y) => Math.round(Number(y)));
 
@@ -525,7 +525,7 @@ export function TryCaliper() {
                     background: theme.calcBg,
                     border: `1px solid ${theme.primary}`,
                     borderLeft: `3px solid ${theme.projection}`,
-                    boxShadow: `0 4px 12px ${theme.calcShadow}`,
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${theme.primary}, transparent 50%), 0 4px 12px ${theme.calcShadow}`,
                     padding: "0 8px",
                     height: 28,
                     display: "flex",
@@ -569,6 +569,8 @@ export function TryCaliper() {
                     fontSize: 11,
                     fontWeight: 500,
                     borderRadius: 3,
+                    x: "-50%",
+                    y: "-50%",
                   }}
                 >
                   <motion.span>{projectLabelVal}</motion.span>

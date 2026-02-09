@@ -217,11 +217,11 @@
   gap: 8px;
 }
 
-.subHeader + .subHeader {
+.subHeader+.subHeader {
   margin-top: 0;
 }
 
-.sectionHeader + .subHeader {
+.sectionHeader+.subHeader {
   margin-top: 0;
 }
 
@@ -319,6 +319,7 @@
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
@@ -1174,14 +1175,14 @@ p.faqAnswer strong {
 .marginGap {
   height: 24px;
   width: 80%;
-  background: rgba(242, 78, 30, 0.08);
+  background: color-mix(in srgb, var(--caliper-secondary), transparent 92%);
   position: relative;
   margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-left: 1px dashed rgba(242, 78, 30, 0.3);
-  border-right: 1px dashed rgba(242, 78, 30, 0.3);
+  border-left: 1px dashed color-mix(in srgb, var(--caliper-secondary), transparent 70%);
+  border-right: 1px dashed color-mix(in srgb, var(--caliper-secondary), transparent 70%);
 }
 
 .measurementBracket {
@@ -1225,7 +1226,7 @@ p.faqAnswer strong {
   background: rgba(0, 0, 0, 0.8);
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(242, 78, 30, 0.2);
+  border: 1px solid var(--caliper-secondary);
   z-index: 10;
 }
 
@@ -1247,7 +1248,7 @@ p.faqAnswer strong {
   right: 0;
   top: 50%;
   height: 1px;
-  background: rgba(242, 78, 30, 0.5);
+  background: color-mix(in srgb, var(--caliper-secondary), transparent 50%);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1601,7 +1602,7 @@ p.faqAnswer strong {
   }
 
   .blogGrid {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 32px;
   }
 
@@ -1650,6 +1651,7 @@ p.faqAnswer strong {
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;

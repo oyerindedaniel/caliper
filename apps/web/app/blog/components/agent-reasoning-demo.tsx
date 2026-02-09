@@ -118,7 +118,7 @@ export function AgentReasoningDemo() {
                   fontFamily: "var(--font-geist-mono)",
                   fontSize: 10,
                   color: "var(--caliper-secondary)",
-                  background: "rgba(242, 78, 30, 0.1)",
+                  background: "color-mix(in srgb, var(--caliper-secondary), transparent 90%)",
                   padding: "4px 8px",
                   border: "1px solid var(--caliper-secondary)",
                   borderRadius: 2,

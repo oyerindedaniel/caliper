@@ -78,6 +78,18 @@ export default function AgenticDocsPage() {
         <McpSetup />
       </section>
 
+
+      <section id="stable-selectors" className={styles.section}>
+        <h2 className={styles.sectionHeader}>Stable Selectors</h2>
+        <p className="mb-18 op-8">
+          AI agents often need to rediscover elements after triggering code changes. While Caliper
+          uses coordinate hit-testing as a fallback, you can ensure 100% reliability by adding
+          stable markers to mission-critical components:
+        </p>
+
+        <CodeBlock code={`<div {...caliperProps("main-cta")}>Click Me</div>`} language="tsx" />
+      </section>
+
       <section id="core-tools" className={styles.section}>
         <h2 className={styles.sectionHeader}>Core Tools</h2>
         <p className="mb-18 op-8">
@@ -191,17 +203,6 @@ export default function AgenticDocsPage() {
             </tbody>
           </table>
         </div>
-      </section>
-
-      <section id="stable-selectors" className={styles.section}>
-        <h2 className={styles.sectionHeader}>Stable Selectors</h2>
-        <p className="mb-18 op-8">
-          AI agents often need to rediscover elements after triggering code changes. While Caliper
-          uses coordinate hit-testing as a fallback, you can ensure 100% reliability by adding
-          stable markers to mission-critical components:
-        </p>
-
-        <CodeBlock code={`<div {...caliperProps("main-cta")}>Click Me</div>`} language="tsx" />
       </section>
 
       <section id="agent-prompts" className={styles.section}>
