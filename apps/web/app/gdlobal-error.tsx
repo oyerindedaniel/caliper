@@ -42,7 +42,11 @@ export default function GlobalError({
             in the root namespace. The application shell could not be initialized.
           </p>
           {error.digest && (
-            <p className={styles.errorDigest} onClick={() => copy(error.digest!)} title="Click to copy ID">
+            <p
+              className={styles.errorDigest}
+              onClick={() => copy(error.digest!)}
+              title="Click to copy ID"
+            >
               {copied ? "ID_COPIED_TO_CLIPBOARD" : `SYSTEM_LOG_ID: ${error.digest}`}
             </p>
           )}

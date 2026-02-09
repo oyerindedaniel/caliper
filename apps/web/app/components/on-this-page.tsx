@@ -40,14 +40,17 @@ function OnThisPageContent() {
   useEffect(() => {
     const contentSections = document.querySelectorAll("section[id], h2[id]");
     const foundTocItems = Array.from(contentSections)
-      .filter(el => {
+      .filter((el) => {
         // Only include h2 if it's inside an article or has a specific class if needed
         // For now, let's just include all h2[id]
-        return el.id && (el.tagName === 'SECTION' || el.tagName === 'H2');
+        return el.id && (el.tagName === "SECTION" || el.tagName === "H2");
       })
       .map((currentSection) => ({
         id: currentSection.id,
-        label: (currentSection.tagName === 'H2' ? currentSection.textContent : currentSection.querySelector("h2")?.textContent) || currentSection.id,
+        label:
+          (currentSection.tagName === "H2"
+            ? currentSection.textContent
+            : currentSection.querySelector("h2")?.textContent) || currentSection.id,
       }));
     setTocItems(foundTocItems);
 

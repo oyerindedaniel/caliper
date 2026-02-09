@@ -9,7 +9,9 @@ export function MarginCollapseDemo() {
       <div className={styles.demoLabel}>AUDIT: MARGIN_COLLAPSE_DISCREPANCY</div>
       <div className={styles.demoStage}>
         <div className={styles.demoNode}>
-          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, opacity: 0.3 }}>NODE_A</span>
+          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, opacity: 0.3 }}>
+            NODE_A
+          </span>
           <div className={`${styles.marginLabel} ${styles.mbLabel}`}>
             <span>mb: 24px</span>
             <span style={{ fontSize: 12, lineHeight: 1 }}>↓</span>
@@ -18,7 +20,12 @@ export function MarginCollapseDemo() {
         <div className={styles.marginGap}>
           <div className={styles.measurementBracket}>
             <div
-              style={{ width: 1, height: "100%", background: "var(--caliper-secondary)", opacity: 0.5 }}
+              style={{
+                width: 1,
+                height: "100%",
+                background: "var(--caliper-secondary)",
+                opacity: 0.5,
+              }}
             />
           </div>
 
@@ -39,7 +46,9 @@ export function MarginCollapseDemo() {
         </div>
 
         <div className={styles.demoNode}>
-          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, opacity: 0.3 }}>NODE_B</span>
+          <span style={{ fontFamily: "var(--font-geist-mono)", fontSize: 11, opacity: 0.3 }}>
+            NODE_B
+          </span>
 
           <div className={`${styles.marginLabel} ${styles.mtLabel}`}>
             <span style={{ fontSize: 12, lineHeight: 1 }}>↑</span>
@@ -48,7 +57,8 @@ export function MarginCollapseDemo() {
         </div>
       </div>
       <div className={styles.demoCaption}>
-        <span style={{ color: "var(--caliper-primary)" }}>DIAGNOSIS:</span> Adjacent vertical margins have collapsed. Reality (24px) != Intent (24px + 24px).
+        <span style={{ color: "var(--caliper-primary)" }}>DIAGNOSIS:</span> Adjacent vertical
+        margins have collapsed. Reality (24px) != Intent (24px + 24px).
       </div>
     </div>
   );

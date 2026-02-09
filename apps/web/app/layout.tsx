@@ -106,7 +106,10 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
         />
       </head>
-      <body className={`${geistSans.className} ${geistSans.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <body
+        className={`${geistSans.className} ${geistSans.variable} ${geistMono.variable}`}
+        suppressHydrationWarning
+      >
         {process.env.NODE_ENV === "development" && (
           <Script
             src="https://unpkg.com/react-scan/dist/auto.global.js"

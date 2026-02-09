@@ -2,7 +2,14 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getBlogPost, getAllBlogSlugs } from "@/lib/blog";
 import { MDXRemote } from "next-mdx-remote/rsc";
-import { MarginCollapseDemo, AgentReasoningDemo, CTA, FlexStretchDemo, HashScroll, BuiltBy } from "../components";
+import {
+  MarginCollapseDemo,
+  AgentReasoningDemo,
+  CTA,
+  FlexStretchDemo,
+  HashScroll,
+  BuiltBy,
+} from "../components";
 import styles from "@/app/page.module.css";
 import Image from "next/image";
 import { getShimmerDataUrl } from "@/lib/shimmer";
@@ -41,20 +48,27 @@ const components = {
   CTA,
   BuiltBy,
   Logo: () => (
-    <span style={{
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: '4px',
-      fontWeight: 600,
-      color: 'var(--foreground)',
-      verticalAlign: 'middle'
-    }}>
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "4px",
+        fontWeight: 600,
+        color: "var(--foreground)",
+        verticalAlign: "middle",
+      }}
+    >
       <Image src="/favicon.png" alt="Caliper Logo" width={18} height={18} className="rounded-sm" />
       Caliper
     </span>
   ),
   h2: (props: ComponentPropsWithoutRef<"h2">) => {
-    const id = props.children?.toString().toLowerCase().trim().replace(/\s+/g, "-").replace(/[^\w-]/g, "");
+    const id = props.children
+      ?.toString()
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^\w-]/g, "");
     return (
       <h2 {...props} id={id}>
         <a href={`#${id}`} className={styles.headerAnchor}>

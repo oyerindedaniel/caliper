@@ -5,7 +5,8 @@ import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Blog",
-  description: "Technical logs on Caliper's layout engine, browser precision, and solving layout discrepancies.",
+  description:
+    "Technical logs on Caliper's layout engine, browser precision, and solving layout discrepancies.",
 };
 
 export default async function BlogPage() {
@@ -16,7 +17,8 @@ export default async function BlogPage() {
       <header className="mb-48">
         <h1 className={styles.pageTitle}>Blog</h1>
         <p className="op-8">
-          Technical logs on Caliper's layout engine, browser geometric edge cases, and the mechanics of browser precision.
+          Technical logs on Caliper's layout engine, browser geometric edge cases, and the mechanics
+          of browser precision.
         </p>
       </header>
 

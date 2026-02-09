@@ -11,7 +11,10 @@ export function CTA({ href, children }: CTAProps) {
     <div className={styles.blogCTAContainer}>
       <Link href={href} className={styles.blogCTA}>
         <span>{children}</span>
-        <span className={`${styles.ctaIcon} material-symbols-outlined`} style={{ fontSize: "20px" }} >
+        <span
+          className={`${styles.ctaIcon} material-symbols-outlined`}
+          style={{ fontSize: "20px" }}
+        >
           arrow_forward
         </span>
       </Link>

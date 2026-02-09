@@ -53,7 +53,6 @@ export function AgentReasoningDemo() {
             borderRadius: 4,
           }}
         >
-
           <div
             style={{
               position: "absolute",
@@ -146,10 +145,7 @@ export function AgentReasoningDemo() {
           }}
         />
       </div>
-      <div
-        className={styles.demoAgentBadge}
-        style={{ color: currentStep.color }}
-      >
+      <div className={styles.demoAgentBadge} style={{ color: currentStep.color }}>
         PROCEDURE: {currentStep.label}
       </div>
     </div>

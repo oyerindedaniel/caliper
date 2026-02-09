@@ -217,11 +217,11 @@
   gap: 8px;
 }
 
-.subHeader+.subHeader {
+.subHeader + .subHeader {
   margin-top: 0;
 }
 
-.sectionHeader+.subHeader {
+.sectionHeader + .subHeader {
   margin-top: 0;
 }
 
@@ -319,7 +319,6 @@
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     opacity: 1;
@@ -1095,7 +1094,9 @@ p.faqAnswer strong {
 
 .demoStage {
   background: #050505;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
   background-size: 20px 20px;
   border: 1px solid rgba(255, 255, 255, 0.03);
   border-radius: 8px;
@@ -1649,7 +1650,6 @@ p.faqAnswer strong {
 }
 
 @media (hover: hover) and (pointer: fine) {
-
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
