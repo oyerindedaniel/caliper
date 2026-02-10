@@ -32,7 +32,6 @@ export async function generateMetadata({ params }: BlogPostProps): Promise<Metad
 
   if (!post) return {};
 
-
   return {
     title: post.title,
     description: post.excerpt,
