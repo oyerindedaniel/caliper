@@ -7,7 +7,7 @@ export interface CaliperCoreSystems {
 }
 
 /**
- * A plugin allows extending Caliper's functionality by accessing the 
+ * A plugin allows extending Caliper's functionality by accessing the
  * OverlayInstance and internal systems.
  */
 export interface CaliperPlugin {

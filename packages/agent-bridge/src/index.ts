@@ -35,8 +35,8 @@ const logger = createLogger("agent-bridge");
 
 /**
  * CaliperBridge Plugin Factory
- * 
- * Creates a Caliper plugin that enables AI agents to interact with the overlay via 
+ *
+ * Creates a Caliper plugin that enables AI agents to interact with the overlay via
  * a WebSocket bridge (local MCP relay) or direct global intent dispatching.
  *
  * When installed, this plugin:
@@ -48,7 +48,7 @@ const logger = createLogger("agent-bridge");
  * ```ts
  * import { init } from "@oyerinde/caliper/preset";
  * import { CaliperBridge } from "@oyerinde/caliper/bridge";
- * 
+ *
  * init({ ... }, [
  *   new CaliperBridge({
  *     enabled: true,
@@ -165,7 +165,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
 
 /**
  * Dispatches a high-level intent to the Caliper engine.
- * 
+ *
  * This function is used to programmatically trigger Caliper actions (like measuring between elements)
  * using the standardized intent format. Requires a `CaliperBridge` to be installed and active.
  *
@@ -196,5 +196,10 @@ export type {
   CaliperAgentState,
 } from "@oyerinde/caliper-schema";
 export { CALIPER_METHODS, CaliperActionResultSchema } from "@oyerinde/caliper-schema";
-export type { AgentBridgeConfig, CaliperPlugin, OverlayInstance, CaliperCoreSystems } from "@caliper/core";
+export type {
+  AgentBridgeConfig,
+  CaliperPlugin,
+  OverlayInstance,
+  CaliperCoreSystems,
+} from "@caliper/core";
 export type { JsonRpcRequest } from "@oyerinde/caliper-schema";

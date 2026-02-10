@@ -23,7 +23,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "Caliper",
+    default: "Home | Caliper",
     template: "%s | Caliper",
   },
   description:

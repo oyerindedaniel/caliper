@@ -83,14 +83,6 @@
     transform 0.2s;
 }
 
-.githubLink:hover .starIcon {
-  transform: scale(1.1);
-}
-
-.clickableRow:hover {
-  background: var(--gray-alpha-100);
-}
-
 .tableContainer {
   width: 100%;
   margin: 0;
@@ -168,11 +160,6 @@
   transition: all 0.2s;
 }
 
-.tab:hover:not(.activeTab) {
-  color: #bbb;
-  background: var(--gray-alpha-100);
-}
-
 .activeTab {
   color: var(--gray-rgb);
   border-bottom-color: var(--gray-rgb);
@@ -217,11 +204,11 @@
   gap: 8px;
 }
 
-.subHeader + .subHeader {
+.subHeader+.subHeader {
   margin-top: 0;
 }
 
-.sectionHeader + .subHeader {
+.sectionHeader+.subHeader {
   margin-top: 0;
 }
 
@@ -319,6 +306,7 @@
 }
 
 @keyframes pulse {
+
   0%,
   100% {
     opacity: 1;
@@ -399,10 +387,6 @@
   justify-content: center;
 }
 
-.copyButton:hover {
-  background: var(--button-primary-hover);
-}
-
 .copyButton:active {
   opacity: 0.8;
 }
@@ -438,11 +422,6 @@
   cursor: pointer;
   transition: all 0.2s;
   opacity: 0.8;
-}
-
-.copyCodeButton:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.2);
 }
 
 .copyCodeButton:focus-visible {
@@ -506,10 +485,6 @@
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
-}
-
-.playgroundBox:hover {
-  background: var(--gray-alpha-200);
 }
 
 .boxLabel {
@@ -578,19 +553,10 @@
   color: var(--background);
 }
 
-.btnPrimary:hover:not(:disabled) {
-  background: var(--button-primary-hover);
-}
-
 .btnSecondary {
   background: transparent;
   border-color: var(--gray-alpha-200);
   color: var(--gray-rgb);
-}
-
-.btnSecondary:hover:not(:disabled) {
-  background: var(--gray-alpha-100);
-  border-color: var(--gray-alpha-100);
 }
 
 .btnBase:active:not(:disabled) {
@@ -646,10 +612,6 @@
   opacity: 0.5;
   text-decoration: none;
   transition: all 0.2s;
-}
-
-.navLink:hover {
-  opacity: 1;
 }
 
 .activeNavLink {
@@ -873,12 +835,6 @@ p.faqAnswer strong {
   text-transform: uppercase;
 }
 
-.errorReset:hover {
-  opacity: 1;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
 .strong {
   color: var(--foreground);
   font-weight: 600;
@@ -919,10 +875,6 @@ p.faqAnswer strong {
   transition: transform 0.5s cubic-bezier(0.2, 0, 0.2, 1);
 }
 
-.blogCard:hover .blogImageContainer img {
-  transform: scale(1.05);
-}
-
 .blogMeta {
   display: flex;
   flex-direction: column;
@@ -943,10 +895,6 @@ p.faqAnswer strong {
   font-weight: 500;
   line-height: 1.4;
   letter-spacing: -0.01em;
-}
-
-.blogCard:hover .blogTitle {
-  color: var(--caliper-primary);
 }
 
 .blogPostContainer {
@@ -1288,17 +1236,6 @@ p.faqAnswer strong {
   display: inline-block;
 }
 
-.blogCTA:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
-  background: #333;
-  color: #fff;
-}
-
-.blogCTA:hover .ctaIcon {
-  transform: translateX(4px);
-}
-
 .blogCTA:active {
   transform: translateY(-2px);
 }
@@ -1374,12 +1311,6 @@ p.faqAnswer strong {
   color: inherit;
   text-decoration: none;
   transition: opacity 0.2s;
-}
-
-.headerAnchor:hover {
-  opacity: 0.7;
-  text-decoration: underline;
-  text-underline-offset: 4px;
 }
 
 .mdxContent {
@@ -1650,6 +1581,7 @@ p.faqAnswer strong {
 }
 
 @media (hover: hover) and (pointer: fine) {
+
   .footer a:hover,
   .footer a[href]:hover {
     text-decoration: underline;
@@ -1669,5 +1601,77 @@ p.faqAnswer strong {
 
   .errorDigest:hover {
     opacity: 1;
+  }
+
+  .blogCTA:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+    background: #333;
+    color: #fff;
+  }
+
+  .blogCTA:hover .ctaIcon {
+    transform: translateX(4px);
+  }
+
+  .githubLink:hover .starIcon {
+    transform: scale(1.1);
+  }
+
+  .clickableRow:hover {
+    background: var(--gray-alpha-100);
+  }
+
+  .tab:hover:not(.activeTab) {
+    color: #bbb;
+    background: var(--gray-alpha-100);
+  }
+
+  .copyButton:hover {
+    background: var(--button-primary-hover);
+  }
+
+  .copyCodeButton:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.2);
+  }
+
+  .playgroundBox:hover {
+    background: var(--gray-alpha-200);
+  }
+
+
+  .btnPrimary:hover:not(:disabled) {
+    background: var(--button-primary-hover);
+  }
+
+  .btnSecondary:hover:not(:disabled) {
+    background: var(--gray-alpha-100);
+    border-color: var(--gray-alpha-100);
+  }
+
+  .navLink:hover {
+    opacity: 1;
+  }
+
+
+  .errorReset:hover {
+    opacity: 1;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .blogCard:hover .blogImageContainer img {
+    transform: scale(1.05);
+  }
+
+  .blogCard:hover .blogTitle {
+    color: var(--caliper-primary);
+  }
+
+  .headerAnchor:hover {
+    opacity: 0.7;
+    text-decoration: underline;
+    text-underline-offset: 4px;
   }
 }

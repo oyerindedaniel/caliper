@@ -37,15 +37,15 @@ export type { Extension };
 
 /**
  * High-level initialization for Caliper with support for extensions and plugins.
- * 
- * This "preset" initializer streamlines setting up Caliper in development or 
- * agentic environments by handling both core configuration and plugin injection 
+ *
+ * This "preset" initializer streamlines setting up Caliper in development or
+ * agentic environments by handling both core configuration and plugin injection
  * in a single call.
  *
  * @example
  * ```ts
  * import { init, CaliperBridge } from "@oyerinde/caliper/preset";
- * 
+ *
  * const caliper = await init({
  *   theme: { primary: "#18a0fb" }
  * }, [

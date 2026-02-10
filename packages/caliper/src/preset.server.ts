@@ -41,8 +41,8 @@ export type Extension = ((instance: OverlayInstance) => void) | CaliperPlugin;
 export function CaliperBridge(_configuration?: AgentBridgeConfig): CaliperPlugin {
   return {
     name: "agent-bridge-stub",
-    install: () => { },
-    dispose: () => { },
+    install: () => {},
+    dispose: () => {},
   };
 }
 
@@ -54,10 +54,10 @@ export async function init(
   _extensions: Array<Extension> = []
 ): Promise<OverlayInstance> {
   return {
-    mount: () => { },
-    dispose: () => { },
+    mount: () => {},
+    dispose: () => {},
     getSystems: () => null,
-    waitForSystems: () => new Promise(() => { }),
+    waitForSystems: () => new Promise(() => {}),
     use: () => ({}) as OverlayInstance,
     mounted: false,
   };

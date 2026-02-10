@@ -23,9 +23,9 @@ export type MeasurementResult = Remap<
 >;
 
 /**
- * Computes the geometric measurement lines between two rectangles based 
+ * Computes the geometric measurement lines between two rectangles based
  * on their relationship (parent, child, or sibling).
- * 
+ *
  * @param context - The cursor context (parent/child/sibling).
  * @param primary - The DOMRect of the selected element.
  * @param secondary - The DOMRect of the target element.

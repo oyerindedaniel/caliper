@@ -37,10 +37,10 @@ export interface MeasurementSystem {
 
 /**
  * Measurement System Factory
- * 
- * Creates a system that tracks measurements between a primary selected element 
- * and other elements under the cursor. It manages the lifecycle of the 
- * measurement (active, frozen, aborted) and integrates with the secondary systems 
+ *
+ * Creates a system that tracks measurements between a primary selected element
+ * and other elements under the cursor. It manages the lifecycle of the
+ * measurement (active, frozen, aborted) and integrates with the secondary systems
  * like calculator and projection.
  *
  * @returns A MeasurementSystem instance.

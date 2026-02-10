@@ -22,7 +22,7 @@ export function isRenderable(
 
 /**
  * Retrieves the root element where the Caliper overlay is mounted.
- * 
+ *
  * @returns The overlay container element if it exists, otherwise document.documentElement.
  */
 export function getOverlayRoot(): HTMLElement {

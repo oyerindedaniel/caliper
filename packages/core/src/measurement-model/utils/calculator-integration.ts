@@ -19,9 +19,9 @@ export interface CalculatorIntegration {
 
 /**
  * Calculator Integration Factory
- * 
- * Creates an integration bridge between the raw calculator state machine and 
- * the measurement system. It handles mapping user inputs (keys, actions) 
+ *
+ * Creates an integration bridge between the raw calculator state machine and
+ * the measurement system. It handles mapping user inputs (keys, actions)
  * to calculator state transitions.
  *
  * @returns A CalculatorIntegration instance.
@@ -84,7 +84,7 @@ export function createCalculatorIntegration(): CalculatorIntegration {
 
 /**
  * Opens and initializes the calculator using the value from a specific measurement line.
- * 
+ *
  * @param calculator - The calculator integration instance to open.
  * @param line - The measurement line providing the base numeric value.
  */
