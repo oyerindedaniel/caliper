@@ -14,7 +14,12 @@ export interface RulerSystem {
 }
 
 /**
- * Manages the "Ruler" system.
+ * Ruler System Factory
+ * 
+ * Creates a system that manages customized ruler lines on the viewport. 
+ * Allows users to drop horizontal and vertical guides and track their positions.
+ *
+ * @returns A RulerSystem instance.
  */
 export function createRulerSystem(): RulerSystem {
   let state: RulerState = {

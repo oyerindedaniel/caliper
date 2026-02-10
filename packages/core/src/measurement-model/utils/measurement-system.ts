@@ -14,7 +14,7 @@ import { createRulerSystem, type RulerSystem } from "../../ruler-model/utils/rul
 
 export type { MeasurementState };
 
-type MeasurementSystemListener = () => void;
+export type MeasurementSystemListener = () => void;
 
 export interface MeasurementSystem {
   measure: (selectedElement: Element, cursor: { x: number; y: number }) => void;
@@ -35,6 +35,16 @@ export interface MeasurementSystem {
   applyResult: (result: MeasurementResult) => void;
 }
 
+/**
+ * Measurement System Factory
+ * 
+ * Creates a system that tracks measurements between a primary selected element 
+ * and other elements under the cursor. It manages the lifecycle of the 
+ * measurement (active, frozen, aborted) and integrates with the secondary systems 
+ * like calculator and projection.
+ *
+ * @returns A MeasurementSystem instance.
+ */
 export function createMeasurementSystem(): MeasurementSystem {
   const baseReader = createReader();
   const reader = createFrequencyControlledReader(baseReader);

@@ -98,7 +98,7 @@ export function buildSelectorInfo(
  * <div {...caliperProps("main-logo")}>...</div>
  */
 export function caliperProps(marker: string) {
-  if (typeof process !== "undefined" && process.env.NODE_ENV === "production") {
+  if (process.env.NODE_ENV === "production") {
     return {};
   }
   return {

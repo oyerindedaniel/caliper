@@ -38,6 +38,15 @@ function withOpacity(color: string, opacity: number): string {
   return color;
 }
 
+/**
+ * Applies a Caliper theme to an HTML element by setting CSS variables.
+ * 
+ * This is used internally to inject the custom theme into the Shadow DOM root 
+ * or can be used manually to sync theme variables with a host application.
+ *
+ * @param theme - The theme configuration object.
+ * @param target - The element to apply styles to. Defaults to documentElement.
+ */
 export function applyTheme(theme?: ThemeConfig, target: HTMLElement = document.documentElement) {
   if (!theme || !target) return;
 
@@ -123,6 +132,15 @@ declare global {
   }
 }
 
+/**
+ * Retrieves the current Caliper configuration from the environment.
+ * 
+ * It resolves configuration in the following priority:
+ * 1. Global window object (`window.__CALIPER_CONFIG__`)
+ * 2. `data-config` attribute on the script tag (useful for UMD/CDN usage)
+ *
+ * @returns The resolved OverlayConfig object.
+ */
 export function getConfig(): OverlayConfig {
   if (typeof window !== "undefined") {
     const windowConfig = window.__CALIPER_CONFIG__ ?? {};
@@ -137,7 +155,7 @@ export function getConfig(): OverlayConfig {
 
     if (dataConfig) {
       try {
-        const parsed = JSON.parse(dataConfig);
+        const parsed = JSON.parse(dataConfig) as OverlayConfig;
         return {
           ...windowConfig,
           ...parsed,

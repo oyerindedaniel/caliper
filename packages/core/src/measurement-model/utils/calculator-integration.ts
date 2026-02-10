@@ -18,7 +18,13 @@ export interface CalculatorIntegration {
 }
 
 /**
- * Create calculator integration for measurement system
+ * Calculator Integration Factory
+ * 
+ * Creates an integration bridge between the raw calculator state machine and 
+ * the measurement system. It handles mapping user inputs (keys, actions) 
+ * to calculator state transitions.
+ *
+ * @returns A CalculatorIntegration instance.
  */
 export function createCalculatorIntegration(): CalculatorIntegration {
   const calculator = createCalculatorState();
@@ -77,7 +83,10 @@ export function createCalculatorIntegration(): CalculatorIntegration {
 }
 
 /**
- * Open calculator from measurement line
+ * Opens and initializes the calculator using the value from a specific measurement line.
+ * 
+ * @param calculator - The calculator integration instance to open.
+ * @param line - The measurement line providing the base numeric value.
  */
 export function openCalculatorFromLine(calculator: CalculatorIntegration, line: MeasurementLine) {
   calculator.open(line.value);

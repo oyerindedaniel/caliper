@@ -45,19 +45,26 @@ class Logger {
 }
 
 /**
- * Global logger instance
+ * Global logger instance used by Caliper core.
  */
 export const logger = new Logger({ prefix: "Caliper" });
 
 /**
- * Create a specialized logger for a specific module
+ * Creates a specialized logger for a specific module or component.
+ * 
+ * @param prefix - The prefix to prepended to log messages (e.g., 'agent-bridge').
+ * @param enabled - Whether this logger is enabled. Defaults to true.
+ * @returns A new Logger instance.
  */
 export function createLogger(prefix: string, enabled?: boolean) {
   return new Logger({ prefix: `Caliper:${prefix}`, enabled });
 }
 
 /**
- * Format a DOMRect for logging
+ * Formats a DOMRect into a human-readable string for logging.
+ * 
+ * @param rect - The rect to format.
+ * @returns A formatted string or "null".
  */
 export function formatRect(rect: DOMRect | null): string {
   if (!rect) return "null";
@@ -65,7 +72,11 @@ export function formatRect(rect: DOMRect | null): string {
 }
 
 /**
- * Format an element for logging with tag and text preview
+ * Formats an Element into a descriptive string including its tag name, 
+ * classes, and a snippet of its text content.
+ * 
+ * @param element - The element to format.
+ * @returns A formatted string or "null".
  */
 export function formatElement(element: Element | null): string {
   if (!element) return "null";

@@ -163,6 +163,15 @@ function createNodeSnapshot(
   };
 }
 
+/**
+ * Performs a comprehensive DOM walk starting from a root element. 
+ * Captures geometry, styles, and relationship metrics for all encountered nodes.
+ * Supports BFS traversal with depth and node limits, and optional visualization.
+ * 
+ * @param rootSelector - The selector or agent ID of the starting element.
+ * @param maxDepthOrOptions - Either the maximum depth number or an options object.
+ * @returns A promise resolving to the WalkResult containing the tree and statistics.
+ */
 export async function walkAndMeasure(
   rootSelector: string,
   maxDepthOrOptions: number | WalkOptions = DEFAULT_WALK_DEPTH

@@ -38,10 +38,10 @@ export function MarginCollapseDemo() {
               fontWeight: 700,
               color: "var(--caliper-secondary)",
               letterSpacing: "0.05em",
-              textShadow: "0 0 10px rgba(242, 78, 30, 0.4)",
+              textShadow: "0 0 10px color-mix(in srgb, var(--caliper-secondary), transparent 60%)",
             }}
           >
-            OBSERVED: 24.0px
+            OBSERVED: 24px
           </motion.span>
         </div>
 

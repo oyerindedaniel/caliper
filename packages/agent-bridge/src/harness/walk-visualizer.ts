@@ -79,6 +79,10 @@ function createBox(id: string, rect: DOMRect, isActive: boolean, isChild: boolea
   return box;
 }
 
+/**
+ * Initializes the walk visualizer by injecting necessary styles and 
+ * creating the overlay container.
+ */
 export function initWalkVisualizer(): void {
   if (isVisualizerActive) return;
 
@@ -87,6 +91,13 @@ export function initWalkVisualizer(): void {
   isVisualizerActive = true;
 }
 
+/**
+ * Displays or updates a measurement boundary for a specific element.
+ * 
+ * @param element - The element to highlight.
+ * @param id - A unique ID for the boundary box.
+ * @param isActive - Whether this node is the current focus of the walk.
+ */
 export function showWalkBoundary(element: Element, id: string, isActive: boolean = false): void {
   if (!isVisualizerActive || !containerElement) {
     initWalkVisualizer();
@@ -153,6 +164,9 @@ export function clearAllWalkBoundaries(): void {
   activeBoxes.clear();
 }
 
+/**
+ * Removes all visualization elements and cleans up the DOM.
+ */
 export function cleanupWalkVisualizer(): void {
   clearAllWalkBoundaries();
 

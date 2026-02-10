@@ -45,6 +45,16 @@ const FAQ_ITEMS = [
     ),
   },
   {
+    question: "Where does my data go?",
+    answer: (
+      <>
+        <strong>Nowhere.</strong> Caliper is entirely local. All measurements and audits occur
+        within your browser&apos;s memory. We do not store, track, or transmit your UI data, source
+        code, or telemetry to any external servers.
+      </>
+    ),
+  },
+  {
     question: "Can I customize the colors?",
     answer: (
       <>

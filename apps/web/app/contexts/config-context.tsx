@@ -1,15 +1,14 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode, useLayoutEffect } from "react";
-import { type OverlayConfig, type OverlayInstance } from "@oyerinde/caliper";
-import { DEFAULT_COMMANDS, DEFAULT_THEME as CORE_THEME } from "@caliper/core";
+import { type OverlayConfig } from "@oyerinde/caliper";
+import {
+  DEFAULT_COMMANDS,
+  DEFAULT_THEME as CORE_THEME,
+  applyTheme,
+  OVERLAY_CONTAINER_ID,
+} from "@caliper/core";
 import { STORAGE_KEY } from "@/app/constants";
-
-declare global {
-  interface Window {
-    __CALIPER__?: OverlayInstance;
-  }
-}
 
 export interface CommandConfig {
   activate: string;
@@ -127,16 +126,15 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   };
 
   const syncCaliper = (theme: ThemeConfig) => {
-    const caliper = window.__CALIPER__;
-    if (caliper) {
-      caliper.dispose();
-      caliper.mount();
+    const overlayContainer = document.getElementById(OVERLAY_CONTAINER_ID);
+    if (overlayContainer) {
+      applyTheme(theme, overlayContainer);
+    }
 
-      if (theme.primary && theme.secondary) {
-        document.documentElement.style.setProperty("--caliper-primary", theme.primary);
-        document.documentElement.style.setProperty("--caliper-secondary", theme.secondary);
-        document.documentElement.style.setProperty("--caliper-projection", theme.projection);
-      }
+    if (theme.primary && theme.secondary) {
+      document.documentElement.style.setProperty("--caliper-primary", theme.primary);
+      document.documentElement.style.setProperty("--caliper-secondary", theme.secondary);
+      document.documentElement.style.setProperty("--caliper-projection", theme.projection);
     }
   };
 

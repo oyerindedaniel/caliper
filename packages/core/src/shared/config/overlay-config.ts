@@ -4,6 +4,7 @@
  */
 import { OS } from "../utils/os.js";
 import type { CaliperAgentState } from "@oyerinde/caliper-schema";
+export type { CaliperAgentState };
 
 export type DeepRequired<T> = {
   [K in keyof T]-?: DeepRequired<T[K]>;

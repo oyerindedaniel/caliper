@@ -1,5 +1,11 @@
 import { RUNTIME_CLASS_IGNORE_PREFIXES } from "../constants/index.js";
 
+/**
+ * Filters out ephemeral CSS classes that are used for runtime state tracking.
+ * 
+ * @param classes - An array or DOMTokenList of class names.
+ * @returns A filtered array of stable class names.
+ */
 export function filterRuntimeClasses(classes: string[] | DOMTokenList): string[] {
   const list = Array.from(classes);
   return list.filter((className) => {

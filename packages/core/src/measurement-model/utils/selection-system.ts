@@ -30,6 +30,15 @@ export interface SelectionSystem {
   updateRect: (rect: DOMRect) => void;
 }
 
+/**
+ * Selection System Factory
+ * 
+ * Creates a system that manages the "primary" selected element. It handles 
+ * tracking the element's geometry, scroll hierarchy, and notifies listeners 
+ * when the selection changes or is cleared.
+ *
+ * @returns A SelectionSystem instance.
+ */
 export function createSelectionSystem(): SelectionSystem {
   let selectedElement: Element | null = null;
   let selectedRect: DOMRect | null = null;

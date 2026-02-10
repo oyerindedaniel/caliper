@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { useIsClient } from "@/app/hooks/use-is-client";
 import styles from "./on-this-page.module.css";
@@ -36,13 +36,21 @@ function OnThisPageContent() {
   const [pillTop, setPillTop] = useState(0);
 
   const itemRefs = useRef<Record<string, HTMLElement | null>>({});
+  const navContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const updatePillPosition = useCallback(() => {
+    if (activeId && itemRefs.current[activeId]) {
+      const activeItemElement = itemRefs.current[activeId];
+      if (activeItemElement) {
+        setPillTop(activeItemElement.offsetTop + activeItemElement.offsetHeight / 2 - 10);
+      }
+    }
+  }, [activeId]);
 
   useEffect(() => {
     const contentSections = document.querySelectorAll("section[id], h2[id]");
     const foundTocItems = Array.from(contentSections)
       .filter((el) => {
-        // Only include h2 if it's inside an article or has a specific class if needed
-        // For now, let's just include all h2[id]
         return el.id && (el.tagName === "SECTION" || el.tagName === "H2");
       })
       .map((currentSection) => ({
@@ -81,28 +89,27 @@ function OnThisPageContent() {
       { rootMargin: "-10% 0px -70% 0px", threshold: 0 }
     );
 
-    const resizeObserver = new ResizeObserver(() => {
-      contentSections.forEach((currentSection) => intersectionObserver.observe(currentSection));
-    });
-
-    resizeObserver.observe(document.body);
-
     contentSections.forEach((currentSection) => intersectionObserver.observe(currentSection));
 
     return () => {
       intersectionObserver.disconnect();
-      resizeObserver.disconnect();
     };
   }, [pathname]);
 
   useEffect(() => {
-    if (activeId && itemRefs.current[activeId]) {
-      const activeItemElement = itemRefs.current[activeId];
-      if (activeItemElement) {
-        setPillTop(activeItemElement.offsetTop + activeItemElement.offsetHeight / 2 - 10);
-      }
-    }
-  }, [activeId, tocItems]);
+    updatePillPosition();
+    const container = navContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      updatePillPosition();
+    });
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [updatePillPosition]);
 
   const handleTocClick = (sectionId: string) => {
     const targetSectionElement = document.getElementById(sectionId);
@@ -110,7 +117,6 @@ function OnThisPageContent() {
       const scrollTargetTop =
         targetSectionElement.getBoundingClientRect().top + window.pageYOffset - 80;
       window.scrollTo({ top: scrollTargetTop, behavior: "smooth" });
-      // Update hash immediately for responsiveness
       window.history.replaceState(null, "", `#${sectionId}`);
       setActiveId(sectionId);
     }
@@ -122,7 +128,7 @@ function OnThisPageContent() {
     <div className={styles.tocWrapper}>
       <aside className={styles.toc}>
         <div className={styles.tocHeader}>On This Page</div>
-        <div className={styles.navContainer}>
+        <div className={styles.navContainer} ref={navContainerRef}>
           <div className={styles.track} />
           {activeId && (
             <div className={styles.pill} style={{ transform: `translateY(${pillTop}px)` }} />

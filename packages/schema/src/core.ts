@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+export type Prettify<T> = {
+    [K in keyof T]: T[K];
+} & {};
+
 export const PositionModeSchema = z.enum(["static", "relative", "absolute", "fixed", "sticky"]);
 
 export const CursorContextSchema = z.enum(["parent", "child", "sibling"]);
@@ -99,32 +103,13 @@ export const ContextMetricsSchema = z.object({
     }),
 });
 
-export type ContextMetrics = z.infer<typeof ContextMetricsSchema>;
-
-export const DEFAULT_CONTEXT_METRICS: ContextMetrics = {
-    rootFontSize: 16,
-    devicePixelRatio: 1,
-    viewportWidth: 1920,
-    viewportHeight: 1080,
-    visualViewportWidth: 1920,
-    visualViewportHeight: 1080,
-    scrollX: 0,
-    scrollY: 0,
-    documentWidth: 1920,
-    documentHeight: 1080,
-    orientation: "landscape",
-    preferences: {
-        colorScheme: "light",
-        reducedMotion: false,
-    },
-};
-
-export type Rect = z.infer<typeof RectSchema>;
-export type PositionMode = z.infer<typeof PositionModeSchema>;
-export type CursorContext = z.infer<typeof CursorContextSchema>;
-export type ScrollState = z.infer<typeof ScrollStateSchema>;
-export type StickyConfig = z.infer<typeof StickyConfigSchema>;
-export type MeasurementLine = z.infer<typeof MeasurementLineSchema>;
-export type MeasurementResult = z.infer<typeof MeasurementResultSchema>;
-export type SelectionMetadata = z.infer<typeof SelectionMetadataSchema>;
+export type ContextMetrics = Prettify<z.infer<typeof ContextMetricsSchema>>;
+export type Rect = Prettify<z.infer<typeof RectSchema>>;
+export type PositionMode = Prettify<z.infer<typeof PositionModeSchema>>;
+export type CursorContext = Prettify<z.infer<typeof CursorContextSchema>>;
+export type ScrollState = Prettify<z.infer<typeof ScrollStateSchema>>;
+export type StickyConfig = Prettify<z.infer<typeof StickyConfigSchema>>;
+export type MeasurementLine = Prettify<z.infer<typeof MeasurementLineSchema>>;
+export type MeasurementResult = Prettify<z.infer<typeof MeasurementResultSchema>>;
+export type SelectionMetadata = Prettify<z.infer<typeof SelectionMetadataSchema>>;
 
