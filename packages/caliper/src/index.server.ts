@@ -71,16 +71,16 @@ export type Systems = {
 
 export function init(_config?: OverlayConfig): OverlayInstance {
   return {
-    mount: () => { },
-    dispose: () => { },
+    mount: () => {},
+    dispose: () => {},
     getSystems: () => null,
-    waitForSystems: () => new Promise(() => { }),
+    waitForSystems: () => new Promise(() => {}),
     use: () => ({}) as OverlayInstance,
     mounted: false,
   };
 }
 
-export const setConfig = (_config: OverlayConfig): void => { };
+export const setConfig = (_config: OverlayConfig): void => {};
 export const getConfig = (): OverlayConfig => ({});
 export const caliperProps = (marker: string) => ({
   "data-caliper-marker": marker,

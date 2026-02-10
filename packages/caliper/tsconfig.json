@@ -8,19 +8,10 @@
     "strictNullChecks": true,
     "allowSyntheticDefaultImports": true,
     "strict": true,
-    "lib": [
-      "esnext",
-      "dom"
-    ],
+    "lib": ["esnext", "dom"],
     "declaration": true,
     "declarationMap": true
   },
-  "include": [
-    "src/**/*",
-    "tsup.config.ts"
-  ],
-  "exclude": [
-    "**/node_modules/**",
-    "dist"
-  ]
+  "include": ["src/**/*", "tsup.config.ts"],
+  "exclude": ["**/node_modules/**", "dist"]
 }

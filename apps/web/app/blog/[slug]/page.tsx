@@ -1,3 +1,4 @@
+import { type Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getBlogPost, getAllBlogSlugs } from "@/lib/blog";
@@ -12,7 +13,6 @@ import {
 } from "../components";
 import styles from "@/app/page.module.css";
 import Image from "next/image";
-import { getShimmerDataUrl } from "@/lib/shimmer";
 import { ComponentPropsWithoutRef, Suspense } from "react";
 
 interface BlogPostProps {
@@ -26,7 +26,7 @@ export async function generateStaticParams() {
   return slugs.map((slug) => ({ slug }));
 }
 
-export async function generateMetadata({ params }: BlogPostProps) {
+export async function generateMetadata({ params }: BlogPostProps): Promise<Metadata> {
   const { slug } = await params;
   const post = await getBlogPost(slug);
 
@@ -36,7 +36,18 @@ export async function generateMetadata({ params }: BlogPostProps) {
     title: post.title,
     description: post.excerpt,
     openGraph: {
-      images: [post.coverImage],
+      title: post.title,
+      description: post.excerpt,
+      type: "article",
+      url: `/blog/${slug}`,
+      siteName: "Caliper",
+      locale: "en_US",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: post.title,
+      description: post.excerpt,
+      creator: "@fybnow",
     },
   };
 }
@@ -113,7 +124,6 @@ export default async function BlogPostPage({ params }: BlogPostProps) {
               className={styles.blogPostImage}
               priority
               placeholder="blur"
-              blurDataURL={getShimmerDataUrl(1200, 675)}
             />
           </div>
         )}

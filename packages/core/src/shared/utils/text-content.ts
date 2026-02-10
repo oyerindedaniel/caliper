@@ -1,7 +1,7 @@
 /**
- * Extracts and cleans the direct text content of an element, excluding text 
+ * Extracts and cleans the direct text content of an element, excluding text
  * from child elements.
- * 
+ *
  * @param element - The element to extract text from.
  * @param maxLength - Optional maximum length for the extracted string.
  * @returns The cleaned text content or undefined if no text found.

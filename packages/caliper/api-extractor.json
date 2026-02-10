@@ -1,51 +1,51 @@
 {
-    "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
-    "projectFolder": ".",
-    "mainEntryPointFilePath": "<projectFolder>/dist/index.d.ts",
-    "bundledPackages": [
-        "@caliper/core",
-        "@caliper/overlay",
-        "@oyerinde/caliper-bridge",
-        "@oyerinde/caliper-schema",
-        "@modelcontextprotocol/sdk"
-    ],
-    "compiler": {
-        "tsconfigFilePath": "<projectFolder>/tsconfig.json"
+  "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
+  "projectFolder": ".",
+  "mainEntryPointFilePath": "<projectFolder>/dist/index.d.ts",
+  "bundledPackages": [
+    "@caliper/core",
+    "@caliper/overlay",
+    "@oyerinde/caliper-bridge",
+    "@oyerinde/caliper-schema",
+    "@modelcontextprotocol/sdk"
+  ],
+  "compiler": {
+    "tsconfigFilePath": "<projectFolder>/tsconfig.json"
+  },
+  "apiReport": {
+    "enabled": false
+  },
+  "docModel": {
+    "enabled": false
+  },
+  "dtsRollup": {
+    "enabled": true,
+    "untrimmedFilePath": "<projectFolder>/dist/index.d.ts"
+  },
+  "tsdocMetadata": {
+    "enabled": false
+  },
+  "messages": {
+    "compilerMessageReporting": {
+      "default": {
+        "logLevel": "warning"
+      }
     },
-    "apiReport": {
-        "enabled": false
+    "extractorMessageReporting": {
+      "default": {
+        "logLevel": "warning"
+      },
+      "ae-missing-release-tag": {
+        "logLevel": "none"
+      },
+      "ae-unresolved-link": {
+        "logLevel": "none"
+      }
     },
-    "docModel": {
-        "enabled": false
-    },
-    "dtsRollup": {
-        "enabled": true,
-        "untrimmedFilePath": "<projectFolder>/dist/index.d.ts"
-    },
-    "tsdocMetadata": {
-        "enabled": false
-    },
-    "messages": {
-        "compilerMessageReporting": {
-            "default": {
-                "logLevel": "warning"
-            }
-        },
-        "extractorMessageReporting": {
-            "default": {
-                "logLevel": "warning"
-            },
-            "ae-missing-release-tag": {
-                "logLevel": "none"
-            },
-            "ae-unresolved-link": {
-                "logLevel": "none"
-            }
-        },
-        "tsdocMessageReporting": {
-            "default": {
-                "logLevel": "none"
-            }
-        }
+    "tsdocMessageReporting": {
+      "default": {
+        "logLevel": "none"
+      }
     }
+  }
 }

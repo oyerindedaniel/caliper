@@ -33,7 +33,7 @@ let activeInstance: OverlayInstance | null = null;
 
 /**
  * Core factory function to create and mount the Caliper overlay.
- * 
+ *
  * It manages the lifecycle of the overlay instance, including:
  * - Bootstrapping the Shadow DOM container.
  * - Injecting CSS styles.
@@ -41,17 +41,17 @@ let activeInstance: OverlayInstance | null = null;
  * - Coordinating measurement and selection systems.
  * - Managing plugin lifecycle via the `.use()` method.
  *
- * This function is idempotent and will return the existing active instance if 
+ * This function is idempotent and will return the existing active instance if
  * one is already mounted in the window.
  *
  * @example
  * ```ts
  * import { createOverlay } from "@caliper/overlay";
- * 
+ *
  * const caliper = createOverlay({
  *   theme: { primary: "#18a0fb" }
  * });
- * 
+ *
  * // Plugins can be added using .use()
  * caliper.use(myPlugin);
  * ```
@@ -62,10 +62,10 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => { },
-      dispose: () => { },
+      mount: () => {},
+      dispose: () => {},
       getSystems: () => null,
-      waitForSystems: () => new Promise(() => { }),
+      waitForSystems: () => new Promise(() => {}),
       use: () => instance,
       mounted: false,
     };

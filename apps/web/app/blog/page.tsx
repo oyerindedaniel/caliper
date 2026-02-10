@@ -7,6 +7,22 @@ export const metadata: Metadata = {
   title: "Blog",
   description:
     "Technical logs on Caliper's layout engine, browser precision, and solving layout discrepancies.",
+  openGraph: {
+    title: "Blog | Caliper",
+    description:
+      "Technical logs on Caliper's layout engine, browser precision, and solving layout discrepancies.",
+    type: "website",
+    url: "/blog",
+    siteName: "Caliper",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Blog | Caliper",
+    description:
+      "Technical logs on Caliper's layout engine, browser precision, and solving layout discrepancies.",
+    creator: "@fybnow",
+  },
 };
 
 export default async function BlogPage() {

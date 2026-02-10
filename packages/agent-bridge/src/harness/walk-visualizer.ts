@@ -80,7 +80,7 @@ function createBox(id: string, rect: DOMRect, isActive: boolean, isChild: boolea
 }
 
 /**
- * Initializes the walk visualizer by injecting necessary styles and 
+ * Initializes the walk visualizer by injecting necessary styles and
  * creating the overlay container.
  */
 export function initWalkVisualizer(): void {
@@ -93,7 +93,7 @@ export function initWalkVisualizer(): void {
 
 /**
  * Displays or updates a measurement boundary for a specific element.
- * 
+ *
  * @param element - The element to highlight.
  * @param id - A unique ID for the boundary box.
  * @param isActive - Whether this node is the current focus of the walk.

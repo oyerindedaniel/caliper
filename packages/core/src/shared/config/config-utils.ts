@@ -40,8 +40,8 @@ function withOpacity(color: string, opacity: number): string {
 
 /**
  * Applies a Caliper theme to an HTML element by setting CSS variables.
- * 
- * This is used internally to inject the custom theme into the Shadow DOM root 
+ *
+ * This is used internally to inject the custom theme into the Shadow DOM root
  * or can be used manually to sync theme variables with a host application.
  *
  * @param theme - The theme configuration object.
@@ -134,7 +134,7 @@ declare global {
 
 /**
  * Retrieves the current Caliper configuration from the environment.
- * 
+ *
  * It resolves configuration in the following priority:
  * 1. Global window object (`window.__CALIPER_CONFIG__`)
  * 2. `data-config` attribute on the script tag (useful for UMD/CDN usage)

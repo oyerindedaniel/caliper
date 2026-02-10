@@ -4,10 +4,10 @@ import { createMeasurementLines, type MeasurementResult } from "./measurement-re
 import { deduceGeometry } from "../../geometry/utils/scroll-aware.js";
 
 /**
- * Computes a measurement result for a selected element relative to another 
- * element at specific cursor coordinates. It automatically resolves the 
+ * Computes a measurement result for a selected element relative to another
+ * element at specific cursor coordinates. It automatically resolves the
  * context (sibling, parent, etc.).
- * 
+ *
  * @param selectedElement - The primary element being measured from.
  * @param cursorX - Current X coordinate.
  * @param cursorY - Current Y coordinate.
@@ -40,10 +40,10 @@ export function createMeasurement(
 
 /**
  * Creates a measurement result between two specific elements with a defined context.
- * 
- * If no context is provided, it will be automatically detected based on the 
+ *
+ * If no context is provided, it will be automatically detected based on the
  * containment relationship (parent/child/sibling).
- * 
+ *
  * @param primaryElement - The primary element.
  * @param secondaryElement - The target element.
  * @param context - Optional explicit context override.

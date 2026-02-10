@@ -15,8 +15,8 @@ export interface RulerSystem {
 
 /**
  * Ruler System Factory
- * 
- * Creates a system that manages customized ruler lines on the viewport. 
+ *
+ * Creates a system that manages customized ruler lines on the viewport.
  * Allows users to drop horizontal and vertical guides and track their positions.
  *
  * @returns A RulerSystem instance.

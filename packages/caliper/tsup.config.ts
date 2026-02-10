@@ -109,12 +109,7 @@ export default defineConfig((options) => {
       },
       format: ["esm", "cjs"],
       platform: "node",
-      noExternal: [
-        "@modelcontextprotocol/sdk",
-        "ws",
-        "@oyerinde/caliper-schema",
-        "@caliper/core",
-      ],
+      noExternal: ["@modelcontextprotocol/sdk", "ws", "@oyerinde/caliper-schema", "@caliper/core"],
       external: ["zod"],
       dts: false,
       shims: false,

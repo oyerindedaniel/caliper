@@ -33,14 +33,12 @@ export interface CaliperActionResult {
 export function CaliperBridge(_config?: AgentBridgeConfig): CaliperPlugin {
   return {
     name: "agent-bridge-stub",
-    install: () => { },
-    dispose: () => { },
+    install: () => {},
+    dispose: () => {},
   };
 }
 
-export async function dispatchCaliperIntent(
-  _intent?: CaliperIntent
-): Promise<CaliperActionResult> {
+export async function dispatchCaliperIntent(_intent?: CaliperIntent): Promise<CaliperActionResult> {
   return {
     success: false,
     method: "UNKNOWN",
