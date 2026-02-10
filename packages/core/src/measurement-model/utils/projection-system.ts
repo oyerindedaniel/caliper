@@ -13,6 +13,15 @@ export interface ProjectionSystem {
   onUpdate: (listener: ProjectionListener) => () => void;
 }
 
+/**
+ * Projection System Factory
+ * 
+ * Creates a system that manages measurement projections (e.g., projecting a 
+ * line from an element to a specific coordinate). It tracks the direction, 
+ * numeric value, and target element for the projection.
+ *
+ * @returns A ProjectionSystem instance.
+ */
 export function createProjectionSystem(): ProjectionSystem {
   let state: ProjectionState = {
     direction: null,

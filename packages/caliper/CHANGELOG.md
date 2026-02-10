@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2026-02-08
+## [0.2.0] - 2026-02-10
 
 ### Added
 
@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
   - **MCP prompts**: `caliper-selector-audit` and `caliper-selectors-compare`.
   - **MCP resources**: `caliper://tabs` and `caliper://state`.
 - **Context Menu**: Right-click selected elements to copy metadata.
+- **Expanded Distribution**: Multi-entry support for `@oyerinde/caliper/preset` and `@oyerinde/caliper/bridge`, alongside dedicated `index.js`, `index.min.js`, and `index.global.js` bundles.
 
 ### Fixed
 

@@ -12,13 +12,34 @@
 
 export { createOverlay as init } from "@caliper/overlay";
 export { setConfig, getConfig, caliperProps } from "@caliper/core";
+
 export type {
   OverlayConfig,
   OverlayInstance,
   CaliperPlugin,
   CaliperCoreSystems as Systems,
+  ThemeConfig,
+  CommandsConfig,
+  AnimationConfig,
+  AgentBridgeConfig,
+  MeasurementSystem,
+  SelectionSystem,
+  MeasurementState,
+  MeasurementResult,
+  MeasurementLine,
+  CalculatorIntegration,
+  ProjectionSystem,
+  RulerSystem,
+  SelectionMetadata,
+  CalculatorShortcuts,
+  ProjectionShortcuts,
+  CaliperAgentState,
+  MeasurementSystemListener,
 } from "@caliper/core";
 
 declare const process: { env: { VERSION: string; NODE_ENV: string } };
 
+/**
+ * The current version of the Caliper package.
+ */
 export const VERSION = process.env.VERSION;

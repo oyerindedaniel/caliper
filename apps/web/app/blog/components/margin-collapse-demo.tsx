@@ -41,7 +41,7 @@ export function MarginCollapseDemo() {
               textShadow: "0 0 10px color-mix(in srgb, var(--caliper-secondary), transparent 60%)",
             }}
           >
-            OBSERVED: 24.0px
+            OBSERVED: 24px
           </motion.span>
         </div>
 

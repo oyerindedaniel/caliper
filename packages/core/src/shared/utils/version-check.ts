@@ -43,6 +43,11 @@ function compareVersions(v1: string, v2: string): number {
   return 0;
 }
 
+/**
+ * Logs the current Caliper version and check for updates in the browser console.
+ * 
+ * @param currentVersion - The current version of the package.
+ */
 export async function showVersionInfo(currentVersion: string): Promise<void> {
   if (typeof window === "undefined") return;
 

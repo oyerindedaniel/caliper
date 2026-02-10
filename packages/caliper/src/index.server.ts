@@ -20,28 +20,69 @@ export interface CaliperPlugin {
   dispose?: () => void;
 }
 
-export interface OverlayConfig {
-  theme?: Record<string, string>;
-  commands?: Record<string, unknown>;
-  animation?: Record<string, unknown>;
-  bridge?: Record<string, unknown>;
+export interface ThemeConfig {
+  primary?: string;
+  secondary?: string;
+  calcBg?: string;
+  calcShadow?: string;
+  calcOpHighlight?: string;
+  calcText?: string;
+  text?: string;
+  projection?: string;
+  ruler?: string;
 }
+
+export interface CommandsConfig {
+  activate?: string;
+  freeze?: string;
+  select?: string;
+  clear?: string;
+  calculator?: Record<string, string>;
+  projection?: Record<string, string>;
+  ruler?: string;
+  selectionHoldDuration?: number;
+}
+
+export interface AnimationConfig {
+  enabled?: boolean;
+  lerpFactor?: number;
+}
+
+export interface AgentBridgeConfig {
+  enabled?: boolean;
+  wsPort?: number;
+  onStateChange?: (state: unknown) => void;
+}
+
+export interface OverlayConfig {
+  theme?: ThemeConfig;
+  commands?: CommandsConfig;
+  animation?: AnimationConfig;
+  bridge?: AgentBridgeConfig;
+}
+
+export type MeasurementSystem = unknown;
+export type SelectionSystem = unknown;
+
+export type Systems = {
+  measurementSystem: MeasurementSystem;
+  selectionSystem: SelectionSystem;
+};
 
 export function init(_config?: OverlayConfig): OverlayInstance {
   return {
-    mount: () => {},
-    dispose: () => {},
+    mount: () => { },
+    dispose: () => { },
     getSystems: () => null,
-    waitForSystems: () => new Promise(() => {}),
+    waitForSystems: () => new Promise(() => { }),
     use: () => ({}) as OverlayInstance,
     mounted: false,
   };
 }
 
-export const setConfig = (_config: OverlayConfig): void => {};
+export const setConfig = (_config: OverlayConfig): void => { };
 export const getConfig = (): OverlayConfig => ({});
-export type Systems = {
-  measurementSystem: unknown;
-  selectionSystem: unknown;
-};
+export const caliperProps = (marker: string) => ({
+  "data-caliper-marker": marker,
+});
 export const VERSION = "[SSR]";

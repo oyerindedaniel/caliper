@@ -51,18 +51,28 @@
         "import": "./dist/bridge.server.js",
         "require": "./dist/bridge.server.cjs"
       },
-      "types": "./dist/bridge.d.ts",
-      "import": "./dist/bridge.js",
-      "require": "./dist/bridge.cjs"
+      "import": {
+        "types": "./dist/bridge.d.ts",
+        "default": "./dist/bridge.js"
+      },
+      "require": {
+        "types": "./dist/bridge.d.cts",
+        "default": "./dist/bridge.cjs"
+      }
     },
     "./preset": {
       "node": {
         "import": "./dist/preset.server.js",
         "require": "./dist/preset.server.cjs"
       },
-      "types": "./dist/preset.d.ts",
-      "import": "./dist/preset.js",
-      "require": "./dist/preset.cjs"
+      "import": {
+        "types": "./dist/preset.d.ts",
+        "default": "./dist/preset.js"
+      },
+      "require": {
+        "types": "./dist/preset.d.cts",
+        "default": "./dist/preset.cjs"
+      }
     }
   },
   "files": [
@@ -73,7 +83,9 @@
   ],
   "scripts": {
     "prebuild": "node scripts/write-version.mjs",
-    "build": "pnpm run clean && pnpm run prebuild && cross-env NODE_ENV=production tsup",
+    "build": "pnpm run clean && pnpm run prebuild && cross-env NODE_ENV=production tsup && pnpm run build:dts",
+    "build:dts": "api-extractor run --local --verbose && api-extractor run --local --verbose --config api-extractor.bridge.json && api-extractor run --local --verbose --config api-extractor.preset.json && pnpm run post:dts",
+    "post:dts": "node -e \"const fs=require('fs'); ['index','bridge','preset'].forEach(f => { const s='dist/'+f+'.d.ts'; if(fs.existsSync(s)) fs.copyFileSync(s, 'dist/'+f+'.d.cts'); });\"",
     "build:watch": "tsup --watch",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
@@ -101,17 +113,20 @@
     "browser-tools"
   ],
   "license": "MIT",
+  "dependencies": {
+    "zod": "4.3.5"
+  },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.25.3",
     "ws": "8.19.0",
-    "zod": "4.3.5",
     "@babel/core": "^7.24.0",
     "@babel/preset-typescript": "^7.28.5",
     "@oyerinde/caliper-schema": "workspace:*",
     "@caliper/core": "workspace:*",
     "@caliper/overlay": "workspace:*",
-    "@microsoft/api-extractor": "^7.55.2",
+    "@microsoft/api-extractor": "^7.56.3",
     "@oyerinde/caliper-bridge": "workspace:*",
+    "@oyerinde/caliper-mcp": "workspace:*",
     "@repo/eslint-config": "workspace:*",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^24.10.9",

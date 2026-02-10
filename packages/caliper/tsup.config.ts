@@ -31,12 +31,11 @@ const DEFAULT_OPTIONS: Options = {
   clean: false,
   dts: true,
   entry: ["./src/index.ts"],
-  env: {
-    NODE_ENV: process.env.NODE_ENV ?? "development",
-    VERSION: version,
+  define: {
+    "process.env.VERSION": JSON.stringify(version),
   },
   external: [],
-  noExternal: ["solid-js", "@caliper/core", "@caliper/overlay"],
+  noExternal: ["solid-js", "@caliper/core", "@caliper/overlay", "@oyerinde/caliper-bridge"],
   outDir: "./dist",
   sourcemap: false,
   splitting: false,
@@ -58,8 +57,6 @@ const getEsbuildPlugins = () => [
 ];
 
 export default defineConfig((options) => {
-  const otherNoExternal = ["@oyerinde/caliper-bridge"];
-
   return [
     {
       ...DEFAULT_OPTIONS,
@@ -68,7 +65,10 @@ export default defineConfig((options) => {
       globalName: "Caliper",
       minify: true,
       platform: "browser",
-      noExternal: [...DEFAULT_OPTIONS.noExternal!, ...otherNoExternal],
+      define: {
+        ...DEFAULT_OPTIONS.define,
+        "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "development"),
+      },
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
     },
@@ -79,6 +79,10 @@ export default defineConfig((options) => {
       globalName: "Caliper",
       minify: true,
       platform: "browser",
+      define: {
+        ...DEFAULT_OPTIONS.define,
+        "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "development"),
+      },
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
       outExtension({ format }) {
@@ -90,38 +94,28 @@ export default defineConfig((options) => {
     {
       ...DEFAULT_OPTIONS,
       entry: {
-        bridge: "../agent-bridge/src/index.ts",
-      },
-      format: ["cjs", "esm"],
-      platform: "browser",
-      noExternal: ["@caliper/core"],
-      splitting: true,
-    },
-    {
-      ...DEFAULT_OPTIONS,
-      entry: {
         index: "./src/index.ts",
         preset: "./src/preset.ts",
+        bridge: "./src/bridge.ts",
       },
       format: ["cjs", "esm"],
       platform: "browser",
       splitting: true,
-      esbuildPlugins: getEsbuildPlugins(),
     },
     {
       ...DEFAULT_OPTIONS,
       entry: {
-        mcp: "../mcp-server/src/index.ts",
+        mcp: "./src/mcp.ts",
       },
       format: ["esm", "cjs"],
       platform: "node",
       noExternal: [
         "@modelcontextprotocol/sdk",
         "ws",
-        "zod",
         "@oyerinde/caliper-schema",
         "@caliper/core",
       ],
+      external: ["zod"],
       dts: false,
       shims: false,
       minify: true,
@@ -134,7 +128,7 @@ export default defineConfig((options) => {
       ...DEFAULT_OPTIONS,
       entry: {
         "index.server": "./src/index.server.ts",
-        "bridge.server": "../agent-bridge/src/index.server.ts",
+        "bridge.server": "./src/bridge.server.ts",
         "preset.server": "./src/preset.server.ts",
       },
       format: ["cjs", "esm"],

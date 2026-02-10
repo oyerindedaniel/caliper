@@ -28,6 +28,7 @@ export const OVERLAY_STYLES = `
   --caliper-projection: ${DEFAULT_THEME.projection};
   --caliper-ruler: ${DEFAULT_THEME.ruler};
   --caliper-success: rgba(74, 222, 128, 1);
+  --caliper-font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
 }
 
 #caliper-overlay-root {
@@ -99,7 +100,7 @@ export const OVERLAY_STYLES = `
   border-radius: 3px;
   font-size: 11px;
   font-weight: 500;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--caliper-font-sans);
   white-space: nowrap;
   z-index: 1000000;
   will-change: transform;
@@ -119,7 +120,7 @@ export const OVERLAY_STYLES = `
   border-radius: 2px;
   font-size: 10px;
   font-weight: 600;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--caliper-font-sans);
   white-space: nowrap;
   z-index: 1000001;
   display: flex;
@@ -179,7 +180,7 @@ export const OVERLAY_STYLES = `
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
-  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-family: var(--caliper-font-sans);
   z-index: 1000005;
   box-shadow: 0 4px 12px var(--caliper-calc-shadow);
   display: flex;

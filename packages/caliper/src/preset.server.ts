@@ -20,21 +20,29 @@ export interface CaliperPlugin {
   dispose?: () => void;
 }
 
+export interface AgentBridgeConfig {
+  enabled?: boolean;
+  wsPort?: number;
+  onStateChange?: (state: unknown) => void;
+}
+
 export interface OverlayConfig {
   theme?: Record<string, string>;
   commands?: Record<string, unknown>;
   animation?: Record<string, unknown>;
-  bridge?: Record<string, unknown>;
+  bridge?: AgentBridgeConfig;
 }
+
+export type Extension = ((instance: OverlayInstance) => void) | CaliperPlugin;
 
 /**
  * CaliperBridge stub for server-side execution.
  */
-export function CaliperBridge(_configuration?: Record<string, unknown>): CaliperPlugin {
+export function CaliperBridge(_configuration?: AgentBridgeConfig): CaliperPlugin {
   return {
     name: "agent-bridge-stub",
-    install: () => {},
-    dispose: () => {},
+    install: () => { },
+    dispose: () => { },
   };
 }
 
@@ -43,14 +51,18 @@ export function CaliperBridge(_configuration?: Record<string, unknown>): Caliper
  */
 export async function init(
   _configuration?: OverlayConfig,
-  _extensions: Array<(instance: OverlayInstance) => void> = []
+  _extensions: Array<Extension> = []
 ): Promise<OverlayInstance> {
   return {
-    mount: () => {},
-    dispose: () => {},
+    mount: () => { },
+    dispose: () => { },
     getSystems: () => null,
-    waitForSystems: () => new Promise(() => {}),
+    waitForSystems: () => new Promise(() => { }),
     use: () => ({}) as OverlayInstance,
     mounted: false,
   };
 }
+
+export const caliperProps = (marker: string) => ({
+  "data-caliper-marker": marker,
+});

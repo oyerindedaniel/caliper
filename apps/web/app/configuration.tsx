@@ -3,16 +3,33 @@ import styles from "@/app/page.module.css";
 import { useOS } from "./hooks/use-os";
 import { CodeBlock } from "./components/code-block";
 
-type ConfigSection = "overview" | "theme" | "commands" | "animation";
+type ConfigSection = "overview" | "theme" | "commands" | "animation" | "bridge";
 
-export function Configuration() {
-  const [section, setSection] = useState<ConfigSection>("overview");
+interface ConfigurationProps {
+  sections?: ConfigSection[];
+  initialSection?: ConfigSection;
+  showHeader?: boolean;
+}
+
+export function Configuration({
+  sections = ["overview", "theme", "commands", "animation", "bridge"],
+  initialSection,
+  showHeader = true,
+}: ConfigurationProps) {
+  const [section, setSection] = useState<ConfigSection>(initialSection ?? sections[0]!);
   const { getSelectKey } = useOS();
 
   const overviewCode = `export interface OverlayConfig {
   theme?: ThemeConfig;
   commands?: CommandsConfig;
   animation?: AnimationConfig;
+  bridge?: AgentBridgeConfig;
+}`;
+
+  const bridgeCode = `export interface AgentBridgeConfig {
+  enabled?: boolean;    // Toggle bridge (default: false)
+  wsPort?: number;     // WebSocket port (default: 9876)
+  onStateChange?: (state: CaliperAgentState) => void; // State callback
 }`;
 
   const themeCode = `export interface ThemeConfig {
@@ -63,6 +80,8 @@ export function Configuration() {
         return commandsCode;
       case "animation":
         return animationCode;
+      case "bridge":
+        return bridgeCode;
       default:
         return overviewCode;
     }
@@ -70,32 +89,17 @@ export function Configuration() {
 
   return (
     <section id="configuration" className={styles.section}>
-      <h2 className={styles.sectionHeader}>Configuration</h2>
+      {showHeader && <h2 className={styles.sectionHeader}>Configuration</h2>}
       <div className={`${styles.tabs} flex flex-wrap gap-8`}>
-        <button
-          className={`${styles.tab} ${section === "overview" ? styles.activeTab : ""}`}
-          onClick={() => setSection("overview")}
-        >
-          Overview
-        </button>
-        <button
-          className={`${styles.tab} ${section === "theme" ? styles.activeTab : ""}`}
-          onClick={() => setSection("theme")}
-        >
-          Theme
-        </button>
-        <button
-          className={`${styles.tab} ${section === "commands" ? styles.activeTab : ""}`}
-          onClick={() => setSection("commands")}
-        >
-          Commands
-        </button>
-        <button
-          className={`${styles.tab} ${section === "animation" ? styles.activeTab : ""}`}
-          onClick={() => setSection("animation")}
-        >
-          Animation
-        </button>
+        {sections.map((s) => (
+          <button
+            key={s}
+            className={`${styles.tab} ${section === s ? styles.activeTab : ""}`}
+            onClick={() => setSection(s)}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </button>
+        ))}
       </div>
 
       <CodeBlock code={getCode()} language="typescript" />

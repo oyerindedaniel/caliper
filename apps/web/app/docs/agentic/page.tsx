@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Installation } from "@/app/installation";
 import { McpSetup } from "@/app/components/mcp-setup";
 import { CodeBlock } from "@/app/components/code-block";
+import { Configuration } from "@/app/configuration";
 
 export default function AgenticDocsPage() {
   return (
@@ -88,6 +89,8 @@ export default function AgenticDocsPage() {
 
         <CodeBlock code={`<div {...caliperProps("main-cta")}>Click Me</div>`} language="tsx" />
       </section>
+
+      <Configuration sections={["bridge"]} showHeader={true} />
 
       <section id="core-tools" className={styles.section}>
         <h2 className={styles.sectionHeader}>Core Tools</h2>

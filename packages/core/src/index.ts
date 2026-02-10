@@ -31,6 +31,8 @@ export {
 export {
   createMeasurementSystem,
   type MeasurementSystem,
+  type MeasurementState,
+  type MeasurementSystemListener,
 } from "./measurement-model/utils/measurement-system.js";
 export {
   createSelectionSystem,
@@ -66,6 +68,11 @@ export type {
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";
 export * from "./shared/config/overlay-config.js";
+export type {
+  CalculatorShortcuts,
+  ProjectionShortcuts,
+  CaliperAgentState,
+} from "./shared/config/overlay-config.js";
 export {
   applyTheme,
   mergeCommands,

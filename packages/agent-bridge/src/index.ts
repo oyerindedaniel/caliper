@@ -35,9 +35,31 @@ const logger = createLogger("agent-bridge");
 
 /**
  * CaliperBridge Plugin Factory
- * Enables AI agents to use Caliper's high-precision measurement engine.
+ * 
+ * Creates a Caliper plugin that enables AI agents to interact with the overlay via 
+ * a WebSocket bridge (local MCP relay) or direct global intent dispatching.
  *
- * @param config - Bridge configuration
+ * When installed, this plugin:
+ * 1. Starts a local WebSocket server (or connects to one) to receive agent commands.
+ * 2. Exposes `window.dispatchCaliperIntent` for manual/in-page agentic calls.
+ * 3. Syncs the overlay state (camera, selection, measurements) back to the agent.
+ *
+ * @example
+ * ```ts
+ * import { init } from "@oyerinde/caliper/preset";
+ * import { CaliperBridge } from "@oyerinde/caliper/bridge";
+ * 
+ * init({ ... }, [
+ *   new CaliperBridge({
+ *     enabled: true,
+ *     wsPort: 3010,
+ *     onStateChange: (state) => console.log("New Agent State:", state)
+ *   })
+ * ]);
+ * ```
+ *
+ * @param config - The bridge configuration settings.
+ * @returns A CaliperPlugin that can be used with `caliper.use()` or in `init()`.
  */
 export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
   let bridgeDispose: (() => void) | null = null;
@@ -141,6 +163,15 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
   };
 }
 
+/**
+ * Dispatches a high-level intent to the Caliper engine.
+ * 
+ * This function is used to programmatically trigger Caliper actions (like measuring between elements)
+ * using the standardized intent format. Requires a `CaliperBridge` to be installed and active.
+ *
+ * @param intent - The action to perform (e.g., 'measure', 'select', 'inspect').
+ * @returns A promise resolving to the result of the action, containing success status and metrics.
+ */
 export async function dispatchCaliperIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
   if (!window.dispatchCaliperIntent) {
     return {
@@ -152,3 +183,18 @@ export async function dispatchCaliperIntent(intent: CaliperIntent): Promise<Cali
   }
   return window.dispatchCaliperIntent(intent);
 }
+
+export type {
+  CaliperIntent,
+  CaliperActionResult,
+  CaliperSelectPayload,
+  CaliperMeasurePayload,
+  CaliperInspectPayload,
+  CaliperWalkDomPayload,
+  CaliperWalkAndMeasurePayload,
+  CaliperGetContextPayload,
+  CaliperAgentState,
+} from "@oyerinde/caliper-schema";
+export { CALIPER_METHODS, CaliperActionResultSchema } from "@oyerinde/caliper-schema";
+export type { AgentBridgeConfig, CaliperPlugin, OverlayInstance, CaliperCoreSystems } from "@caliper/core";
+export type { JsonRpcRequest } from "@oyerinde/caliper-schema";
