@@ -33,6 +33,7 @@ const DEFAULT_OPTIONS: Options = {
   entry: ["./src/index.ts"],
   define: {
     "process.env.VERSION": JSON.stringify(version),
+    __DEV__: JSON.stringify(process.env.NODE_ENV !== "production"),
   },
   external: [],
   noExternal: ["solid-js", "@caliper/core", "@caliper/overlay", "@oyerinde/caliper-bridge"],
@@ -63,7 +64,6 @@ export default defineConfig((options) => {
       entry: { index: "./src/auto.ts" },
       format: ["iife"],
       globalName: "Caliper",
-      minify: true,
       platform: "browser",
       define: {
         ...DEFAULT_OPTIONS.define,
@@ -112,8 +112,7 @@ export default defineConfig((options) => {
       noExternal: ["@modelcontextprotocol/sdk", "ws", "@oyerinde/caliper-schema", "@caliper/core"],
       external: ["zod"],
       dts: false,
-      shims: false,
-      minify: true,
+      shims: true,
       banner: {
         js: "#!/usr/bin/env node\n" + banner,
       },

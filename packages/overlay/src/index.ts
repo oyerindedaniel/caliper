@@ -15,6 +15,7 @@ import {
   showVersionInfo,
   OVERLAY_CONTAINER_ID,
   MAX_SAFE_Z_INDEX,
+  logger,
 } from "@caliper/core";
 
 import { injectStyles, removeStyles } from "./style-injector/utils/inject-styles.js";
@@ -62,10 +63,10 @@ let activeInstance: OverlayInstance | null = null;
 export function createOverlay(config?: OverlayConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => {},
-      dispose: () => {},
+      mount: () => { },
+      dispose: () => { },
       getSystems: () => null,
-      waitForSystems: () => new Promise(() => {}),
+      waitForSystems: () => new Promise(() => { }),
       use: () => instance,
       mounted: false,
     };
@@ -102,6 +103,9 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
   const commands = mergeCommands(mergedConfig.commands);
   const animation = mergeAnimation(mergedConfig.animation);
   const theme = mergeTheme(mergedConfig.theme);
+
+  const debug = config?.debug ?? windowConfig?.debug ?? true;
+  logger.setEnabled(debug);
 
   let cleanup: (() => void) | null = null;
   let systems: Systems | null = null;

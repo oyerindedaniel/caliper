@@ -1,3 +1,5 @@
+declare const __DEV__: boolean;
+
 export type LogLevel = "debug" | "info" | "warn" | "error" | "none";
 
 export interface LoggerOptions {
@@ -5,41 +7,48 @@ export interface LoggerOptions {
   enabled?: boolean;
 }
 
+/**
+ * Global master switch for all logger instances.
+ * This allows a single config point to silence the entire library.
+ */
+let isGlobalEnabled = true;
+
 class Logger {
   private prefix: string;
-  private enabled: boolean;
 
   constructor(options: LoggerOptions = {}) {
     this.prefix = options.prefix ? `[${options.prefix}]` : "[Caliper]";
-    this.enabled = options.enabled !== false;
   }
 
   setEnabled(enabled: boolean) {
-    this.enabled = enabled;
+    isGlobalEnabled = enabled;
   }
 
   debug(...args: any[]) {
-    if (!this.enabled) return;
+    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
+    if (!isGlobalEnabled) return;
     console.debug(this.prefix, ...args);
   }
 
   info(...args: any[]) {
-    if (!this.enabled) return;
+    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
+    if (!isGlobalEnabled) return;
     console.info(this.prefix, ...args);
   }
 
   warn(...args: any[]) {
-    if (!this.enabled) return;
+    if (!isGlobalEnabled) return;
     console.warn(this.prefix, ...args);
   }
 
   error(...args: any[]) {
-    if (!this.enabled) return;
+    if (!isGlobalEnabled) return;
     console.error(this.prefix, ...args);
   }
 
   log(...args: any[]) {
-    if (!this.enabled) return;
+    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
+    if (!isGlobalEnabled) return;
     console.log(this.prefix, ...args);
   }
 }
@@ -51,13 +60,13 @@ export const logger = new Logger({ prefix: "Caliper" });
 
 /**
  * Creates a specialized logger for a specific module or component.
+ * All loggers created this way share the same global enabled state.
  *
  * @param prefix - The prefix to prepended to log messages (e.g., 'agent-bridge').
- * @param enabled - Whether this logger is enabled. Defaults to true.
  * @returns A new Logger instance.
  */
-export function createLogger(prefix: string, enabled?: boolean) {
-  return new Logger({ prefix: `Caliper:${prefix}`, enabled });
+export function createLogger(prefix: string) {
+  return new Logger({ prefix: `Caliper:${prefix}` });
 }
 
 /**
