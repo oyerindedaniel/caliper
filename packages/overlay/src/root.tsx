@@ -333,7 +333,7 @@ export function Root(config: RootConfig) {
                 copyTimeoutId = null;
               }, 1500);
             })
-            .catch(() => { });
+            .catch(() => {});
         }
         return;
       }
@@ -687,7 +687,7 @@ export function Root(config: RootConfig) {
       }
     };
 
-    console.log("random log")
+    console.log("random log");
 
     window.addEventListener("caliper:agent-lock-change", handleAgentLockChange);
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
