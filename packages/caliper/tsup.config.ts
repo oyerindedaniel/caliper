@@ -33,6 +33,7 @@ const DEFAULT_OPTIONS: Options = {
   entry: ["./src/index.ts"],
   define: {
     "process.env.VERSION": JSON.stringify(version),
+    __DEV__: JSON.stringify(process.env.NODE_ENV !== "production"),
   },
   external: [],
   noExternal: ["solid-js", "@caliper/core", "@caliper/overlay", "@oyerinde/caliper-bridge"],
@@ -71,6 +72,7 @@ export default defineConfig((options) => {
       },
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
+      sourcemap: true,
     },
     {
       ...DEFAULT_OPTIONS,
@@ -85,6 +87,7 @@ export default defineConfig((options) => {
       },
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
+      sourcemap: true,
       outExtension({ format }) {
         return {
           js: `.js`,
@@ -98,6 +101,7 @@ export default defineConfig((options) => {
         preset: "./src/preset.ts",
         bridge: "./src/bridge.ts",
       },
+      external: ["zod"],
       format: ["cjs", "esm"],
       platform: "browser",
       splitting: true,
@@ -109,11 +113,10 @@ export default defineConfig((options) => {
       },
       format: ["esm", "cjs"],
       platform: "node",
-      noExternal: ["@modelcontextprotocol/sdk", "ws", "@oyerinde/caliper-schema", "@caliper/core"],
-      external: ["zod"],
+      noExternal: ["@modelcontextprotocol/sdk", "@oyerinde/caliper-schema", "@caliper/core"],
+      external: ["zod", "ws"],
       dts: false,
-      shims: false,
-      minify: true,
+      shims: true,
       banner: {
         js: "#!/usr/bin/env node\n" + banner,
       },

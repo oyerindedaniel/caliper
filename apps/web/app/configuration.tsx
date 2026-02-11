@@ -20,10 +20,11 @@ export function Configuration({
   const { getSelectKey } = useOS();
 
   const overviewCode = `export interface OverlayConfig {
-  theme?: ThemeConfig;
-  commands?: CommandsConfig;
-  animation?: AnimationConfig;
-  bridge?: AgentBridgeConfig;
+  theme?: ThemeConfig;          // Visual appearance (colors, shadows)
+  commands?: CommandsConfig;    // Keyboard shortcuts
+  animation?: AnimationConfig;  // Boundary box lerp behavior
+  bridge?: AgentBridgeConfig;   // Agent Bridge for AI/MCP integration
+  debug?: boolean;              // Enable debug logging (default: true). All logs are stripped in production.
 }`;
 
   const bridgeCode = `export interface AgentBridgeConfig {

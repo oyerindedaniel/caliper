@@ -222,6 +222,9 @@ importers:
 
   packages/caliper:
     dependencies:
+      ws:
+        specifier: 8.19.0
+        version: 8.19.0
       zod:
         specifier: 4.3.5
         version: 4.3.5
@@ -286,9 +289,6 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
-      ws:
-        specifier: 8.19.0
-        version: 8.19.0
 
   packages/core:
     devDependencies:

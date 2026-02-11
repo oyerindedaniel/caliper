@@ -45,7 +45,7 @@ export default function RootLayout({ children }) {
       <body>
         {process.env.NODE_ENV === "development" && (
           <Script
-             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.min.js"
              data-config={JSON.stringify({ 
                theme: { primary: "#AC2323" } 
              })}
@@ -98,7 +98,7 @@ if (import.meta.env.DEV) {
   data-config='{ "bridge": { "enabled": true } }'
 ></script>`
     : `<!-- index.html -->
-<script src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"></script>`;
+<script src="https://unpkg.com/@oyerinde/caliper/dist/index.global.min.js"></script>`;
 
   const nuxtCode = isAgentic
     ? `// plugins/caliper.client.ts

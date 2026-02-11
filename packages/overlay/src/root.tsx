@@ -687,6 +687,8 @@ export function Root(config: RootConfig) {
       }
     };
 
+    console.log("random log");
+
     window.addEventListener("caliper:agent-lock-change", handleAgentLockChange);
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });
     window.addEventListener("pointerup", handlePointerUp, { capture: true });
@@ -698,6 +700,44 @@ export function Root(config: RootConfig) {
     window.addEventListener("contextmenu", handleContextMenu, { capture: true });
     window.addEventListener("blur", handleBlur);
     window.addEventListener("focus", handleFocus);
+
+    let lastPathname = location.pathname;
+
+    const clearOnNavigate = () => {
+      const newPathname = location.pathname;
+      if (newPathname === lastPathname) return;
+      lastPathname = newPathname;
+
+      setIsActivatePressed(false);
+      resetCalculatorUI();
+      resetCopyFeedback();
+
+      if (system) {
+        system.abort();
+      }
+
+      if (selectionSystem) {
+        lastHoveredElement = null;
+        selectionDelegate.cancel();
+        measureDelegate.cancel();
+        selectionSystem.clear();
+      }
+    };
+
+    const originalPushState = history.pushState.bind(history);
+    const originalReplaceState = history.replaceState.bind(history);
+
+    history.pushState = function (...args) {
+      originalPushState(...args);
+      clearOnNavigate();
+    };
+
+    history.replaceState = function (...args) {
+      originalReplaceState(...args);
+      clearOnNavigate();
+    };
+
+    window.addEventListener("popstate", clearOnNavigate);
 
     onCleanup(() => {
       window.removeEventListener("caliper:agent-lock-change", handleAgentLockChange);
@@ -711,6 +751,10 @@ export function Root(config: RootConfig) {
       window.removeEventListener("contextmenu", handleContextMenu, { capture: true });
       window.removeEventListener("blur", handleBlur);
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("popstate", clearOnNavigate);
+
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
 
       if (mouseMoveRafId) {
         cancelAnimationFrame(mouseMoveRafId);
