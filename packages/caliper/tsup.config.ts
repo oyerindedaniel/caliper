@@ -64,6 +64,7 @@ export default defineConfig((options) => {
       entry: { index: "./src/auto.ts" },
       format: ["iife"],
       globalName: "Caliper",
+      minify: true,
       platform: "browser",
       define: {
         ...DEFAULT_OPTIONS.define,
@@ -71,6 +72,7 @@ export default defineConfig((options) => {
       },
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
+      sourcemap: true,
     },
     {
       ...DEFAULT_OPTIONS,
@@ -85,6 +87,7 @@ export default defineConfig((options) => {
       },
       esbuildPlugins: getEsbuildPlugins(),
       dts: false,
+      sourcemap: true,
       outExtension({ format }) {
         return {
           js: `.js`,
@@ -98,6 +101,7 @@ export default defineConfig((options) => {
         preset: "./src/preset.ts",
         bridge: "./src/bridge.ts",
       },
+      external: ["zod"],
       format: ["cjs", "esm"],
       platform: "browser",
       splitting: true,
@@ -109,8 +113,8 @@ export default defineConfig((options) => {
       },
       format: ["esm", "cjs"],
       platform: "node",
-      noExternal: ["@modelcontextprotocol/sdk", "ws", "@oyerinde/caliper-schema", "@caliper/core"],
-      external: ["zod"],
+      noExternal: ["@modelcontextprotocol/sdk", "@oyerinde/caliper-schema", "@caliper/core"],
+      external: ["zod", "ws"],
       dts: false,
       shims: true,
       banner: {
