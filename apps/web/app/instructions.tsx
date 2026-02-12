@@ -33,7 +33,7 @@ export function Instructions() {
       <ul className={styles.instructionList}>
         <li className={styles.instructionItem}>
           <strong>W / A / S / D</strong> — Project element edges across the viewport to check
-          alignment.
+          alignment. <span className="op-6 fs-12">(Requires active selection)</span>
         </li>
         <li className={styles.instructionItem}>
           <strong>Numeric Input</strong> — While projecting, type a number to align the projection
@@ -50,7 +50,7 @@ export function Instructions() {
         <li className={styles.instructionItem}>
           <strong>Precision Control</strong> — Select a ruler and use <strong>Arrow Keys</strong> to
           nudge.
-          <span style={{ opacity: 0.6, fontSize: "12px", display: "block", marginTop: "4px" }}>
+          <span className="op-6 fs-12 block mt-4">
             {getControlKey()}+Arrow: 10px | Shift+Arrow: 0.1px
           </span>
         </li>
@@ -59,8 +59,8 @@ export function Instructions() {
           rulers to calculate and reveal distances between them.
         </li>
         <li className={styles.instructionItem}>
-          <strong>Magnetic Snapping</strong> — Rulers automatically snap to active projection lines
-          when dragged nearby.
+          <strong>Magnetic Snapping</strong> — Rulers automatically snap to boundary boxes and
+          active projection lines when dragged nearby.
         </li>
         <li className={styles.instructionItem}>
           <strong>Deselect/Remove</strong> — Click empty space to deselect; press{" "}

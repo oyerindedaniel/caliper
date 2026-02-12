@@ -9,6 +9,7 @@ import type {
   CaliperCoreSystems,
   CaliperAgentState,
 } from "@caliper/core";
+export { CaliperAgentStateSchema } from "@oyerinde/caliper-schema";
 import { init as initCaliper } from "./index.js";
 import { CaliperBridge } from "@oyerinde/caliper-bridge";
 import { caliperProps } from "@caliper/core";
@@ -42,23 +43,30 @@ export type { Extension };
  * agentic environments by handling both core configuration and plugin injection
  * in a single call.
  *
+ * It accepts two types of extensions:
+ * 1. Simple callback functions: `(instance: OverlayInstance) => void`
+ * 2. Formal Caliper plugins: Objects with an `install(instance: OverlayInstance)` method.
+ *
  * @example
  * ```ts
  * import { init, CaliperBridge } from "@oyerinde/caliper/preset";
  *
- * const caliper = await init({
+ * const caliper = init({
  *   theme: { primary: "#18a0fb" }
  * }, [
  *   (instance) => console.log("Caliper ready!", instance),
- *   new CaliperBridge({ wsPort: 3010 })
+ *   CaliperBridge({ wsPort: 3010 })
  * ]);
  * ```
  *
  * @param configuration - Caliper core configuration (theme, commands, settings).
- * @param extensions - An array of extension functions or Caliper plugins to install immediately.
- * @returns A promise that resolves to the initialized Caliper OverlayInstance.
+ * @param extensions - An array of functions or plugin objects to install immediately.
+ * @returns The initialized Caliper OverlayInstance.
  */
-export async function init(configuration?: OverlayConfig, extensions: Array<Extension> = []) {
+export function init(
+  configuration?: OverlayConfig,
+  extensions: Array<Extension> = []
+): OverlayInstance {
   const caliperInstance = initCaliper(configuration);
 
   if (extensions && Array.isArray(extensions)) {

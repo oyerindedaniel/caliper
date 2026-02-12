@@ -6,6 +6,7 @@ import { Inter } from "next/font/google";
 import styles from "@/app/page.module.css";
 import { useOS } from "./hooks/use-os";
 import { useConfig } from "./contexts/config-context";
+import { useIsMobile } from "./hooks/use-mobile";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -66,6 +67,7 @@ const PlusIcon = CalculatorIcons["+"];
 export function TryCaliper() {
   const { getAltKey, getControlKey } = useOS();
   const { theme, commands } = useConfig();
+  const isMobile = useIsMobile();
   const [phase, setPhase] = useState<Phase>("idle");
   const [isPaused, setIsPaused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -214,16 +216,16 @@ export function TryCaliper() {
           <strong>{getAltKey()}</strong> and hover to measure. Press <strong>Space</strong> to
           freeze, then use the calculator.
         </p>
-        <div style={{ overflow: "hidden" }}>
-          <AnimatePresence mode="wait" initial={false}>
+        <div style={{ position: "relative", minHeight: 24, display: "flex", alignItems: "center" }}>
+          <AnimatePresence mode="popLayout" initial={false}>
             <motion.div
               key={phase}
-              initial={{ y: 12, opacity: 0 }}
+              initial={{ y: 8, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -12, opacity: 0 }}
+              exit={{ y: -8, opacity: 0 }}
               transition={{
-                duration: 0.6,
-                ease: [0.19, 1, 0.22, 1],
+                duration: 0.4,
+                ease: [0.23, 1, 0.32, 1],
               }}
               style={{
                 fontSize: 12,
@@ -233,11 +235,11 @@ export function TryCaliper() {
                 display: "flex",
                 alignItems: "center",
                 gap: 12,
-                height: "100%",
+                width: "100%",
               }}
             >
               <span style={{ opacity: 0.9 }}>{phaseDescription}</span>
-              {phase !== "idle" && (
+              {phase !== "idle" && !isMobile && (
                 <div
                   style={{
                     display: "flex",

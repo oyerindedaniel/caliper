@@ -183,23 +183,3 @@ export async function dispatchCaliperIntent(intent: CaliperIntent): Promise<Cali
   }
   return window.dispatchCaliperIntent(intent);
 }
-
-export type {
-  CaliperIntent,
-  CaliperActionResult,
-  CaliperSelectPayload,
-  CaliperMeasurePayload,
-  CaliperInspectPayload,
-  CaliperWalkDomPayload,
-  CaliperWalkAndMeasurePayload,
-  CaliperGetContextPayload,
-  CaliperAgentState,
-} from "@oyerinde/caliper-schema";
-export { CALIPER_METHODS, CaliperActionResultSchema } from "@oyerinde/caliper-schema";
-export type {
-  AgentBridgeConfig,
-  CaliperPlugin,
-  OverlayInstance,
-  CaliperCoreSystems,
-} from "@caliper/core";
-export type { JsonRpcRequest } from "@oyerinde/caliper-schema";

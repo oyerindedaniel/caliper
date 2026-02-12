@@ -5,6 +5,7 @@ import {
   getTotalScrollDelta,
   getCommonVisibilityWindow,
   getOverlayRoot,
+  type ScrollState,
 } from "@caliper/core";
 import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.jsx";
 import { MeasurementLabels } from "./render-labels.jsx";
@@ -81,7 +82,10 @@ export function Overlay(props: OverlayProps) {
     const hasSameStack =
       res.primaryPosition === res.secondaryPosition &&
       res.primaryHierarchy.length === res.secondaryHierarchy.length &&
-      res.primaryHierarchy.every((p, i) => p.element === res.secondaryHierarchy[i]?.element);
+      res.primaryHierarchy.every(
+        (scrollState: ScrollState, index: number) =>
+          scrollState.element === res.secondaryHierarchy[index]?.element
+      );
 
     const isDirectParentChild =
       (res.primaryHierarchy.length > 0 &&

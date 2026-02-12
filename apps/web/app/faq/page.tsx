@@ -2,35 +2,54 @@
 
 import styles from "@/app/page.module.css";
 import Image from "next/image";
+import { useCopy } from "@/app/hooks/use-copy";
 
-const FAQ_ITEMS = [
+interface FAQItem {
+  question: string;
+  answer: React.ReactNode;
+  prompt?: string;
+}
+
+const FAQ_ITEMS: FAQItem[] = [
   {
     question: "How is Caliper different from Chrome DevTools?",
     answer: (
       <>
-        Chrome DevTools is a general-purpose debugger. Caliper is specialized for design
-        engineering. It provides features DevTools lacks, like simultaneous multi-element
-        measurement, keyboard-driven precision, design-token awareness, and visual projection tools
-        for alignment checks.
+        Specialized for design engineering. Unlike DevTools, it handles simultaneous multi-element
+        measurement, keyboard-driven precision, and visual projection tools for layout alignment.
       </>
     ),
+    prompt:
+      "Referencing https://caliper.danieloyerinde.com, explain how Caliper's multi-element measurement and visual projection tools solve design engineering problems that standard Chrome DevTools cannot.",
   },
   {
     question: "Does it work with my framework?",
     answer: (
       <>
-        Yes. Caliper is framework-agnostic. It runs as a standalone overlay in the DOM. Whether you
-        use Next.js, Vue, Svelte, or plain HTML, Caliper works the same way.
+        Yes. Caliper is framework-agnostic. It runs as a standalone DOM overlay, fully compatible
+        with Next.js, Vite, Astro, Nuxt, Vue, and plain HTML.
       </>
     ),
+    prompt:
+      "Referencing https://caliper.danieloyerinde.com, how does Caliper's framework-agnostic DOM overlay approach ensure it works across Next.js, Vite, and Astro without specific plugins?",
   },
   {
     question: "What is the Agent Bridge?",
     answer: (
       <>
-        The <strong>Agent Bridge</strong> connects Caliper to AI coding agents like Cursor or Claude
-        Code. It allows the AI to "see" your local UI, perform audits, and verify its own CSS
-        changes visually, rather than just guessing based on code.
+        A high-speed link that exposes your local browser state to AI agents. It enables AI to
+        visually audit your UI instead of guessing from code.
+      </>
+    ),
+    prompt:
+      "Referencing https://caliper.danieloyerinde.com and https://caliper.danieloyerinde.com/docs/agentic, describe the architecture of Caliper's Agent Bridge and how it enables AI agents to perform visual UI audits of local development states.",
+  },
+  {
+    question: "Does it work if I have multiple tabs open?",
+    answer: (
+      <>
+        Gracefully. Each tab is assigned a unique session ID. Caliper tracks focus and only syncs
+        the active tab’s state to your agent.
       </>
     ),
   },
@@ -38,38 +57,51 @@ const FAQ_ITEMS = [
     question: "Is it safe for production?",
     answer: (
       <>
-        Caliper is designed to be stripped out of production bundles. If you initialize it inside a{" "}
-        <strong>process.env.NODE_ENV === &apos;development&apos;</strong> check (as recommended), it
-        will never load in <strong>production</strong>.
+        Yes. When initialized inside a development check (e.g.,{" "}
+        <strong>process.env.NODE_ENV === &apos;development&apos;</strong>), it is completely
+        stripped from production bundles.
       </>
     ),
+    prompt:
+      "Referencing https://caliper.danieloyerinde.com, what are the best practices for ensuring Caliper's library and bridge code are entirely removed from production build bundles?",
+  },
+  {
+    question: "My AI Agent can't connect. What should I check?",
+    answer: (
+      <>
+        Usually a port conflict. Ensure the bridge port is not being used by another process and
+        verify the MCP relay is running in your terminal.
+      </>
+    ),
+    prompt:
+      "Referencing https://caliper.danieloyerinde.com and https://caliper.danieloyerinde.com/docs/agentic, my AI Agent cannot connect to the Caliper Bridge. Can you provide a guide on how to identify which process (PID) is claiming my configured WebSocket port on my operating system so I can resolve the conflict?",
   },
   {
     question: "Where does my data go?",
     answer: (
       <>
-        <strong>Nowhere.</strong> Caliper is entirely local. All measurements and audits occur
-        within your browser&apos;s memory. We do not store, track, or transmit your UI data, source
-        code, or telemetry to any external servers.
+        <strong>Nowhere.</strong> All processing is local. No UI data, source code, or telemetry is
+        transmitted to external servers. Your privacy is a priority.
       </>
     ),
   },
   {
-    question: "Can I customize the colors?",
+    question: "Can I customize the overlay?",
     answer: (
       <>
-        Absolutely. You can override the entire color theme in the configuration object passed to{" "}
-        <strong>init()</strong>. Match it to your brand or personal preference.
+        Yes. Pass a configuration object to <strong>init()</strong> to override the default theme
+        (colors) or command shortcuts (keys) to match your personal preference or brand.
       </>
     ),
+    prompt:
+      "Referencing https://caliper.danieloyerinde.com, how can I programmatically customize Caliper's overlay colors and command shortcuts to match my project's design system?",
   },
   {
-    question: "Why do use a custom MCP instead of a browser extension?",
+    question: "Why do you use a custom MCP instead of a browser extension?",
     answer: (
       <>
-        Browser extensions are sandboxed and cannot easily communicate with your local editor or
-        terminal. Our MCP server bridges that gap, allowing direct, bi-directional communication
-        between your AI agent and the live browser state.
+        Extensions are sandboxed. Our MCP relay allows the AI agent to communicate directly with the
+        browser&apos;s live layout engine without sandbox restrictions.
       </>
     ),
   },
@@ -102,14 +134,38 @@ export default function FAQPage() {
 
       <div className={styles.faqList}>
         {FAQ_ITEMS.map((item, idx) => (
-          <div key={idx} className={styles.faqItem}>
-            <div className={styles.faqNumber}>{idx + 1}</div>
-            <h3 className={styles.faqQuestion}>{item.question}</h3>
-            <div className={styles.faqConnector} />
-            <p className={styles.faqAnswer}>{item.answer}</p>
-          </div>
+          <FAQRow key={idx} item={item} index={idx} />
         ))}
       </div>
     </>
+  );
+}
+
+function FAQRow({ item, index }: { item: FAQItem; index: number }) {
+  const { copied, copy } = useCopy();
+
+  return (
+    <div className={styles.faqItem}>
+      <div className={styles.faqNumber}>{index + 1}</div>
+      <div className={`${styles.faqQuestion} flex items-start justify-between gap-16`}>
+        <h3 className="flex-1 m-0">{item.question}</h3>
+        {item.prompt && (
+          <button
+            onClick={() => copy(item.prompt!)}
+            className={`${styles.copyPromptButton} ${copied ? styles.copyPromptButtonActive : ""}`}
+            title="Copy prompt for AI agent"
+          >
+            <span className="material-symbols-outlined fs-14">
+              {copied ? "check_circle" : "content_copy"}
+            </span>
+            <span className={styles.copyPromptText}>
+              {copied ? "Copied Prompt" : "Copy Prompt"}
+            </span>
+          </button>
+        )}
+      </div>
+      <div className={styles.faqConnector} />
+      <p className={styles.faqAnswer}>{item.answer}</p>
+    </div>
   );
 }

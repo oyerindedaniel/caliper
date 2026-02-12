@@ -62,12 +62,12 @@ export default function RootLayout({ children }) {
     ? `// main.ts
 if (import.meta.env.DEV) {
   import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
-    init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
+    init({/* config */}, [CaliperBridge({ enabled: true })]);
   });
 }`
     : `// main.ts
 if (import.meta.env.DEV) {
-  import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+  import("@oyerinde/caliper").then(({ init }) => init({/* config */}));
 }`;
 
   const astroCode = isAgentic
@@ -75,7 +75,7 @@ if (import.meta.env.DEV) {
 <script type="module">
   if (import.meta.env.DEV) {
     import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
-      init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
+      init({/* config */}, [CaliperBridge({ enabled: true })]);
     });
   }
 </script>`
@@ -84,7 +84,7 @@ if (import.meta.env.DEV) {
   <head>
     <script type="module">
       if (import.meta.env.DEV) {
-        import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+        import("@oyerinde/caliper").then(({ init }) => init({/* config */}));
       }
     </script>
   </head>
@@ -105,14 +105,14 @@ if (import.meta.env.DEV) {
 export default defineNuxtPlugin(() => {
   if (import.meta.dev) {
     import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
-      init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
+      init({/* config */}, [CaliperBridge({ enabled: true })]);
     });
   }
 });`
     : `// plugins/caliper.client.ts
 export default defineNuxtPlugin(() => {
   if (import.meta.dev) {
-    import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+    import("@oyerinde/caliper").then(({ init }) => init({/* config */}));
   }
 });`;
 
@@ -120,24 +120,24 @@ export default defineNuxtPlugin(() => {
     ? `// main.ts
 if (import.meta.env.DEV) {
   import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
-    init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
+    init({/* config */}, [CaliperBridge({ enabled: true })]);
   });
 }`
     : `// main.ts
 if (import.meta.env.DEV) {
-  import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+  import("@oyerinde/caliper").then(({ init }) => init({/* config */}));
 }`;
 
   const tanstackCode = isAgentic
     ? `// src/entry-client.tsx
 if (process.env.NODE_ENV === "development") {
   import("@oyerinde/caliper/preset").then(({ init, CaliperBridge }) => {
-    init(/* config */, [(caliper) => caliper.use(CaliperBridge({ enabled: true }))]);
+    init({/* config */}, [CaliperBridge({ enabled: true })]);
   });
 }`
     : `// src/entry-client.tsx
 if (process.env.NODE_ENV === "development") {
-  import("@oyerinde/caliper").then(({ init }) => init(/* config */));
+  import("@oyerinde/caliper").then(({ init }) => init({/* config */}));
 }`;
 
   const getLanguage = () => {

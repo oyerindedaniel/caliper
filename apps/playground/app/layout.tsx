@@ -21,7 +21,7 @@ export default function RootLayout({
         />
         <Script
           src={`/caliper.js?v=${Date.now()}`}
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
           crossOrigin="anonymous"
           data-config={JSON.stringify({
             bridge: { enabled: true },

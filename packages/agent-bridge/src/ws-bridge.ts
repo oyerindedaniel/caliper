@@ -107,10 +107,9 @@ export function createWSBridge(options: BridgeOptions) {
   function scheduleReconnect() {
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
 
-    const exponent = Math.min(reconnectAttempts, 6);
-    const delay = Math.min(BASE_DELAY * Math.pow(2, exponent), MAX_DELAY);
-    const jitter = Math.random() * (delay * 0.1);
-    const finalDelay = delay + jitter;
+    const backoff = BASE_DELAY * Math.pow(2, Math.min(reconnectAttempts, 6));
+    const jitter = backoff * 0.1 * Math.random();
+    const finalDelay = Math.min(backoff + jitter, MAX_DELAY);
 
     reconnectAttempts++;
 

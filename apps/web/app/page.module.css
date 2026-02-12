@@ -819,6 +819,11 @@ p.faqAnswer strong {
   font-size: 12px;
 }
 
+.backIcon {
+  display: inline-block;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 .errorReset {
   background: none;
   border: none;
@@ -1416,6 +1421,40 @@ p.faqAnswer strong {
   margin-bottom: 0;
 }
 
+.copyPromptButton {
+  appearance: none;
+  background: var(--gray-alpha-100);
+  border: 1px solid var(--gray-alpha-200);
+  border-radius: 6px;
+  color: var(--gray-rgb);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-family: var(--font-geist-mono);
+  font-size: 10px;
+  opacity: 0.5;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  height: 26px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.copyPromptButtonActive {
+  background: var(--caliper-primary) !important;
+  border-color: var(--caliper-primary) !important;
+  color: white !important;
+  opacity: 1 !important;
+}
+
+.copyPromptText {
+  white-space: nowrap;
+  font-weight: 700;
+}
+
 @media (max-width: 768px) {
   .page {
     padding: 40px 16px;
@@ -1593,6 +1632,10 @@ p.faqAnswer strong {
 
   .link:hover {
     opacity: 1;
+    text-decoration: none;
+  }
+
+  .link:hover span:last-child {
     text-decoration: underline;
     text-underline-offset: 3px;
   }
@@ -1608,7 +1651,8 @@ p.faqAnswer strong {
     color: #fff;
   }
 
-  .blogCTA:hover .ctaIcon {
+  .link:hover .ctaIcon,
+  a:hover .ctaIcon {
     transform: translateX(4px);
   }
 
@@ -1669,5 +1713,17 @@ p.faqAnswer strong {
     opacity: 0.7;
     text-decoration: underline;
     text-underline-offset: 4px;
+  }
+
+  .link:hover .backIcon,
+  a:hover .backIcon {
+    transform: translateX(-4px);
+  }
+
+  .copyPromptButton:hover {
+    opacity: 1;
+    background: var(--gray-alpha-200);
+    border-color: var(--caliper-primary);
+    color: var(--caliper-primary);
   }
 }

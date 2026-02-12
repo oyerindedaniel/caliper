@@ -1,13 +1,9 @@
-import type { SyncSource, CursorContext, Remap } from "../../shared/types/index.js";
+import type { SyncSource, CursorContext, Remap, ScrollState } from "../../shared/types/index.js";
 import type {
   MeasurementLine as BaseMeasurementLine,
   MeasurementResult as BaseMeasurementResult,
 } from "@oyerinde/caliper-schema";
-import {
-  type ScrollState,
-  type StickyConfig,
-  getTotalScrollDelta,
-} from "../../geometry/utils/scroll-aware.js";
+import { getTotalScrollDelta } from "../../geometry/utils/scroll-aware.js";
 
 export type MeasurementLine = BaseMeasurementLine;
 

@@ -64,7 +64,13 @@ export type {
   CaliperCoreSystems,
   OverlayInstance,
   CaliperPlugin,
+  ScrollState,
+  Remap,
+  PositionMode,
+  StickyConfig,
 } from "./shared/types/index.js";
+export { type ProjectionListener } from "./measurement-model/utils/projection-system.js";
+export { type RulerListener } from "./ruler-model/utils/ruler-system.js";
 export * from "./shared/constants/index.js";
 export * from "./shared/math/index.js";
 export * from "./shared/config/overlay-config.js";

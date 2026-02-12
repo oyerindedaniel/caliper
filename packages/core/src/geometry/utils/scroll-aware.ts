@@ -1,22 +1,9 @@
 /**
  * Scroll-Aware Geometry Engine
  */
-import type {
-  ScrollState as BaseScrollState,
-  PositionMode as BasePositionMode,
-  StickyConfig as BaseStickyConfig,
-  SelectionMetadata as BaseSelectionMetadata,
-} from "@oyerinde/caliper-schema";
+import type { ScrollState, PositionMode, StickyConfig } from "../../shared/types/index.js";
+import type { SelectionMetadata as BaseSelectionMetadata } from "@oyerinde/caliper-schema";
 import { isRenderable } from "../../shared/utils/dom-utils.js";
-
-export interface ScrollState extends BaseScrollState {
-  element?: HTMLElement;
-  containerRect: DOMRect | null; // In document coordinates
-}
-
-export type PositionMode = BasePositionMode;
-
-export type StickyConfig = BaseStickyConfig;
 
 export interface DeducedGeometry extends Omit<
   BaseSelectionMetadata,

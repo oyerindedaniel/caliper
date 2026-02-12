@@ -1,6 +1,6 @@
 import { ProjectionState, ProjectionDirection } from "../../shared/types/index.js";
 
-type ProjectionListener = (state: ProjectionState) => void;
+export type ProjectionListener = (state: ProjectionState) => void;
 
 export interface ProjectionSystem {
   getState: () => ProjectionState;

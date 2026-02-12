@@ -28,16 +28,6 @@ export function buildSelectorInfo(
 
   const marker = element.getAttribute("data-caliper-marker") || undefined;
 
-  let depth = metadata?.depth;
-  if (depth === undefined) {
-    depth = 0;
-    let curr = element.parentElement;
-    while (curr) {
-      depth++;
-      curr = curr.parentElement;
-    }
-  }
-
   let x: number;
   let y: number;
 
@@ -57,7 +47,6 @@ export function buildSelectorInfo(
     nthChild: nthChild !== -1 ? nthChild : undefined,
     x,
     y,
-    depth,
     marker,
   };
 
