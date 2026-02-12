@@ -117,15 +117,16 @@ export default function RootLayout({
           />
         )}
         <Script
-          src={
-            process.env.NODE_ENV === "production"
-              ? "https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-              : `/caliper.js?v=${Date.now()}`
-          }
+          // src={
+          //   process.env.NODE_ENV === "production"
+          //     ? "https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
+          //     : `/caliper.js?v=${Date.now()}`
+          // }
+          src={`/caliper.js?v=${Date.now()}`}
           strategy="beforeInteractive"
           crossOrigin="anonymous"
           data-config={JSON.stringify({
-            bridge: { enabled: process.env.NODE_ENV === "development" },
+            bridge: { enabled: true },
           })}
         />
         <ConfigProvider>

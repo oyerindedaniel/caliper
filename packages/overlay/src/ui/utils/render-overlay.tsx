@@ -72,7 +72,9 @@ export function Overlay(props: OverlayProps) {
         res.primaryHierarchy,
         res.secondaryHierarchy,
         props.selectionMetadata().element!,
-        res.secondaryElement!
+        res.secondaryElement!,
+        res.primaryWinX,
+        res.primaryWinY
       ),
     };
 
@@ -131,7 +133,7 @@ export function Overlay(props: OverlayProps) {
         <Portal mount={getOverlayRoot()}>
           <Calculator
             state={props.calculatorState!()!}
-            onClose={props.onCalculatorClose || (() => {})}
+            onClose={props.onCalculatorClose || (() => { })}
             position={{ x: props.cursor().x, y: props.cursor().y }}
             isFocused={props.activeFocus?.() === "calculator"}
           />
@@ -162,8 +164,8 @@ export function Overlay(props: OverlayProps) {
             projectionState={props.projectionState}
             metadata={props.selectionMetadata}
             result={props.result}
-            onUpdate={props.onRulerUpdate || (() => {})}
-            onRemove={props.onRulerRemove || (() => {})}
+            onUpdate={props.onRulerUpdate || (() => { })}
+            onRemove={props.onRulerRemove || (() => { })}
             onLineClick={props.onLineClick}
           />
         </Portal>

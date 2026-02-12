@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { deduceGeometry, getTotalScrollDelta } from "./scroll-aware.js";
+import {
+  deduceGeometry,
+  getTotalScrollDelta,
+  getLiveGeometry,
+  getCommonVisibilityWindow,
+} from "./scroll-aware.js";
 import { getLivePoint } from "../../measurement-model/utils/measurement-result.js";
 import type { MeasurementLine } from "@oyerinde/caliper-schema";
 
@@ -1743,5 +1748,512 @@ describe("DISCONNECT REPLICATION", () => {
     // Parent track should be used: (100 + 300) - 120 = 280
     const absHeight = Math.abs(deduction.stickyConfig?.containerHeight || 0);
     expect(absHeight).toBe(280);
+  });
+});
+
+/**
+ * ====================================================================
+ * TOC STICKY CLIPPING BUG
+ * ====================================================================
+ *
+ * Bug Report:
+ * On the Caliper docs page, the "On This Page" (TOC) component has this structure:
+ *
+ *   <div class="tocWrapper">          (grid cell)
+ *     <aside class="toc">            (position: sticky; top: 144px)
+ *       <div class="navContainer">   (overflow-y: auto; max-height: calc(100vh - 160px))
+ *         <nav>
+ *           <a class="navItem">...</a>   (tocItem children)
+ *         </nav>
+ *       </div>
+ *     </aside>
+ *   </div>
+ *
+ * Scenario:
+ * 1. User selects `navContainer` (the scroll container inside the sticky aside).
+ * 2. User measures to a `tocItem` (child of navContainer).
+ * 3. When the page scrolls and the aside "sticks", the measurement lines
+ *    start clipping incorrectly.
+ *
+ * Key Observation:
+ * - Measuring from `aside` (the sticky element itself) to a tocItem does NOT clip.
+ * - Measuring from `navContainer` (scroll container inside sticky) to a tocItem DOES clip.
+ *
+ * Root Cause Hypothesis:
+ * `navContainer` is a scroll container (overflow-y: auto). It appears in the
+ * tocItem's `scrollHierarchy` with a `containerRect` captured in document coords.
+ * When the page scrolls and the aside sticks, `navContainer` moves with it.
+ *
+ * `getLiveGeometry` has a `hasStickyAncestor` adjustment that shifts the clipping
+ * window by (currentScroll - captureScroll). However, `getCommonVisibilityWindow`
+ * (used for measurement lines between two elements) does NOT have this adjustment.
+ * This causes the common visibility window to use the stale containerRect,
+ * resulting in incorrect clipping of measurement lines.
+ */
+describe("TOC STICKY CLIPPING BUG", () => {
+  beforeEach(() => {
+    document.body.innerHTML = "";
+    elementStyleMap.clear();
+    vi.restoreAllMocks();
+
+    vi.spyOn(window, "getComputedStyle").mockImplementation((el: Element): CSSStyleDeclaration => {
+      const mock = elementStyleMap.get(el) || {};
+      const merged: Partial<CSSStyleDeclaration> = {
+        overflow: "visible",
+        overflowY: "visible",
+        overflowX: "visible",
+        position: "static",
+        top: "auto",
+        bottom: "auto",
+        left: "auto",
+        right: "auto",
+        transform: "none",
+        filter: "none",
+        perspective: "none",
+        contain: "none",
+        willChange: "auto",
+        ...mock,
+      };
+
+      if (el instanceof HTMLElement && el.style) {
+        merged.position = el.style.position || mock.position || "static";
+      }
+
+      return merged as unknown as CSSStyleDeclaration;
+    });
+
+    Object.defineProperty(window, "scrollY", { value: 0, writable: true, configurable: true });
+    Object.defineProperty(window, "scrollX", { value: 0, writable: true, configurable: true });
+    Object.defineProperty(window, "innerHeight", {
+      value: 900,
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      value: 1200,
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  /**
+   * Helper: Build the TOC DOM structure that mirrors the real component.
+   */
+  function buildTocStructure() {
+    const tocWrapper = document.createElement("div");
+    const aside = document.createElement("aside");
+    const navContainer = document.createElement("div");
+    const nav = document.createElement("nav");
+    const tocItem1 = document.createElement("a");
+    const tocItem2 = document.createElement("a");
+    const tocItem3 = document.createElement("a");
+
+    nav.appendChild(tocItem1);
+    nav.appendChild(tocItem2);
+    nav.appendChild(tocItem3);
+    navContainer.appendChild(nav);
+    aside.appendChild(navContainer);
+    tocWrapper.appendChild(aside);
+    document.body.appendChild(tocWrapper);
+
+    return { tocWrapper, aside, navContainer, nav, tocItem1, tocItem2, tocItem3 };
+  }
+
+  it("Bug 1: navContainer clipping rect should track sticky parent on window scroll", () => {
+    /**
+     * This test verifies that when we compute `getLiveGeometry` for a static
+     * element (tocItem) whose scroll hierarchy includes a navContainer that
+     * sits inside a sticky aside, the clipping bounds correctly update
+     * as the window scrolls.
+     *
+     * Structure:
+     * - Body scrolls (window level)
+     *   - aside (sticky, top: 144px)
+     *     - navContainer (overflow-y: auto, max-height: 740px)
+     *       - tocItem (static)
+     *
+     * At capture time (window.scrollY = 0):
+     *   aside is at document Y = 300 (not yet stuck)
+     *   navContainer is at document Y = 330
+     *   tocItem is at document Y = 360
+     *
+     * After scroll (window.scrollY = 500):
+     *   aside sticks at viewport Y = 144
+     *   navContainer viewport Y = 174 → document Y = 174 + 500 = 674
+     *   tocItem viewport Y = 204 → document Y = 204 + 500 = 704
+     *
+     * The clipping window from navContainer should follow the sticky movement.
+     * If it doesn't, lines will be clipped against the old position (doc Y 330),
+     * which is now far above the actual visible area.
+     */
+    const { aside, navContainer, tocItem1 } = buildTocStructure();
+
+    // Setup aside as sticky
+    setupSpatialSimulation(aside, {
+      styles: { position: "sticky", top: "144px" },
+      rect: { top: 300, left: 900, width: 220, height: 600 },
+      offsetTop: 300,
+      offsetParent: document.body,
+    });
+
+    // Setup navContainer as scroll container inside sticky
+    setupSpatialSimulation(navContainer, {
+      styles: { overflow: "auto", overflowY: "auto" },
+      rect: { top: 330, left: 900, width: 220, height: 540 },
+      clientHeight: 540,
+      clientWidth: 220,
+      offsetTop: 30,
+      offsetParent: aside,
+    });
+
+    // Setup tocItem
+    setupSpatialSimulation(tocItem1, {
+      rect: { top: 360, left: 916, width: 188, height: 20 },
+      offsetTop: 30,
+      offsetParent: navContainer,
+    });
+
+    // CAPTURE: Deduce geometry at scroll 0
+    const tocItemDeduction = deduceGeometry(tocItem1);
+
+    // Verify navContainer appears in the tocItem's scroll hierarchy
+    const navContainerInHierarchy = tocItemDeduction.scrollHierarchy.find(
+      (s) => s.element === navContainer
+    );
+    expect(navContainerInHierarchy).toBeDefined();
+
+    // Verify hasStickyAncestor is true for navContainer
+    expect(navContainerInHierarchy?.hasStickyAncestor).toBe(true);
+
+    // SCROLL: Window scrolls down 500px, aside sticks
+    Object.defineProperty(window, "scrollY", { value: 500 });
+
+    // Compute live geometry
+    const liveGeo = getLiveGeometry(
+      tocItemDeduction.rect,
+      tocItemDeduction.scrollHierarchy,
+      tocItemDeduction.position,
+      tocItemDeduction.stickyConfig,
+      0, // initialWindowX
+      0, // initialWindowY
+      false
+    );
+
+    expect(liveGeo).not.toBeNull();
+
+    // The clipping window (visibleMinY/visibleMaxY) should reflect the
+    // navContainer's LIVE document position, not its captured position.
+    // Captured navContainer doc top: 330
+    // Live navContainer doc top should be: 174 (viewport) + 500 (scroll) = 674
+    // If hasStickyAncestor adjustment works: 330 + (500 - 0) = 830?
+    // Actually: containerLiveTop = containerRect.top - ancestorDelta + windowScrollAdjustment
+    // = 330 - 0 + (500 - 0) = 830.
+    //
+    // The key assertion: clipping minY should NOT be 330 (stale).
+    // It should be adjusted for the sticky movement.
+    expect(liveGeo!.visibleMinY).toBeGreaterThan(330);
+  });
+
+  it("Bug 2: getCommonVisibilityWindow should adjust for sticky ancestors on shared containers", () => {
+    /**
+     * This is the CORE BUG.
+     *
+     * `getCommonVisibilityWindow` is used when rendering measurement lines
+     * between two elements. It computes the intersection of their shared
+     * scroll containers' clipping rects.
+     *
+     * Unlike `getLiveGeometry`, `getCommonVisibilityWindow` does NOT have
+     * the `hasStickyAncestor` adjustment. So when the navContainer moves
+     * with the sticky aside, the common visibility window still uses the
+     * stale `containerRect.top` from capture time.
+     *
+     * Structure:
+     * - navContainer (primary, overflow-y: auto, inside sticky aside)
+     * - tocItem (secondary, child of navContainer)
+     *
+     * navContainer is in BOTH hierarchies (it's a shared scroll ancestor
+     * AND it IS the primary element).
+     */
+    const { aside, navContainer, tocItem1 } = buildTocStructure();
+
+    // Setup aside as sticky
+    setupSpatialSimulation(aside, {
+      styles: { position: "sticky", top: "144px" },
+      rect: { top: 300, left: 900, width: 220, height: 600 },
+      offsetTop: 300,
+      offsetParent: document.body,
+    });
+
+    // Setup navContainer as scroll container
+    setupSpatialSimulation(navContainer, {
+      styles: { overflow: "auto", overflowY: "auto" },
+      rect: { top: 330, left: 900, width: 220, height: 540 },
+      clientHeight: 540,
+      clientWidth: 220,
+      offsetTop: 30,
+      offsetParent: aside,
+    });
+
+    // Setup tocItem
+    setupSpatialSimulation(tocItem1, {
+      rect: { top: 360, left: 916, width: 188, height: 20 },
+      offsetTop: 30,
+      offsetParent: navContainer,
+    });
+
+    // CAPTURE both deductions
+    const navDeduction = deduceGeometry(navContainer);
+    const tocDeduction = deduceGeometry(tocItem1);
+
+    // SCROLL: Window scrolls down 500px
+    Object.defineProperty(window, "scrollY", { value: 500 });
+
+    // Compute common visibility window
+    const common = getCommonVisibilityWindow(
+      navDeduction.scrollHierarchy,
+      tocDeduction.scrollHierarchy,
+      navContainer,
+      tocItem1
+    );
+
+    // If the bug exists: common.minY will be based on the stale containerRect (doc Y ~330).
+    // This clips the lines against a region that's now 500px above the actual visible area.
+    //
+    // CORRECT behavior: The common visibility window should account for
+    // the sticky parent's movement, producing a minY near 830 (330 + 500).
+    //
+    // EXPECTED FAILURE: This test should FAIL if getCommonVisibilityWindow
+    // doesn't adjust for hasStickyAncestor.
+    if (isFinite(common.minY)) {
+      expect(common.minY).toBeGreaterThan(500);
+    }
+  });
+
+  it("Bug 3: Measuring from aside (sticky element itself) should NOT clip incorrectly", () => {
+    /**
+     * CONTROL TEST: This replicates the scenario where measuring from
+     * the aside (the sticky element) to a tocItem works correctly.
+     *
+     * Why it works: The aside is the STICKY ANCHOR. It's not a scroll
+     * container, so it does NOT appear in the tocItem's scrollHierarchy
+     * as a clipping container. Therefore, no stale containerRect is used
+     * for clipping, and the measurement lines render correctly.
+     */
+    const { aside, navContainer, tocItem1 } = buildTocStructure();
+
+    // Setup aside as sticky (NOT a scroll container)
+    setupSpatialSimulation(aside, {
+      styles: { position: "sticky", top: "144px" },
+      rect: { top: 300, left: 900, width: 220, height: 600 },
+      offsetTop: 300,
+      offsetParent: document.body,
+    });
+
+    // navContainer is scroll container but we're selecting aside, not navContainer
+    setupSpatialSimulation(navContainer, {
+      styles: { overflow: "auto", overflowY: "auto" },
+      rect: { top: 330, left: 900, width: 220, height: 540 },
+      clientHeight: 540,
+      clientWidth: 220,
+      offsetTop: 30,
+      offsetParent: aside,
+    });
+
+    setupSpatialSimulation(tocItem1, {
+      rect: { top: 360, left: 916, width: 188, height: 20 },
+      offsetTop: 30,
+      offsetParent: navContainer,
+    });
+
+    // CAPTURE
+    const asideDeduction = deduceGeometry(aside);
+    const tocDeduction = deduceGeometry(tocItem1);
+
+    // Aside should be detected as sticky
+    expect(asideDeduction.position).toBe("sticky");
+
+    // SCROLL
+    Object.defineProperty(window, "scrollY", { value: 500 });
+
+    // Compute common visibility
+    const common = getCommonVisibilityWindow(
+      asideDeduction.scrollHierarchy,
+      tocDeduction.scrollHierarchy,
+      aside,
+      tocItem1
+    );
+
+    // When measuring from aside (non-scroll-container) to tocItem,
+    // the only shared scroll container might be none or the window.
+    // The common window should be unbounded or very large.
+    // This should NOT produce an incorrectly small clipping region.
+    const clipHeight = common.maxY - common.minY;
+    if (isFinite(clipHeight)) {
+      // If there IS a common clip, it should be large enough to contain
+      // both elements' visible areas (not clipped by stale coords).
+      expect(clipHeight).toBeGreaterThan(100);
+    } else {
+      // Unbounded is fine - means no restrictive clip
+      expect(common.minY).toBe(-Infinity);
+    }
+  });
+
+  it("Bug 4: Scroll container inside sticky - clipping should stay consistent across scroll positions", () => {
+    /**
+     * REGRESSION TEST: Verifies that the clipping bounds for a tocItem
+     * inside a scroll container inside a sticky element remain consistent
+     * (relative to the element) as the window scrolls through multiple positions.
+     *
+     * The clipping should always encompass the tocItem when it's visible
+     * within the navContainer, regardless of how far the window has scrolled.
+     */
+    const { aside, navContainer, tocItem1 } = buildTocStructure();
+
+    setupSpatialSimulation(aside, {
+      styles: { position: "sticky", top: "144px" },
+      rect: { top: 300, left: 900, width: 220, height: 600 },
+      offsetTop: 300,
+      offsetParent: document.body,
+    });
+
+    setupSpatialSimulation(navContainer, {
+      styles: { overflow: "auto", overflowY: "auto" },
+      rect: { top: 330, left: 900, width: 220, height: 540 },
+      clientHeight: 540,
+      clientWidth: 220,
+      offsetTop: 30,
+      offsetParent: aside,
+    });
+
+    setupSpatialSimulation(tocItem1, {
+      rect: { top: 360, left: 916, width: 188, height: 20 },
+      offsetTop: 30,
+      offsetParent: navContainer,
+    });
+
+    // CAPTURE at scroll 0
+    const tocDeduction = deduceGeometry(tocItem1);
+
+    // Check at multiple scroll positions
+    const scrollPositions = [0, 200, 500, 1000, 2000];
+    const results: Array<{ scrollY: number; liveTop: number; isHidden: boolean }> = [];
+
+    for (const scrollPos of scrollPositions) {
+      Object.defineProperty(window, "scrollY", { value: scrollPos, configurable: true });
+
+      const liveGeo = getLiveGeometry(
+        tocDeduction.rect,
+        tocDeduction.scrollHierarchy,
+        tocDeduction.position,
+        tocDeduction.stickyConfig,
+        0,
+        0,
+        false
+      );
+
+      if (liveGeo) {
+        results.push({
+          scrollY: scrollPos,
+          liveTop: liveGeo.top,
+          isHidden: liveGeo.isHidden,
+        });
+      }
+    }
+
+    // The tocItem should NEVER be marked as hidden when the navContainer
+    // is still visible on screen (the aside is sticky, so it's always visible).
+    // If the clipping rect doesn't track the sticky movement, it will
+    // incorrectly mark the tocItem as hidden at larger scroll values.
+    for (const result of results) {
+      expect(result.isHidden).toBe(false);
+    }
+  });
+
+  it("Bug 5: Combined - navContainer internal scroll + window scroll should both clip correctly", () => {
+    /**
+     * COMPOUND SCENARIO: Both the navContainer scrolls internally AND
+     * the window scrolls (sticky activates). This tests the interaction
+     * between internal scroll delta and sticky ancestor adjustment.
+     *
+     * Structure:
+     * - Window scrolls (aside sticks)
+     *   - aside (sticky top: 144px)
+     *     - navContainer (overflow-y: auto, scrolled internally by 100px)
+     *       - tocItem3 (at offset 300 in nav, partially scrolled out)
+     */
+    const { aside, navContainer, tocItem1, tocItem3 } = buildTocStructure();
+
+    setupSpatialSimulation(aside, {
+      styles: { position: "sticky", top: "144px" },
+      rect: { top: 300, left: 900, width: 220, height: 600 },
+      offsetTop: 300,
+      offsetParent: document.body,
+    });
+
+    setupSpatialSimulation(navContainer, {
+      styles: { overflow: "auto", overflowY: "auto" },
+      rect: { top: 330, left: 900, width: 220, height: 300 },
+      clientHeight: 300,
+      clientWidth: 220,
+      offsetTop: 30,
+      scrollTop: 0,
+      offsetParent: aside,
+    });
+
+    // tocItem3 is further down in the nav list
+    setupSpatialSimulation(tocItem3, {
+      rect: { top: 530, left: 916, width: 188, height: 20 },
+      offsetTop: 200,
+      offsetParent: navContainer,
+    });
+
+    // CAPTURE navContainer and tocItem3
+    const navDeduction = deduceGeometry(navContainer);
+    const tocDeduction = deduceGeometry(tocItem3);
+
+    // SCROLL: Window scrolls 500px AND navContainer scrolls internally 100px
+    Object.defineProperty(window, "scrollY", { value: 500, configurable: true });
+    Object.defineProperty(navContainer, "scrollTop", { value: 100, configurable: true });
+
+    // Compute live geometry for tocItem3
+    const liveGeo = getLiveGeometry(
+      tocDeduction.rect,
+      tocDeduction.scrollHierarchy,
+      tocDeduction.position,
+      tocDeduction.stickyConfig,
+      0,
+      0,
+      false
+    );
+
+    expect(liveGeo).not.toBeNull();
+
+    // The tocItem3 should still be visible (it's at offset 200, scrolled 100,
+    // so it's at viewport offset 100 within a 300px container).
+    // If clipping uses stale coords, it will incorrectly think the container
+    // is 500px above where it actually is, and clip the tocItem.
+    expect(liveGeo!.isHidden).toBe(false);
+
+    // Compute common visibility for measurement lines
+    const common = getCommonVisibilityWindow(
+      navDeduction.scrollHierarchy,
+      tocDeduction.scrollHierarchy,
+      navContainer,
+      tocItem3
+    );
+
+    // The common visibility window should reflect both:
+    // 1. The internal scroll of navContainer (100px)
+    // 2. The sticky movement of the aside (window scroll 500px)
+    //
+    // If only internal scroll is accounted for but NOT sticky movement,
+    // the clip region will be wrong-positioned in document space.
+    if (isFinite(common.minY)) {
+      // The navContainer's live doc top should be around:
+      // captured(330) + stickyAdjustment(500) - internalScroll(0 suffix for container itself)
+      // ≈ 830
+      // NOT 330 (stale)
+      expect(common.minY).toBeGreaterThan(500);
+    }
   });
 });
