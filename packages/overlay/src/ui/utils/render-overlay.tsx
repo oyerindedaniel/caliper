@@ -72,7 +72,9 @@ export function Overlay(props: OverlayProps) {
         res.primaryHierarchy,
         res.secondaryHierarchy,
         props.selectionMetadata().element!,
-        res.secondaryElement!
+        res.secondaryElement!,
+        res.primaryWinX,
+        res.primaryWinY
       ),
     };
 

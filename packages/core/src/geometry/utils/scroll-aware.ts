@@ -498,12 +498,17 @@ export function getTotalScrollDelta(
 
 /**
  * Find shared scroll containers between two elements.
+ * When containers have sticky ancestors, their document-space position shifts
+ * with window scroll. initWinX/initWinY specify the window scroll at capture
+ * time so the clipping bounds can be adjusted to their live positions.
  */
 export function getCommonVisibilityWindow(
   hierarchy1: ScrollState[],
   hierarchy2: ScrollState[],
   element1: Element,
-  element2: Element
+  element2: Element,
+  initWinX = 0,
+  initWinY = 0
 ) {
   const h1Map = new Map<HTMLElement, number>();
   for (let index = 0; index < hierarchy1.length; index++) {
@@ -590,8 +595,37 @@ export function getCommonVisibilityWindow(
     const ancestorDeltaX = suffix.sumsX[sIndex + 1] ?? 0;
     const ancestorDeltaY = suffix.sumsY[sIndex + 1] ?? 0;
 
-    const containerLiveLeft = containerRect.left - ancestorDeltaX;
-    const containerLiveTop = containerRect.top - ancestorDeltaY;
+    // Sticky ancestor adjustment: if this container sits inside a sticky
+    // element, its document-space position drifts with window scroll.
+    let windowScrollAdjustmentX = 0;
+    let windowScrollAdjustmentY = 0;
+
+    let hasStickyAncestorFlag: boolean;
+    if (typeof scrollState.hasStickyAncestor === "boolean") {
+      hasStickyAncestorFlag = scrollState.hasStickyAncestor;
+    } else if (scrollState.element) {
+      let checkElement: Element | null = scrollState.element;
+      hasStickyAncestorFlag = false;
+      while (checkElement && checkElement !== document.documentElement) {
+        const checkStyle = getScrollGeometryStyle(checkElement);
+        if (checkStyle.position === "sticky") {
+          hasStickyAncestorFlag = true;
+          break;
+        }
+        if (checkStyle.position === "fixed") break;
+        checkElement = checkElement.parentElement;
+      }
+    } else {
+      hasStickyAncestorFlag = false;
+    }
+
+    if (hasStickyAncestorFlag) {
+      windowScrollAdjustmentX = window.scrollX - initWinX;
+      windowScrollAdjustmentY = window.scrollY - initWinY;
+    }
+
+    const containerLiveLeft = containerRect.left - ancestorDeltaX + windowScrollAdjustmentX;
+    const containerLiveTop = containerRect.top - ancestorDeltaY + windowScrollAdjustmentY;
 
     const clipLeft = containerLiveLeft + (scrollState.element?.clientLeft ?? 0);
     const clipTop = containerLiveTop + (scrollState.element?.clientTop ?? 0);

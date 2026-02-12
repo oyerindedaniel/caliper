@@ -125,7 +125,7 @@ export default function RootLayout({
           strategy="beforeInteractive"
           crossOrigin="anonymous"
           data-config={JSON.stringify({
-            bridge: { enabled: process.env.NODE_ENV === "development" },
+            bridge: { enabled: true },
           })}
         />
         <ConfigProvider>
