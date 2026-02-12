@@ -1,9 +1,23 @@
-import type { CursorContext as SchemaContext } from "@oyerinde/caliper-schema";
+import type {
+  CursorContext as SchemaContext,
+  ScrollState as BaseScrollState,
+  PositionMode as BasePositionMode,
+  StickyConfig as BaseStickyConfig,
+} from "@oyerinde/caliper-schema";
 
 export type CursorContext = SchemaContext | null;
 export type SyncSource = "primary" | "secondary";
 
 export type ProjectionDirection = "top" | "right" | "bottom" | "left";
+
+export type PositionMode = BasePositionMode;
+
+export type StickyConfig = BaseStickyConfig;
+
+export interface ScrollState extends BaseScrollState {
+  element?: HTMLElement;
+  containerRect: DOMRect | null; // In document coordinates
+}
 
 export interface ProjectionState {
   direction: ProjectionDirection | null;

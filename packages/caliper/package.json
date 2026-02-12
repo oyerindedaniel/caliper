@@ -115,10 +115,10 @@
   "license": "MIT",
   "dependencies": {
     "ws": "8.19.0",
-    "zod": "4.3.5"
+    "zod": "4.3.5",
+    "@modelcontextprotocol/sdk": "1.25.3"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.25.3",
     "@babel/core": "^7.24.0",
     "@babel/preset-typescript": "^7.28.5",
     "@oyerinde/caliper-schema": "workspace:*",

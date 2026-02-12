@@ -32,6 +32,8 @@ export async function generateMetadata({ params }: BlogPostProps): Promise<Metad
 
   if (!post) return {};
 
+  const isWhyCaliper = post.title === "Why Caliper";
+
   return {
     title: post.title,
     description: post.excerpt,
@@ -42,12 +44,25 @@ export async function generateMetadata({ params }: BlogPostProps): Promise<Metad
       url: `/blog/${slug}`,
       siteName: "Caliper",
       locale: "en_US",
+      ...(isWhyCaliper && {
+        images: [
+          {
+            url: "/why-caliper-og.png",
+            width: 1200,
+            height: 630,
+            alt: post.title,
+          },
+        ],
+      }),
     },
     twitter: {
       card: "summary_large_image",
       title: post.title,
       description: post.excerpt,
       creator: "@fybnow",
+      ...(isWhyCaliper && {
+        images: ["/why-caliper-og.png"],
+      }),
     },
   };
 }
@@ -109,7 +124,7 @@ export default async function BlogPostPage({ params }: BlogPostProps) {
     <article className={styles.blogPostContainer} data-caliper-ignore>
       <div className="mb-32">
         <Link href="/blog" className={styles.link}>
-          ← Back to Blog
+          <span className={styles.backIcon}>←</span> <span>Back to Blog</span>
         </Link>
       </div>
       <header className={styles.blogPostHeader}>

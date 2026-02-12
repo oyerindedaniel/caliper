@@ -2,18 +2,29 @@ import { z } from "zod";
 import { ContextMetricsSchema, MeasurementResultSchema, SelectionMetadataSchema } from "./core.js";
 import { CaliperComputedStylesSchema, CaliperNodeSchema, CaliperSelectorInputSchema, WalkOptionsSchema, type WalkOptionsBase } from "./audit.js";
 import {
-    JSONRPCRequestSchema,
-    JSONRPCNotificationSchema,
-    JSONRPCResultResponseSchema,
-    JSONRPCErrorResponseSchema,
+    JSONRPCRequestSchema as _JSONRPCRequestSchema,
+    JSONRPCNotificationSchema as _JSONRPCNotificationSchema,
+    JSONRPCResultResponseSchema as _JSONRPCResultResponseSchema,
+    JSONRPCErrorResponseSchema as _JSONRPCErrorResponseSchema,
     type JSONRPCRequest,
     type JSONRPCResponse,
     type JSONRPCNotification,
-    isJSONRPCRequest,
-    isJSONRPCNotification,
-    isJSONRPCResultResponse,
-    isJSONRPCErrorResponse,
+    isJSONRPCRequest as _isJSONRPCRequest,
+    isJSONRPCNotification as _isJSONRPCNotification,
+    isJSONRPCResultResponse as _isJSONRPCResultResponse,
+    isJSONRPCErrorResponse as _isJSONRPCErrorResponse,
 } from "@modelcontextprotocol/sdk/types.js";
+
+export const JSONRPCRequestSchema = _JSONRPCRequestSchema;
+export const JSONRPCNotificationSchema = _JSONRPCNotificationSchema;
+export const JSONRPCResultResponseSchema = _JSONRPCResultResponseSchema;
+export const JSONRPCErrorResponseSchema = _JSONRPCErrorResponseSchema;
+export const isJSONRPCRequest = _isJSONRPCRequest;
+export const isJSONRPCNotification = _isJSONRPCNotification;
+export const isJSONRPCResultResponse = _isJSONRPCResultResponse;
+export const isJSONRPCErrorResponse = _isJSONRPCErrorResponse;
+
+export type { JSONRPCRequest, JSONRPCResponse, JSONRPCNotification };
 
 export const ViewportSchema = z.object({
     width: z.number(),
@@ -172,12 +183,6 @@ export type JsonRpcRequest = JSONRPCRequest;
 export type JsonRpcResponse = JSONRPCResponse;
 export type JsonRpcNotification = JSONRPCNotification;
 
-export {
-    isJSONRPCRequest,
-    isJSONRPCNotification,
-    isJSONRPCResultResponse,
-    isJSONRPCErrorResponse,
-};
 
 export class RpcFactory {
     static request<T extends Record<string, unknown>>(

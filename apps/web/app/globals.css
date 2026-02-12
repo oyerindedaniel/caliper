@@ -128,8 +128,20 @@ a {
   font-size: 14px !important;
 }
 
+.fs-16 {
+  font-size: 16px !important;
+}
+
 .fs-18 {
   font-size: 18px !important;
+}
+
+.material-symbols-outlined {
+  font-size: 18px;
+  /* Default override for material stuff */
+  display: inline-block;
+  vertical-align: middle;
+  line-height: 1;
 }
 
 .op-5 {

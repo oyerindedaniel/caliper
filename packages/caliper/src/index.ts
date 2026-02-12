@@ -33,11 +33,10 @@ export type {
   SelectionMetadata,
   CalculatorShortcuts,
   ProjectionShortcuts,
-  CaliperAgentState,
   MeasurementSystemListener,
 } from "@caliper/core";
 
-declare const process: { env: { VERSION: string; NODE_ENV: string } };
+declare const process: { env: { VERSION: string } };
 
 /**
  * The current version of the Caliper package.

@@ -51,7 +51,7 @@ export default function ChangelogPage({ changelog }: ChangelogPageProps) {
     <div data-caliper-ignore>
       <div className="mb-32">
         <Link href="/" className={styles.link}>
-          ← Back to Home
+          <span className={styles.backIcon}>←</span> <span>Back to Home</span>
         </Link>
       </div>
 

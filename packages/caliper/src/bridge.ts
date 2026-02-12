@@ -9,7 +9,27 @@ export type {
   CaliperWalkAndMeasurePayload,
   CaliperGetContextPayload,
   CaliperAgentState,
-  JsonRpcRequest,
+  ViewportState,
+  CaliperSelectorInput,
+  SelectionMetadata,
+  MeasurementResult,
+  ScrollState,
+  Rect,
+  PositionMode,
+  StickyConfig,
+  MeasurementLine,
+  CursorContext,
+  JSONRPCRequest,
+  CaliperNode,
 } from "@oyerinde/caliper-schema";
-export { CALIPER_METHODS, CaliperActionResultSchema } from "@oyerinde/caliper-schema";
-export type { OverlayInstance, CaliperCoreSystems } from "@caliper/core";
+export {
+  CALIPER_METHODS,
+  CaliperActionResultSchema,
+  CaliperAgentStateSchema,
+  CaliperSelectPayloadSchema,
+  CaliperMeasurePayloadSchema,
+  CaliperInspectPayloadSchema,
+  CaliperWalkDomPayloadSchema,
+  CaliperWalkAndMeasurePayloadSchema,
+  CaliperGetContextPayloadSchema,
+} from "@oyerinde/caliper-schema";

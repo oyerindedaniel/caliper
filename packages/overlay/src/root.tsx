@@ -311,8 +311,16 @@ export function Root(config: RootConfig) {
           const secondaryElement = system.getSecondaryElement();
           if (primaryElement && secondaryElement) {
             clipboardContent = JSON.stringify({
-              primary: buildSelectorInfo(primaryElement),
-              secondary: buildSelectorInfo(secondaryElement),
+              primary: buildSelectorInfo(primaryElement, selectionMetadata()),
+              secondary: buildSelectorInfo(secondaryElement, {
+                rect: measurementResult.secondary,
+                scrollHierarchy: measurementResult.secondaryHierarchy,
+                position: measurementResult.secondaryPosition,
+                stickyConfig: measurementResult.secondarySticky,
+                initialWindowX: measurementResult.secondaryWinX,
+                initialWindowY: measurementResult.secondaryWinY,
+                hasContainingBlock: measurementResult.secondaryHasContainingBlock,
+              }),
             });
           }
         } else if (selectedElement) {
@@ -686,8 +694,6 @@ export function Root(config: RootConfig) {
         setPinnedCalculatorPos({ x: e.clientX, y: e.clientY });
       }
     };
-
-    console.log("random log");
 
     window.addEventListener("caliper:agent-lock-change", handleAgentLockChange);
     window.addEventListener("pointerdown", handlePointerDown, { capture: true });

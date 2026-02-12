@@ -11,7 +11,7 @@ export default function NotFound() {
       </p>
       <div className={styles.errorAction}>
         <Link href="/" className={styles.link}>
-          ← Return to Landing Base
+          <span className={styles.backIcon}>←</span> <span>Return to Landing Base</span>
         </Link>
       </div>
     </div>
