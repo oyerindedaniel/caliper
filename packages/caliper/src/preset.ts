@@ -1,8 +1,7 @@
 import type {
-  OverlayConfig,
+  CaliperConfig,
   OverlayInstance,
   CaliperPlugin,
-  AgentBridgeConfig,
   ThemeConfig,
   CommandsConfig,
   AnimationConfig,
@@ -18,10 +17,9 @@ export { CaliperBridge };
 export { caliperProps };
 
 export type {
-  OverlayConfig,
+  CaliperConfig,
   OverlayInstance,
   CaliperPlugin,
-  AgentBridgeConfig,
   ThemeConfig,
   CommandsConfig,
   AnimationConfig,
@@ -64,7 +62,7 @@ export type { Extension };
  * @returns The initialized Caliper OverlayInstance.
  */
 export function init(
-  configuration?: OverlayConfig,
+  configuration?: CaliperConfig,
   extensions: Array<Extension> = []
 ): OverlayInstance {
   const caliperInstance = initCaliper(configuration);

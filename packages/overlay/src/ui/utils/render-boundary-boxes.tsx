@@ -77,9 +77,17 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
     };
   };
 
-  const liveSelectionTarget = createMemo(() => {
+  /**
+   * Guard: A zero-width AND zero-height rect means the element has been
+   * removed from the DOM or collapsed (e.g., animating out via display:none).
+   * We retain the last known good position to avoid the box snapping to 0,0.
+   */
+  const isDegenerate = (geo: LiveGeometry | null): boolean =>
+    geo !== null && geo.width === 0 && geo.height === 0;
+
+  const liveSelectionTarget = createMemo((prev: LiveGeometry | null) => {
     props.viewport.version;
-    return getLiveGeometry(
+    const geo = getLiveGeometry(
       props.metadata.rect,
       props.metadata.scrollHierarchy,
       props.metadata.position,
@@ -87,13 +95,15 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
       props.metadata.initialWindowX,
       props.metadata.initialWindowY
     );
-  });
+    if (isDegenerate(geo)) return prev;
+    return geo;
+  }, null as LiveGeometry | null);
 
-  const liveSecondaryTarget = createMemo(() => {
+  const liveSecondaryTarget = createMemo((prev: LiveGeometry | null) => {
     props.viewport.version;
     const res = props.result;
     if (!(props.isActivatePressed || props.isFrozen) || !res) return null;
-    return getLiveGeometry(
+    const geo = getLiveGeometry(
       res.secondary,
       res.secondaryHierarchy,
       res.secondaryPosition,
@@ -101,7 +111,9 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
       res.secondaryWinX,
       res.secondaryWinY
     );
-  });
+    if (isDegenerate(geo)) return prev;
+    return geo;
+  }, null as LiveGeometry | null);
 
   createEffect(
     on(

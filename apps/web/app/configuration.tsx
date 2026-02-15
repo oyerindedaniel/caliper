@@ -19,18 +19,18 @@ export function Configuration({
   const [section, setSection] = useState<ConfigSection>(initialSection ?? sections[0]!);
   const { getSelectKey } = useOS();
 
-  const overviewCode = `export interface OverlayConfig {
+  const overviewCode = `export interface CaliperConfig {
   theme?: ThemeConfig;          // Visual appearance (colors, shadows)
   commands?: CommandsConfig;    // Keyboard shortcuts
   animation?: AnimationConfig;  // Boundary box lerp behavior
-  bridge?: AgentBridgeConfig;   // Agent Bridge for AI/MCP integration
   debug?: boolean;              // Enable debug logging (default: true). All logs are stripped in production.
 }`;
 
   const bridgeCode = `export interface AgentBridgeConfig {
   enabled?: boolean;    // Toggle bridge (default: false)
   wsPort?: number;     // WebSocket port (default: 9876)
-  onStateChange?: (state: CaliperAgentState) => void; // State callback
+  onStateChange?: (state: CaliperAgentState) => void; // State callback (ESM)
+  onStateChangeGlobal?: string; // Global function name (IIFE/CDN)
 }`;
 
   const themeCode = `export interface ThemeConfig {

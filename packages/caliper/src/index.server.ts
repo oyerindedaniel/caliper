@@ -48,18 +48,15 @@ export interface AnimationConfig {
   lerpFactor?: number;
 }
 
-export interface AgentBridgeConfig {
-  enabled?: boolean;
-  wsPort?: number;
-  onStateChange?: (state: unknown) => void;
-}
-
-export interface OverlayConfig {
+export interface CaliperConfig {
   theme?: ThemeConfig;
   commands?: CommandsConfig;
   animation?: AnimationConfig;
-  bridge?: AgentBridgeConfig;
+  debug?: boolean;
 }
+
+/** @deprecated Use CaliperConfig instead */
+export type OverlayConfig = CaliperConfig;
 
 export type MeasurementSystem = unknown;
 export type SelectionSystem = unknown;
@@ -69,19 +66,19 @@ export type Systems = {
   selectionSystem: SelectionSystem;
 };
 
-export function init(_config?: OverlayConfig): OverlayInstance {
+export function init(_config?: CaliperConfig): OverlayInstance {
   return {
-    mount: () => {},
-    dispose: () => {},
+    mount: () => { },
+    dispose: () => { },
     getSystems: () => null,
-    waitForSystems: () => new Promise(() => {}),
+    waitForSystems: () => new Promise(() => { }),
     use: () => ({}) as OverlayInstance,
     mounted: false,
   };
 }
 
-export const setConfig = (_config: OverlayConfig): void => {};
-export const getConfig = (): OverlayConfig => ({});
+export const setConfig = (_config: CaliperConfig): void => { };
+export const getConfig = (): CaliperConfig => ({});
 export const caliperProps = (marker: string) => ({
   "data-caliper-marker": marker,
 });

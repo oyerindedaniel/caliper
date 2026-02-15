@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode, useLayoutEffect } from "react";
-import { type OverlayConfig } from "@oyerinde/caliper";
+import { type CaliperConfig } from "@oyerinde/caliper";
 import {
   DEFAULT_COMMANDS,
   DEFAULT_THEME as CORE_THEME,
@@ -85,7 +85,7 @@ interface ConfigContextType {
   updateTheme: (key: keyof ThemeConfig, value: string) => void;
   applyConfig: () => void;
   resetConfig: () => void;
-  getCaliperConfig: () => OverlayConfig;
+  getCaliperConfig: () => CaliperConfig;
 }
 
 const ConfigContext = createContext<ConfigContextType | null>(null);
@@ -156,7 +156,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const getCaliperConfig = (): OverlayConfig => ({
+  const getCaliperConfig = (): CaliperConfig => ({
     theme: appliedConfig.theme,
     commands: {
       activate: appliedConfig.commands.activate,

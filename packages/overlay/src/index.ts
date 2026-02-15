@@ -1,7 +1,7 @@
 import { render } from "solid-js/web";
 import { Root } from "./root.jsx";
 import type {
-  OverlayConfig,
+  CaliperConfig,
   CaliperCoreSystems as Systems,
   OverlayInstance,
   CaliperPlugin,
@@ -60,13 +60,13 @@ let activeInstance: OverlayInstance | null = null;
  * @param config - The initial configuration object to merge with global defaults.
  * @returns An OverlayInstance with mount, dispose, and plugin management capabilities.
  */
-export function createOverlay(config?: OverlayConfig): OverlayInstance {
+export function createOverlay(config?: CaliperConfig): OverlayInstance {
   if (!IS_BROWSER) {
     return {
-      mount: () => {},
-      dispose: () => {},
+      mount: () => { },
+      dispose: () => { },
       getSystems: () => null,
-      waitForSystems: () => new Promise(() => {}),
+      waitForSystems: () => new Promise(() => { }),
       use: () => instance,
       mounted: false,
     };
@@ -83,7 +83,7 @@ export function createOverlay(config?: OverlayConfig): OverlayInstance {
   }
 
   const windowConfig = getConfig();
-  const mergedConfig: OverlayConfig = {
+  const mergedConfig: CaliperConfig = {
     theme: { ...windowConfig?.theme, ...config?.theme },
     commands: {
       ...windowConfig?.commands,

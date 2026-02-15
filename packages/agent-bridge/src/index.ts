@@ -124,6 +124,14 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
           const disposeSync = initStateSync(stateStore, systems, (state) => {
             wsBridge.sendStateUpdate(state);
             config.onStateChange?.(state);
+            if (config.onStateChangeGlobal) {
+              const globalCallback = (window as unknown as Record<string, unknown>)[
+                config.onStateChangeGlobal
+              ];
+              if (typeof globalCallback === "function") {
+                (globalCallback as (s: typeof state) => void)(state);
+              }
+            }
           });
 
           window.dispatchCaliperIntent = async (
