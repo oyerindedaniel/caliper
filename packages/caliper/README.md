@@ -183,7 +183,7 @@ const caliper = init();
 caliper.use(
   CaliperBridge({
     enabled: true,
-    wsUrl: "ws://localhost:9876",
+    wsPort: 9876,
   })
 );
 ```
@@ -262,10 +262,6 @@ init({
   animation: {
     enabled: true, // Smooth hover box
     lerpFactor: 0.25, // Fluidity (low = slower)
-  },
-  bridge: {
-    enabled: true, // Connect to AI Agents
-    wsPort: 9876, // Port for MCP relay
   },
 });
 ```

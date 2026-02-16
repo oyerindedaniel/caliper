@@ -76,20 +76,23 @@ export interface AgentBridgeConfig {
   wsPort?: number;
   /** Callback for agent state changes */
   onStateChange?: (state: CaliperAgentState) => void;
+  /** Name of a global window function to call on state changes (IIFE/CDN-safe, JSON-serializable) */
+  onStateChangeGlobal?: string;
 }
 
-export interface OverlayConfig {
+export interface CaliperConfig {
   /** Customize the visual appearance of the overlay (colors, shadows). */
   theme?: ThemeConfig;
   /** Customize keyboard shortcuts for all interactions. */
   commands?: CommandsConfig;
   /** Control the boundary box lerp animation behavior. */
   animation?: AnimationConfig;
-  /** Configure the Agent Bridge for AI/MCP integration. */
-  bridge?: AgentBridgeConfig;
   /** Enable debug logging (default: true). All logs are stripped from production builds. */
   debug?: boolean;
 }
+
+/** @deprecated Use CaliperConfig instead */
+export type OverlayConfig = CaliperConfig;
 
 export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
   activate: "Alt",

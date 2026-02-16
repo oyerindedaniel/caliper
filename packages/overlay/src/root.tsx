@@ -400,12 +400,14 @@ export function Root(config: RootConfig) {
           hoveredElement.contains(lastHoveredElement) &&
           hoveredElement !== lastHoveredElement;
 
+        const lastHoveredDetached = lastHoveredElement && !document.contains(lastHoveredElement);
+
         if (isAlt) {
           if (system) {
             measureDelegate.execute(!!isAncestor, selectedElement, cursorPoint, hoveredElement);
           }
         } else if (state !== "FROZEN") {
-          if (hoveredElement) {
+          if (hoveredElement && !lastHoveredDetached) {
             selectionDelegate.execute(!!isAncestor, hoveredElement);
           }
         }
@@ -853,14 +855,14 @@ export function Root(config: RootConfig) {
 
     const runUpdates = () => {
       if (sentinelResized || primaryChanged) {
-        if (observedPrimary) {
+        if (observedPrimary && document.contains(observedPrimary)) {
           const rect = observedPrimary.getBoundingClientRect();
           selectionSystem?.updateRect(rect);
           if (system) system.updatePrimaryRect(rect);
         }
       }
       if (sentinelResized || secondaryChanged) {
-        if (observedSecondary) {
+        if (observedSecondary && document.contains(observedSecondary)) {
           const rect = observedSecondary.getBoundingClientRect();
           system?.updateSecondaryRect(rect);
         }

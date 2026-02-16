@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2026-02-16
+
+### Refactored
+
+- **Configuration Engine**: Renamed `OverlayConfig` to `CaliperConfig` to reflect its expanded scope.
+- **Bridge Decoupling**: Moved `bridge` configuration out of the core config type. It is now exclusively a plugin concern, with specialized `IIFEConfig` handling for CDN/script-tag users.
+
+### Added
+
+- **Agent Bridge Serialization**: Introduced `onStateChangeGlobal` to allow string-based callback names in `data-config` for IIFE/CDN environments.
+
+### Fixed
+
+- **Boundary Box Snapping**: Fixed a bug where boxes would snap to `(0,0)` when elements animated out or were removed from the DOM. The overlay now retains the last known good position.
+
 ## [0.2.0] - 2026-02-12
 
 ### Added

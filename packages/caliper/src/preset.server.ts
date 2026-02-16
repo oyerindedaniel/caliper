@@ -20,25 +20,22 @@ export interface CaliperPlugin {
   dispose?: () => void;
 }
 
-export interface AgentBridgeConfig {
-  enabled?: boolean;
-  wsPort?: number;
-  onStateChange?: (state: unknown) => void;
-}
-
-export interface OverlayConfig {
+export interface CaliperConfig {
   theme?: Record<string, string>;
   commands?: Record<string, unknown>;
   animation?: Record<string, unknown>;
-  bridge?: AgentBridgeConfig;
+  debug?: boolean;
 }
+
+/** @deprecated Use CaliperConfig instead */
+export type OverlayConfig = CaliperConfig;
 
 export type Extension = ((instance: OverlayInstance) => void) | CaliperPlugin;
 
 /**
  * CaliperBridge stub for server-side execution.
  */
-export function CaliperBridge(_configuration?: AgentBridgeConfig): CaliperPlugin {
+export function CaliperBridge(_configuration?: Record<string, unknown>): CaliperPlugin {
   return {
     name: "agent-bridge-stub",
     install: () => {},
@@ -50,7 +47,7 @@ export function CaliperBridge(_configuration?: AgentBridgeConfig): CaliperPlugin
  * server-side stub for the preset initialization.
  */
 export async function init(
-  _configuration?: OverlayConfig,
+  _configuration?: CaliperConfig,
   _extensions: Array<Extension> = []
 ): Promise<OverlayInstance> {
   return {

@@ -77,31 +77,55 @@ export function BoundaryBoxes(props: BoundaryBoxesProps) {
     };
   };
 
-  const liveSelectionTarget = createMemo(() => {
-    props.viewport.version;
-    return getLiveGeometry(
-      props.metadata.rect,
-      props.metadata.scrollHierarchy,
-      props.metadata.position,
-      props.metadata.stickyConfig,
-      props.metadata.initialWindowX,
-      props.metadata.initialWindowY
-    );
-  });
+  const isDegenerate = (geo: LiveGeometry | null): boolean =>
+    geo !== null && geo.width === 0 && geo.height === 0;
 
-  const liveSecondaryTarget = createMemo(() => {
-    props.viewport.version;
-    const res = props.result;
-    if (!(props.isActivatePressed || props.isFrozen) || !res) return null;
-    return getLiveGeometry(
-      res.secondary,
-      res.secondaryHierarchy,
-      res.secondaryPosition,
-      res.secondarySticky,
-      res.secondaryWinX,
-      res.secondaryWinY
-    );
-  });
+  const liveSelectionTarget = createMemo(
+    (prev: LiveGeometry | null) => {
+      props.viewport.version;
+
+      if (prev && props.metadata.element && !document.contains(props.metadata.element)) {
+        return prev;
+      }
+
+      const geo = getLiveGeometry(
+        props.metadata.rect,
+        props.metadata.scrollHierarchy,
+        props.metadata.position,
+        props.metadata.stickyConfig,
+        props.metadata.initialWindowX,
+        props.metadata.initialWindowY
+      );
+      if (isDegenerate(geo)) return prev;
+      return geo;
+    },
+    null as LiveGeometry | null
+  );
+
+  const liveSecondaryTarget = createMemo(
+    (prev: LiveGeometry | null) => {
+      props.viewport.version;
+      const res = props.result;
+      if (!(props.isActivatePressed || props.isFrozen) || !res) return null;
+
+      if (prev && res.secondaryElement && !document.contains(res.secondaryElement)) {
+        return prev;
+      }
+
+      const geo = getLiveGeometry(
+        res.secondary,
+        res.secondaryHierarchy,
+        res.secondaryPosition,
+        res.secondarySticky,
+        res.secondaryWinX,
+        res.secondaryWinY
+      );
+
+      if (isDegenerate(geo)) return prev;
+      return geo;
+    },
+    null as LiveGeometry | null
+  );
 
   createEffect(
     on(

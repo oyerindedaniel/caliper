@@ -1,5 +1,5 @@
 import type {
-  OverlayConfig,
+  CaliperConfig,
   ThemeConfig,
   AnimationConfig,
   CommandsConfig,
@@ -128,7 +128,7 @@ export function mergeTheme(userTheme?: ThemeConfig): DeepRequired<ThemeConfig> {
 
 declare global {
   interface Window {
-    __CALIPER_CONFIG__?: OverlayConfig;
+    __CALIPER_CONFIG__?: CaliperConfig;
   }
 }
 
@@ -139,9 +139,9 @@ declare global {
  * 1. Global window object (`window.__CALIPER_CONFIG__`)
  * 2. `data-config` attribute on the script tag (useful for UMD/CDN usage)
  *
- * @returns The resolved OverlayConfig object.
+ * @returns The resolved CaliperConfig object.
  */
-export function getConfig(): OverlayConfig {
+export function getConfig(): CaliperConfig {
   if (typeof window !== "undefined") {
     const windowConfig = window.__CALIPER_CONFIG__ ?? {};
 
@@ -155,14 +155,13 @@ export function getConfig(): OverlayConfig {
 
     if (dataConfig) {
       try {
-        const parsed = JSON.parse(dataConfig) as OverlayConfig;
+        const parsed = JSON.parse(dataConfig) as CaliperConfig;
         return {
           ...windowConfig,
           ...parsed,
           theme: { ...windowConfig.theme, ...parsed.theme },
           commands: { ...windowConfig.commands, ...parsed.commands },
           animation: { ...windowConfig.animation, ...parsed.animation },
-          bridge: { ...windowConfig.bridge, ...parsed.bridge },
         };
       } catch (e) {
         console.warn("[CALIPER] Failed to parse data-config attribute", e);
@@ -190,7 +189,7 @@ export function getConfig(): OverlayConfig {
  * });
  * ```
  */
-export function setConfig(config: OverlayConfig): void {
+export function setConfig(config: CaliperConfig): void {
   if (typeof window !== "undefined") {
     window.__CALIPER_CONFIG__ = config;
   }

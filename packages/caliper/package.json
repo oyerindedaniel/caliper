@@ -1,6 +1,6 @@
 {
   "name": "@oyerinde/caliper",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "High-precision browser measurements, projections, and layout auditing",
   "type": "module",
   "main": "dist/index.cjs",
@@ -10,7 +10,7 @@
     "caliper": "./dist/mcp.js"
   },
   "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
-  "homepage": "https://github.com/oyerindedaniel/caliper#readme",
+  "homepage": "https://caliper.danieloyerinde.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/oyerindedaniel/caliper.git",

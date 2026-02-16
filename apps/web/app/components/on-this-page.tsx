@@ -47,6 +47,9 @@ function OnThisPageContent() {
     }
   }, [activeId]);
 
+  const isScrollingFromClick = useRef(false);
+  const scrollClickTimer = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     const contentSections = document.querySelectorAll("section[id], h2[id]");
     const foundTocItems = Array.from(contentSections)
@@ -76,6 +79,8 @@ function OnThisPageContent() {
 
     const intersectionObserver = new IntersectionObserver(
       (entries) => {
+        if (isScrollingFromClick.current) return;
+
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             const id = entry.target.id;
@@ -93,6 +98,7 @@ function OnThisPageContent() {
 
     return () => {
       intersectionObserver.disconnect();
+      if (scrollClickTimer.current) clearTimeout(scrollClickTimer.current);
     };
   }, [pathname]);
 
@@ -114,6 +120,12 @@ function OnThisPageContent() {
   const handleTocClick = (sectionId: string) => {
     const targetSectionElement = document.getElementById(sectionId);
     if (targetSectionElement) {
+      isScrollingFromClick.current = true;
+      if (scrollClickTimer.current) clearTimeout(scrollClickTimer.current);
+      scrollClickTimer.current = setTimeout(() => {
+        isScrollingFromClick.current = false;
+      }, 800);
+
       const scrollTargetTop =
         targetSectionElement.getBoundingClientRect().top + window.pageYOffset - 80;
       window.scrollTo({ top: scrollTargetTop, behavior: "smooth" });
