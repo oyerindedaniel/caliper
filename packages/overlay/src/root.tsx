@@ -341,7 +341,7 @@ export function Root(config: RootConfig) {
                 copyTimeoutId = null;
               }, 1500);
             })
-            .catch(() => { });
+            .catch(() => {});
         }
         return;
       }
@@ -400,8 +400,7 @@ export function Root(config: RootConfig) {
           hoveredElement.contains(lastHoveredElement) &&
           hoveredElement !== lastHoveredElement;
 
-        const lastHoveredDetached =
-          lastHoveredElement && !document.contains(lastHoveredElement);
+        const lastHoveredDetached = lastHoveredElement && !document.contains(lastHoveredElement);
 
         if (isAlt) {
           if (system) {
@@ -846,7 +845,6 @@ export function Root(config: RootConfig) {
       observedSecondary = secondaryEl;
     }
   };
-
 
   createEffect(() => {
     let resizeTimer: number | null = null;

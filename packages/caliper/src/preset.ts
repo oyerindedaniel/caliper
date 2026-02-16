@@ -5,6 +5,7 @@ import type {
   ThemeConfig,
   CommandsConfig,
   AnimationConfig,
+  AgentBridgeConfig,
   CaliperCoreSystems,
   CaliperAgentState,
 } from "@caliper/core";
@@ -23,7 +24,8 @@ export type {
   ThemeConfig,
   CommandsConfig,
   AnimationConfig,
-  CaliperCoreSystems,
+  AgentBridgeConfig,
+  CaliperCoreSystems as Systems,
   CaliperAgentState,
 };
 

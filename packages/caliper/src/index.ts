@@ -22,6 +22,7 @@ export type {
   ThemeConfig,
   CommandsConfig,
   AnimationConfig,
+  AgentBridgeConfig,
   MeasurementSystem,
   SelectionSystem,
   MeasurementState,

@@ -120,7 +120,6 @@ function OnThisPageContent() {
   const handleTocClick = (sectionId: string) => {
     const targetSectionElement = document.getElementById(sectionId);
     if (targetSectionElement) {
-
       isScrollingFromClick.current = true;
       if (scrollClickTimer.current) clearTimeout(scrollClickTimer.current);
       scrollClickTimer.current = setTimeout(() => {
