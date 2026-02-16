@@ -12,6 +12,10 @@ import {
   isId,
   type CaliperParams,
   isCaliperActionResult,
+  isBridgeNotification,
+  isBridgeErrorResponse,
+  isBridgeResultResponse,
+  CaliperNodeSchema,
 } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -139,46 +143,7 @@ export class BridgeService extends EventEmitter {
 
           const message = result.data;
 
-          if ("id" in message) {
-            if ("result" in message) {
-              const resolve = this.pendingCalls.get(String(message.id));
-
-              if (resolve) {
-                const finalResult = message.result;
-
-                if (isCaliperActionResult(finalResult)) {
-                  if (
-                    finalResult.success &&
-                    finalResult.method === CALIPER_METHODS.WALK_AND_MEASURE &&
-                    binaryPayload
-                  ) {
-                    try {
-                      const root = BitBridge.deserialize(binaryPayload);
-                      if ("walkResult" in finalResult) {
-                        finalResult.walkResult.root = root;
-                      }
-                    } catch (error) {
-                      logger.error("Bit-Bridge reconstruction failed:", error);
-                    }
-                  }
-                  resolve(finalResult);
-                } else {
-                  // If we reach here, we have a result that doesn't match our specific schemas but is valid JSON-RPC.
-                  // Since we expect strict types, we treat this as a validation error or unexpected type.
-                  resolve({ error: "Unexpected result format received from bridge" });
-                }
-                this.pendingCalls.delete(String(message.id));
-              }
-            } else if ("error" in message) {
-              if (message.id !== null) {
-                const resolve = this.pendingCalls.get(String(message.id));
-                if (resolve) {
-                  resolve({ error: message.error.message });
-                  this.pendingCalls.delete(String(message.id));
-                }
-              }
-            }
-          } else if ("method" in message) {
+          if (isBridgeNotification(message)) {
             if (message.method === CALIPER_METHODS.REGISTER_TAB) {
               const { tabId: newTabId, url, title, isFocused } = message.params;
               tabId = newTabId;
@@ -195,9 +160,47 @@ export class BridgeService extends EventEmitter {
                 tabManager.updateTab(tabId, isFocused);
               }
             } else if (message.method === CALIPER_METHODS.STATE_UPDATE) {
-              const state = message.params;
-              this.emit(BRIDGE_EVENTS.STATE, state);
+              this.emit(BRIDGE_EVENTS.STATE, message.params);
             }
+            return;
+          }
+
+          if (isBridgeErrorResponse(message)) {
+            if (message.id !== null) {
+              const resolve = this.pendingCalls.get(String(message.id));
+              if (resolve) {
+                resolve({ error: message.error.message });
+                this.pendingCalls.delete(String(message.id));
+              }
+            }
+            return;
+          }
+
+          if (isBridgeResultResponse(message)) {
+            const resolve = this.pendingCalls.get(String(message.id));
+            if (!resolve) return;
+
+            const finalResult = message.result;
+
+            if (isCaliperActionResult(finalResult)) {
+              if ("walkResult" in finalResult && binaryPayload) {
+                try {
+                  const raw = BitBridge.deserialize(binaryPayload);
+                  const parsed = CaliperNodeSchema.safeParse(raw);
+                  if (parsed.success) {
+                    finalResult.walkResult.root = parsed.data;
+                  } else {
+                    logger.error("Bit-Bridge deserialized node failed schema validation", z.treeifyError(parsed.error));
+                  }
+                } catch (error) {
+                  logger.error("Bit-Bridge reconstruction failed:", error);
+                }
+              }
+              resolve(finalResult);
+            } else {
+              resolve({ error: "Unexpected result format received from bridge" });
+            }
+            this.pendingCalls.delete(String(message.id));
           }
         } catch (error: unknown) {
           logger.error("WS Message Processing Error:", error);
