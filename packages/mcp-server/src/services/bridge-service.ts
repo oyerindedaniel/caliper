@@ -162,12 +162,6 @@ export class BridgeService extends EventEmitter {
                     }
                   }
                   resolve(finalResult);
-                } else if (
-                  finalResult &&
-                  typeof finalResult === "object" &&
-                  "error" in finalResult
-                ) {
-                  resolve(finalResult as { error: string });
                 } else {
                   // If we reach here, we have a result that doesn't match our specific schemas but is valid JSON-RPC.
                   // Since we expect strict types, we treat this as a validation error or unexpected type.
