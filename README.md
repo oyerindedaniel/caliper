@@ -39,6 +39,7 @@ The AI agent gained "layout eyes" and can perform high-precision audits, measure
 Caliper is designed to be side-effect-free in production and easy to integrate into any modern stack.
 
 ### 1. Next.js (App Router)
+
 ```tsx
 // app/layout.tsx
 import Script from "next/script";
@@ -50,7 +51,7 @@ export default function RootLayout({ children }) {
         {process.env.NODE_ENV === "development" && (
           <Script
             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-            data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
+            data-config={JSON.stringify({ theme: { primary: "#AC2323" } })}
             strategy="afterInteractive"
           />
         )}
@@ -62,19 +63,21 @@ export default function RootLayout({ children }) {
 ```
 
 ### 2. Vite
+
 ```html
 <!-- index.html -->
 <script type="module">
-if (import.meta.env.DEV) {
-  // Run npm i @oyerinde/caliper then
-  import("@oyerinde/caliper").then(({ init }) => {
-    init({ theme: { primary: '#AC2323' } });
-  });
-}
+  if (import.meta.env.DEV) {
+    // Run npm i @oyerinde/caliper then
+    import("@oyerinde/caliper").then(({ init }) => {
+      init({ theme: { primary: "#AC2323" } });
+    });
+  }
 </script>
 ```
 
 ### 3. HTML (Plain)
+
 ```html
 <!-- index.html -->
 <script type="module">
@@ -89,12 +92,13 @@ if (import.meta.env.DEV) {
 ```
 
 ### 4. Astro
+
 ```html
 <!-- src/components/Caliper.astro -->
 <script type="module" is:inline>
   if (import.meta.env.DEV) {
     // Run npm i @oyerinde/caliper then
-    import('@oyerinde/caliper').then(({ init }) => {
+    import("@oyerinde/caliper").then(({ init }) => {
       init();
     });
   }
@@ -102,6 +106,7 @@ if (import.meta.env.DEV) {
 ```
 
 ### 5. Nuxt
+
 ```ts
 // nuxt.config.ts
 export default defineNuxtConfig({
@@ -109,43 +114,45 @@ export default defineNuxtConfig({
     head: {
       script: [
         {
-          src: 'https://unpkg.com/@oyerinde/caliper/dist/index.global.js',
-          'data-config': JSON.stringify({ theme: { primary: '#AC2323' } }),
-          defer: true
-        }
-      ]
-    }
-  }
+          src: "https://unpkg.com/@oyerinde/caliper/dist/index.global.js",
+          "data-config": JSON.stringify({ theme: { primary: "#AC2323" } }),
+          defer: true,
+        },
+      ],
+    },
+  },
 });
 ```
 
 ### 6. Vue
+
 ```html
 <!-- index.html -->
 <script type="module">
   if (import.meta.env.DEV) {
     // Run npm i @oyerinde/caliper then
     import("@oyerinde/caliper").then(({ init }) => {
-      init({ theme: { primary: '#AC2323' } });
+      init({ theme: { primary: "#AC2323" } });
     });
   }
 </script>
 ```
 
 ### 7. TanStack Start
+
 ```tsx
 // root.tsx
-import { Meta, Scripts } from '@tanstack/react-router';
+import { Meta, Scripts } from "@tanstack/react-router";
 
 export function Root() {
   return (
     <html lang="en">
       <head>
         <Meta />
-        {process.env.NODE_ENV === 'development' && (
+        {process.env.NODE_ENV === "development" && (
           <script
             src="https://unpkg.com/@oyerinde/caliper/dist/index.global.js"
-            data-config={JSON.stringify({ theme: { primary: '#AC2323' } })}
+            data-config={JSON.stringify({ theme: { primary: "#AC2323" } })}
             async
           />
         )}
@@ -169,38 +176,45 @@ import { init } from "@oyerinde/caliper";
 
 init({
   theme: {
-    primary: "#18A0FB",         // Main brand color
-    secondary: "#F24E1E",       // Accent color (for highlights)
-    calcBg: "rgba(30,30,30,0.95)", 
+    primary: "#18A0FB", // Main brand color
+    secondary: "#F24E1E", // Accent color (for highlights)
+    calcBg: "rgba(30,30,30,0.95)",
     calcShadow: "rgba(0,0,0,0.5)",
     calcOpHighlight: "#18A0FB", // Operator pulse color
     calcText: "#FFFFFF",
     text: "#FFFFFF",
-    projection: "#9B51E4",      // Edge projection lines
-    ruler: "#18A0FB"            // Ruler/guideline color
+    projection: "#9B51E4", // Edge projection lines
+    ruler: "#18A0FB", // Ruler/guideline color
   },
   commands: {
-    activate: "Alt",            // Reveal overlay
-    freeze: " ",                // Key to lock lines
-    select: "Control",          // Key to select (held)
-    clear: "Escape",            // Clear measurements
-    ruler: "r",                 // Ruler (Shift+r)
+    activate: "Alt", // Reveal overlay
+    freeze: " ", // Key to lock lines
+    select: "Control", // Key to select (held)
+    clear: "Escape", // Clear measurements
+    ruler: "r", // Ruler (Shift+r)
     selectionHoldDuration: 250, // Select hold-time (ms)
     calculator: {
-      top: "t", right: "r", bottom: "b", left: "l", distance: "g"
+      top: "t",
+      right: "r",
+      bottom: "b",
+      left: "l",
+      distance: "g",
     },
     projection: {
-      top: "w", left: "a", bottom: "s", right: "d"
-    }
+      top: "w",
+      left: "a",
+      bottom: "s",
+      right: "d",
+    },
   },
   animation: {
-    enabled: true,              // Smooth hover box
-    lerpFactor: 0.25            // Fluidity (low = slower)
+    enabled: true, // Smooth hover box
+    lerpFactor: 0.25, // Fluidity (low = slower)
   },
   bridge: {
-    enabled: true,              // Connect to AI Agents
-    wsPort: 9876                // Port for MCP relay
-  }
+    enabled: true, // Connect to AI Agents
+    wsPort: 9876, // Port for MCP relay
+  },
 });
 ```
 
@@ -219,6 +233,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 ## Interaction Guide ⌨️
 
 ### Measurements
+
 - **Cmd/Ctrl + Click + Hold** (250ms) — Select an element.
 - **Right-Click** — Copy element metadata (selector, text, ID) when selected.
 - **Hover** — View relative distances to target.
@@ -226,12 +241,14 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 - **Space** — Freeze the current state.
 
 ### Analysis tools
+
 - **W / A / S / D** — Trigger edge projections.
 - **Shift + R** — Create a pair of vertical and horizontal guidelines at the cursor.
 - **Numeric Keypad** — Type numbers while projecting to set specific edge distances.
 - **Escape** — Clear all active measurements, rulers, and projections.
 
 ### Ruler Precision
+
 - **Arrow Keys** — Nudge selected ruler lines by 1px.
 - **Shift + Arrows** — Nudge by 10px.
 - **Option/Alt + Arrows** — Nudge by 0.1px for sub-pixel auditing.
@@ -244,9 +261,6 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 ## License ⚖️
 
 This project is licensed under the **MIT License**.
-
-- **Allowed**: Personal and commercial use, modification, and distribution.
-- **Open**: Completely permissive with no restrictions on derivative works or competition.
 
 ---
 

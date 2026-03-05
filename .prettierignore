@@ -24,3 +24,5 @@ yarn.lock
 .DS_Store
 *.pem
 coverage
+
+*.md

@@ -2342,14 +2342,26 @@ describe("TOC STICKY CLIPPING BUG", () => {
     });
 
     vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
-      top: -300, left: 0, width: 400, height: 1500,
-      bottom: 1200, right: 400, x: 0, y: -300,
+      top: -300,
+      left: 0,
+      width: 400,
+      height: 1500,
+      bottom: 1200,
+      right: 400,
+      x: 0,
+      y: -300,
       toJSON: () => "",
     } as DOMRect);
 
     vi.spyOn(stickyChild, "getBoundingClientRect").mockReturnValue({
-      top: 20, left: 50, width: 100, height: 40,
-      bottom: 60, right: 150, x: 50, y: 20,
+      top: 20,
+      left: 50,
+      width: 100,
+      height: 40,
+      bottom: 60,
+      right: 150,
+      x: 50,
+      y: 20,
       toJSON: () => "",
     } as DOMRect);
 
@@ -2407,14 +2419,26 @@ describe("TOC STICKY CLIPPING BUG", () => {
     });
 
     vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
-      top: -500, left: 0, width: 400, height: 1500,
-      bottom: 1000, right: 400, x: 0, y: -500,
+      top: -500,
+      left: 0,
+      width: 400,
+      height: 1500,
+      bottom: 1000,
+      right: 400,
+      x: 0,
+      y: -500,
       toJSON: () => "",
     } as DOMRect);
 
     vi.spyOn(stickyChild, "getBoundingClientRect").mockReturnValue({
-      top: 20, left: 50, width: 100, height: 40,
-      bottom: 60, right: 150, x: 50, y: 20,
+      top: 20,
+      left: 50,
+      width: 100,
+      height: 40,
+      bottom: 60,
+      right: 150,
+      x: 50,
+      y: 20,
       toJSON: () => "",
     } as DOMRect);
 
@@ -2451,22 +2475,42 @@ describe("TOC STICKY CLIPPING BUG", () => {
 
     // LEFT LINE
     const leftStart = getLivePoint(
-      leftLine.start, "primary", leftLine,      // startSync = "primary"
-      primaryDelta, secondaryDelta, 0, 0
+      leftLine.start,
+      "primary",
+      leftLine, // startSync = "primary"
+      primaryDelta,
+      secondaryDelta,
+      0,
+      0
     );
     const leftEnd = getLivePoint(
-      leftLine.end, "secondary", leftLine,       // endSync = "secondary"
-      primaryDelta, secondaryDelta, 0, 0
+      leftLine.end,
+      "secondary",
+      leftLine, // endSync = "secondary"
+      primaryDelta,
+      secondaryDelta,
+      0,
+      0
     );
 
     // RIGHT LINE
     const rightStart = getLivePoint(
-      rightLine.start, "secondary", rightLine,   // startSync = "secondary"
-      primaryDelta, secondaryDelta, 0, 0
+      rightLine.start,
+      "secondary",
+      rightLine, // startSync = "secondary"
+      primaryDelta,
+      secondaryDelta,
+      0,
+      0
     );
     const rightEnd = getLivePoint(
-      rightLine.end, "primary", rightLine,        // endSync = "primary"
-      primaryDelta, secondaryDelta, 0, 0
+      rightLine.end,
+      "primary",
+      rightLine, // endSync = "primary"
+      primaryDelta,
+      secondaryDelta,
+      0,
+      0
     );
 
     // The child's live document-space center Y should be at:
