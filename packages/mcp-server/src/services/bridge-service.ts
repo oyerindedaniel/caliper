@@ -58,10 +58,8 @@ export class BridgeService extends EventEmitter {
             resolve();
           });
 
-          server.on("error", (error: unknown) => {
-            const err = error as { code?: string; message?: string };
-
-            if (err.code === "EADDRINUSE" && remaining > 0) {
+          server.on("error", (error: NodeJS.ErrnoException) => {
+            if (error.code === "EADDRINUSE" && remaining > 0) {
               const attemptNum = retries - remaining + 1;
               const delay = getExponentialBackoff(attemptNum - 1, 500);
 
@@ -78,7 +76,7 @@ export class BridgeService extends EventEmitter {
               }, delay);
             } else {
               const errorMessage =
-                err.code === "EADDRINUSE"
+                error.code === "EADDRINUSE"
                   ? `Port ${currentPort} is already in use by another process. Please close the other instance of Caliper or use a different port.`
                   : `WebSocket server error: ${String(error)}`;
 
@@ -190,7 +188,10 @@ export class BridgeService extends EventEmitter {
                   if (parsed.success) {
                     finalResult.walkResult.root = parsed.data;
                   } else {
-                    logger.error("Bit-Bridge deserialized node failed schema validation", z.treeifyError(parsed.error));
+                    logger.error(
+                      "Bit-Bridge deserialized node failed schema validation",
+                      z.treeifyError(parsed.error)
+                    );
                   }
                 } catch (error) {
                   logger.error("Bit-Bridge reconstruction failed:", error);
