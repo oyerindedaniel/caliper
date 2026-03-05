@@ -254,7 +254,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 - **Option/Alt + Arrows** — Nudge by 0.1px for sub-pixel auditing.
 - **Magnetic Snap** — Rulers automatically snap to active projection lines.
 - **Chained Measurement** — Link multiple parallel rulers with **Shift + Click** to reveal gaps.
-- **Auto-Focus** — Typing operators (**+ - \* / .**) instantly switches focus to the calculator.
+- **Auto-Focus** — Typing operators (**+ - * / .**) instantly switches focus to the calculator.
 
 ---
 
