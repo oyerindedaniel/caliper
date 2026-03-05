@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2] - 2026-03-05
+
+### Fixed
+
+- **Geometry Engine**: Fixed measurement breakout on sticky elements during scroll.
+
 ## [0.2.1] - 2026-02-16
 
 ### Refactored
@@ -15,7 +21,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- **Boundary Box Snapping**: Fixed a bug where boxes would snap to `(0,0)` when elements animated out or were removed from the DOM. The overlay now retains the last known good position.
+- **Boundary Box Snapping**: Fixed boxes snapping to (0,0) by retaining last known position for detached or animating elements.
 
 ## [0.2.0] - 2026-02-12
 

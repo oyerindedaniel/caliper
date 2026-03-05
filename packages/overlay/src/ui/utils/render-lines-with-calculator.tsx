@@ -106,12 +106,12 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
               }
 
               if (line.type === "top" || line.type === "bottom") {
-                // If start is primary, end follows start.x, vice versa.
-                if (line.startSync === "primary") end.x = start.x;
-                else start.x = end.x;
+                // Align axis to the inner (target) element endpoint
+                if (line.type === "top") start.x = end.x;
+                else end.x = start.x;
               } else if (line.type === "left" || line.type === "right") {
-                if (line.startSync === "primary") end.y = start.y;
-                else start.y = end.y;
+                if (line.type === "left") start.y = end.y;
+                else end.y = start.y;
               }
 
               let liveValue = 0;

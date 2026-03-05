@@ -2256,4 +2256,257 @@ describe("TOC STICKY CLIPPING BUG", () => {
       expect(common.minY).toBeGreaterThan(500);
     }
   });
+
+  it("should keep left/right measurement lines centered on sticky secondary child when scrolling (EDGE CASE)", () => {
+    /**
+     * EDGE CASE REPLICATION:
+     * User selects a PARENT element (primary), then measures to a STICKY CHILD (secondary).
+     * The context is "child" — primary contains secondary.
+     *
+     * Structure:
+     *   Scroller (600px viewport, overflow: auto)
+     *     -> Parent wrapper (1500px tall, static)
+     *        -> Sticky child (top: 20px, 100x40px)
+     *        -> Other content...
+     *
+     * Flow:
+     * 1. User scrolls to 300px → sticky child is pinned at viewport Y=20.
+     * 2. User selects parent, measures to sticky child → context = "child".
+     * 3. Left/right lines are created with Y = childCenter (child.top + child.height/2).
+     *    - Left line: startSync = "primary", endSync = "secondary"
+     *    - Right line: startSync = "secondary", endSync = "primary"
+     * 4. User scrolls to 500px → sticky child stays pinned, parent moves.
+     *
+     * BUG:
+     * The left line's Y-coordinate is computed from the CHILD's center but synced
+     * via "primary" delta. The rendering code forces `end.y = start.y` for left lines
+     * when startSync === "primary". So the Y is dragged to the primary's delta,
+     * not the secondary's. Since the sticky child's Y hasn't moved (it's pinned),
+     * but the parent has shifted, the line "breaks out" of the child element.
+     *
+     * Similarly for the right line (startSync = "secondary"):
+     * The rendering forces `start.y = end.y`, but end is synced to "primary".
+     * So the line again follows the parent's Y, not the child's.
+     */
+
+    const scroller = document.createElement("div");
+    const parent = document.createElement("div");
+    const stickyChild = document.createElement("div");
+
+    parent.appendChild(stickyChild);
+    scroller.appendChild(parent);
+    document.body.appendChild(scroller);
+
+    // Scroller: 600px viewport, overflow auto
+    setupSpatialSimulation(scroller, {
+      styles: { overflow: "auto" },
+      rect: { top: 0, left: 0, width: 400, height: 600 },
+      clientHeight: 600,
+      clientWidth: 400,
+      offsetTop: 0,
+      offsetParent: document.body,
+    });
+
+    // Parent: 1500px tall, static, fills scroller width
+    setupSpatialSimulation(parent, {
+      styles: { position: "static" },
+      rect: { top: -300, left: 0, width: 400, height: 1500 }, // At scroll 300: top = 0 - 300 = -300
+      clientHeight: 1500,
+      clientWidth: 400,
+      offsetTop: 0,
+      offsetParent: scroller,
+    });
+
+    // Sticky child: natural offset 50px from parent top, sticky top: 20px
+    Object.defineProperty(stickyChild, "offsetTop", {
+      get: () => {
+        const style = window.getComputedStyle(stickyChild);
+        return style.position === "sticky" ? 50 : 50; // Natural is truly 50
+      },
+      configurable: true,
+    });
+
+    setupSpatialSimulation(stickyChild, {
+      styles: { position: "sticky", top: "20px" },
+      rect: { top: 20, left: 50, width: 100, height: 40 }, // At scroll 300: pinned at 20px
+      clientHeight: 40,
+      clientWidth: 100,
+      offsetParent: parent,
+    });
+
+    // === STEP 1: SCROLL DOWN to 300px ===
+    Object.defineProperty(scroller, "scrollTop", {
+      value: 300,
+      writable: true,
+      configurable: true,
+    });
+
+    vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
+      top: -300, left: 0, width: 400, height: 1500,
+      bottom: 1200, right: 400, x: 0, y: -300,
+      toJSON: () => "",
+    } as DOMRect);
+
+    vi.spyOn(stickyChild, "getBoundingClientRect").mockReturnValue({
+      top: 20, left: 50, width: 100, height: 40,
+      bottom: 60, right: 150, x: 50, y: 20,
+      toJSON: () => "",
+    } as DOMRect);
+
+    // === CAPTURE: Deduce geometry for both ===
+    const parentDeduction = deduceGeometry(parent);
+    const childDeduction = deduceGeometry(stickyChild);
+
+    // The captured rects are in document space (scroll-aware)
+    // Parent: top = -300 + 0 (scrollY=0 since window not scrolled) = -300? No wait.
+    // getScrollAwareRect adds window.scrollX/Y. window.scrollY = 0 here.
+    // Parent viewport top = -300, doc top = -300 + 0 = -300.
+    // Child viewport top = 20, doc top = 20 + 0 = 20.
+    // Child doc center Y = 20 + 20 = 40.
+
+    // Create the left measurement line as createMeasurementLines would for "child" context
+    // In child context: primary = parent rect, container = child rect (secondary)
+    const primaryRect = parentDeduction.rect; // parent's document-space rect
+    const secondaryRect = childDeduction.rect; // child's document-space rect
+
+    // The "left" line in child context:
+    //   start: { x: primary.left, y: secondary.top + secondary.height / 2 }
+    //   startSync: "primary"
+    //   end: { x: secondary.left, y: secondary.top + secondary.height / 2 }
+    //   endSync: "secondary"
+    const leftLine: MeasurementLine = {
+      type: "left",
+      value: Math.abs(secondaryRect.left - primaryRect.left),
+      start: { x: primaryRect.left, y: secondaryRect.top + secondaryRect.height / 2 },
+      end: { x: secondaryRect.left, y: secondaryRect.top + secondaryRect.height / 2 },
+      startSync: "primary",
+      endSync: "secondary",
+    };
+
+    // The "right" line in child context:
+    //   start: { x: secondary.right, y: secondary.top + secondary.height / 2 }
+    //   startSync: "secondary"
+    //   end: { x: primary.right, y: secondary.top + secondary.height / 2 }
+    //   endSync: "primary"
+    const rightLine: MeasurementLine = {
+      type: "right",
+      value: Math.abs(primaryRect.right - secondaryRect.right),
+      start: { x: secondaryRect.right, y: secondaryRect.top + secondaryRect.height / 2 },
+      end: { x: primaryRect.right, y: secondaryRect.top + secondaryRect.height / 2 },
+      startSync: "secondary",
+      endSync: "primary",
+    };
+
+    // === STEP 2: SCROLL DOWN to 500px ===
+    // The sticky child stays pinned at viewport Y=20 (its threshold).
+    // The parent shifts further up (viewport top = -500).
+    Object.defineProperty(scroller, "scrollTop", {
+      value: 500,
+      writable: true,
+      configurable: true,
+    });
+
+    vi.spyOn(parent, "getBoundingClientRect").mockReturnValue({
+      top: -500, left: 0, width: 400, height: 1500,
+      bottom: 1000, right: 400, x: 0, y: -500,
+      toJSON: () => "",
+    } as DOMRect);
+
+    vi.spyOn(stickyChild, "getBoundingClientRect").mockReturnValue({
+      top: 20, left: 50, width: 100, height: 40,
+      bottom: 60, right: 150, x: 50, y: 20,
+      toJSON: () => "",
+    } as DOMRect);
+
+    // === CALCULATE LIVE DELTAS ===
+    const primaryDelta = getTotalScrollDelta(
+      parentDeduction.scrollHierarchy,
+      parentDeduction.position,
+      parentDeduction.stickyConfig,
+      parentDeduction.initialWindowX,
+      parentDeduction.initialWindowY,
+      !!parentDeduction.containingBlock
+    );
+
+    const secondaryDelta = getTotalScrollDelta(
+      childDeduction.scrollHierarchy,
+      childDeduction.position,
+      childDeduction.stickyConfig,
+      childDeduction.initialWindowX,
+      childDeduction.initialWindowY,
+      !!childDeduction.containingBlock
+    );
+
+    // Parent is static → its delta should track the scroll exactly:
+    // scrollDelta = current(500) - initial(300) = 200
+    expect(primaryDelta.deltaY).toBe(200);
+
+    // Sticky child → its delta should reflect pinning (it hasn't moved in viewport):
+    // At both scroll 300 and 500, the child is pinned at viewport Y=20.
+    // Document position: scroll300 → 20+0=20, scroll500 → 20+0=20.
+    // Since pinned, the delta accounts for sticky behavior.
+
+    // === THE CRITICAL CHECK: Live line Y-coordinate ===
+    // Compute the live positions of each line endpoint
+
+    // LEFT LINE
+    const leftStart = getLivePoint(
+      leftLine.start, "primary", leftLine,      // startSync = "primary"
+      primaryDelta, secondaryDelta, 0, 0
+    );
+    const leftEnd = getLivePoint(
+      leftLine.end, "secondary", leftLine,       // endSync = "secondary"
+      primaryDelta, secondaryDelta, 0, 0
+    );
+
+    // RIGHT LINE
+    const rightStart = getLivePoint(
+      rightLine.start, "secondary", rightLine,   // startSync = "secondary"
+      primaryDelta, secondaryDelta, 0, 0
+    );
+    const rightEnd = getLivePoint(
+      rightLine.end, "primary", rightLine,        // endSync = "primary"
+      primaryDelta, secondaryDelta, 0, 0
+    );
+
+    // The child's live document-space center Y should be at:
+    // childDeduction.rect.top - secondaryDelta.deltaY + childDeduction.rect.height / 2
+    const childLiveGeo = getLiveGeometry(
+      childDeduction.rect,
+      childDeduction.scrollHierarchy,
+      childDeduction.position,
+      childDeduction.stickyConfig,
+      childDeduction.initialWindowX,
+      childDeduction.initialWindowY,
+      !!childDeduction.containingBlock
+    );
+
+    const childLiveCenterY = childLiveGeo
+      ? childLiveGeo.top + childLiveGeo.height / 2
+      : secondaryRect.top + secondaryRect.height / 2 - secondaryDelta.deltaY;
+
+    // Now simulate the rendering logic:
+    // For LEFT line (type === "left"):
+    //   The renderer does: start.y = end.y
+    //   This means the line's Y follows the secondary-synced endpoint (end).
+    const renderedLeftY = leftEnd.y; // end is secondary-synced → tracks the child's live Y
+
+    // For RIGHT line (type === "right"):
+    //   The renderer does: end.y = start.y
+    //   This means the line's Y follows the secondary-synced endpoint (start).
+    const renderedRightY = rightStart.y; // start is secondary-synced → tracks the child's live Y
+
+    // === THE ASSERTION ===
+    // The rendered Y of the left/right lines should match the child's live center Y.
+    // With the fix, they follow the secondary (child) delta instead of the primary (parent) delta.
+
+    const driftLeft = Math.abs(renderedLeftY - childLiveCenterY);
+    const driftRight = Math.abs(renderedRightY - childLiveCenterY);
+
+    // Drift should be 0 (or very close) now that the snap follows the child's delta.
+    const tolerance = 0.5;
+
+    expect(driftLeft).toBeLessThanOrEqual(tolerance);
+    expect(driftRight).toBeLessThanOrEqual(tolerance);
+  });
 });
