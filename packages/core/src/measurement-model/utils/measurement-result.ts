@@ -266,7 +266,6 @@ export function getLiveLineValue(line: MeasurementLine, result: MeasurementResul
   );
 
   const startPoint = getLivePoint(line.start, line.startSync, line, primaryDelta, secondaryDelta);
-
   const endPoint = getLivePoint(line.end, line.endSync, line, primaryDelta, secondaryDelta);
 
   const dx = Math.abs(startPoint.x - endPoint.x);

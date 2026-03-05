@@ -319,9 +319,6 @@ For AI agents to reliably rediscover elements across re-renders (like HMR), we r
 
 This project is licensed under the **MIT License**.
 
-- **Allowed**: Personal and commercial use, modification, and distribution.
-- **Open**: Completely permissive with no restrictions on derivative works or competition.
-
 ---
 
 ## Author & Acknowledgement 👤

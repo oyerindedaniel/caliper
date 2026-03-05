@@ -221,9 +221,6 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 
 This project is licensed under the **MIT License**.
 
-- **Allowed**: Personal and commercial use, modification, and distribution.
-- **Open**: Completely permissive with no restrictions on derivative works or competition.
-
 ---
 
 ## Author & Acknowledgement 👤

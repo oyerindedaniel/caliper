@@ -215,7 +215,6 @@ export function Root(config: RootConfig) {
 
       const element = getTopElementAtPoint(x, y);
       if (element && selectionSystem) {
-
         if (system) {
           system.abort();
         }
@@ -342,7 +341,7 @@ export function Root(config: RootConfig) {
                 copyTimeoutId = null;
               }, 1500);
             })
-            .catch(() => { });
+            .catch(() => {});
         }
         return;
       }
