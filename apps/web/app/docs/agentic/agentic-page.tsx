@@ -110,7 +110,8 @@ export default function AgenticDocsPage() {
 
         <div>
           <p className="mb-18 op-8">
-            In <strong>Claude Code</strong>, you can alternatively add it via the plugin marketplace:
+            In <strong>Claude Code</strong>, you can alternatively add it via the plugin
+            marketplace:
           </p>
           <CodeBlock code={`/plugin marketplace add oyerindedaniel/caliper`} language="bash" />
         </div>
