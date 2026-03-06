@@ -42,7 +42,7 @@ const logger = createLogger("agent-bridge");
  * When installed, this plugin:
  * 1. Starts a local WebSocket server (or connects to one) to receive agent commands.
  * 2. Exposes `window.dispatchCaliperIntent` for manual/in-page agentic calls.
- * 3. Syncs the overlay state (camera, selection, measurements) back to the agent.
+ * 3. Syncs the overlay state (selection, measurements) back to the agent.
  *
  * @example
  * ```ts

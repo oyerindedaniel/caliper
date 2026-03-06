@@ -4,9 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.2] - 2026-03-05
 
+### Improved
+
+- **Context Menu**: Swapped copy shortcuts. Right-click now copies the `data-caliper-agent-id`; `Shift + Right-Click` copies the full JSON fingerprint.
+
 ### Fixed
 
 - **Geometry Engine**: Fixed measurement breakout on sticky elements during scroll.
+- **Logger**: Fixed `__DEV__` guard in production builds preventing `debug`, `info`, and `log` from appearing when enabled.
+- **MCP Server**: Fixed `console.log` usage on startup to ensure `stdout` is reserved exclusively for the JSON-RPC protocol.
 
 ## [0.2.1] - 2026-02-16
 

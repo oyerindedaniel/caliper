@@ -29,7 +29,7 @@ Options:
 `);
       process.exit(0);
     } else if (args[i] === "--docs" || args[i] === "-d") {
-      console.log("\n📚 View Documentation: https://caliper.danieloyerinde.com/\n");
+      console.error("\n📚 View Documentation: https://caliper.danieloyerinde.com/\n");
       process.exit(0);
     }
   }
