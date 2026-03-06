@@ -1,5 +1,3 @@
-declare const __DEV__: boolean;
-
 export type LogLevel = "debug" | "info" | "warn" | "error" | "none";
 
 export interface LoggerOptions {
@@ -25,13 +23,11 @@ class Logger {
   }
 
   debug(...args: any[]) {
-    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
     if (!isGlobalEnabled) return;
     console.debug(this.prefix, ...args);
   }
 
   info(...args: any[]) {
-    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
     if (!isGlobalEnabled) return;
     console.info(this.prefix, ...args);
   }
@@ -47,7 +43,6 @@ class Logger {
   }
 
   log(...args: any[]) {
-    if (typeof __DEV__ !== "undefined" && !__DEV__) return;
     if (!isGlobalEnabled) return;
     console.log(this.prefix, ...args);
   }

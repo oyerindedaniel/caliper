@@ -25,6 +25,7 @@ import {
   type RulerState,
   RESIZE_THROTTLE_MS,
   buildSelectorInfo,
+  generateId,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -302,32 +303,53 @@ export function Root(config: RootConfig) {
 
         let clipboardContent = "";
 
-        if (contextEvent.shiftKey && selectedElement) {
-          // Mode 1: Copy ONLY the Agent ID string
-          clipboardContent = selectedElement.getAttribute("data-caliper-agent-id") || "";
-        } else if (measurementResult && system && selectionSystem) {
-          // Mode 2: Copy dual-fingerprint for measurements
-          const primaryElement = selectionSystem.getSelected();
-          const secondaryElement = system.getSecondaryElement();
-          if (primaryElement && secondaryElement) {
-            clipboardContent = JSON.stringify({
-              primary: buildSelectorInfo(primaryElement, selectionMetadata()),
-              secondary: buildSelectorInfo(secondaryElement, {
-                rect: measurementResult.secondary,
-                scrollHierarchy: measurementResult.secondaryHierarchy,
-                position: measurementResult.secondaryPosition,
-                stickyConfig: measurementResult.secondarySticky,
-                initialWindowX: measurementResult.secondaryWinX,
-                initialWindowY: measurementResult.secondaryWinY,
-                hasContainingBlock: measurementResult.secondaryHasContainingBlock,
-              }),
-            });
+        if (contextEvent.shiftKey) {
+          // Shift + Right-Click: Copy full built selector(s)
+          if (measurementResult && system && selectionSystem) {
+            const primaryElement = selectionSystem.getSelected();
+            const secondaryElement = system.getSecondaryElement();
+            if (primaryElement && secondaryElement) {
+              clipboardContent = JSON.stringify({
+                primary: buildSelectorInfo(primaryElement, selectionMetadata()),
+                secondary: buildSelectorInfo(secondaryElement, {
+                  rect: measurementResult.secondary,
+                  scrollHierarchy: measurementResult.secondaryHierarchy,
+                  position: measurementResult.secondaryPosition,
+                  stickyConfig: measurementResult.secondarySticky,
+                  initialWindowX: measurementResult.secondaryWinX,
+                  initialWindowY: measurementResult.secondaryWinY,
+                  hasContainingBlock: measurementResult.secondaryHasContainingBlock,
+                }),
+              });
+            }
+          } else if (selectedElement) {
+            clipboardContent = JSON.stringify(
+              buildSelectorInfo(selectedElement, selectionMetadata())
+            );
           }
-        } else if (selectedElement) {
-          // Mode 3: Copy full selection fingerprint (default)
-          clipboardContent = JSON.stringify(
-            buildSelectorInfo(selectedElement, selectionMetadata())
-          );
+        } else {
+          // Right-Click: Copy agent ID(s)
+          const ensureAgentId = (el: Element): string => {
+            let id = el.getAttribute("data-caliper-agent-id");
+            if (!id) {
+              id = generateId("caliper");
+              el.setAttribute("data-caliper-agent-id", id);
+            }
+            return id;
+          };
+
+          if (measurementResult && system && selectionSystem) {
+            const primaryElement = selectionSystem.getSelected();
+            const secondaryElement = system.getSecondaryElement();
+            if (primaryElement && secondaryElement) {
+              clipboardContent = JSON.stringify({
+                primary: ensureAgentId(primaryElement),
+                secondary: ensureAgentId(secondaryElement),
+              });
+            }
+          } else if (selectedElement) {
+            clipboardContent = ensureAgentId(selectedElement);
+          }
         }
 
         if (clipboardContent) {
@@ -341,7 +363,7 @@ export function Root(config: RootConfig) {
                 copyTimeoutId = null;
               }, 1500);
             })
-            .catch(() => {});
+            .catch(() => { });
         }
         return;
       }

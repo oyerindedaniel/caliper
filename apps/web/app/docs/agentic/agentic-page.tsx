@@ -59,12 +59,14 @@ export default function AgenticDocsPage() {
         </p>
         <ul className={styles.instructionList}>
           <li className={styles.instructionItem}>
-            <strong>Right-Click Selection</strong> — Copy the full JSON Fingerprint for a stable
-            agent handoff.
+            <strong>Right-Click Selection</strong> — Copy the{" "}
+            <code>data-caliper-agent-id</code> to target a single element. With a measurement
+            active, copies both primary and secondary agent IDs.
           </li>
           <li className={styles.instructionItem}>
-            <strong>Shift + Right-Click</strong> — Copy the specific{" "}
-            <code>data-caliper-agent-id</code> to target a single element.
+            <strong>Shift + Right-Click</strong> — Copy the full JSON Fingerprint for a stable
+            agent handoff. With a measurement active, copies both primary and secondary
+            fingerprints.
           </li>
         </ul>
       </section>
