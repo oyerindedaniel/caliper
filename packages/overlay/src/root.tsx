@@ -363,7 +363,7 @@ export function Root(config: RootConfig) {
                 copyTimeoutId = null;
               }, 1500);
             })
-            .catch(() => { });
+            .catch(() => {});
         }
         return;
       }
