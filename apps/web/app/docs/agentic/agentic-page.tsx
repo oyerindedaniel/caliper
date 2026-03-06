@@ -93,6 +93,29 @@ export default function AgenticDocsPage() {
         <McpSetup />
       </section>
 
+      <section id="agent-skills" className={styles.section}>
+        <h2 className={styles.sectionHeader}>Agent Skills</h2>
+        <p className="mb-18 op-8">
+          Equip your agent with high-level playbooks for layout auditing, design reconciliation, and
+          source-code tracing.
+        </p>
+
+        <h3 className={styles.subHeader}>Installation</h3>
+        <div className="mb-24">
+          <p className="mb-18 op-8">
+            Install the skill globally or per-project using the Agent Skills CLI:
+          </p>
+          <CodeBlock code={`npx skills add oyerindedaniel/caliper`} language="bash" />
+        </div>
+
+        <div>
+          <p className="mb-18 op-8">
+            In <strong>Claude Code</strong>, you can alternatively add it via the plugin marketplace:
+          </p>
+          <CodeBlock code={`/plugin marketplace add oyerindedaniel/caliper`} language="bash" />
+        </div>
+      </section>
+
       <section id="core-tools" className={styles.section}>
         <h2 className={styles.sectionHeader}>Core Tools</h2>
         <p className="mb-18 op-8">

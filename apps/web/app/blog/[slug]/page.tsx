@@ -15,6 +15,8 @@ import styles from "@/app/page.module.css";
 import Image from "next/image";
 import { ComponentPropsWithoutRef, Suspense } from "react";
 
+import { getShimmerDataUrl } from "@/lib/shimmer";
+
 interface BlogPostProps {
   params: Promise<{
     slug: string;
@@ -139,6 +141,7 @@ export default async function BlogPostPage({ params }: BlogPostProps) {
               className={styles.blogPostImage}
               priority
               placeholder="blur"
+              blurDataURL={getShimmerDataUrl(1200, 630)}
             />
           </div>
         )}

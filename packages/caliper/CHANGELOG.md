@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-03-06
+
+### Added
+
+- **Agent Skills**: Official `SKILL.md` support for AI agents (Claude Code, Cursor, etc.) via `npx skills add oyerindedaniel/caliper`.
+
 ## [0.2.2] - 2026-03-05
 
 ### Improved

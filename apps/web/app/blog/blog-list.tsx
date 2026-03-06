@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import styles from "@/app/page.module.css";
+import { getShimmerDataUrl } from "@/lib/shimmer";
 
 export interface BlogPost {
   slug: string;
@@ -27,6 +28,7 @@ export default function BlogList({ posts }: BlogListProps) {
               fill
               sizes="(max-width: 768px) 100vw, 33vw"
               placeholder="blur"
+              blurDataURL={getShimmerDataUrl(700, 475)}
             />
           </div>
           <div className={styles.blogMeta}>
