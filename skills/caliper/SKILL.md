@@ -3,7 +3,7 @@ name: caliper
 description: High-precision layout audits and component tracing for design engineering. Use when asked to "audit spacing", "measure contrast", "verify styling", "fix layout shift", or "reconcile design".
 metadata:
   author: oyerindedaniel
-  version: "1.0.0"
+  version: "1.1.0"
   license: MIT
   type: agent-skill
   mcp-servers:
@@ -23,19 +23,26 @@ This skill transforms you into a precision design engineer. You will use the Cal
 ## 1. Environment Setup & Verification
 
 > [!IMPORTANT]
-> **Limitation**: Caliper requires an active browser tab connected via the Agent Bridge. It **cannot** audit static screenshots or design files (Figma/Sketch) without a live rendered URL.
+> **Limitation**: Caliper measures the **live DOM runtime**. It cannot audit static screenshots or design files (Figma/Sketch) directly. Your application **must be actively running** in a browser tab with an active Agent Bridge connection.
 
 Perform these checks to ensure Caliper is active before start auditing:
 
 1. **Check if Caliper is already active**
-   - Search for `init({ bridge: { enabled: true } })` or a `<script src=".../caliper">` tag with `data-config`.
+   - Search for `init({}, [CaliperBridge({ enabled: true })])` or a `<script src=".../caliper">` tag with `data-config`.
    - If found: Skip to connection check (Step 3).
 
 2. **If missing, check for installation vs. setup**
-   - **Step A (Check Library Presence)**: Verify `@oyerinde/caliper` in `package.json`.
+   - **Step A (Check Library Presence)**: 
+     - Search for `@oyerinde/caliper` in `package.json`.
+     - Search for `<script src=".../caliper">` tags in `index.html`, `layout.tsx`, or root template files.
    - **Step B (Determine Action)**:
-     - If in `package.json` but not active: Propose the module `init()` snippet below.
+     - If library is present (package or script) but not active: Propose the initialization snippet below.
      - If entirely missing: Propose the **CDN Script** (Zero-install, Universal) or package installation for module-based projects.
+       - **Package Manager Detection**: Identify the correct installer by checking for lockfiles:
+         - `pnpm-lock.yaml` -> Use `pnpm add -D @oyerinde/caliper`
+         - `yarn.lock` -> Use `yarn add -D @oyerinde/caliper`
+         - `bun.lockb` or `bun.lock` -> Use `bun add -d @oyerinde/caliper`
+         - `package-lock.json` or none -> Use `npm install -D @oyerinde/caliper`
    - **Reference Implementations:**
      - **Option 1: Vanilla / Global Script (Recommended for Quick Start)**
        ```html
@@ -43,8 +50,13 @@ Perform these checks to ensure Caliper is active before start auditing:
        ```
      - **Option 2: Module-based (React/Vite/etc)**
        ```ts
-       import { init } from "@oyerinde/caliper";
-       init({ bridge: { enabled: true } });
+       import { init, CaliperBridge } from "@oyerinde/caliper/preset";
+       
+       init({
+         theme: { primary: "#18a0fb" }
+       }, [
+         CaliperBridge({ enabled: true })
+       ]);
        ```
    - Documentation: [Agentic Installation](https://caliper.danieloyerinde.com/docs/agentic#installation).
 
@@ -55,7 +67,29 @@ Perform these checks to ensure Caliper is active before start auditing:
    - **Status**: If the list is empty, the MCP server is active but cannot see the browser. Instruct the user to verify:
      - The web app is open in a browser tab.
      - The bridge is active in the code (see Step 2 snippet).
-     - The port matches the [MCP Configuration](https://caliper.danieloyerinde.com/docs/agentic#mcp-server).
+     - **Port Verification**: Check the code for a custom `wsPort` (default is 9876). If found, ensure the MCP server is configured with that same port using the `-p` or `--port` flag.
+
+### 1.4 Production Safety
+
+> [!IMPORTANT]
+> Caliper is a development-only tool. You MUST advise the user to wrap the initialization in an environment check to prevent it from leaking into production bundles.
+
+**Next.js / Vite / Modern Bundlers:**
+```tsx
+{process.env.NODE_ENV === "development" && (
+  <Script src="..." /> // or init(...)
+)}
+```
+
+**Vanilla HTML / CDN:**
+```html
+<script>
+  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    // Add the global script tag here
+    // <script src="..." data-config='{"bridge": {"enabled": true}}'></script>
+  }
+</script>
+```
 
 ## 2. Element Targeting
 
@@ -64,6 +98,9 @@ If a user request is vague (e.g., "Check the header"), you should proactively ch
 1.  **Stable Markers**: (Highest Priority) Use `data-caliper-id` (caliperProps) found in the codebase.
 2.  **Caliper Identifiers**: Use the **JSON Fingerprint** or **Agent ID** (`caliper-***`) provided by the user or discovered via the `caliper://state` resource.
 3.  **Standard Selectors**: (Last Resort) Use raw CSS classes or IDs only if no stable markers are available.
+
+> [!TIP]
+> **Ignored Elements**: If a selector fails, check if the element or its parent has the `data-caliper-ignore` attribute. Caliper's engine will skip these by design.
 
 ## 3. Tool Details
 
@@ -77,13 +114,14 @@ When asked to "audit a component," follow this precise loop:
 1.  **Step 0: Context Gathering (Pre-flight)**: 
     - **Identify Target**: Locate the element using `caliper://state` or persistent context.
     - **Cleanup (Optional)**: If this is a *fresh* audit on a new component, call `caliper_clear` to remove stale visual markers. **Rule**: SKIP cleanup during iterative "fix it" loops or when the user says you're "not getting it", so the visual history remains visible.
+    - **Environment Context**: Call `caliper_get_context()` to retrieve current viewport dimensions and scroll state. This is vital for debugging responsive issues.
     - Call `caliper_inspect({ selector })` to retrieve metadata, `descendantCount`, and `sourceHints`.
     - Analyze the `descendantsTruncated` flag to determine if pagination is required.
 2.  **Step 1: Recursive Walk (Data Capture)**: 
     - Call `caliper_walk_and_measure({ selector })`.
     - **Pagination Logic**: If `hasMore` is true, use the returned `continuationToken` in a subsequent call as the `continueFrom` parameter. Continue this loop until `hasMore` is false to ensure you have the *entire* component tree.
     - **Analysis**: Look for:
-        - **Spacing Drift**: Gaps not matching the project's scale (e.g., 13px instead of 12px or 16px).
+        - **Spacing Drift**: Gaps not matching the project's scale (e.g., 13px instead of 12px or 16px). **Note**: Observe sub-pixel geometry (e.g., 12.33px); these are often intentional for sub-pixel anti-aliasing or indicators of parent grid/flex miscalculations.
         - **Typography**: Inconsistent `lineHeight` or `fontWeight` among siblings.
         - **Layering & Visibility**: Check `zIndex`, `display`, and `visibility`. Debug if elements are being overlapped or are "invisible" due to positioning.
         - **Layout Logic**: Elements using `absolute` positioning where `flex` or `grid` would be more stable.
@@ -99,11 +137,13 @@ When asked to "audit a component," follow this precise loop:
 Don't just check hex codes; check **intent** and **accessibility**.
 
 - **Contrast**: `caliper_check_contrast({ foreground, background })`. 
-    *   Goal: AA (4.5:1) for normal text, 3:1 for large text.
+    *   Goal: AA (4.5:1) for normal text, 3:1 for large text. Aim for AAA (7:1) for critical UI paths.
 - **Token Accuracy**: `caliper_delta_e({ color1, color2 })`. 
-    *   Use this to see if a rendered "blue" is "close enough" to a design token. 
-    *   Delta E < 0.05 is an acceptable match. 
-    *   Delta E > 0.1 means they are likely using the wrong token or a hardcoded value.
+    *   Interpret the Oklab Delta E results:
+        - `< 0.05`: Imperceptible or "Just Noticeable" (Acceptable token match).
+        - `0.05 - 0.1`: Noticeable (Possible wrong token or local override).
+        - `0.1 - 0.3`: Distinct (Likely incorrect token usage).
+        - `> 0.3`: Very different (Hardcoded or severe design drift).
 
 ### 3.3 Physical Measurement
 
