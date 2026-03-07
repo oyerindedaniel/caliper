@@ -6,7 +6,7 @@
 
 Caliper is a high-precision, framework-agnostic measurement tool that lives in your browser during development. It helps you catch "pixel-drift" and alignment issues before they reach production.
 
-### AI Agents & MCP 🤖
+### AI Agents & MCP
 
 Caliper is "AI-Native". It can be connected to AI agents (like Cursor, Claude Code, or Antigravity) via the **Model Context Protocol (MCP)**, allowing agents to perform pixel-perfect audits of your UI.
 
@@ -18,7 +18,7 @@ The AI agent gains "layout eyes" and can perform high-precision audits, measurem
 
 ---
 
-## Features 🚀
+## Features
 
 - **Core Measurement**: High-precision boundary detection and distance calculation between DOM elements.
 - **Interactive Overlay**: Real-time measurement lines and labels with smooth, high-fidelity animations.
@@ -32,7 +32,7 @@ The AI agent gains "layout eyes" and can perform high-precision audits, measurem
 
 ---
 
-## Installation 📦
+## Installation
 
 Caliper is designed to be side-effect-free in production and easy to integrate into any modern stack.
 
@@ -165,7 +165,7 @@ export function Root() {
 
 ---
 
-## Agent Bridge Installation 🤖
+## Agent Bridge Installation
 
 The Agent Bridge enables AI agents (like Claude or Cursor) to communicate with Caliper. It is available as a sub-export of the main package.
 
@@ -218,7 +218,7 @@ Enable the bridge directly in your configuration block:
 
 ---
 
-## Configuration 🛠️
+## Configuration
 
 Caliper can be customized to fit your specific design system and workflow. `init()` automatically mounts the overlay in the browser.
 
@@ -287,7 +287,7 @@ For AI agents to reliably rediscover elements across re-renders (like HMR), we r
 
 ---
 
-## Interaction Guide ⌨️
+## Interaction Guide
 
 ### Measurements
 
@@ -315,13 +315,13 @@ For AI agents to reliably rediscover elements across re-renders (like HMR), we r
 
 ---
 
-## License ⚖️
+## License
 
 This project is licensed under the **MIT License**.
 
 ---
 
-## Author & Acknowledgement 👤
+## Author & Acknowledgement
 
 **Caliper** is built and maintained with precision by **[Daniel Oyerinde](https://danieloyerinde.com)**.
 

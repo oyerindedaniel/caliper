@@ -6,7 +6,7 @@ Agentic bridge for Caliper - enables AI agents to use Caliper's high-precision m
 
 This package provides the "glue" between your browser-based Caliper UI and the Model Context Protocol (MCP) relay.
 
-## Usage 🚀
+## Usage
 
 ### 1. Initialize with Caliper
 
@@ -26,7 +26,7 @@ caliper.use(
 );
 ```
 
-## Configuration 🛠️
+## Configuration
 
 | Option          | Type                                 | Required | Description                                             |
 | :-------------- | :----------------------------------- | :------- | :------------------------------------------------------ |
@@ -34,7 +34,7 @@ caliper.use(
 | `wsPort`        | `number`                             | No       | WebSocket port for the MCP relay (default: `9876`)      |
 | `onStateChange` | `(state: CaliperAgentState) => void` | No       | Callback for real-time state synchronization            |
 
-## Pro-Tip: Stable Markers 🎯
+## Pro-Tip: Stable Markers
 
 To help AI agents reliably rediscover elements after code changes or re-renders, use the `caliperProps` helper to mark critical elements:
 
@@ -42,6 +42,6 @@ To help AI agents reliably rediscover elements after code changes or re-renders,
 <div {...caliperProps("submission-button")}>Submit</div>
 ```
 
-## License ⚖️
+## License
 
 MIT

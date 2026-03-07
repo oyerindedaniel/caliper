@@ -8,7 +8,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 
 ---
 
-## Features 🚀
+## Features
 
 - **Core Measurement**: High-precision boundary detection and distance calculation between DOM elements.
 - **Interactive Overlay**: Real-time measurement lines and labels with smooth, high-fidelity animations.
@@ -20,7 +20,7 @@ Caliper is a high-precision, framework-agnostic measurement tool that lives in y
 
 ---
 
-## Installation 📦
+## Installation
 
 Caliper is designed to be side-effect-free in production and easy to integrate into any modern stack.
 
@@ -153,7 +153,7 @@ export function Root() {
 
 ---
 
-## Configuration 🛠️
+## Configuration
 
 Caliper can be customized to fit your specific design system and workflow. `init()` automatically mounts the overlay in the browser.
 
@@ -190,7 +190,7 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 
 ---
 
-## Interaction Guide ⌨️
+## Interaction Guide
 
 ### Measurements
 
@@ -217,13 +217,13 @@ To prevent Caliper from measuring specific elements (like sidebars, floating but
 
 ---
 
-## License ⚖️
+## License
 
 This project is licensed under the **MIT License**.
 
 ---
 
-## Author & Acknowledgement 👤
+## Author & Acknowledgement
 
 **Caliper** is built and maintained with precision by **[Daniel Oyerinde](https://danieloyerinde.com)**.
 

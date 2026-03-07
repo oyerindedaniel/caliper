@@ -11,7 +11,7 @@ metadata:
 
 This skill transforms you into a precision design engineer. You will use the Caliper MCP server to "see" the live browser, measure pixel-perfect gaps, and map rendered elements directly back to the user's source code.
 
-### 🚀 Capabilities
+### Capabilities
 - **High-Precision Auditing**: Measure pixel-perfect spacing, geometry, and alignment.
 - **Color Verification**: Calculate WCAG contrast ratios and Delta E perceptual differences.
 - **Source Tracing**: Map rendered browser elements directly to specific source code lines.

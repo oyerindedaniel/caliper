@@ -4,7 +4,7 @@
 
 Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (like Cursor, Claude Code, or Antigravity) to the Caliper measurement engine running in your browser.
 
-## Features 🚀
+## Features
 
 - **High Precision**: Agents get the exact sub-pixel geometry from the browser DOM.
 - **Visual Feedback**: You can see exactly what the agent is measuring as it happens in the browser overlay.
@@ -12,7 +12,7 @@ Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (
 - **Multi-Tab Support**: Automatically targets and tracks the focused browser tab.
 - **Zero Config**: Standardized WebSocket relay on port 9876.
 
-## Installation & Setup 📦
+## Installation & Setup
 
 ### 1. In your Web Application
 
@@ -66,7 +66,7 @@ Antigravity uses a configuration file named `mcp_config.json`. Add the caliper s
 }
 ```
 
-### 3. CLI Configuration ⚙️
+### 3. CLI Configuration
 
 The following flags are available when running the server:
 
@@ -86,7 +86,7 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - "Measure the spacing between the logo and the navigation links."
 - "Check the contrast ratio between the text and background colors."
 
-## Tools Provided 🛠️
+## Tools Provided
 
 - `caliper_list_tabs`: List all browser tabs currently connected to the bridge.
 - `caliper_switch_tab(tabId)`: Switch targeting to a specific browser tab.
@@ -99,7 +99,7 @@ Once connected, the AI agent will have access to high-precision layout tools. Yo
 - `caliper_check_contrast(foreground, background)`: Check WCAG 2.1 contrast ratio between two colors (hex, rgb, oklch, etc.).
 - `caliper_delta_e(color1, color2)`: Calculate perceptual color difference between two colors using Oklab.
 
-## Prompts Provided 📋
+## Prompts Provided
 
 Prompts are predefined expert workflows. Trigger them in your editor (e.g., using `/` in Cursor).
 
@@ -108,11 +108,11 @@ Prompts are predefined expert workflows. Trigger them in your editor (e.g., usin
 | `caliper-selector-audit`    | Comprehensive, structured element audit (source discovery + precision analysis). |
 | `caliper-selectors-compare` | Compare two elements (A reference vs B target) to fix styling.                   |
 
-## Resources 📚
+## Resources
 
 - `caliper://tabs`: Live list of connected browser windows.
 - `caliper://state`: Real-time state of the active browser tab (Active Selection, Measurements, and Stable JSON Fingerprints for seamless tool-based hand-off).
 
-## License ⚖️
+## License
 
 MIT
