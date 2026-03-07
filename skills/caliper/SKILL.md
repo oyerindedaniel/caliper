@@ -1,10 +1,13 @@
 ---
 name: caliper
-description: Official Caliper Agent Skill. Teaches AI agents how to perform high-precision layout audits, component tracing, and design-to-code reconciliation using the Caliper MCP server. Use when asked to "audit", "measure", "verify styling", or "fix layout".
+description: High-precision layout audits and component tracing for design engineering. Use when asked to "audit spacing", "measure contrast", "verify styling", "fix layout shift", or "reconcile design".
 metadata:
   author: oyerindedaniel
   version: "1.0.0"
+  license: MIT
   type: agent-skill
+  mcp-servers:
+    - caliper
 ---
 
 # Caliper: Precision Design Engineering
@@ -45,39 +48,48 @@ Perform these checks to ensure Caliper is active before start auditing:
        ```
    - Documentation: [Agentic Installation](https://caliper.danieloyerinde.com/docs/agentic#installation).
 
-3. **Check for an active connection**
-   - Call `caliper_list_tabs`.
-   - If empty: The MCP server is active but cannot see the browser. Instruct the user to verify:
+3. **Check for an active connection & Multi-Tab Auditing**
+   - Call `caliper_list_tabs` to retrieve all connected browser instances.
+   - **Identification**: Use the `title` and `url` fields to identify the target environment (e.g., "Dashboard" vs "Landing Page").
+   - **Switching Context**: If multiple tabs are active, call `caliper_switch_tab({ tabId })` to focus your audit on the correct tab before proceeding.
+   - **Status**: If the list is empty, the MCP server is active but cannot see the browser. Instruct the user to verify:
      - The web app is open in a browser tab.
      - The bridge is active in the code (see Step 2 snippet).
      - The port matches the [MCP Configuration](https://caliper.danieloyerinde.com/docs/agentic#mcp-server).
 
-## 2. Advanced Targeting (Caliper Selectors)
+## 2. Element Targeting
 
-Never rely on fragile CSS classes alone. Caliper provides stable identifiers:
+If a user request is vague (e.g., "Check the header"), you should proactively choose a relevant selector to audit just to verify the layout. Follow this tiered priority:
 
-- **JSON Fingerprint**: (Preferred) Example: `{"agentId":"caliper-a1b2","tag":"div"}`.
-- **Agent ID**: (`caliper-***`) Stable across re-renders.
-- **caliperProps**: If you see `data-caliper-id` in the code, use that selector.
+1.  **Stable Markers**: (Highest Priority) Use `data-caliper-id` (caliperProps) found in the codebase.
+2.  **Caliper Identifiers**: Use the **JSON Fingerprint** or **Agent ID** (`caliper-***`) provided by the user or discovered via the `caliper://state` resource.
+3.  **Standard Selectors**: (Last Resort) Use raw CSS classes or IDs only if no stable markers are available.
 
-## 3. Tool Mastery & Intense Details
+## 3. Tool Details
 
 ### 3.1 The "Audit Loop" (Harness Flow)
 
+> [!IMPORTANT]
+> **Context First**: You MUST gather all required context (geometry, computed styles, and recursive child relationships) and perform a comprehensive analysis before making any code changes. Never attempt to "fix" an issue until the audit is 100% complete.
+
 When asked to "audit a component," follow this precise loop:
 
-1.  **Inspect (Pre-flight)**: Call `caliper_inspect({ selector })`. 
-    *   **Crucial**: Analyze the returned `descendantCount` and `descendantsTruncated` flag.
-    *   Compare these against the "Pagination Threshold" mentioned in the `caliper_inspect` tool description to decide if a single walk is safe.
-2.  **Walk (Data Capture)**: Call `caliper_walk_and_measure({ selector })`.
-    *   If the previous inspection indicated a large tree, use the `maxNodes` parameter to initiate pagination, following the batch size recommended in the tool documentation.
-    *   Analyze the returned tree for:
-        *   **Spacing Drift**: Gaps not matching the project's scale (e.g., 13px instead of 12px or 16px).
-        *   **Typography**: Inconsistent `lineHeight` or `fontWeight` among siblings.
-        *   **Layout Logic**: Elements using `absolute` positioning where `flex` or `grid` would be more stable.
-3.  **Trace (Source Discovery)**: Use `sourceHints` from step 1.
-    *   Look at `suggestedGrep`. This is a pre-built grep pattern to find exactly where that element is defined in the `.tsx` or `.html` files.
-4.  **Fix & Verify**: Apply the code change, then re-call `caliper_inspect` to verify the new computed styles match the goal.
+1.  **Step 0: Context Gathering (Pre-flight)**: 
+    - Call `caliper_inspect({ selector })` to retrieve metadata, `descendantCount`, and `sourceHints`.
+    - Analyze the `descendantsTruncated` flag to determine if pagination is required.
+2.  **Step 1: Recursive Walk (Data Capture)**: 
+    - Call `caliper_walk_and_measure({ selector })`.
+    - **Pagination Logic**: If `hasMore` is true, use the returned `continuationToken` in a subsequent call as the `continueFrom` parameter. Continue this loop until `hasMore` is false to ensure you have the *entire* component tree.
+    - **Analysis**: Look for:
+        - **Spacing Drift**: Gaps not matching the project's scale (e.g., 13px instead of 12px or 16px).
+        - **Typography**: Inconsistent `lineHeight` or `fontWeight` among siblings.
+        - **Layout Logic**: Elements using `absolute` positioning where `flex` or `grid` would be more stable.
+3.  **Step 2: Trace (Source Discovery)**: 
+    - Use `sourceHints` to map the rendered nodes to the codebase.
+    - Look at `suggestedGrep`. This is a pre-built grep pattern to find exactly where that element is defined in the `.tsx` or `.html` files.
+4.  **Step 3: Fix & Verify**: 
+    - Only after Steps 0-2 are complete, apply the code change.
+    - Re-call `caliper_inspect` or `caliper_walk_and_measure` to verify the new computed styles match the goal.
 
 ### 3.2 Color & Perceptual Audit
 
@@ -111,3 +123,18 @@ Always report findings with:
 - **Actual vs Expected**: The measured value vs the design system goal.
 - **Recommendation**: The exact CSS/Style fix required.
 - **Verification**: A confirmation that you have re-measured after the fix.
+
+## 6. Usage Example
+
+**User**: "The 'Submit' button on the login page looks like it has uneven padding."
+
+**Agent**:
+1.  **Observe**: Noticing the user is on `/login`. I subscribe to `caliper://state`.
+2.  **Inspect**: I call `caliper_inspect({ selector: "button[type='submit']" })`. I see `descendantCount: 2`. No pagination needed.
+3.  **Walk**: I call `caliper_walk_and_measure({ selector: "button[type='submit']" })`. 
+    - **Result**: `padding-left: 16px`, `padding-right: 18px`.
+4.  **Trace**: I use `sourceHints.suggestedGrep` (e.g., `"<button.*type='submit'"` ) to search the codebase. I discover the component in `src/components/LoginButton.tsx`.
+5.  **Analyze**: Confirming the padding is indeed asymmetrical (16px vs 18px).
+6.  **Fix**: I update `LoginButton.tsx` to use a consistent `px-4` (16px) tailwind class.
+7.  **Verify**: I re-call `caliper_inspect` to confirm `padding-right` is now `16px`.
+8.  **Respond**: "I've audited the 'Submit' button. It had a 2px padding imbalance (16px left vs 18px right). I've corrected it in `LoginButton.tsx` and verified the fix in the browser."
