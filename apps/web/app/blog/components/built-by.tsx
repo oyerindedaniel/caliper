@@ -21,9 +21,8 @@ export function BuiltBy() {
             <span className={styles.builtByLabel}>THE_CORE_PRINCIPLE</span>
             <h4 className={styles.builtByTitle}>Engineering Absolute Certainty</h4>
             <p className={styles.builtByText}>
-              Caliper was built because you can’t audit a system if you’re not sure of the truth. We
-              solve for the geometric edge cases—fragmented stacking contexts, recursive scroll
-              hierarchies, and subpixel rounding—that standard tools simply ignore.
+              Caliper establishes layout ground truth. We resolve the geometric edge cases like
+              scroll hierarchies and subpixel rounding that standard tools ignore.
             </p>
           </div>
         </div>

@@ -14,7 +14,7 @@ In frontend engineering, we deal with a persistent "Semantic-Visual Discrepancy.
 
 ## Beyond the Declarative
 
-### The Invisible Gap
+### Margin Collapse
 
 Consider the "Invisible Gap." You set a margin-bottom of `24px` on one element and a margin-top of `24px` on the next. Logically, you expect a `48px` separation.
 
@@ -22,7 +22,7 @@ Consider the "Invisible Gap." You set a margin-bottom of `24px` on one element a
 
 Browsers apply **Margin Collapsing**, merging vertical margins of adjacent blocks into a single space. While DevTools allows you to inspect the computed values on each element, it doesn't provide a direct, automated way to measure the *distance* created between them in physical pixels.
 
-### The Flex Override 
+### Flexbox Behavior
 
 Another common discrepancy occurs with **Flexbox alignment**. You might set a child element to `display: inline-block`, expecting it to stay compact and only take up as much space as its content; however, if the parent container uses `display: flex` without a specific `align-items` value, the browser defaults to `stretch`.
 
@@ -30,15 +30,15 @@ Another common discrepancy occurs with **Flexbox alignment**. You might set a ch
 
 Your compact "inline" element now takes up the whole row. DevTools identifies the element as a flex-item; however, identifying that it has expanded to fill the container remains a manual verification process.
 
-With Caliper, you don't have to guess. You can verify the real-world distance instantly, or let an agent audit the layout itself and point out the issue. 
+With Caliper, you don't have to guess. You can verify the real-world distance instantly, or let an agent audit the layout itself and point out the drift. Once the drift is verified, you can immediately take action to reconcile the code to match your original intent.
 
 DevTools is for inspecting your instructions; <Logo /> is for auditing the outcome.
 
-## The Subpixel Reality
+## Subpixel Precision
 
 Fluid layouts and relative units introduce a subtle but persistent problem: subpixel rounding. A flexbox container might calculate an element's width as `112.33px`, but since hardware operates on physical pixels, the browser is forced to round.
 
-Depending on the device and the rendering engine, that error can accumulate across a grid. You end up with a layout that is "mostly" right, but contains tiny misalignments that are computationally invisible to standard DOM queries but immediately obvious to anyone with an eye for detail. This isn't a bug in your code, but it is a failure of the rendered outcome. <Logo /> solves this by auditing the final computed geometry against the physical pixel grid, identifying these subpixel drifts automatically.
+Depending on the device and the rendering engine, that error can accumulate across a grid. You end up with a layout that is "mostly" right, but contains tiny misalignments that are computationally invisible to standard DOM queries but immediately obvious to anyone with an eye for detail. This isn't a bug in your code, but it is a failure of the rendered outcome. <Logo /> solves this by auditing the final computed geometry against the physical pixel grid, identifying these subpixel drifts automatically. Once identified, you can then decide to adjust your container constraints or apply a specific layout fix to eliminate the drift and lock in your alignment.
 
 ## Observability for the next generation of tools
 
@@ -58,7 +58,7 @@ The reasoning chain below illustrates how Caliper bridges this gap:
 2.  **Audit the Stack**: See exactly how stacking contexts and z-indices are actually being prioritized.
 3.  **Validate Outcomes**: Build automated checks that catch layout regressions with sub-pixel precision.
 
-Layout auditing isn't just about finding bugs; it’s about ensuring the **exactness** of your layout. Whether you're a designer perfecting a premium UI or an engineer building automated layout checks, <Logo /> ensures that the final render matches your original intent.
+Caliper ensures your rendered layout matches your design intent. Whether you are manually perfecting a UI or building automated checks, we provide the precision needed to close the gap between code and reality.
 
 <CTA href="/docs/agentic">Implement Agentic Auditing</CTA>
 
@@ -66,4 +66,4 @@ Layout auditing isn't just about finding bugs; it’s about ensuring the **exact
 
 ---
 
-*Precision isn't a preference. It's a requirement.*
+*The tool for detail-obsessed design engineers.*

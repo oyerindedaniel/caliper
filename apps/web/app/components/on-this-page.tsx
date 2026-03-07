@@ -96,8 +96,36 @@ function OnThisPageContent() {
 
     contentSections.forEach((currentSection) => intersectionObserver.observe(currentSection));
 
+    const handleScroll = () => {
+      if (isScrollingFromClick.current) return;
+
+      const doc = document.documentElement;
+      if (!doc) return;
+
+      const isAtBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 15;
+      
+      if (isAtBottom && foundTocItems.length > 0) {
+        const lastItem = foundTocItems[foundTocItems.length - 1];
+        if (!lastItem) return;
+
+        const lastId = lastItem.id;
+        setActiveId((currentId) => {
+          if (currentId !== lastId) {
+            if (window.location.hash !== `#${lastId}`) {
+              window.history.replaceState(null, "", `#${lastId}`);
+            }
+            return lastId;
+          }
+          return currentId;
+        });
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
     return () => {
       intersectionObserver.disconnect();
+      window.removeEventListener("scroll", handleScroll);
       if (scrollClickTimer.current) clearTimeout(scrollClickTimer.current);
     };
   }, [pathname]);
