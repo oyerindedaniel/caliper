@@ -75,6 +75,8 @@ If a user request is vague (e.g., "Check the header"), you should proactively ch
 When asked to "audit a component," follow this precise loop:
 
 1.  **Step 0: Context Gathering (Pre-flight)**: 
+    - **Identify Target**: Locate the element using `caliper://state` or persistent context.
+    - **Cleanup (Optional)**: If this is a *fresh* audit on a new component, call `caliper_clear` to remove stale visual markers. **Rule**: SKIP cleanup during iterative "fix it" loops or when the user says you're "not getting it", so the visual history remains visible.
     - Call `caliper_inspect({ selector })` to retrieve metadata, `descendantCount`, and `sourceHints`.
     - Analyze the `descendantsTruncated` flag to determine if pagination is required.
 2.  **Step 1: Recursive Walk (Data Capture)**: 
@@ -83,6 +85,7 @@ When asked to "audit a component," follow this precise loop:
     - **Analysis**: Look for:
         - **Spacing Drift**: Gaps not matching the project's scale (e.g., 13px instead of 12px or 16px).
         - **Typography**: Inconsistent `lineHeight` or `fontWeight` among siblings.
+        - **Layering & Visibility**: Check `zIndex`, `display`, and `visibility`. Debug if elements are being overlapped or are "invisible" due to positioning.
         - **Layout Logic**: Elements using `absolute` positioning where `flex` or `grid` would be more stable.
 3.  **Step 2: Trace (Source Discovery)**: 
     - Use `sourceHints` to map the rendered nodes to the codebase.
@@ -108,13 +111,29 @@ When comparing two separate elements (e.g., "Is the sidebar really 20px from the
 1.  Use `caliper_measure({ primarySelector, secondarySelector })`.
 2.  It returns the edge-to-edge distances (`top-to-bottom`, `left-to-right`, etc.).
 
+### 3.4 Design-to-Code Reconciliation
+
+When the user provides a design specification (from text, a task, or an image), follow this "Spec vs. Reality" workflow:
+
+1.  **Extract Spec**: Identify the target values (e.g., `padding: 24px`, `gap: 12px`, `color: #000`).
+2.  **Observe Reality**: Perform the full **Audit Loop (Section 3.1)** on the target component. You MUST start with `caliper_inspect` to gather the `sourceHints` required for tracing.
+3.  **Identify Drift**: Explicitly calculate the difference (e.g., "The spec requires 24px padding, but the browser is rendering 20px").
+4.  **Reconcile**: Edit the source code (traced via `sourceHints`) to match the spec.
+5.  **Verify**: Re-measure to confirm the drift is now zero.
+
 ## 4. Resource: `caliper://state`
 
-**Subscribe to this resource to passively observe the user.** It provides a real-time stream of the user's browser activity.
+**Subscribe to this resource to passively observe the user.** It provides a real-time stream of the user's browser activity, selection state, and active measurements.
 
-- **Event Trigger**: When the user Cmd/Ctrl + Clicks an element, `caliper://state` updates with a `selectionFingerprint`.
-- **Primary Selector Source**: Use the `selectionFingerprint.selector` from this resource as your first choice for any tool input. Do not force the user to provide a CSS selector if they have already made a selection in the UI.
-- **Proactive Context**: If you receive a resource update, acknowledge it immediately: *"I see you've selected the [tag] in the browser. Shall I perform a layout audit on it?"*
+- **Event Trigger**: When the user interacts with the UI (Cmd/Ctrl + Click or hovering over pairs), `caliper://state` updates with fingerprints.
+- **Fingerprint Priority**: 
+    - **Single Audit**: Use `selectionFingerprint.selector` for single-element tools like `caliper_inspect` or `caliper_walk_dom`.
+    - **Pair Audit**: Use `measurementFingerprint.primary` and `measurementFingerprint.secondary` for dual-element tools like `caliper_measure`.
+- **Handling Vague Requests**: If the user gives a generic command (e.g., "audit", "check this", "fix this"), your FIRST action must be to read `caliper://state`. 
+    - **Selection Found**: Treat the fingerprint as the implicit target and initiate the audit loop immediately.
+    - **Continuous Context & Persistence**: If you are in an iterative loop (e.g., a previous fix didn't work, or the user says you're "not getting it"), DO NOT ask for clarification or selectors again. If the user says "fix it", "try again", or "still broken", you must persist with the previous target, re-run a full audit to re-measure, and attempt a different approach immediately.
+    - **No Selection/Context**: Do NOT force a Caliper audit. Instead, ask for clarification or use surrounding context to determine the target.
+- **Proactive Context**: If you receive a resource update, acknowledge it immediately: *"I see you've selected [Element A] and [Element B] in the browser. Shall I audit the distance between them?"*
 
 ## 5. Reporting Format
 
@@ -123,6 +142,9 @@ Always report findings with:
 - **Actual vs Expected**: The measured value vs the design system goal.
 - **Recommendation**: The exact CSS/Style fix required.
 - **Verification**: A confirmation that you have re-measured after the fix.
+
+> [!TIP]
+> **Expert Prompts**: If available, use the pre-built `caliper-selector-audit` or `caliper-selectors-compare` prompts to generate standardized reports for the user.
 
 ## 6. Usage Example
 
