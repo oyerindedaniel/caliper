@@ -4,7 +4,7 @@ import { useState } from "react";
 import styles from "@/app/page.module.css";
 import { CodeBlock } from "./code-block";
 
-type Tool = "cursor" | "claude-code" | "antigravity";
+type Tool = "cursor" | "claude-code" | "antigravity" | "opencode";
 
 export function McpSetup() {
   const [tool, setTool] = useState<Tool>("cursor");
@@ -27,6 +27,15 @@ export function McpSetup() {
     },
   };
 
+  const opencodeConfig = {
+    mcp: {
+      caliper: {
+        type: "local",
+        command: ["npx", "-y", "@oyerinde/caliper", "--port", "9876"],
+      },
+    },
+  };
+
   const getCode = () => {
     switch (tool) {
       case "cursor":
@@ -35,6 +44,8 @@ export function McpSetup() {
         return `claude mcp add @oyerinde/caliper -- npx -y @oyerinde/caliper --port 9876`;
       case "antigravity":
         return JSON.stringify(antigravityConfig, null, 2);
+      case "opencode":
+        return JSON.stringify(opencodeConfig, null, 2);
     }
   };
 
@@ -63,6 +74,12 @@ export function McpSetup() {
         >
           Antigravity
         </button>
+        <button
+          className={`${styles.tab} ${tool === "opencode" ? styles.activeTab : ""}`}
+          onClick={() => setTool("opencode")}
+        >
+          OpenCode
+        </button>
       </div>
 
       <div className="">
@@ -86,6 +103,14 @@ export function McpSetup() {
           <>
             <p className="mb-12 op-8">
               Add to your <code>mcp_config.json</code>:
+            </p>
+            <CodeBlock code={getCode()} language={getLanguage()} />
+          </>
+        )}
+        {tool === "opencode" && (
+          <>
+            <p className="mb-12 op-8">
+              Add to your <code>opencode.jsonc</code>:
             </p>
             <CodeBlock code={getCode()} language={getLanguage()} />
           </>

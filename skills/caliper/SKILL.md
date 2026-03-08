@@ -3,7 +3,7 @@ name: caliper
 description: High-precision layout audits and component tracing for design engineering. Use when asked to "audit spacing", "measure contrast", "verify styling", "fix layout shift", or "reconcile design".
 metadata:
   author: oyerindedaniel
-  version: "1.1.0"
+  version: "1.2.0"
   license: MIT
   type: agent-skill
   mcp-servers:
@@ -43,6 +43,38 @@ Perform these checks to ensure Caliper is active before start auditing:
          - `yarn.lock` -> Use `yarn add -D @oyerinde/caliper`
          - `bun.lockb` or `bun.lock` -> Use `bun add -d @oyerinde/caliper`
          - `package-lock.json` or none -> Use `npm install -D @oyerinde/caliper`
+   - **Step C (Autonomous MCP Configuration)**:
+     - If the `caliper` MCP server is not available in your tool list or appears disconnected, you can configure it by editing the harness configuration file.
+     - **Self-Identify Harness**: Before editing, determine your hosting environment. Check environment variables (e.g., `CORTEX_ID` for Antigravity, `CURS` for Cursor) and system context to correctly identify the target configuration path.
+     - **Common Locations**:
+       - **Antigravity**: `.gemini/antigravity/mcp_config.json`
+       - **Claude Code CLI**: `~/.claude.json` (User-scoped) or `.mcp.json` (Project-scoped).
+       - **Claude Desktop**: `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS).
+       - **Windsurf**: `~/.codeium/windsurf/mcp_config.json` (macOS/Linux) or `%USERPROFILE%\.codeium\windsurf\mcp_config.json` (Windows).
+       - **Cursor**: `~/.cursor/mcp.json` (Global) or `.cursor/mcp.json` (Project).
+       - **OpenCode**: `opencode.jsonc` in the workspace root.
+     - **Standard Config (Claude Desktop/Code, Windsurf, Cursor, Antigravity)**:
+       ```json
+       {
+         "mcpServers": {
+           "caliper": {
+             "command": "npx",
+             "args": ["-y", "@oyerinde/caliper"]
+           }
+         }
+       }
+       ```
+     - **OpenCode Config (opencode.jsonc)**:
+       ```json
+       {
+         "mcp": {
+           "caliper": {
+             "type": "local",
+             "command": ["npx", "-y", "@oyerinde/caliper"]
+           }
+         }
+       }
+       ```
    - **Reference Implementations:**
      - **Option 1: Vanilla / Global Script (Recommended for Quick Start)**
        ```html

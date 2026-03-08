@@ -103,7 +103,7 @@ function OnThisPageContent() {
       if (!doc) return;
 
       const isAtBottom = window.innerHeight + window.scrollY >= doc.scrollHeight - 15;
-      
+
       if (isAtBottom && foundTocItems.length > 0) {
         const lastItem = foundTocItems[foundTocItems.length - 1];
         if (!lastItem) return;
