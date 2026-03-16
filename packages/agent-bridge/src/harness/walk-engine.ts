@@ -275,13 +275,10 @@ export async function walkAndMeasure(
 
       if (currentNode.depth >= maxDepth) continue;
 
-      const allChildren = [...Array.from(currentElement.children)];
+      const allChildren = Array.from(currentElement.children);
       if (currentElement.shadowRoot) {
         allChildren.push(...Array.from(currentElement.shadowRoot.children));
       }
-
-      const visibleChildren = allChildren.filter(isVisible);
-      currentNode.measurements.siblingCount = visibleChildren.length;
 
       let visibleIdx = 0;
       for (let domIdx = 0; domIdx < allChildren.length; domIdx++) {
@@ -350,6 +347,11 @@ export async function walkAndMeasure(
           );
           continue;
         }
+      }
+
+      currentNode.measurements.siblingCount = visibleIdx;
+      for (const child of currentNode.children) {
+        child.measurements.siblingCount = visibleIdx;
       }
     }
 

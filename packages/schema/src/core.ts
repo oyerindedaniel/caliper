@@ -25,6 +25,8 @@ export const ScrollStateSchema = z.object({
     containerRect: RectSchema.nullable(),
     absoluteDepth: z.number(),
     hasStickyAncestor: z.boolean().optional(),
+    isFixed: z.boolean().optional(),
+    isScrollingBox: z.boolean().optional(),
 });
 
 export const MeasurementLineSchema = z.object({

@@ -82,6 +82,11 @@ function overflowIndicatesClipping(style: ScrollGeometryStyle | CSSStyleDeclarat
   return /(auto|scroll|hidden|clip)/.test(style.overflow + style.overflowY + style.overflowX);
 }
 
+/** True if overflow values establish a scrolling box (auto, scroll, hidden). Style-only, no DOM access. */
+function overflowEstablishesScrollingBox(style: ScrollGeometryStyle | CSSStyleDeclaration): boolean {
+  return /(auto|scroll|hidden)/.test(style.overflow + style.overflowY + style.overflowX);
+}
+
 export function isScrollContainer(element: Element): boolean {
   if (!isRenderable(element)) return false;
   if (element.tagName.toLowerCase() === "svg") return false;
@@ -96,7 +101,7 @@ export function isScrollContainer(element: Element): boolean {
  */
 function establishesScrollingBox(element: Element): boolean {
   const style = getScrollGeometryStyle(element);
-  return /(auto|scroll|hidden)/.test(style.overflow + style.overflowY + style.overflowX);
+  return overflowEstablishesScrollingBox(style);
 }
 
 interface FullHierarchyResult {
@@ -106,6 +111,7 @@ interface FullHierarchyResult {
   containingBlock: HTMLElement | null;
   treeDepth: number;
   anchorAbsoluteDepth: number;
+  styleCache: Map<Element, ScrollGeometryStyle>;
 }
 
 /**
@@ -129,13 +135,19 @@ function getFullHierarchy(element: Element): FullHierarchyResult {
       containingBlock: null,
       treeDepth: 0,
       anchorAbsoluteDepth: -1,
+      styleCache: new Map(),
     };
   }
 
   const styles: ScrollGeometryStyle[] = [];
+  const styleCache = new Map<Element, ScrollGeometryStyle>();
   for (let i = 0; i < n; i++) {
     const node = ancestors[i];
-    if (node !== undefined) styles.push(getScrollGeometryStyle(node));
+    if (node !== undefined) {
+      const computedStyle = getScrollGeometryStyle(node);
+      styles.push(computedStyle);
+      styleCache.set(node, computedStyle);
+    }
   }
 
   const hasStickyAbove: boolean[] = [];
@@ -197,6 +209,8 @@ function getFullHierarchy(element: Element): FullHierarchyResult {
         containerRect: getScrollAwareRect(containerElement.getBoundingClientRect()),
         absoluteDepth: depthFromRoot,
         hasStickyAncestor: hasStickyAbove[i] ?? false,
+        isFixed: style.position === "fixed",
+        isScrollingBox: overflowEstablishesScrollingBox(style),
       });
     }
   }
@@ -208,6 +222,7 @@ function getFullHierarchy(element: Element): FullHierarchyResult {
     containingBlock,
     treeDepth: n - 1,
     anchorAbsoluteDepth,
+    styleCache,
   };
 }
 
@@ -322,9 +337,8 @@ export function getTotalScrollDelta(
     if (!scrollState) continue;
 
     const element = scrollState.element!;
-    const style = getScrollGeometryStyle(element);
-    const isFixed = style.position === "fixed";
-    const isScrollingBox = establishesScrollingBox(element);
+    const isFixed = scrollState.isFixed ?? getScrollGeometryStyle(element).position === "fixed";
+    const isScrollingBox = scrollState.isScrollingBox ?? establishesScrollingBox(element);
 
     if (isScrollingBox) {
       /**
@@ -587,24 +601,7 @@ export function getCommonVisibilityWindow(
     let windowScrollAdjustmentX = 0;
     let windowScrollAdjustmentY = 0;
 
-    let hasStickyAncestorFlag: boolean;
-    if (typeof scrollState.hasStickyAncestor === "boolean") {
-      hasStickyAncestorFlag = scrollState.hasStickyAncestor;
-    } else if (scrollState.element) {
-      let checkElement: Element | null = scrollState.element;
-      hasStickyAncestorFlag = false;
-      while (checkElement && checkElement !== document.documentElement) {
-        const checkStyle = getScrollGeometryStyle(checkElement);
-        if (checkStyle.position === "sticky") {
-          hasStickyAncestorFlag = true;
-          break;
-        }
-        if (checkStyle.position === "fixed") break;
-        checkElement = checkElement.parentElement;
-      }
-    } else {
-      hasStickyAncestorFlag = false;
-    }
+    const hasStickyAncestorFlag = scrollState.hasStickyAncestor ?? false;
 
     if (hasStickyAncestorFlag) {
       windowScrollAdjustmentX = window.scrollX - initWinX;
@@ -696,25 +693,7 @@ export function getLiveGeometry(
     let windowScrollAdjustmentX = 0;
     let windowScrollAdjustmentY = 0;
 
-    let hasStickyAncestorFlag: boolean;
-    if (typeof scrollState.hasStickyAncestor === "boolean") {
-      hasStickyAncestorFlag = scrollState.hasStickyAncestor;
-    } else if (scrollState.element) {
-      let checkElement: Element | null = scrollState.element;
-      hasStickyAncestorFlag = false;
-      while (checkElement && checkElement !== document.documentElement) {
-        const checkStyle = getScrollGeometryStyle(checkElement);
-        if (checkStyle.position === "sticky") {
-          hasStickyAncestorFlag = true;
-          break;
-        }
-        // Fixed elements break the chain - their children don't move with window scroll
-        if (checkStyle.position === "fixed") break;
-        checkElement = checkElement.parentElement;
-      }
-    } else {
-      hasStickyAncestorFlag = false;
-    }
+    const hasStickyAncestorFlag = scrollState.hasStickyAncestor ?? false;
 
     if (hasStickyAncestorFlag) {
       // For containers with sticky ancestors: they move with the sticky element,
@@ -820,13 +799,14 @@ function getRootOffset(element: Element): { top: number; left: number } {
 
 function collectStickyOnPath(
   from: HTMLElement,
-  to: Element
+  to: Element,
+  styleCache?: Map<Element, ScrollGeometryStyle>
 ): Array<{ element: HTMLElement; originalPosition: string }> {
   const out: Array<{ element: HTMLElement; originalPosition: string }> = [];
   let current: Element | null = from;
   while (current) {
     if (current instanceof HTMLElement) {
-      const style = getScrollGeometryStyle(current);
+      const style = styleCache?.get(current) ?? getScrollGeometryStyle(current);
       if (style.position === "sticky") {
         out.push({ element: current, originalPosition: current.style.position });
       }
@@ -842,8 +822,8 @@ function collectStickyOnPath(
  * Calculates the exact layout offset of an element relative to a container.
  * Sticky elements on the path are temporarily set to static so the offset chain is consistent, then restored.
  */
-function getDistanceFromContainer(targetElement: HTMLElement, containerElement: Element) {
-  const stickyElements = collectStickyOnPath(targetElement, containerElement);
+function getDistanceFromContainer(targetElement: HTMLElement, containerElement: Element, styleCache?: Map<Element, ScrollGeometryStyle>) {
+  const stickyElements = collectStickyOnPath(targetElement, containerElement, styleCache);
   for (const { element } of stickyElements) element.style.position = "static";
   try {
     const targetOffset = getRootOffset(targetElement);
@@ -866,7 +846,8 @@ function getDistanceFromContainer(targetElement: HTMLElement, containerElement: 
 function getDistancesWithSingleToggle(
   scrollAnchor: HTMLElement,
   scrollingContainer: Element,
-  cappingContainer: HTMLElement | null
+  cappingContainer: HTMLElement | null,
+  styleCache?: Map<Element, ScrollGeometryStyle>
 ): {
   naturalPosition: { offsetX: number; offsetY: number };
   cappingNaturalPosition: { offsetX: number; offsetY: number } | null;
@@ -875,7 +856,8 @@ function getDistancesWithSingleToggle(
   const list: Array<{ element: HTMLElement; originalPosition: string }> = [];
   for (const { element, originalPosition } of collectStickyOnPath(
     scrollAnchor,
-    scrollingContainer
+    scrollingContainer,
+    styleCache
   )) {
     if (!seen.has(element)) {
       seen.add(element);
@@ -885,7 +867,8 @@ function getDistancesWithSingleToggle(
   if (cappingContainer && cappingContainer !== scrollAnchor) {
     for (const { element, originalPosition } of collectStickyOnPath(
       cappingContainer,
-      scrollingContainer
+      scrollingContainer,
+      styleCache
     )) {
       if (!seen.has(element)) {
         seen.add(element);
@@ -929,16 +912,21 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     containingBlock,
     treeDepth,
     anchorAbsoluteDepth,
+    styleCache,
   } = getFullHierarchy(element);
 
   let stickyConfig;
   if (positionMode === "sticky" && scrollAnchor) {
-    const style = getScrollGeometryStyle(scrollAnchor);
+    const style = styleCache.get(scrollAnchor) ?? getScrollGeometryStyle(scrollAnchor);
 
     let scrollingContainer: Element = document.documentElement;
     let currentParent = scrollAnchor.parentElement;
     while (currentParent && currentParent !== document.documentElement) {
-      if (establishesScrollingBox(currentParent)) {
+      const parentStyle = styleCache.get(currentParent);
+      const isScrolling = parentStyle
+        ? overflowEstablishesScrollingBox(parentStyle)
+        : establishesScrollingBox(currentParent);
+      if (isScrolling) {
         scrollingContainer = currentParent;
         break;
       }
@@ -949,7 +937,9 @@ export function deduceGeometry(element: Element): DeducedGeometry {
     const isDocLevelCapping =
       cappingContainer === document.documentElement || cappingContainer === document.body;
     const cappingStyle =
-      cappingContainer instanceof HTMLElement ? getScrollGeometryStyle(cappingContainer) : null;
+      cappingContainer instanceof HTMLElement
+        ? (styleCache.get(cappingContainer) ?? getScrollGeometryStyle(cappingContainer))
+        : null;
     const isCappingContainerSticky = cappingStyle?.position === "sticky";
 
     const anchorRect = scrollAnchor.getBoundingClientRect();
@@ -972,12 +962,13 @@ export function deduceGeometry(element: Element): DeducedGeometry {
       const dist = getDistancesWithSingleToggle(
         scrollAnchor,
         scrollingContainer,
-        cappingContainer as HTMLElement
+        cappingContainer as HTMLElement,
+        styleCache
       );
       naturalPosition = dist.naturalPosition;
       cappingNaturalPosition = dist.cappingNaturalPosition;
     } else {
-      naturalPosition = getDistanceFromContainer(scrollAnchor, scrollingContainer);
+      naturalPosition = getDistanceFromContainer(scrollAnchor, scrollingContainer, styleCache);
     }
 
     let containerHeight: number;
