@@ -2,8 +2,7 @@ import { createSignal, createMemo, For, Show } from "solid-js";
 import {
   type MeasurementLine,
   type LiveGeometry,
-  getLivePoint,
-  clampPointToGeometry,
+  resolveLiveLineEndpoints,
   generateId,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
@@ -66,62 +65,13 @@ export function MeasurementLinesWithCalculator(props: MeasurementLinesProps) {
         <For each={props.lines}>
           {(line, index) => {
             const lineData = createMemo(() => {
-              const sRaw = getLivePoint(
-                line.start,
-                line.startSync,
+              const { start, end, liveValue } = resolveLiveLineEndpoints({
                 line,
-                props.data.primary.delta,
-                props.data.secondary.delta,
-                props.viewport.scrollX,
-                props.viewport.scrollY
-              );
-
-              const eRaw = getLivePoint(
-                line.end,
-                line.endSync,
-                line,
-                props.data.primary.delta,
-                props.data.secondary.delta,
-                props.viewport.scrollX,
-                props.viewport.scrollY
-              );
-
-              let start = sRaw;
-              let end = eRaw;
-
-              if (!props.data.isSameContext) {
-                start = clampPointToGeometry(
-                  sRaw,
-                  line.startSync === "secondary"
-                    ? props.data.secondary.geo
-                    : props.data.primary.geo,
-                  props.viewport
-                );
-                const eRawClamped = clampPointToGeometry(
-                  eRaw,
-                  line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo,
-                  props.viewport
-                );
-                end = { ...eRawClamped };
-              }
-
-              if (line.type === "top" || line.type === "bottom") {
-                // Align axis to the inner (target) element endpoint
-                if (line.type === "top") start.x = end.x;
-                else end.x = start.x;
-              } else if (line.type === "left" || line.type === "right") {
-                if (line.type === "left") start.y = end.y;
-                else end.y = start.y;
-              }
-
-              let liveValue = 0;
-              if (line.type === "top" || line.type === "bottom") {
-                liveValue = Math.abs(start.y - end.y);
-              } else if (line.type === "left" || line.type === "right") {
-                liveValue = Math.abs(start.x - end.x);
-              } else {
-                liveValue = Math.sqrt(Math.pow(start.x - end.x, 2) + Math.pow(start.y - end.y, 2));
-              }
+                isSameContext: props.data.isSameContext,
+                primary: props.data.primary,
+                secondary: props.data.secondary,
+                viewport: props.viewport,
+              });
 
               return { x1: start.x, y1: start.y, x2: end.x, y2: end.y, liveValue };
             });

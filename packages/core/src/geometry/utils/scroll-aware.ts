@@ -1,9 +1,9 @@
 /**
  * Scroll-Aware Geometry Engine
  */
-import type { ScrollState, PositionMode, StickyConfig } from "../../shared/types/index.js";
+import type { ScrollState, PositionMode, StickyConfig } from "@/shared/types/index.js";
 import type { SelectionMetadata as BaseSelectionMetadata } from "@oyerinde/caliper-schema";
-import { isRenderable } from "../../shared/utils/dom-utils.js";
+import { isRenderable } from "@/shared/utils/dom-utils.js";
 
 export interface DeducedGeometry extends Omit<
   BaseSelectionMetadata,
@@ -83,7 +83,9 @@ function overflowIndicatesClipping(style: ScrollGeometryStyle | CSSStyleDeclarat
 }
 
 /** True if overflow values establish a scrolling box (auto, scroll, hidden). Style-only, no DOM access. */
-function overflowEstablishesScrollingBox(style: ScrollGeometryStyle | CSSStyleDeclaration): boolean {
+function overflowEstablishesScrollingBox(
+  style: ScrollGeometryStyle | CSSStyleDeclaration
+): boolean {
   return /(auto|scroll|hidden)/.test(style.overflow + style.overflowY + style.overflowX);
 }
 
@@ -822,7 +824,11 @@ function collectStickyOnPath(
  * Calculates the exact layout offset of an element relative to a container.
  * Sticky elements on the path are temporarily set to static so the offset chain is consistent, then restored.
  */
-function getDistanceFromContainer(targetElement: HTMLElement, containerElement: Element, styleCache?: Map<Element, ScrollGeometryStyle>) {
+function getDistanceFromContainer(
+  targetElement: HTMLElement,
+  containerElement: Element,
+  styleCache?: Map<Element, ScrollGeometryStyle>
+) {
   const stickyElements = collectStickyOnPath(targetElement, containerElement, styleCache);
   for (const { element } of stickyElements) element.style.position = "static";
   try {

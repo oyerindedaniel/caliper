@@ -1,6 +1,6 @@
-import { RulerLine, RulerState } from "../../shared/types/index.js";
-import { MAX_RULER_LINES } from "../../shared/constants/index.js";
-import { generateId } from "../../shared/utils/id.js";
+import { RulerLine, RulerState } from "@/shared/types/index.js";
+import { MAX_RULER_LINES } from "@/shared/constants/index.js";
+import { generateId } from "@/shared/utils/id.js";
 
 export type RulerListener = (state: RulerState) => void;
 

@@ -1,7 +1,7 @@
 import { generateId } from "./id.js";
 import { filterRuntimeClasses } from "./class-filter.js";
 import { getElementDirectText } from "./text-content.js";
-import { BRIDGE_TAB_ID_KEY } from "../constants/index.js";
+import { BRIDGE_TAB_ID_KEY } from "@/shared/constants/index.js";
 import type { CaliperSelectorInput, SelectionMetadata } from "@oyerinde/caliper-schema";
 
 export function buildSelectorInfo(

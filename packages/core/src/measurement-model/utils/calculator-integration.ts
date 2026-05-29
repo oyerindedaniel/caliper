@@ -2,7 +2,7 @@ import {
   createCalculatorState,
   type CalculatorState,
   type CalculatorOperation,
-} from "../../calculator-model/utils/calculator-state.js";
+} from "@/calculator-model/utils/calculator-state.js";
 import type { MeasurementLine } from "./measurement-result.js";
 
 export interface CalculatorIntegration {

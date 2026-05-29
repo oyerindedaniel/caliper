@@ -1,6 +1,6 @@
-import { createReader } from "../../scheduling/reader.js";
-import { createFrequencyControlledReader } from "../../scheduling/frequency-control.js";
-import type { CursorContext } from "../../shared/types/index.js";
+import { createReader } from "@/scheduling/reader.js";
+import { createFrequencyControlledReader } from "@/scheduling/frequency-control.js";
+import type { CursorContext } from "@/shared/types/index.js";
 import type { MeasurementResult } from "./measurement-result.js";
 import { createMeasurementLines } from "./measurement-result.js";
 import { createMeasurement } from "./create-measurement.js";
@@ -10,7 +10,7 @@ import {
   type CalculatorIntegration,
 } from "./calculator-integration.js";
 import { createProjectionSystem, type ProjectionSystem } from "./projection-system.js";
-import { createRulerSystem, type RulerSystem } from "../../ruler-model/utils/ruler-system.js";
+import { createRulerSystem, type RulerSystem } from "@/ruler-model/utils/ruler-system.js";
 
 export type { MeasurementState };
 

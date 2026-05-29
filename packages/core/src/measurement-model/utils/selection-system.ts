@@ -1,7 +1,7 @@
 import type { SelectionMetadata as BaseSelectionMetadata } from "@oyerinde/caliper-schema";
-import { deduceGeometry } from "../../geometry/utils/scroll-aware.js";
-import { waitPostRaf } from "../../shared/utils/raf.js";
-import type { Remap, ScrollState, PositionMode, StickyConfig } from "../../shared/types/index.js";
+import { deduceGeometry } from "@/geometry/utils/scroll-aware.js";
+import { waitPostRaf } from "@/shared/utils/raf.js";
+import type { Remap, ScrollState, PositionMode, StickyConfig } from "@/shared/types/index.js";
 
 /**
  * Selection system for tracking selected elements

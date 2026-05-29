@@ -1,4 +1,4 @@
-import { OVERLAY_CONTAINER_ID } from "../constants/index.js";
+import { OVERLAY_CONTAINER_ID } from "@/shared/constants/index.js";
 
 /**
  * Check if the provided element is a valid renderable object in any context.

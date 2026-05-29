@@ -26,6 +26,7 @@ import {
   RESIZE_THROTTLE_MS,
   buildSelectorInfo,
   generateId,
+  getMaxProjectionDistance,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { PREFIX } from "./css/styles.js";
@@ -598,7 +599,10 @@ export function Root(config: RootConfig) {
               metadata.initialWindowY
             );
             if (!live) return undefined;
-            return getMaxProjectionDistance(dir, live);
+            return getMaxProjectionDistance(dir, live, {
+              width: document.documentElement.scrollWidth,
+              height: document.documentElement.scrollHeight,
+            });
           };
 
           const maxRunway = getRunway(dir);
@@ -630,7 +634,10 @@ export function Root(config: RootConfig) {
 
               let max: number | undefined;
               if (live) {
-                max = getMaxProjectionDistance(currentDir, live);
+                max = getMaxProjectionDistance(currentDir, live, {
+                  width: document.documentElement.scrollWidth,
+                  height: document.documentElement.scrollHeight,
+                });
               }
               projectionSystem?.appendValue(key, max);
             } else if (isBackspace) {
@@ -1071,23 +1078,4 @@ export function Root(config: RootConfig) {
       onCalculatorClose={handleCalculatorClose}
     />
   );
-}
-
-function getMaxProjectionDistance(
-  dir: ProjectionDirection,
-  live: { top: number; left: number; width: number; height: number }
-): number {
-  const docWidth = document.documentElement.scrollWidth;
-  const docHeight = document.documentElement.scrollHeight;
-
-  switch (dir) {
-    case "top":
-      return live.top;
-    case "bottom":
-      return docHeight - (live.top + live.height);
-    case "left":
-      return live.left;
-    case "right":
-      return docWidth - (live.left + live.width);
-  }
 }

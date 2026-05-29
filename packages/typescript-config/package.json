@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "lint": "echo \"No files to lint\"",
-    "format": "prettier --write \"**/*.{json,md}\""
+    "format": "prettier --write \"**/*.{json,md}\"",
+    "check-types": "node -e \"process.exit(0)\""
   },
   "devDependencies": {
     "prettier": "^3.7.4"

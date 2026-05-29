@@ -1,7 +1,7 @@
-import type { CursorContext } from "../../shared/types/index.js";
-import { resolveAmbiguousContext } from "../../cursor-context/utils/priority-rules.js";
+import type { CursorContext } from "@/shared/types/index.js";
+import { resolveAmbiguousContext } from "@/cursor-context/utils/priority-rules.js";
 import { createMeasurementLines, type MeasurementResult } from "./measurement-result.js";
-import { deduceGeometry } from "../../geometry/utils/scroll-aware.js";
+import { deduceGeometry } from "@/geometry/utils/scroll-aware.js";
 
 /**
  * Computes a measurement result for a selected element relative to another

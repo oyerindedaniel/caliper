@@ -1,4 +1,4 @@
-import { SUPPRESSION_MAX_FRAMES, SUPPRESSION_DELAY } from "../shared/constants/index.js";
+import { SUPPRESSION_MAX_FRAMES, SUPPRESSION_DELAY } from "@/shared/constants/index.js";
 
 export interface SuppressionOptions {
   maxFrames?: number;

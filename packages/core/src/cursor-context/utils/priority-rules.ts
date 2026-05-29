@@ -1,5 +1,5 @@
-import type { CursorContext } from "../../shared/types/index.js";
-import { isEligible } from "../../element-picking/utils/filter-visible.js";
+import type { CursorContext } from "@/shared/types/index.js";
+import { isEligible } from "@/element-picking/utils/filter-visible.js";
 
 /**
  * ============================================================================

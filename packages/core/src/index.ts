@@ -25,6 +25,28 @@ export {
   getLivePoint,
 } from "./measurement-model/utils/measurement-result.js";
 export {
+  isSameMeasurementContext,
+  type SameMeasurementContextInput,
+} from "./measurement-model/utils/measurement-context.js";
+export {
+  getMaxProjectionDistance,
+  getProjectionLineGeometry,
+  type DocSize,
+  type ProjectionViewport,
+  type ProjectionLineGeometry,
+  type ProjectionLineGeometryInput,
+} from "./measurement-model/utils/projection-geometry.js";
+export {
+  resolveLiveLineEndpoints,
+  resolveMeasurementLabelPosition,
+  type LiveLineSyncData,
+  type ResolveLiveLineEndpointsInput,
+  type ResolvedLiveLineEndpoints,
+  type MeasurementLabelPosition,
+  type MeasurementLabelPositionInput,
+  type VisibilityWindow,
+} from "./measurement-model/utils/live-line-render.js";
+export {
   createMeasurement,
   createMeasurementBetween,
 } from "./measurement-model/utils/create-measurement.js";
