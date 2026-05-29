@@ -2,7 +2,7 @@
  * Calculator configuration and shortcuts.
  * This file defines how users can customize the calculator triggers and appearance.
  */
-import { OS } from "../utils/os.js";
+import { OS } from "@/shared/utils/os.js";
 import type { CaliperAgentState } from "@oyerinde/caliper-schema";
 export type { CaliperAgentState };
 

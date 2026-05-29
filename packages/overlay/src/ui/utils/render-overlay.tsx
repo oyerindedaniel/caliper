@@ -5,7 +5,7 @@ import {
   getTotalScrollDelta,
   getCommonVisibilityWindow,
   getOverlayRoot,
-  type ScrollState,
+  isSameMeasurementContext,
 } from "@caliper/core";
 import { MeasurementLinesWithCalculator } from "./render-lines-with-calculator.jsx";
 import { MeasurementLabels } from "./render-labels.jsx";
@@ -79,23 +79,16 @@ export function Overlay(props: OverlayProps) {
       ),
     };
 
-    const hasSameStack =
-      res.primaryPosition === res.secondaryPosition &&
-      res.primaryHierarchy.length === res.secondaryHierarchy.length &&
-      res.primaryHierarchy.every(
-        (scrollState: ScrollState, index: number) =>
-          scrollState.element === res.secondaryHierarchy[index]?.element
-      );
-
-    const isDirectParentChild =
-      (res.primaryHierarchy.length > 0 &&
-        res.primaryHierarchy[0]?.element === res.secondaryElement) ||
-      (res.secondaryHierarchy.length > 0 &&
-        res.secondaryHierarchy[0]?.element === props.selectionMetadata().element);
-
     return {
       ...base,
-      isSameContext: hasSameStack || isDirectParentChild,
+      isSameContext: isSameMeasurementContext({
+        primaryPosition: res.primaryPosition,
+        secondaryPosition: res.secondaryPosition,
+        primaryHierarchy: res.primaryHierarchy,
+        secondaryHierarchy: res.secondaryHierarchy,
+        selectedElement: props.selectionMetadata().element,
+        secondaryElement: res.secondaryElement,
+      }),
     };
   });
 

@@ -1,4 +1,4 @@
-import { ProjectionState, ProjectionDirection } from "../../shared/types/index.js";
+import { ProjectionState, ProjectionDirection } from "@/shared/types/index.js";
 
 export type ProjectionListener = (state: ProjectionState) => void;
 

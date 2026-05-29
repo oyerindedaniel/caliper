@@ -23,7 +23,6 @@ import type {
   CaliperMeasurePayload,
   CaliperInspectPayload,
   CaliperWalkDomPayload,
-  CaliperSelectorInput,
 } from "@oyerinde/caliper-schema";
 import { BitBridge, CALIPER_METHODS } from "@oyerinde/caliper-schema";
 import { DEFAULT_WALK_DEPTH } from "./constants.js";

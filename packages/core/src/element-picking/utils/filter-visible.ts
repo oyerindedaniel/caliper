@@ -1,4 +1,4 @@
-import { isRenderable } from "../../shared/utils/dom-utils.js";
+import { isRenderable } from "@/shared/utils/dom-utils.js";
 
 /**
  * Check if an element is visible

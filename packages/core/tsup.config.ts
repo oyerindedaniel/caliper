@@ -10,4 +10,9 @@ export default defineConfig({
   treeshake: false,
   external: [],
   noExternal: ["@oyerinde/caliper-schema"],
+  esbuildOptions(options) {
+    options.alias = {
+      "@": "./src",
+    };
+  },
 });

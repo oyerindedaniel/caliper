@@ -27,7 +27,6 @@
     "babel-preset-solid": "^1.9.10",
     "esbuild-plugin-babel": "^0.2.3",
     "@caliper/core": "workspace:*",
-    "@oyerinde/caliper-schema": "workspace:*",
     "solid-js": "^1.9.10"
   }
 }

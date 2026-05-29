@@ -2,8 +2,8 @@ import { For, Show, createMemo } from "solid-js";
 import {
   type MeasurementLine,
   type LiveGeometry,
-  getLivePoint,
-  clampPointToGeometry,
+  resolveLiveLineEndpoints,
+  resolveMeasurementLabelPosition,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
@@ -34,8 +34,6 @@ interface MeasurementLabelsProps {
  * Render measurement labels using Viewport-Relative coordinates.
  */
 export function MeasurementLabels(props: MeasurementLabelsProps) {
-  const margin = 16;
-
   return (
     <div class={`${PREFIX}viewport-fixed`} style={{ "z-index": 1000000 }}>
       <For each={props.lines}>
@@ -43,123 +41,20 @@ export function MeasurementLabels(props: MeasurementLabelsProps) {
           const position = createMemo(() => {
             props.viewport.version;
 
-            const sRaw = getLivePoint(
-              line.start,
-              line.startSync,
+            const endpoints = resolveLiveLineEndpoints({
               line,
-              props.data.primary.delta,
-              props.data.secondary.delta,
-              props.viewport.scrollX,
-              props.viewport.scrollY
-            );
+              isSameContext: props.data.isSameContext,
+              primary: props.data.primary,
+              secondary: props.data.secondary,
+              viewport: props.viewport,
+            });
 
-            const eRaw = getLivePoint(
-              line.end,
-              line.endSync,
+            return resolveMeasurementLabelPosition({
               line,
-              props.data.primary.delta,
-              props.data.secondary.delta,
-              props.viewport.scrollX,
-              props.viewport.scrollY
-            );
-
-            const dxRaw = Math.abs(sRaw.x - eRaw.x);
-            const dyRaw = Math.abs(sRaw.y - eRaw.y);
-
-            let liveValue = 0;
-            if (line.type === "top" || line.type === "bottom") {
-              liveValue = dyRaw;
-            } else if (line.type === "left" || line.type === "right") {
-              liveValue = dxRaw;
-            } else {
-              liveValue = Math.sqrt(dxRaw * dxRaw + dyRaw * dyRaw);
-            }
-
-            let start = sRaw;
-            let end = eRaw;
-
-            if (!props.data.isSameContext) {
-              start = clampPointToGeometry(
-                sRaw,
-                line.startSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo,
-                props.viewport
-              );
-              const eClamped = clampPointToGeometry(
-                eRaw,
-                line.endSync === "secondary" ? props.data.secondary.geo : props.data.primary.geo,
-                props.viewport
-              );
-              end = { ...eClamped };
-            }
-
-            if (line.type === "top" || line.type === "bottom") {
-              // Align axis to the inner (target) element endpoint
-              if (line.type === "top") start.x = end.x;
-              else end.x = start.x;
-            } else if (line.type === "left" || line.type === "right") {
-              if (line.type === "left") start.y = end.y;
-              else end.y = start.y;
-            }
-
-            const naturalX = (start.x + end.x) / 2;
-            const naturalY = (start.y + end.y) / 2;
-
-            const vpMinX = 0;
-            const vpMaxX = props.viewport.width;
-            const vpMinY = 0;
-            const vpMaxY = props.viewport.height;
-
-            const common = props.data.common;
-            const hasCommon = isFinite(common.minX);
-
-            const cMinX = hasCommon
-              ? Math.max(vpMinX, common.minX - props.viewport.scrollX)
-              : vpMinX;
-            const cMaxX = hasCommon
-              ? Math.min(vpMaxX, common.maxX - props.viewport.scrollX)
-              : vpMaxX;
-            const cMinY = hasCommon
-              ? Math.max(vpMinY, common.minY - props.viewport.scrollY)
-              : vpMinY;
-            const cMaxY = hasCommon
-              ? Math.min(vpMaxY, common.maxY - props.viewport.scrollY)
-              : vpMaxY;
-
-            const lineMinX = Math.min(start.x, end.x);
-            const lineMaxX = Math.max(start.x, end.x);
-            const lineMinY = Math.min(start.y, end.y);
-            const lineMaxY = Math.max(start.y, end.y);
-
-            const isFullyHidden =
-              lineMaxY < cMinY || lineMinY > cMaxY || lineMaxX < cMinX || lineMinX > cMaxX;
-
-            if (isFullyHidden) return { x: 0, y: 0, isHidden: true, value: 0 };
-
-            const visibleLineMinX = Math.max(lineMinX, cMinX);
-            const visibleLineMaxX = Math.min(lineMaxX, cMaxX);
-            const visibleLineMinY = Math.max(lineMinY, cMinY);
-            const visibleLineMaxY = Math.min(lineMaxY, cMaxY);
-
-            const centerX = (visibleLineMinX + visibleLineMaxX) / 2;
-            const centerY = (visibleLineMinY + visibleLineMaxY) / 2;
-
-            let targetX = naturalX;
-            let targetY = naturalY;
-
-            if (Math.abs(start.x - end.x) < 1) {
-              // Vertical
-              targetY = centerY;
-              targetX = Math.max(cMinX + margin, Math.min(cMaxX - margin, targetX));
-            } else if (Math.abs(start.y - end.y) < 1) {
-              // Horizontal
-              targetX = centerX;
-              targetY = Math.max(cMinY + margin, Math.min(cMaxY - margin, targetY));
-            } else {
-              targetX = Math.max(cMinX + margin, Math.min(cMaxX - margin, naturalX));
-              targetY = Math.max(cMinY + margin, Math.min(cMaxY - margin, naturalY));
-            }
-
-            return { x: targetX, y: targetY, isHidden: false, value: liveValue };
+              endpoints,
+              common: props.data.common,
+              viewport: props.viewport,
+            });
           });
 
           return (

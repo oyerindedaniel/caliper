@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { getLiveGeometry, deduceGeometry, getTotalScrollDelta } from "./scroll-aware.js";
-import { getLivePoint } from "../../measurement-model/utils/measurement-result.js";
+import { getLivePoint } from "@/measurement-model/utils/measurement-result.js";
 import type { MeasurementLine } from "@oyerinde/caliper-schema";
 
 const elementStyleMap = new Map<Element, Partial<CSSStyleDeclaration>>();
