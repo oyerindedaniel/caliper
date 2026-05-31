@@ -7,7 +7,8 @@
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "caliper": "./dist/mcp.js"
+    "caliper": "./dist/mcp.js",
+    "caliper-engine": "./dist/engine-cli.js"
   },
   "author": "Daniel Oyerinde <oyerinde.daniel@yahoo.com> (https://danieloyerinde.com)",
   "homepage": "https://caliper.danieloyerinde.com",

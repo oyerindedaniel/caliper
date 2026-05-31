@@ -6,8 +6,10 @@ import {
   RECOMMENDED_PAGINATION_THRESHOLD,
   CALIPER_METHODS,
   type CaliperAgentState,
+  type CaliperMeasurementRouting,
 } from "@oyerinde/caliper-schema";
 import { bridgeService } from "./bridge-service.js";
+import { createMeasurementService, type MeasurementService } from "./measurement-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { parseColor, calculateDeltaE, calculateContrastRatio } from "../utils/color-utils.js";
@@ -15,13 +17,27 @@ import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
 import { BRIDGE_EVENTS } from "../shared/events.js";
 
 const logger = createLogger("mcp-server");
+export type CaliperMcpServerOptions = {
+  port?: number;
+  engineUrl?: string | null;
+  engineTargetUrl?: string | null;
+  runtimeRouting?: CaliperMeasurementRouting;
+};
+
 export class CaliperMcpServer {
   private server: McpServer;
   private port: number;
+  private measurementService: MeasurementService;
   private lastState: CaliperAgentState | null = null;
 
-  constructor(port: number = DEFAULT_BRIDGE_PORT) {
-    this.port = port;
+  constructor(options: CaliperMcpServerOptions = {}) {
+    this.port = options.port ?? DEFAULT_BRIDGE_PORT;
+    this.measurementService = createMeasurementService({
+      bridgePort: this.port,
+      engineUrl: options.engineUrl ?? null,
+      engineTargetUrl: options.engineTargetUrl ?? null,
+      runtimeRouting: options.runtimeRouting,
+    });
     this.server = new McpServer({
       name: "caliper-mcp-server",
       version: process.env.VERSION as string,
@@ -103,7 +119,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ selector }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.INSPECT, { selector });
+          const result = await this.measurementService.call(CALIPER_METHODS.INSPECT, { selector });
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -138,7 +154,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ primarySelector, secondarySelector }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.MEASURE, {
+          const result = await this.measurementService.call(CALIPER_METHODS.MEASURE, {
             primarySelector,
             secondarySelector,
           });
@@ -165,7 +181,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async () => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.CLEAR, {});
+          const result = await this.measurementService.call(CALIPER_METHODS.CLEAR, {});
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -196,7 +212,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ selector }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.WALK_DOM, { selector });
+          const result = await this.measurementService.call(CALIPER_METHODS.WALK_DOM, { selector });
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
@@ -284,7 +300,7 @@ The output includes:
       },
       async ({ selector, maxDepth, maxNodes, continueFrom, minElementSize, ignoreSelectors }) => {
         try {
-          const auditResult = await bridgeService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
+          const auditResult = await this.measurementService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
             selector,
             maxDepth: maxDepth ?? 5,
             maxNodes,
@@ -325,14 +341,99 @@ The output includes:
       },
       async () => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.GET_CONTEXT, {});
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+          const result = await this.measurementService.call(CALIPER_METHODS.GET_CONTEXT, {});
+          const payload =
+            result.success && result.method === CALIPER_METHODS.GET_CONTEXT
+              ? {
+                  ...result,
+                  runtimeConnection: this.measurementService.getRuntimeConnection(),
+                }
+              : result;
+          return { content: [{ type: "text", text: JSON.stringify(payload) }] };
         } catch (error) {
           return {
             content: [
               {
                 type: "text",
                 text: `Get Context failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_set_viewport",
+      {
+        description:
+          "Set the emulated viewport for engine-mode audits. Requires MCP started with --runtime engine --engine.",
+        inputSchema: z.object({
+          width: z.number().int().positive().describe("Viewport width in CSS pixels"),
+          height: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Viewport height in CSS pixels (default 812)"),
+          deviceScaleFactor: z
+            .number()
+            .positive()
+            .optional()
+            .describe("Device pixel ratio override (default 1)"),
+        }),
+      },
+      async ({ width, height, deviceScaleFactor }) => {
+        try {
+          const result = await this.measurementService.call(CALIPER_METHODS.SET_VIEWPORT, {
+            width,
+            height,
+            deviceScaleFactor,
+          });
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Set viewport failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_audit_breakpoints",
+      {
+        description:
+          "Audit an element at viewport widths derived from page @media rules (plus optional explicit widths). Returns visibility and geometry at each width.",
+        inputSchema: z.object({
+          selector: z.string().describe("CSS selector or caliper agent id"),
+          widths: z
+            .array(z.number().int().positive())
+            .optional()
+            .describe("Explicit viewport widths to audit"),
+          height: z.number().int().positive().optional().describe("Viewport height for each step"),
+        }),
+      },
+      async ({ selector, widths, height }) => {
+        try {
+          const result = await this.measurementService.call(CALIPER_METHODS.AUDIT_BREAKPOINTS, {
+            selector,
+            widths,
+            height,
+          });
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Breakpoint audit failed: ${error instanceof Error ? error.message : String(error)}`,
               },
             ],
             isError: true,
@@ -479,6 +580,27 @@ Returns the Delta E value and a human-readable interpretation:
               uri: "caliper://tabs",
               mimeType: "application/json",
               text: JSON.stringify(tabs, null, 2),
+            },
+          ],
+        };
+      }
+    );
+
+    this.server.registerResource(
+      "caliper-runtime",
+      "caliper://runtime",
+      {
+        description:
+          "Active Caliper runtime connection: attached bridge tab vs engine sandbox, routing mode, and engine health URL.",
+      },
+      async () => {
+        const runtimeConnection = this.measurementService.getRuntimeConnection();
+        return {
+          contents: [
+            {
+              uri: "caliper://runtime",
+              mimeType: "application/json",
+              text: JSON.stringify(runtimeConnection, null, 2),
             },
           ],
         };
@@ -709,7 +831,7 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
 
   async start() {
     try {
-      await bridgeService.start(this.port);
+      await this.measurementService.start();
     } catch (err) {
       logger.error("Bridge startup failed:", err);
     }
@@ -725,7 +847,7 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
   }
 
   async stop() {
-    await bridgeService.stop();
+    await this.measurementService.stop();
     logger.info("Server stopped.");
   }
 }

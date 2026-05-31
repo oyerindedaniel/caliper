@@ -125,6 +125,27 @@ export default defineConfig((options) => {
     {
       ...DEFAULT_OPTIONS,
       entry: {
+        "engine-cli": "./src/engine-cli.ts",
+      },
+      format: ["esm"],
+      platform: "node",
+      noExternal: ["@oyerinde/caliper-schema"],
+      external: ["zod", "ws", "@oyerinde/caliper"],
+      dts: false,
+      shims: true,
+      banner: {
+        js: "#!/usr/bin/env node\n" + banner,
+      },
+      esbuildOptions(options) {
+        options.alias = {
+          "@engine": "../engine/src",
+        };
+      },
+      esbuildPlugins: [],
+    },
+    {
+      ...DEFAULT_OPTIONS,
+      entry: {
         "index.server": "./src/index.server.ts",
         "bridge.server": "./src/bridge.server.ts",
         "preset.server": "./src/preset.server.ts",

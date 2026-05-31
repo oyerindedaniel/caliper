@@ -43,3 +43,8 @@ PERFORMANCE.md
 SCOPE.md
 RECONCILER_2_PRD.md
 NCO_PROPOSAL.md
+caliper-agent-handoff-wishlist.md
+
+# Cursor
+.cursor/
+.agents/

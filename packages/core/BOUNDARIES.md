@@ -36,7 +36,3 @@ Published bundle: ships overlay + core + bridge for script-tag and ESM consumers
 ## Dependency rule
 
 `overlay` / `bridge` / `caliper` → `core` → `schema`. Never the reverse.
-
-## Future headless engine
-
-A headless Chrome/Playwright package should depend on `core` + `schema`, implement its own host lifecycle, and reuse projection/live-line helpers — not duplicate geometry in overlay.

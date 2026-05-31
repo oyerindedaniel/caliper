@@ -1,0 +1,41 @@
+{
+  "name": "@caliper/engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "caliper-engine": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "pnpm run clean && tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "check-types": "tsc --noEmit",
+    "clean": "node -e \"const fs = require('fs'); if (fs.existsSync('dist')) fs.rmSync('dist', { recursive: true, force: true })\"",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oyerinde/caliper-schema": "workspace:*",
+    "@oyerinde/caliper": "workspace:*",
+    "ws": "8.19.0",
+    "zod": "4.3.5"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^24.10.9",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.39.1",
+    "prettier": "^3.7.4",
+    "tsup": "^8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

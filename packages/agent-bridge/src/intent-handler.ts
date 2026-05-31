@@ -25,6 +25,7 @@ import type {
   CaliperWalkDomPayload,
 } from "@oyerinde/caliper-schema";
 import { BitBridge, CALIPER_METHODS } from "@oyerinde/caliper-schema";
+import { analyzeElementVisibility } from "./visibility.js";
 import { DEFAULT_WALK_DEPTH } from "./constants.js";
 import type { CaliperStateStore } from "./state-store.js";
 
@@ -150,6 +151,9 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
       const computedStyleDeclaration = window.getComputedStyle(targetElement);
       const descendantStats = countDescendants(targetElement);
 
+      const computedStyles = parseComputedStyles(computedStyleDeclaration);
+      const visibility = analyzeElementVisibility({ element: targetElement, computedStyles });
+
       return {
         success: true,
         method: CALIPER_METHODS.INSPECT,
@@ -162,7 +166,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
           horizontal: boundingClientRect.width,
           vertical: boundingClientRect.height,
         },
-        computedStyles: parseComputedStyles(computedStyleDeclaration),
+        computedStyles,
         selection: sanitizeSelection({
           element: targetElement,
           rect: elementGeometry.rect,
@@ -177,6 +181,7 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         descendantCount: descendantStats.count,
         descendantsTruncated: descendantStats.isTruncated,
         sourceHints: generateSourceHints(targetElement),
+        visibility,
         timestamp: Date.now(),
       };
     });
@@ -298,6 +303,24 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
             success: true,
             method: CALIPER_METHODS.GET_CONTEXT,
             context: getContextMetrics(),
+            timestamp: Date.now(),
+          };
+          break;
+        case CALIPER_METHODS.SET_VIEWPORT:
+          result = {
+            success: false,
+            method: CALIPER_METHODS.SET_VIEWPORT,
+            error:
+              "Viewport emulation requires Caliper engine runtime. Start MCP with --runtime engine --engine.",
+            timestamp: Date.now(),
+          };
+          break;
+        case CALIPER_METHODS.AUDIT_BREAKPOINTS:
+          result = {
+            success: false,
+            method: CALIPER_METHODS.AUDIT_BREAKPOINTS,
+            error:
+              "Breakpoint audits require Caliper engine runtime. Start MCP with --runtime engine --engine.",
             timestamp: Date.now(),
           };
           break;
