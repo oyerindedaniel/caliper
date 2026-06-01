@@ -1,5 +1,5 @@
 import {
-  CALIPER_METHODS,
+  CALIPER_ENGINE_METHODS,
   DEFAULT_AUDIT_VIEWPORT_HEIGHT,
   type CaliperActionResult,
   type CaliperAuditContext,
@@ -44,7 +44,7 @@ export class EmulationSession {
 
     return {
       success: true,
-      method: CALIPER_METHODS.SET_VIEWPORT,
+      method: CALIPER_ENGINE_METHODS.SET_VIEWPORT,
       viewport: {
         width: payload.width,
         height,

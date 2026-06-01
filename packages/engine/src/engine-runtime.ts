@@ -16,9 +16,15 @@ export async function createEngineRuntime(
 
   try {
     if (options.targetUrl) {
-      browserSession = await EngineBrowserSession.launch({ targetUrl: options.targetUrl });
+      browserSession = await EngineBrowserSession.launch({
+        targetUrl: options.targetUrl,
+        engineHost: server.host,
+        enginePort: server.port,
+        sessionId: server.sessionId,
+      });
       server.setActiveUrl(browserSession.url);
       server.setChromeConnected(true);
+      server.setCaptureHandler((fileName) => browserSession!.resolveCapturePath(fileName));
       server.setRpcHandler((request) => dispatchEngineRpc(browserSession!, request));
     }
 

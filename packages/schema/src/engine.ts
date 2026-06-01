@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CaliperMethodSchema, JSONRPCRequestSchema } from "./bridge.js";
+import { CaliperRpcMethodSchema, JSONRPCRequestSchema } from "./bridge.js";
 
 export const CALIPER_RUNTIME_MODES = {
   ATTACHED: "attached",
@@ -76,7 +76,7 @@ export const CaliperConnectionTargetSchema = z.discriminatedUnion("runtime", [
 export type CaliperConnectionTarget = z.infer<typeof CaliperConnectionTargetSchema>;
 
 export const EngineRpcRequestSchema = JSONRPCRequestSchema.refine(
-  (request) => CaliperMethodSchema.safeParse(request.method).success,
+  (request) => CaliperRpcMethodSchema.safeParse(request.method).success,
   { message: "Unsupported Caliper RPC method" }
 );
 

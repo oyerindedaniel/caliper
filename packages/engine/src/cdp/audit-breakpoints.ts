@@ -1,22 +1,26 @@
 import {
+  CALIPER_ENGINE_METHODS,
   CALIPER_METHODS,
   DEFAULT_AUDIT_VIEWPORT_HEIGHT,
   type CaliperActionResult,
   type CaliperAuditBreakpointsPayload,
   type CaliperBreakpointAuditMatrix,
-  type CaliperVisibility,
 } from "@oyerinde/caliper-schema";
 import type { HarnessSession } from "./harness-session.js";
 import type { EmulationSession } from "./emulation-session.js";
 import { CssVisibilitySession } from "./visibility-css.js";
 import type { CdpClient } from "./cdp-client.js";
+import { finalizeMeasurementResult } from "./finalize-measurement-result.js";
+
+type FinalizeMeasurementResult = typeof finalizeMeasurementResult;
 
 export class AuditBreakpointsSession {
   constructor(
     private readonly client: CdpClient,
     private readonly harness: HarnessSession,
     private readonly emulation: EmulationSession,
-    private readonly cssVisibility: CssVisibilitySession
+    private readonly cssVisibility: CssVisibilitySession,
+    private readonly finalizeMeasurementResult: FinalizeMeasurementResult
   ) {}
 
   async run(payload: CaliperAuditBreakpointsPayload): Promise<CaliperActionResult> {
@@ -36,7 +40,7 @@ export class AuditBreakpointsSession {
     if (breakpoints.length === 0) {
       return {
         success: false,
-        method: CALIPER_METHODS.AUDIT_BREAKPOINTS,
+        method: CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS,
         selector: payload.selector,
         error:
           "No breakpoint widths resolved. Page has no px media queries — pass widths explicitly.",
@@ -62,28 +66,29 @@ export class AuditBreakpointsSession {
           id: `audit-${breakpoint.width}`,
         });
 
-        if (!inspectResult.success || inspectResult.method !== CALIPER_METHODS.INSPECT) {
+        const finalizedInspect = await this.finalizeMeasurementResult(
+          inspectResult,
+          this.cssVisibility,
+          this.emulation
+        );
+
+        if (!finalizedInspect.success || finalizedInspect.method !== CALIPER_METHODS.INSPECT) {
           return {
             success: false,
-            method: CALIPER_METHODS.AUDIT_BREAKPOINTS,
+            method: CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS,
             selector: payload.selector,
             error:
-              inspectResult.success === false
-                ? inspectResult.error
+              finalizedInspect.success === false
+                ? finalizedInspect.error
                 : "Inspect failed during breakpoint audit",
             timestamp: Date.now(),
           };
         }
 
-        const baseVisibility = inspectResult.visibility ?? {
-          status: "visible",
+        const visibility = finalizedInspect.visibility ?? {
+          status: "visible" as const,
           intersectingViewport: true,
         };
-
-        const visibility = await this.cssVisibility.resolveInspectVisibility(
-          payload.selector,
-          baseVisibility as CaliperVisibility
-        );
 
         entries.push({
           selector: payload.selector,
@@ -95,8 +100,8 @@ export class AuditBreakpointsSession {
           },
           visibility,
           geometry: {
-            width: inspectResult.distances.horizontal,
-            height: inspectResult.distances.vertical,
+            width: finalizedInspect.distances.horizontal,
+            height: finalizedInspect.distances.vertical,
           },
         });
       }
@@ -113,7 +118,7 @@ export class AuditBreakpointsSession {
 
     return {
       success: true,
-      method: CALIPER_METHODS.AUDIT_BREAKPOINTS,
+      method: CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS,
       selector: payload.selector,
       audit,
       timestamp: Date.now(),

@@ -306,24 +306,6 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
             timestamp: Date.now(),
           };
           break;
-        case CALIPER_METHODS.SET_VIEWPORT:
-          result = {
-            success: false,
-            method: CALIPER_METHODS.SET_VIEWPORT,
-            error:
-              "Viewport emulation requires Caliper engine runtime. Start MCP with --runtime engine --engine.",
-            timestamp: Date.now(),
-          };
-          break;
-        case CALIPER_METHODS.AUDIT_BREAKPOINTS:
-          result = {
-            success: false,
-            method: CALIPER_METHODS.AUDIT_BREAKPOINTS,
-            error:
-              "Breakpoint audits require Caliper engine runtime. Start MCP with --runtime engine --engine.",
-            timestamp: Date.now(),
-          };
-          break;
         default:
           const _exhaustive: never = intent;
           throw new Error(`Unknown intent method: ${(_exhaustive as CaliperIntent).method}`);

@@ -7,9 +7,12 @@ import {
   DEFAULT_ENGINE_PORT,
   EngineHealthSchema,
   RpcFactory,
+  isCaliperActionResult,
+  isJSONRPCErrorResponse,
+  isJSONRPCResultResponse,
   type CaliperActionResult,
-  type CaliperMethod,
-  type CaliperParams,
+  type CaliperRpcMethod,
+  type CaliperRpcParams,
   type EngineHealth,
   type JsonRpcResponse,
 } from "@oyerinde/caliper-schema";
@@ -23,8 +26,6 @@ export type EngineServiceOptions = {
   engineUrl: string;
   targetUrl?: string | null;
 };
-
-type JsonRpcErrorResponse = Extract<JsonRpcResponse, { error: unknown }>;
 
 export class EngineService {
   private readonly engineUrl: string;
@@ -54,10 +55,10 @@ export class EngineService {
     });
   }
 
-  async call<M extends CaliperMethod, T = CaliperActionResult>(
-    method: M,
-    params: CaliperParams<M>
-  ): Promise<T> {
+  async call(
+    method: CaliperRpcMethod,
+    params: CaliperRpcParams<CaliperRpcMethod>
+  ): Promise<CaliperActionResult> {
     const requestId = generateId("engine-call");
     const request = RpcFactory.request(method, params, requestId);
     const response = await fetch(`${this.engineUrl}/rpc`, {
@@ -68,16 +69,19 @@ export class EngineService {
 
     const payload = (await response.json()) as JsonRpcResponse;
 
-    if ("error" in payload && payload.error) {
-      const errorPayload = payload as JsonRpcErrorResponse;
-      throw new Error(errorPayload.error.message);
+    if (isJSONRPCErrorResponse(payload)) {
+      throw new Error(payload.error.message);
     }
 
-    if (!("result" in payload)) {
+    if (!isJSONRPCResultResponse(payload)) {
       throw new Error("Engine RPC returned an unexpected response shape");
     }
 
-    return payload.result as T;
+    if (!isCaliperActionResult(payload.result)) {
+      throw new Error("Engine RPC returned an invalid result shape");
+    }
+
+    return payload.result;
   }
 
   async stop(): Promise<void> {

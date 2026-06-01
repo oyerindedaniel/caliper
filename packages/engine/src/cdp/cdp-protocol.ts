@@ -163,3 +163,50 @@ export type CssGetStyleSheetResponse = {
 export type CssStyleSheetAddedEvent = {
   header: CssStyleSheetHeader;
 };
+
+/** CDP Runtime.consoleAPICalled — https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#event-consoleAPICalled */
+export type RuntimeConsoleApiCalledEvent = {
+  type: string;
+  args?: RuntimeRemoteObject[];
+  executionContextId?: number;
+  timestamp?: number;
+  stackTrace?: { callFrames?: Array<{ url?: string; lineNumber?: number; columnNumber?: number }> };
+};
+
+/** CDP Runtime.exceptionThrown — https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#event-exceptionThrown */
+export type RuntimeExceptionThrownEvent = {
+  exceptionDetails: RuntimeExceptionDetails;
+  timestamp?: number;
+};
+
+/** CDP Log.entryAdded — https://chromedevtools.github.io/devtools-protocol/tot/Log/#event-entryAdded */
+export type LogEntryAddedEvent = {
+  entry: {
+    source?: string;
+    level?: string;
+    text?: string;
+    timestamp?: number;
+    url?: string;
+    lineNumber?: number;
+  };
+};
+
+/** CDP Network.loadingFailed — https://chromedevtools.github.io/devtools-protocol/tot/Network/#event-loadingFailed */
+export type NetworkLoadingFailedEvent = {
+  requestId?: string;
+  timestamp?: number;
+  type?: string;
+  errorText?: string;
+  canceled?: boolean;
+  blockedReason?: string;
+};
+
+/** CDP Animation.getPlaybackRate — https://chromedevtools.github.io/devtools-protocol/tot/Animation/#method-getPlaybackRate */
+export type AnimationGetPlaybackRateResponse = {
+  playbackRate: number;
+};
+
+/** CDP Page.captureScreenshot — https://chromedevtools.github.io/devtools-protocol/tot/Page/#method-captureScreenshot */
+export type PageCaptureScreenshotResponse = {
+  data: string;
+};

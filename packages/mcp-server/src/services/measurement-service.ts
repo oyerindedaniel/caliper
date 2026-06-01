@@ -2,8 +2,10 @@ import {
   CALIPER_MEASUREMENT_ROUTING,
   CALIPER_RUNTIME_MODES,
   type CaliperActionResult,
+  type CaliperBaseMethod,
+  type CaliperEngineMethod,
+  type CaliperEngineParams,
   type CaliperMeasurementRouting,
-  type CaliperMethod,
   type CaliperParams,
   type CaliperRuntimeConnection,
 } from "@oyerinde/caliper-schema";
@@ -66,14 +68,13 @@ export class MeasurementService {
     await this.engineService?.stop();
   }
 
-  async call<M extends CaliperMethod, T = CaliperActionResult>(
+  async call<M extends CaliperBaseMethod>(
     method: M,
-    params: CaliperParams<M>,
-    retries: number = 0
-  ): Promise<T> {
+    params: CaliperParams<M>
+  ): Promise<CaliperActionResult> {
     switch (this.runtimeRouting) {
       case CALIPER_MEASUREMENT_ROUTING.ATTACHED:
-        return bridgeService.call(method, params, retries);
+        return bridgeService.call(method, params);
 
       case CALIPER_MEASUREMENT_ROUTING.ENGINE:
         if (!this.engineService) {
@@ -87,7 +88,7 @@ export class MeasurementService {
       case CALIPER_MEASUREMENT_ROUTING.AUTO:
       default:
         if (tabManager.getActiveTab()) {
-          return bridgeService.call(method, params, retries);
+          return bridgeService.call(method, params);
         }
 
         if (this.engineService) {
@@ -99,6 +100,20 @@ export class MeasurementService {
           "No Caliper runtime is available. Connect a browser tab with CaliperBridge or start caliper-engine."
         );
     }
+  }
+
+  async callEngine<M extends CaliperEngineMethod>(
+    method: M,
+    params: CaliperEngineParams<M>
+  ): Promise<CaliperActionResult> {
+    if (!this.engineService) {
+      throw new Error(
+        "Engine control methods require caliper-engine. Start MCP with --runtime engine --engine."
+      );
+    }
+
+    logger.info(`Routing ${method} to caliper-engine`);
+    return this.engineService.call(method, params);
   }
 
   getEngineHealthUrl(): string | null {

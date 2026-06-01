@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, basename } from "node:path";
 import { z } from "zod";
 import {
   DEFAULT_ENGINE_HOST,
@@ -47,6 +47,7 @@ type EngineHttpJsonBody =
   | EngineHttpErrorBody;
 
 type RpcHandler = (request: EngineRpcRequest) => Promise<unknown>;
+type CaptureHandler = (fileName: string) => string | null;
 
 export class CaliperEngineServer {
   readonly host: string;
@@ -59,6 +60,7 @@ export class CaliperEngineServer {
   private activeUrl: string | null;
   private chromeConnected = false;
   private rpcHandler: RpcHandler | null = null;
+  private captureHandler: CaptureHandler | null = null;
 
   constructor(options: CaliperEngineServerOptions = {}) {
     this.host = options.host ?? DEFAULT_ENGINE_HOST;
@@ -75,6 +77,10 @@ export class CaliperEngineServer {
 
   setRpcHandler(handler: RpcHandler | null): void {
     this.rpcHandler = handler;
+  }
+
+  setCaptureHandler(handler: CaptureHandler | null): void {
+    this.captureHandler = handler;
   }
 
   setActiveUrl(activeUrl: string | null): void {
@@ -158,6 +164,11 @@ export class CaliperEngineServer {
         return;
       }
 
+      if (incoming.method === "GET" && requestUrl.pathname.startsWith("/captures/")) {
+        await this.handleCapture(requestUrl.pathname, outgoing);
+        return;
+      }
+
       if (incoming.method === "POST" && requestUrl.pathname === "/rpc") {
         await this.handleRpc(incoming, outgoing);
         return;
@@ -170,6 +181,28 @@ export class CaliperEngineServer {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  private async handleCapture(pathname: string, outgoing: ServerResponse): Promise<void> {
+    const fileName = basename(decodeURIComponent(pathname.slice("/captures/".length)));
+    if (!fileName || fileName.includes("..") || !this.captureHandler) {
+      this.writeHttpError(outgoing, 404, { error: "not_found" });
+      return;
+    }
+
+    const filePath = this.captureHandler(fileName);
+    if (!filePath || !existsSync(filePath)) {
+      this.writeHttpError(outgoing, 404, { error: "not_found" });
+      return;
+    }
+
+    const fileBuffer = readFileSync(filePath);
+    const contentType = fileName.endsWith(".jpeg") ? "image/jpeg" : "image/png";
+    outgoing.writeHead(200, {
+      "content-type": contentType,
+      "content-length": fileBuffer.byteLength,
+    });
+    outgoing.end(fileBuffer);
   }
 
   private async handleRpc(incoming: IncomingMessage, outgoing: ServerResponse): Promise<void> {

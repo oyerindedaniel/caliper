@@ -5,6 +5,7 @@ import {
   MAX_DESCENDANT_COUNT,
   RECOMMENDED_PAGINATION_THRESHOLD,
   CALIPER_METHODS,
+  CALIPER_ENGINE_METHODS,
   type CaliperAgentState,
   type CaliperMeasurementRouting,
 } from "@oyerinde/caliper-schema";
@@ -386,7 +387,7 @@ The output includes:
       },
       async ({ width, height, deviceScaleFactor }) => {
         try {
-          const result = await this.measurementService.call(CALIPER_METHODS.SET_VIEWPORT, {
+          const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SET_VIEWPORT, {
             width,
             height,
             deviceScaleFactor,
@@ -422,11 +423,14 @@ The output includes:
       },
       async ({ selector, widths, height }) => {
         try {
-          const result = await this.measurementService.call(CALIPER_METHODS.AUDIT_BREAKPOINTS, {
-            selector,
-            widths,
-            height,
-          });
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS,
+            {
+              selector,
+              widths,
+              height,
+            }
+          );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -438,6 +442,153 @@ The output includes:
             ],
             isError: true,
           };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_get_runtime",
+      {
+        description:
+          "Read console messages, uncaught exceptions, browser logs, and failed network requests from the caliper-engine tab. Use when the user asks to check logs or debug runtime errors. Call caliper_engine_clear_runtime before a repro if you need a clean window.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.GET_RUNTIME,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Get runtime", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_clear_runtime",
+      {
+        description:
+          "Clear caliper-engine runtime buffers (console, exceptions, logs, network failures). Call before reproducing an issue, then use caliper_engine_get_runtime after.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.CLEAR_RUNTIME,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Clear runtime", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_scroll",
+      {
+        description:
+          "Scroll the caliper-engine page to an absolute scroll position. Requires MCP started with --runtime engine --engine.",
+        inputSchema: z.object({
+          scrollX: z.number().optional().describe("Horizontal scroll position in CSS pixels"),
+          scrollY: z.number().optional().describe("Vertical scroll position in CSS pixels"),
+        }),
+      },
+      async ({ scrollX, scrollY }) => {
+        try {
+          const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SCROLL, {
+            scrollX,
+            scrollY,
+          });
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Scroll", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_scroll_into_view",
+      {
+        description:
+          "Scroll the caliper-engine page until the target selector is in view. Requires engine mode.",
+        inputSchema: z.object({
+          selector: z.string().describe("CSS selector or caliper agent id"),
+        }),
+      },
+      async ({ selector }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.SCROLL_INTO_VIEW,
+            { selector }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Scroll into view", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_pause_animations",
+      {
+        description:
+          "Pause CSS and Web Animations on the caliper-engine page. Pair with caliper_engine_resume_animations when finished.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Pause animations", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_resume_animations",
+      {
+        description: "Restore animation playback on the caliper-engine page after pausing.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Resume animations", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_screenshot",
+      {
+        description:
+          "Capture a PNG screenshot of the caliper-engine page. Returns a loopback URL to the image file.",
+        inputSchema: z.object({
+          fullPage: z.boolean().optional().describe("Capture the full scrollable page"),
+          format: z.enum(["png", "jpeg"]).optional().describe("Image format (default png)"),
+        }),
+      },
+      async ({ fullPage, format }) => {
+        try {
+          const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SCREENSHOT, {
+            fullPage,
+            format,
+          });
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Screenshot", error);
         }
       }
     );
@@ -850,4 +1001,16 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
     await this.measurementService.stop();
     logger.info("Server stopped.");
   }
+}
+
+function formatEngineToolError(action: string, error: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `${action} failed: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    ],
+    isError: true,
+  };
 }

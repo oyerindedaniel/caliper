@@ -7,12 +7,10 @@ export class BridgeError extends Error {
 }
 
 export class BridgeTimeoutError extends BridgeError {
-  constructor(method: string, attempt: number, totalRetries: number) {
-    const message =
-      attempt < totalRetries
-        ? `Bridge request timed out for method: ${method}. Retrying... (Attempt ${attempt + 1}/${totalRetries + 1})`
-        : `Bridge request timed out for method: ${method}. The bridge is connected, but the operation took too long.`;
-    super(message);
+  constructor(method: string) {
+    super(
+      `Bridge request timed out for method: ${method}. The bridge is connected, but the operation took too long.`
+    );
     this.name = "BridgeTimeoutError";
     Object.setPrototypeOf(this, BridgeTimeoutError.prototype);
   }
