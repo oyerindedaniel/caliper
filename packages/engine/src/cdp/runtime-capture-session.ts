@@ -61,9 +61,7 @@ export class RuntimeCaptureSession {
     });
 
     this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
-      const requestUrl = event.requestId
-        ? this.networkRequestUrls.get(event.requestId)
-        : undefined;
+      const requestUrl = event.requestId ? this.networkRequestUrls.get(event.requestId) : undefined;
       this.networkFailureEntries.push({
         url: requestUrl ?? "unknown",
         error: event.errorText ?? "unknown",
@@ -136,9 +134,7 @@ function mapLogEvent(event: LogEntryAddedEvent): CaliperRuntimeLogEntry {
   };
 }
 
-function normalizeConsoleLevel(
-  type: string
-): CaliperRuntimeConsoleEntry["level"] {
+function normalizeConsoleLevel(type: string): CaliperRuntimeConsoleEntry["level"] {
   if (type === "warning") {
     return "warn";
   }
@@ -166,7 +162,9 @@ function formatRemoteObjects(objects: RuntimeRemoteObject[]): string {
   return parts.join(" ");
 }
 
-function formatStackTrace(details: RuntimeExceptionThrownEvent["exceptionDetails"]): string | undefined {
+function formatStackTrace(
+  details: RuntimeExceptionThrownEvent["exceptionDetails"]
+): string | undefined {
   const stackTrace = details.stackTrace as
     | { callFrames?: Array<{ functionName?: string; url?: string; lineNumber?: number }> }
     | undefined;

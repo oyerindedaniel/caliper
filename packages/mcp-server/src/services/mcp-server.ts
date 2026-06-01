@@ -387,11 +387,14 @@ The output includes:
       },
       async ({ width, height, deviceScaleFactor }) => {
         try {
-          const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SET_VIEWPORT, {
-            width,
-            height,
-            deviceScaleFactor,
-          });
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.SET_VIEWPORT,
+            {
+              width,
+              height,
+              deviceScaleFactor,
+            }
+          );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -582,10 +585,13 @@ The output includes:
       },
       async ({ fullPage, format }) => {
         try {
-          const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SCREENSHOT, {
-            fullPage,
-            format,
-          });
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.SCREENSHOT,
+            {
+              fullPage,
+              format,
+            }
+          );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return formatEngineToolError("Screenshot", error);

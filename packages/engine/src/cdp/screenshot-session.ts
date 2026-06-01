@@ -26,11 +26,14 @@ export class ScreenshotSession {
     const format = options.format ?? "png";
     const scrollPosition = await readWindowScrollPosition(this.client, { onMissing: "zero" });
 
-    const response = await this.client.send<PageCaptureScreenshotResponse>("Page.captureScreenshot", {
-      format,
-      captureBeyondViewport: options.fullPage ?? false,
-      fromSurface: true,
-    });
+    const response = await this.client.send<PageCaptureScreenshotResponse>(
+      "Page.captureScreenshot",
+      {
+        format,
+        captureBeyondViewport: options.fullPage ?? false,
+        fromSurface: true,
+      }
+    );
 
     const captureId = randomUUID();
     const extension = format === "jpeg" ? "jpeg" : "png";

@@ -39,9 +39,7 @@ export class EngineMeasurementSession {
     this.runtimeCapture = new RuntimeCaptureSession(client);
     this.navigation = new NavigationSession(client);
     this.stabilization = new StabilizationSession(client);
-    this.screenshot = options.screenshot
-      ? new ScreenshotSession(client, options.screenshot)
-      : null;
+    this.screenshot = options.screenshot ? new ScreenshotSession(client, options.screenshot) : null;
 
     this.auditBreakpoints = new AuditBreakpointsSession(
       client,
@@ -102,7 +100,10 @@ export class EngineMeasurementSession {
         };
 
       case CALIPER_ENGINE_METHODS.SCROLL: {
-        const position = await this.navigation.scrollTo(request.params.scrollX, request.params.scrollY);
+        const position = await this.navigation.scrollTo(
+          request.params.scrollX,
+          request.params.scrollY
+        );
         return {
           success: true,
           method: CALIPER_ENGINE_METHODS.SCROLL,
@@ -177,4 +178,3 @@ function toEngineRequest(request: EngineRpcRequest): CaliperEngineRequest {
     params: request.params ?? {},
   } as CaliperEngineRequest;
 }
-
