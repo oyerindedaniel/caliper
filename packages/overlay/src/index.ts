@@ -192,12 +192,12 @@ export function createOverlay(config?: CaliperConfig): OverlayInstance {
   };
 
   activeInstance = instance;
-  window.__CALIPER__ = instance;
 
-  // Auto-mount in browser
   if (IS_BROWSER) {
     instance.mount();
   }
+
+  window.__CALIPER__ = instance;
 
   return instance;
 }

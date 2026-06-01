@@ -13,13 +13,12 @@ export function analyzeElementVisibility(input: VisibilityInput): CaliperVisibil
   const visibility = computedStyles.visibility ?? "visible";
   const opacityValue = parseOpacity(computedStyles.opacity);
   const intersectingViewport = isIntersectingViewport(rect);
-  const hasLayout = rect.width > 0 || rect.height > 0;
 
   if (display === "none") {
     return {
       status: CALIPER_VISIBILITY_STATUS.HIDDEN,
       reason: CALIPER_VISIBILITY_REASON.DISPLAY_NONE,
-      intersectingViewport: false,
+      intersectingViewport,
     };
   }
 
@@ -27,7 +26,7 @@ export function analyzeElementVisibility(input: VisibilityInput): CaliperVisibil
     return {
       status: CALIPER_VISIBILITY_STATUS.HIDDEN,
       reason: CALIPER_VISIBILITY_REASON.NOT_VISIBLE,
-      intersectingViewport: false,
+      intersectingViewport,
     };
   }
 
@@ -36,19 +35,11 @@ export function analyzeElementVisibility(input: VisibilityInput): CaliperVisibil
     return {
       status: CALIPER_VISIBILITY_STATUS.HIDDEN,
       reason: CALIPER_VISIBILITY_REASON.PARENT_HIDDEN,
-      intersectingViewport: false,
+      intersectingViewport,
       hiddenBy: {
         type: "ancestor",
         ancestorSelector: describeElement(hiddenAncestor),
       },
-    };
-  }
-
-  if (hasLayout && !intersectingViewport) {
-    return {
-      status: CALIPER_VISIBILITY_STATUS.HIDDEN,
-      reason: CALIPER_VISIBILITY_REASON.OUTSIDE_VIEWPORT,
-      intersectingViewport: false,
     };
   }
 

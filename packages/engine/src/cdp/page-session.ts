@@ -1,6 +1,7 @@
 import { buildEngineHttpUrl, DEFAULT_ENGINE_HOST } from "@oyerinde/caliper-schema";
 import { pollUntil } from "@engine/utils/poll-until.js";
-import { CdpClient, type CdpPageTarget } from "./cdp-client.js";
+import { CdpClient } from "./cdp-client.js";
+import type { CdpPageTarget } from "./cdp-protocol.js";
 
 export class PageSession {
   readonly client: CdpClient;

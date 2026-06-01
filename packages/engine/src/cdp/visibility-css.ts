@@ -5,38 +5,15 @@ import {
   type CaliperVisibilityHiddenBy,
 } from "@oyerinde/caliper-schema";
 import type { CdpClient } from "./cdp-client.js";
+import type {
+  CssGetMatchedStylesForNodeResponse,
+  CssGetMediaQueriesResponse,
+  CssGetStyleSheetResponse,
+  CssRuleMatch,
+  CssStyle,
+  CssStyleSheetAddedEvent,
+} from "./cdp-protocol.js";
 import { resolveSelectorToNodeId } from "./dom-resolver.js";
-
-type CssStyleProperty = {
-  name: string;
-  value: string;
-};
-
-type CssStyle = {
-  cssProperties?: CssStyleProperty[];
-  shorthandEntries?: Array<{ name: string; value: string }>;
-};
-
-type CssRule = {
-  selectorList?: { text?: string };
-  style?: CssStyle;
-  media?: Array<{ text?: string; source?: string }>;
-  styleSheetId?: string;
-};
-
-type RuleMatch = {
-  rule?: CssRule;
-};
-
-type MatchedStylesResponse = {
-  matchedCSSRules?: RuleMatch[];
-  inherited?: Array<{ matchedCSSRules?: RuleMatch[] }>;
-};
-
-type StylesheetHeader = {
-  styleSheetId: string;
-  sourceURL?: string;
-};
 
 export class CssVisibilitySession {
   private stylesheetUrls = new Map<string, string>();
@@ -45,8 +22,7 @@ export class CssVisibilitySession {
 
   async enable(): Promise<void> {
     await this.client.send("CSS.enable");
-    this.client.onEvent("CSS.styleSheetAdded", (params) => {
-      const header = params as StylesheetHeader;
+    this.client.onEvent<CssStyleSheetAddedEvent>("CSS.styleSheetAdded", ({ header }) => {
       if (header.styleSheetId) {
         this.stylesheetUrls.set(header.styleSheetId, header.sourceURL ?? "");
       }
@@ -62,7 +38,7 @@ export class CssVisibilitySession {
       return baseVisibility;
     }
 
-    const matchedStyles = await this.client.send<MatchedStylesResponse>(
+    const matchedStyles = await this.client.send<CssGetMatchedStylesForNodeResponse>(
       "CSS.getMatchedStylesForNode",
       { nodeId }
     );
@@ -84,9 +60,7 @@ export class CssVisibilitySession {
   }
 
   async listMediaQueries(): Promise<Array<{ text: string; source?: string }>> {
-    const response = await this.client.send<{ medias?: Array<{ text?: string; source?: string }> }>(
-      "CSS.getMediaQueries"
-    );
+    const response = await this.client.send<CssGetMediaQueriesResponse>("CSS.getMediaQueries");
 
     const queries: Array<{ text: string; source?: string }> = [];
     for (const media of response.medias ?? []) {
@@ -104,10 +78,9 @@ export class CssVisibilitySession {
     }
 
     try {
-      const response = await this.client.send<{ stylesheet?: { sourceURL?: string } }>(
-        "CSS.getStyleSheet",
-        { styleSheetId }
-      );
+      const response = await this.client.send<CssGetStyleSheetResponse>("CSS.getStyleSheet", {
+        styleSheetId,
+      });
       const sourceUrl = response.stylesheet?.sourceURL ?? "";
       this.stylesheetUrls.set(styleSheetId, sourceUrl);
       return sourceUrl || undefined;
@@ -118,7 +91,7 @@ export class CssVisibilitySession {
 }
 
 async function findDisplayNoneRule(
-  matchedStyles: MatchedStylesResponse,
+  matchedStyles: CssGetMatchedStylesForNodeResponse,
   resolveStylesheetUrl: (styleSheetId: string) => Promise<string | undefined>
 ): Promise<CaliperVisibilityHiddenBy | null> {
   const ruleMatches = collectRuleMatches(matchedStyles);
@@ -157,8 +130,8 @@ async function findDisplayNoneRule(
   return null;
 }
 
-function collectRuleMatches(matchedStyles: MatchedStylesResponse): RuleMatch[] {
-  const matches: RuleMatch[] = [];
+function collectRuleMatches(matchedStyles: CssGetMatchedStylesForNodeResponse): CssRuleMatch[] {
+  const matches: CssRuleMatch[] = [];
   matches.push(...(matchedStyles.matchedCSSRules ?? []));
   for (const inherited of matchedStyles.inherited ?? []) {
     matches.push(...(inherited.matchedCSSRules ?? []));

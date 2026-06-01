@@ -1,12 +1,22 @@
 import type { CaliperActionResult, CaliperIntent } from "@oyerinde/caliper-schema";
 import { pollUntil } from "@engine/utils/poll-until.js";
 import type { CdpClient } from "./cdp-client.js";
+import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
 import { InjectSession } from "./inject-session.js";
 
-type RuntimeEvaluateResult = {
-  result?: { value?: unknown };
-  exceptionDetails?: { text?: string; exception?: { description?: string } };
+type HarnessPageProbe = {
+  dispatchReady: boolean;
+  engineInjected: boolean;
+  pageCaliperPresent: boolean;
+  bridgeBooting: boolean;
 };
+
+/** Must match @caliper/core OVERLAY_CONTAINER_ID */
+const CALIPER_OVERLAY_ROOT_ID = "caliper-overlay-root";
+
+export class CaliperHarnessLoadError extends Error {
+  readonly name = "CaliperHarnessLoadError";
+}
 
 export class HarnessSession {
   private readonly injectSession: InjectSession;
@@ -16,28 +26,54 @@ export class HarnessSession {
   }
 
   async ensureReady(): Promise<void> {
-    // Inject before any new document loads.
-    await this.injectSession.registerCaliperBootstrap();
-
-    if (await this.isReady()) {
-      // App already ships CaliperBridge — no current-document inject needed.
+    let probe = await this.probePage();
+    if (probe.dispatchReady) {
       return;
     }
 
-    // Current document: addScriptToEvaluateOnNewDocument does not run here.
-    await this.injectSession.injectIntoCurrentDocument();
+    if (probe.pageCaliperPresent && !probe.engineInjected) {
+      if (!probe.bridgeBooting) {
+        try {
+          probe = await pollUntil(
+            async () => {
+              const next = await this.probePage();
+              if (next.dispatchReady || next.bridgeBooting) {
+                return next;
+              }
+              return null;
+            },
+            { intervalMs: 100, timeoutMs: 2_000 }
+          );
+        } catch {
+          throw new CaliperHarnessLoadError(
+            "Target page has Caliper overlay but CaliperBridge is not enabled. Engine mode requires bridge with dispatchCaliperIntent."
+          );
+        }
+      }
 
-    // Bundle init is async (waitForSystems); poll until dispatchCaliperIntent exists.
-    await pollUntil(async () => (await this.isReady()) || null, {
-      intervalMs: 250,
-      timeoutMs: 20_000,
-      errorMessage:
-        "Caliper harness is not available in the page. Enable CaliperBridge in your app or ship a Caliper inject bundle.",
-    });
+      if (probe.dispatchReady) {
+        return;
+      }
+
+      await this.waitForDispatch(
+        "CaliperBridge is booting on the target page but dispatchCaliperIntent never became available."
+      );
+      return;
+    }
+
+    await this.injectSession.registerCaliperBootstrap();
+
+    if (!probe.engineInjected) {
+      await this.injectSession.injectIntoCurrentDocument();
+    }
+
+    await this.waitForDispatch(
+      "Caliper harness did not become ready after engine inject. Engine mode requires CaliperBridge."
+    );
   }
 
   async dispatchIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
-    const evaluation = await this.client.send<RuntimeEvaluateResult>("Runtime.evaluate", {
+    const evaluation = await this.client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
       expression: `(async () => {
         const intent = ${JSON.stringify(intent)};
         if (typeof window.dispatchCaliperIntent !== "function") {
@@ -55,11 +91,11 @@ export class HarnessSession {
     });
 
     if (evaluation.exceptionDetails) {
-      const description =
+      throw new Error(
         evaluation.exceptionDetails.exception?.description ??
-        evaluation.exceptionDetails.text ??
-        "Runtime.evaluate failed";
-      throw new Error(description);
+          evaluation.exceptionDetails.text ??
+          "Runtime.evaluate failed"
+      );
     }
 
     const actionResult = evaluation.result?.value;
@@ -70,12 +106,43 @@ export class HarnessSession {
     return actionResult as CaliperActionResult;
   }
 
-  private async isReady(): Promise<boolean> {
-    const evaluation = await this.client.send<RuntimeEvaluateResult>("Runtime.evaluate", {
-      expression: "typeof window.dispatchCaliperIntent === 'function'",
+  private async waitForDispatch(errorMessage: string): Promise<void> {
+    await pollUntil(async () => ((await this.probePage()).dispatchReady ? true : null), {
+      intervalMs: 250,
+      timeoutMs: 20_000,
+      errorMessage,
+    });
+  }
+
+  private async probePage(): Promise<HarnessPageProbe> {
+    const evaluation = await this.client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
+      expression: `({
+        dispatchReady: typeof window.dispatchCaliperIntent === "function",
+        engineInjected: window.__CALIPER_ENGINE_INJECTED__ === true,
+        bridgeBooting: window.__CALIPER_BRIDGE_BOOTING__ === true,
+        pageCaliperPresent:
+          window.__CALIPER__?.mounted === true ||
+          !!document.getElementById(${JSON.stringify(CALIPER_OVERLAY_ROOT_ID)}),
+      })`,
       returnByValue: true,
     });
 
-    return evaluation.result?.value === true;
+    const probe = evaluation.result?.value;
+    if (!probe || typeof probe !== "object") {
+      return {
+        dispatchReady: false,
+        engineInjected: false,
+        pageCaliperPresent: false,
+        bridgeBooting: false,
+      };
+    }
+
+    const value = probe as Record<string, unknown>;
+    return {
+      dispatchReady: value.dispatchReady === true,
+      engineInjected: value.engineInjected === true,
+      pageCaliperPresent: value.pageCaliperPresent === true,
+      bridgeBooting: value.bridgeBooting === true,
+    };
   }
 }

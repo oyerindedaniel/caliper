@@ -73,6 +73,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
     install: (instance: OverlayInstance) => {
       const cleanup = () => {
         delete window.dispatchCaliperIntent;
+        delete window.__CALIPER_BRIDGE_BOOTING__;
         isInitialized = false;
         intentHandler = null;
         if (stateStore) {
@@ -93,6 +94,8 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
         cleanup();
         return;
       }
+
+      window.__CALIPER_BRIDGE_BOOTING__ = true;
 
       instance
         .waitForSystems()
@@ -151,6 +154,8 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
             return intentHandler.dispatch(intent);
           };
 
+          delete window.__CALIPER_BRIDGE_BOOTING__;
+
           isInitialized = true;
           if (relayEnabled) {
             logger.info(`Initialized. MCP relay on port ${wsPort} (${wsUrl})`);
@@ -167,6 +172,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
         })
         .catch((error) => {
           if (isDisposed) return;
+          delete window.__CALIPER_BRIDGE_BOOTING__;
           logger.error("Failed to initialize agent bridge:", error);
           cleanup();
         });

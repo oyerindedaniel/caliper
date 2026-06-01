@@ -1,16 +1,26 @@
 import WebSocket from "ws";
 
 import { DEFAULT_ENGINE_HOST, buildEngineHttpUrl, isLoopbackHost } from "@oyerinde/caliper-schema";
+import type { CdpPageTarget } from "./cdp-protocol.js";
 
-type CdpCommandResult = {
+/** Command response envelope: `{ id, result?, error? }`. Domain result shapes live in cdp-protocol.ts and connect via `send<T>()`. */
+type CdpCommandResponseEnvelope = {
+  id: number;
   result?: unknown;
-  error?: { code: number; message: string; data?: unknown };
+  error?: {
+    code: number;
+    message: string;
+    data?: unknown;
+  };
 };
 
-type CdpEvent = {
-  method?: string;
+/** Event envelope: `{ method, params? }`. Event param shapes live in cdp-protocol.ts and connect via `onEvent<T>()`. */
+type CdpEventEnvelope = {
+  method: string;
   params?: unknown;
 };
+
+type CdpWireMessage = CdpCommandResponseEnvelope | CdpEventEnvelope;
 
 type PendingCommand = {
   resolve: (value: unknown) => void;
@@ -18,13 +28,6 @@ type PendingCommand = {
 };
 
 type CdpEventHandler = (params: unknown) => void;
-
-export type CdpPageTarget = {
-  id: string;
-  type: string;
-  url: string;
-  webSocketDebuggerUrl: string;
-};
 
 export class CdpClient {
   private readonly pendingCommands = new Map<number, PendingCommand>();
@@ -59,13 +62,14 @@ export class CdpClient {
     return (await response.json()) as CdpPageTarget[];
   }
 
-  onEvent(method: string, handler: CdpEventHandler): () => void {
+  onEvent<TParams = unknown>(method: string, handler: (params: TParams) => void): () => void {
+    const wrapped: CdpEventHandler = (params) => handler(params as TParams);
     const handlers = this.eventHandlers.get(method) ?? new Set<CdpEventHandler>();
-    handlers.add(handler);
+    handlers.add(wrapped);
     this.eventHandlers.set(method, handlers);
 
     return () => {
-      handlers.delete(handler);
+      handlers.delete(wrapped);
     };
   }
 
@@ -110,12 +114,10 @@ export class CdpClient {
   }
 
   private handleMessage(rawMessage: string): void {
-    const message = JSON.parse(rawMessage) as CdpCommandResult & CdpEvent & { id?: number };
+    const message = JSON.parse(rawMessage) as CdpWireMessage;
 
-    if (message.id === undefined) {
-      if (message.method) {
-        this.dispatchEvent(message.method, message.params);
-      }
+    if (!isCommandResponse(message)) {
+      this.dispatchEvent(message.method, message.params);
       return;
     }
 
@@ -151,4 +153,8 @@ function assertLoopbackDebuggerUrl(webSocketDebuggerUrl: string): void {
   if (!isLoopbackHost(parsedUrl.hostname)) {
     throw new Error(`Refusing to connect to non-loopback CDP endpoint: ${parsedUrl.hostname}`);
   }
+}
+
+function isCommandResponse(message: CdpWireMessage): message is CdpCommandResponseEnvelope {
+  return "id" in message;
 }

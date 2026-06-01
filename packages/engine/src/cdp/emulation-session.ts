@@ -6,10 +6,7 @@ import {
   type CaliperSetViewportPayload,
 } from "@oyerinde/caliper-schema";
 import type { CdpClient } from "./cdp-client.js";
-
-type LayoutMetrics = {
-  layoutViewport: { clientWidth: number; clientHeight: number; pageX: number; pageY: number };
-};
+import type { PageGetLayoutMetricsResponse } from "./cdp-protocol.js";
 
 export class EmulationSession {
   private emulated = false;
@@ -73,7 +70,7 @@ export class EmulationSession {
   }
 
   async getAuditContext(): Promise<CaliperAuditContext> {
-    const metrics = await this.client.send<LayoutMetrics>("Page.getLayoutMetrics");
+    const metrics = await this.client.send<PageGetLayoutMetricsResponse>("Page.getLayoutMetrics");
     const viewport = metrics.layoutViewport;
 
     return {

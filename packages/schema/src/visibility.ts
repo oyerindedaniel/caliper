@@ -15,7 +15,6 @@ export const CALIPER_VISIBILITY_STATUS = {
 export const CALIPER_VISIBILITY_REASON = {
   DISPLAY_NONE: "display_none",
   NOT_VISIBLE: "not_visible",
-  OUTSIDE_VIEWPORT: "outside_viewport",
   PARENT_HIDDEN: "parent_hidden",
 } as const;
 
@@ -27,7 +26,6 @@ export const CaliperVisibilityStatusSchema = z.enum([
 export const CaliperVisibilityReasonSchema = z.enum([
   CALIPER_VISIBILITY_REASON.DISPLAY_NONE,
   CALIPER_VISIBILITY_REASON.NOT_VISIBLE,
-  CALIPER_VISIBILITY_REASON.OUTSIDE_VIEWPORT,
   CALIPER_VISIBILITY_REASON.PARENT_HIDDEN,
 ]);
 

@@ -1,8 +1,9 @@
 import type { CdpClient } from "./cdp-client.js";
-
-type DomDocument = {
-  root: { nodeId: number };
-};
+import type {
+  DomDescribeNodeResponse,
+  DomGetDocumentResponse,
+  DomQuerySelectorResponse,
+} from "./cdp-protocol.js";
 
 export function normalizeSelectorForDom(selector: string): string {
   if (selector.startsWith("caliper-")) {
@@ -18,12 +19,12 @@ export async function resolveSelectorToNodeId(
 ): Promise<number | null> {
   await client.send("DOM.enable");
 
-  const document = await client.send<DomDocument>("DOM.getDocument", {
+  const document = await client.send<DomGetDocumentResponse>("DOM.getDocument", {
     depth: -1,
     pierce: true,
   });
 
-  const queryResult = await client.send<{ nodeId: number }>("DOM.querySelector", {
+  const queryResult = await client.send<DomQuerySelectorResponse>("DOM.querySelector", {
     nodeId: document.root.nodeId,
     selector: normalizeSelectorForDom(selector),
   });
@@ -32,9 +33,7 @@ export async function resolveSelectorToNodeId(
 }
 
 export async function describeNodeSelector(client: CdpClient, nodeId: number): Promise<string> {
-  const description = await client.send<{
-    node: { nodeName: string; attributes?: string[] };
-  }>("DOM.describeNode", { nodeId });
+  const description = await client.send<DomDescribeNodeResponse>("DOM.describeNode", { nodeId });
 
   const attributes = description.node.attributes ?? [];
   for (let index = 0; index < attributes.length; index += 2) {

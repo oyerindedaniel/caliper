@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { CdpClient } from "./cdp-client.js";
+import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
 
 export class InjectSession {
   private registered = false;
@@ -26,7 +27,7 @@ export class InjectSession {
 
   async injectIntoCurrentDocument(): Promise<void> {
     const injectSource = readCaliperInjectScript();
-    await this.client.send("Runtime.evaluate", {
+    await this.client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
       expression: buildBootstrapExpression(injectSource),
     });
   }
@@ -50,6 +51,6 @@ function buildBootstrapExpression(scriptSource: string): string {
     const script = document.createElement("script");
     script.setAttribute("data-config", ${JSON.stringify(bridgeConfig)});
     script.textContent = ${JSON.stringify(scriptSource)};
-    (document.documentElement || document.head || document.body).appendChild(script);
+    document.documentElement.appendChild(script);
   })();`;
 }
