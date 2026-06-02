@@ -7,7 +7,8 @@ import {
   DEFAULT_ENGINE_PORT,
   EngineHealthSchema,
   RpcFactory,
-  isCaliperActionResultFor,
+  parseCaliperActionResult,
+  isCaliperActionResultMethod,
   isJSONRPCErrorResponse,
   isJSONRPCResultResponse,
   type CaliperActionResultFor,
@@ -89,11 +90,12 @@ export class EngineService {
       throw new Error("Engine RPC returned an unexpected response shape");
     }
 
-    if (!isCaliperActionResultFor(payload.result, method)) {
+    const result = parseCaliperActionResult(payload.result);
+    if (!result || !isCaliperActionResultMethod(result, method)) {
       throw new Error("Engine RPC returned an invalid result shape");
     }
 
-    return payload.result;
+    return result;
   }
 
   async stop(): Promise<void> {

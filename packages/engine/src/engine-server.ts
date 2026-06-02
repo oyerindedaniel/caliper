@@ -8,12 +8,13 @@ import {
   DEFAULT_ENGINE_HOST,
   DEFAULT_ENGINE_PORT,
   EngineHealthSchema,
-  EngineRpcRequestSchema,
+  CaliperRpcRequestSchema,
   RpcFactory,
   buildEngineHttpUrl,
   isId,
+  type CaliperActionResult,
+  type CaliperRpcRequest,
   type EngineHealth,
-  type EngineRpcRequest,
   type EngineSessionState,
   type NullableId,
   type RpcErrorInput,
@@ -46,7 +47,7 @@ type EngineHttpJsonBody =
   | ReturnType<typeof RpcFactory.response>
   | EngineHttpErrorBody;
 
-type RpcHandler = (request: EngineRpcRequest) => Promise<unknown>;
+type RpcHandler = (request: CaliperRpcRequest) => Promise<CaliperActionResult>;
 type CaptureHandler = (fileName: string) => string | null;
 
 export class CaliperEngineServer {
@@ -216,7 +217,7 @@ export class CaliperEngineServer {
       return;
     }
 
-    const parsedRequest = EngineRpcRequestSchema.safeParse(parsedBody);
+    const parsedRequest = CaliperRpcRequestSchema.safeParse(parsedBody);
 
     if (!parsedRequest.success) {
       this.writeRpcError(outgoing, 400, {
@@ -228,19 +229,21 @@ export class CaliperEngineServer {
       return;
     }
 
+    const request = parsedRequest.data as CaliperRpcRequest;
+
     if (!this.rpcHandler) {
       this.writeRpcError(outgoing, 501, {
-        id: parsedRequest.data.id,
+        id: request.id,
         code: -32000,
         message: "Engine RPC handlers are not configured yet",
       });
       return;
     }
 
-    const result = await this.rpcHandler(parsedRequest.data);
+    const result = await this.rpcHandler(request);
     this.writeRpcResult(outgoing, {
-      id: parsedRequest.data.id,
-      result: result as Record<string, unknown>,
+      id: request.id,
+      result,
     });
   }
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CALIPER_METHODS, RpcFactory } from "./bridge.js";
+import {
+  CALIPER_METHODS,
+  parseCaliperRpcRequest,
+  RpcFactory,
+} from "./bridge.js";
 import {
   buildEngineHttpUrl,
   CALIPER_MEASUREMENT_ROUTING,
@@ -9,8 +13,6 @@ import {
   CaliperConnectionTargetSchema,
   CaliperMeasurementRoutingSchema,
   EngineHealthSchema,
-  EngineRpcRequestSchema,
-  isEngineRpcRequest,
   isLoopbackHost,
 } from "./engine.js";
 
@@ -53,8 +55,7 @@ describe("engine schema", () => {
       "rpc-1"
     );
 
-    expect(isEngineRpcRequest(request)).toBe(true);
-    expect(EngineRpcRequestSchema.parse(request).method).toBe(CALIPER_METHODS.INSPECT);
+    expect(parseCaliperRpcRequest(request)?.method).toBe(CALIPER_METHODS.INSPECT);
 
     const invalidRequest = {
       jsonrpc: "2.0",
@@ -63,8 +64,7 @@ describe("engine schema", () => {
       params: {},
     };
 
-    expect(isEngineRpcRequest(invalidRequest)).toBe(false);
-    expect(EngineRpcRequestSchema.safeParse(invalidRequest).success).toBe(false);
+    expect(parseCaliperRpcRequest(invalidRequest)).toBeNull();
   });
 
   it("parses measurement routing modes", () => {

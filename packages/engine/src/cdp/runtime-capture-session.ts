@@ -165,9 +165,7 @@ function formatRemoteObjects(objects: RuntimeRemoteObject[]): string {
 function formatStackTrace(
   details: RuntimeExceptionThrownEvent["exceptionDetails"]
 ): string | undefined {
-  const stackTrace = details.stackTrace as
-    | { callFrames?: Array<{ functionName?: string; url?: string; lineNumber?: number }> }
-    | undefined;
+  const stackTrace = details.stackTrace;
   if (!stackTrace?.callFrames?.length) {
     return undefined;
   }

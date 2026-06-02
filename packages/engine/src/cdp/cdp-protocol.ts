@@ -25,6 +25,20 @@ export type RuntimeRemoteObject = {
   customPreview?: unknown;
 };
 
+/** CDP Runtime.CallFrame — https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-CallFrame */
+export type RuntimeCallFrame = {
+  functionName?: string;
+  url?: string;
+  lineNumber?: number;
+  columnNumber?: number;
+};
+
+/** CDP Runtime.StackTrace — https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-StackTrace */
+export type RuntimeStackTrace = {
+  description?: string;
+  callFrames?: RuntimeCallFrame[];
+};
+
 /** CDP Runtime.ExceptionDetails — https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#type-ExceptionDetails */
 export type RuntimeExceptionDetails = {
   exceptionId: number;
@@ -33,7 +47,7 @@ export type RuntimeExceptionDetails = {
   columnNumber: number;
   scriptId?: string;
   url?: string;
-  stackTrace?: unknown;
+  stackTrace?: RuntimeStackTrace;
   exception?: RuntimeRemoteObject;
   executionContextId?: number;
 };
@@ -170,7 +184,7 @@ export type RuntimeConsoleApiCalledEvent = {
   args?: RuntimeRemoteObject[];
   executionContextId?: number;
   timestamp?: number;
-  stackTrace?: { callFrames?: Array<{ url?: string; lineNumber?: number; columnNumber?: number }> };
+  stackTrace?: RuntimeStackTrace;
 };
 
 /** CDP Runtime.exceptionThrown — https://chromedevtools.github.io/devtools-protocol/tot/Runtime/#event-exceptionThrown */
