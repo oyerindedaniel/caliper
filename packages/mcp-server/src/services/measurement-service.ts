@@ -1,7 +1,7 @@
 import {
   CALIPER_MEASUREMENT_ROUTING,
   CALIPER_RUNTIME_MODES,
-  type CaliperActionResult,
+  type CaliperActionResultFor,
   type CaliperBaseMethod,
   type CaliperEngineMethod,
   type CaliperEngineParams,
@@ -71,7 +71,7 @@ export class MeasurementService {
   async call<M extends CaliperBaseMethod>(
     method: M,
     params: CaliperParams<M>
-  ): Promise<CaliperActionResult> {
+  ): Promise<CaliperActionResultFor<M>> {
     switch (this.runtimeRouting) {
       case CALIPER_MEASUREMENT_ROUTING.ATTACHED:
         return bridgeService.call(method, params);
@@ -105,7 +105,7 @@ export class MeasurementService {
   async callEngine<M extends CaliperEngineMethod>(
     method: M,
     params: CaliperEngineParams<M>
-  ): Promise<CaliperActionResult> {
+  ): Promise<CaliperActionResultFor<M>> {
     if (!this.engineService) {
       throw new Error(
         "Engine control methods require caliper-engine. Start MCP with --runtime engine --engine."

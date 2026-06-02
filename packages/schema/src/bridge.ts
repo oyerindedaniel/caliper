@@ -27,6 +27,7 @@ import {
   type JSONRPCRequest,
   type JSONRPCResponse,
   type JSONRPCNotification,
+  type JSONRPCErrorResponse,
   isJSONRPCRequest as _isJSONRPCRequest,
   isJSONRPCNotification as _isJSONRPCNotification,
   isJSONRPCResultResponse as _isJSONRPCResultResponse,
@@ -42,7 +43,7 @@ export const isJSONRPCNotification = _isJSONRPCNotification;
 export const isJSONRPCResultResponse = _isJSONRPCResultResponse;
 export const isJSONRPCErrorResponse = _isJSONRPCErrorResponse;
 
-export type { JSONRPCRequest, JSONRPCResponse, JSONRPCNotification };
+export type { JSONRPCRequest, JSONRPCResponse, JSONRPCNotification, JSONRPCErrorResponse };
 
 export const ViewportSchema = z.object({
   width: z.number(),
@@ -300,23 +301,19 @@ export const IdSchema = z.union([z.string(), z.number()]);
 export type Id = z.infer<typeof IdSchema>;
 export type NullableId<T extends Id = Id> = T | null;
 
-export type JsonRpcRequest = JSONRPCRequest;
-export type JsonRpcResponse = JSONRPCResponse;
-export type JsonRpcNotification = JSONRPCNotification;
-
 export class RpcFactory {
   static request(
     method: CaliperRpcMethod,
     params: CaliperRpcParamsByMethod[CaliperRpcMethod],
     id: Id
-  ): JsonRpcRequest {
+  ): JSONRPCRequest {
     return JSONRPCRequestSchema.parse({ jsonrpc: "2.0", method, params, id });
   }
 
-  static response<T extends Record<string, unknown>>(input: {
+  static response(input: {
     id: NullableId;
-    result: T;
-  }): JsonRpcResponse {
+    result: Record<string, unknown>;
+  }): JSONRPCResponse {
     return JSONRPCResultResponseSchema.parse({
       jsonrpc: "2.0",
       id: input.id,
@@ -329,7 +326,7 @@ export class RpcFactory {
     code: number;
     message: string;
     data?: unknown;
-  }): JsonRpcResponse {
+  }): JSONRPCErrorResponse {
     return JSONRPCErrorResponseSchema.parse({
       jsonrpc: "2.0",
       ...(input.id !== null ? { id: input.id } : {}),
@@ -341,10 +338,10 @@ export class RpcFactory {
     });
   }
 
-  static notification<T extends Record<string, unknown>>(
+  static notification(
     method: CaliperBridgeNotificationMethod,
-    params: T
-  ): JsonRpcNotification {
+    params: Record<string, unknown>
+  ): JSONRPCNotification {
     return JSONRPCNotificationSchema.parse({
       jsonrpc: "2.0",
       method,
@@ -363,6 +360,17 @@ export const isId = (value: unknown): value is Id => {
 export const isCaliperActionResult = (value: unknown): value is CaliperActionResult => {
   return CaliperActionResultSchema.safeParse(value).success;
 };
+
+export function isCaliperActionResultFor<M extends CaliperRpcMethod>(
+  value: unknown,
+  method: M
+): value is CaliperActionResultFor<M> {
+  if (!isCaliperActionResult(value)) {
+    return false;
+  }
+
+  return value.method === method;
+}
 
 export const CaliperResponseSchema = z.union([
   z.object({
@@ -442,6 +450,11 @@ export const CaliperGetContextPayloadSchema = z.object({});
 export type ViewportState = z.infer<typeof ViewportSchema>;
 export type ElementGeometry = z.infer<typeof ElementGeometrySchema>;
 export type CaliperActionResult = z.infer<typeof CaliperActionResultSchema>;
+
+export type CaliperActionResultFor<M extends CaliperRpcMethod> =
+  | Extract<CaliperActionResult, { success: true; method: M }>
+  | (Extract<CaliperActionResult, { success: false }> & { method: M });
+  
 export type CaliperAgentState = z.infer<typeof CaliperAgentStateSchema>;
 export type CaliperSelectPayload = z.infer<typeof CaliperSelectPayloadSchema>;
 export type CaliperMeasurePayload = z.infer<typeof CaliperMeasurePayloadSchema>;
@@ -470,7 +483,7 @@ export type CaliperBaseRequest = {
 
 export type CaliperParams<M extends CaliperBaseMethod> = CaliperBaseParamsByMethod[M];
 
-export type CaliperIntent = JsonRpcRequest & CaliperBaseRequest;
+export type CaliperIntent = JSONRPCRequest & CaliperBaseRequest;
 
 export type CaliperRpcParamsByMethod = CaliperBaseParamsByMethod & CaliperEngineParamsByMethod;
 export type CaliperRpcParams<M extends CaliperRpcMethod> = CaliperRpcParamsByMethod[M];

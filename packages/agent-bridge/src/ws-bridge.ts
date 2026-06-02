@@ -3,7 +3,7 @@ import {
   type CaliperIntent,
   type NullableId,
   RpcFactory,
-  type JsonRpcRequest,
+  type JSONRPCRequest,
   CALIPER_METHODS,
   BitBridge,
   type CaliperAgentState,
@@ -57,7 +57,7 @@ export function createWSBridge(options: BridgeOptions) {
       socket.onmessage = async (event) => {
         let messageId: NullableId = null;
         try {
-          const message = JSON.parse(event.data) as JsonRpcRequest;
+          const message = JSON.parse(event.data) as JSONRPCRequest;
           messageId = message.id;
 
           const result = await onIntent(message as CaliperIntent);

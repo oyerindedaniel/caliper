@@ -309,13 +309,18 @@ The output includes:
             minElementSize,
             ignoreSelectors,
           });
-          const auditResponse = auditResult as {
-            walkResult?: { hasMore?: boolean; batchInstructions?: string };
-          };
+
+          if (!auditResult.success) {
+            return {
+              content: [{ type: "text", text: `Walk and Measure failed: ${auditResult.error}` }],
+              isError: true,
+            };
+          }
+
           let reportContent = JSON.stringify(auditResult);
 
-          if (auditResponse.walkResult?.hasMore && auditResponse.walkResult?.batchInstructions) {
-            reportContent = `${auditResponse.walkResult.batchInstructions}\n\n${reportContent}`;
+          if (auditResult.walkResult.hasMore && auditResult.walkResult.batchInstructions) {
+            reportContent = `${auditResult.walkResult.batchInstructions}\n\n${reportContent}`;
           }
 
           return { content: [{ type: "text", text: reportContent }] };
@@ -343,13 +348,12 @@ The output includes:
       async () => {
         try {
           const result = await this.measurementService.call(CALIPER_METHODS.GET_CONTEXT, {});
-          const payload =
-            result.success && result.method === CALIPER_METHODS.GET_CONTEXT
-              ? {
-                  ...result,
-                  runtimeConnection: this.measurementService.getRuntimeConnection(),
-                }
-              : result;
+          const payload = result.success
+            ? {
+                ...result,
+                runtimeConnection: this.measurementService.getRuntimeConnection(),
+              }
+            : result;
           return { content: [{ type: "text", text: JSON.stringify(payload) }] };
         } catch (error) {
           return {

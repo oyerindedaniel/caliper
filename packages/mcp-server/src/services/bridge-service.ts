@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   BridgeMessageSchema,
   type CaliperActionResult,
+  type CaliperActionResultFor,
   type CaliperBaseMethod,
   type CaliperAgentState,
   BitBridge,
@@ -12,6 +13,7 @@ import {
   isId,
   type CaliperParams,
   isCaliperActionResult,
+  isCaliperActionResultFor,
   isBridgeNotification,
   isBridgeErrorResponse,
   isBridgeResultResponse,
@@ -221,7 +223,7 @@ export class BridgeService extends EventEmitter {
   async call<M extends CaliperBaseMethod>(
     method: M,
     params: CaliperParams<M>
-  ): Promise<CaliperActionResult> {
+  ): Promise<CaliperActionResultFor<M>> {
     if (this.startupError) {
       throw new Error(`Caliper Bridge Unavailable: ${this.startupError}`);
     }
@@ -237,7 +239,7 @@ export class BridgeService extends EventEmitter {
 
     let timeoutHandle: ReturnType<typeof setTimeout>;
 
-    const responsePromise = new Promise<CaliperActionResult>((resolve, reject) => {
+    const responsePromise = new Promise<CaliperActionResultFor<M>>((resolve, reject) => {
       this.pendingCalls.set(callId, (bridgeResponse) => {
         clearTimeout(timeoutHandle);
 
@@ -250,7 +252,7 @@ export class BridgeService extends EventEmitter {
           return;
         }
 
-        if (isCaliperActionResult(bridgeResponse)) {
+        if (isCaliperActionResultFor(bridgeResponse, method)) {
           resolve(bridgeResponse);
           return;
         }

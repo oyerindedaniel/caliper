@@ -7,14 +7,18 @@ import {
   DEFAULT_ENGINE_PORT,
   EngineHealthSchema,
   RpcFactory,
-  isCaliperActionResult,
+  isCaliperActionResultFor,
   isJSONRPCErrorResponse,
   isJSONRPCResultResponse,
-  type CaliperActionResult,
+  type CaliperActionResultFor,
+  type CaliperBaseMethod,
+  type CaliperEngineMethod,
+  type CaliperEngineParams,
+  type CaliperParams,
   type CaliperRpcMethod,
   type CaliperRpcParams,
   type EngineHealth,
-  type JsonRpcResponse,
+  type JSONRPCResponse,
 } from "@oyerinde/caliper-schema";
 import { generateId } from "../utils/id.js";
 import { createLogger } from "../utils/logger.js";
@@ -55,10 +59,18 @@ export class EngineService {
     });
   }
 
-  async call(
-    method: CaliperRpcMethod,
-    params: CaliperRpcParams<CaliperRpcMethod>
-  ): Promise<CaliperActionResult> {
+  async call<M extends CaliperBaseMethod>(
+    method: M,
+    params: CaliperParams<M>
+  ): Promise<CaliperActionResultFor<M>>;
+  async call<M extends CaliperEngineMethod>(
+    method: M,
+    params: CaliperEngineParams<M>
+  ): Promise<CaliperActionResultFor<M>>;
+  async call<M extends CaliperRpcMethod>(
+    method: M,
+    params: CaliperRpcParams<M>
+  ): Promise<CaliperActionResultFor<M>> {
     const requestId = generateId("engine-call");
     const request = RpcFactory.request(method, params, requestId);
     const response = await fetch(`${this.engineUrl}/rpc`, {
@@ -67,7 +79,7 @@ export class EngineService {
       body: JSON.stringify(request),
     });
 
-    const payload = (await response.json()) as JsonRpcResponse;
+    const payload = (await response.json()) as JSONRPCResponse;
 
     if (isJSONRPCErrorResponse(payload)) {
       throw new Error(payload.error.message);
@@ -77,7 +89,7 @@ export class EngineService {
       throw new Error("Engine RPC returned an unexpected response shape");
     }
 
-    if (!isCaliperActionResult(payload.result)) {
+    if (!isCaliperActionResultFor(payload.result, method)) {
       throw new Error("Engine RPC returned an invalid result shape");
     }
 

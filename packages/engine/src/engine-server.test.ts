@@ -4,11 +4,9 @@ import {
   RpcFactory,
   buildEngineHttpUrl,
   DEFAULT_ENGINE_HOST,
-  type JsonRpcResponse,
+  type JSONRPCErrorResponse,
 } from "@oyerinde/caliper-schema";
 import { CaliperEngineServer } from "./engine-server.js";
-
-type JsonRpcErrorResponse = Extract<JsonRpcResponse, { error: unknown }>;
 
 describe("CaliperEngineServer", () => {
   let engineServer: CaliperEngineServer | null = null;
@@ -51,7 +49,7 @@ describe("CaliperEngineServer", () => {
 
     expect(response.status).toBe(400);
 
-    const payload = (await response.json()) as JsonRpcErrorResponse;
+    const payload = (await response.json()) as JSONRPCErrorResponse;
     expect(payload.error?.code).toBe(-32600);
     expect(payload.id).toBe("bad-1");
     expect(payload.error?.data).toBeDefined();
@@ -78,7 +76,7 @@ describe("CaliperEngineServer", () => {
 
     expect(response.status).toBe(501);
 
-    const payload = (await response.json()) as JsonRpcErrorResponse;
+    const payload = (await response.json()) as JSONRPCErrorResponse;
     expect(payload.error?.message).toBe("Engine RPC handlers are not configured yet");
   });
 });
