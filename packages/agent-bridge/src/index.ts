@@ -73,6 +73,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
     install: (instance: OverlayInstance) => {
       const cleanup = () => {
         delete window.dispatchCaliperIntent;
+        delete window.__CALIPER_BRIDGE_BOOTING__;
         isInitialized = false;
         intentHandler = null;
         if (stateStore) {
@@ -94,6 +95,8 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
         return;
       }
 
+      window.__CALIPER_BRIDGE_BOOTING__ = true;
+
       instance
         .waitForSystems()
         .then((systems: CaliperCoreSystems) => {
@@ -113,16 +116,19 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
           stateStore = createStateStore();
           intentHandler = createIntentHandler(systems, stateStore);
 
+          const relayEnabled = config.relay !== false;
           const wsPort = config.wsPort ?? DEFAULT_WS_PORT;
           const wsUrl = `ws://localhost:${wsPort}`;
 
-          const wsBridge = createWSBridge({
-            onIntent: (intent) => intentHandler!.dispatch(intent),
-            wsUrl,
-          });
+          const wsBridge = relayEnabled
+            ? createWSBridge({
+                onIntent: (intent) => intentHandler!.dispatch(intent),
+                wsUrl,
+              })
+            : null;
 
           const disposeSync = initStateSync(stateStore, systems, (state) => {
-            wsBridge.sendStateUpdate(state);
+            wsBridge?.sendStateUpdate(state);
             config.onStateChange?.(state);
             if (config.onStateChangeGlobal) {
               const globalCallback = (window as unknown as Record<string, unknown>)[
@@ -141,25 +147,32 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
               return {
                 success: false,
                 method: intent.method,
-                error: "Agent bridge not initialized",
+                error: "Caliper agent bridge not initialized",
                 timestamp: Date.now(),
               };
             }
             return intentHandler.dispatch(intent);
           };
 
+          delete window.__CALIPER_BRIDGE_BOOTING__;
+
           isInitialized = true;
-          logger.info(`Initialized. MCP Relay enabled on port ${wsPort} (${wsUrl})`);
+          if (relayEnabled) {
+            logger.info(`Initialized. MCP relay on port ${wsPort} (${wsUrl})`);
+          } else {
+            logger.info("Initialized. CDP dispatch only (MCP relay disabled).");
+          }
 
           bridgeDispose = () => {
             disposeSync();
-            wsBridge.destroy();
+            wsBridge?.destroy();
             cleanup();
             logger.info("Bridge stopped. Connections closed.");
           };
         })
         .catch((error) => {
           if (isDisposed) return;
+          delete window.__CALIPER_BRIDGE_BOOTING__;
           logger.error("Failed to initialize agent bridge:", error);
           cleanup();
         });
@@ -185,7 +198,7 @@ export async function dispatchCaliperIntent(intent: CaliperIntent): Promise<Cali
     return {
       success: false,
       method: intent.method,
-      error: "Agent bridge not initialized",
+      error: "Caliper agent bridge not initialized",
       timestamp: Date.now(),
     };
   }

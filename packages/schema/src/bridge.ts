@@ -1,11 +1,24 @@
 import { z } from "zod";
 import { ContextMetricsSchema, MeasurementResultSchema, SelectionMetadataSchema } from "./core.js";
 import {
+  CaliperAuditContextSchema,
+  CaliperBreakpointAuditMatrixSchema,
+  CaliperRuntimeConnectionSchema,
+  CaliperVisibilitySchema,
+} from "./visibility.js";
+import {
   CaliperComputedStylesSchema,
   CaliperNodeSchema,
   CaliperSelectorInputSchema,
   WalkOptionsSchema,
 } from "./audit.js";
+import {
+  CALIPER_ENGINE_METHODS,
+  CaliperEngineMethodSchema,
+  type CaliperEngineParamsByMethod,
+  CaliperRuntimeBlockSchema,
+  CaliperScreenshotRefSchema,
+} from "./engine-control.js";
 import {
   JSONRPCRequestSchema as _JSONRPCRequestSchema,
   JSONRPCNotificationSchema as _JSONRPCNotificationSchema,
@@ -14,6 +27,7 @@ import {
   type JSONRPCRequest,
   type JSONRPCResponse,
   type JSONRPCNotification,
+  type JSONRPCErrorResponse,
   isJSONRPCRequest as _isJSONRPCRequest,
   isJSONRPCNotification as _isJSONRPCNotification,
   isJSONRPCResultResponse as _isJSONRPCResultResponse,
@@ -29,7 +43,7 @@ export const isJSONRPCNotification = _isJSONRPCNotification;
 export const isJSONRPCResultResponse = _isJSONRPCResultResponse;
 export const isJSONRPCErrorResponse = _isJSONRPCErrorResponse;
 
-export type { JSONRPCRequest, JSONRPCResponse, JSONRPCNotification };
+export type { JSONRPCRequest, JSONRPCResponse, JSONRPCNotification, JSONRPCErrorResponse };
 
 export const ViewportSchema = z.object({
   width: z.number(),
@@ -71,7 +85,7 @@ export const CALIPER_METHODS = {
   STATE_UPDATE: "caliper/stateUpdate",
 } as const;
 
-export const CaliperMethodSchema = z.enum([
+export const CaliperBaseMethodSchema = z.enum([
   CALIPER_METHODS.SELECT,
   CALIPER_METHODS.MEASURE,
   CALIPER_METHODS.INSPECT,
@@ -80,10 +94,26 @@ export const CaliperMethodSchema = z.enum([
   CALIPER_METHODS.WALK_DOM,
   CALIPER_METHODS.WALK_AND_MEASURE,
   CALIPER_METHODS.GET_CONTEXT,
+]);
+
+export const CaliperBridgeNotificationMethodSchema = z.enum([
   CALIPER_METHODS.REGISTER_TAB,
   CALIPER_METHODS.TAB_UPDATE,
   CALIPER_METHODS.STATE_UPDATE,
 ]);
+
+export const CaliperMethodSchema = z.union([
+  CaliperBaseMethodSchema,
+  CaliperBridgeNotificationMethodSchema,
+]);
+
+export type CaliperBaseMethod = z.infer<typeof CaliperBaseMethodSchema>;
+export type CaliperBridgeNotificationMethod = z.infer<typeof CaliperBridgeNotificationMethodSchema>;
+export type CaliperMethod = z.infer<typeof CaliperMethodSchema>;
+
+export const CaliperRpcMethodSchema = z.union([CaliperBaseMethodSchema, CaliperEngineMethodSchema]);
+
+export type CaliperRpcMethod = z.infer<typeof CaliperRpcMethodSchema>;
 
 export const SourceHintsSchema = z.object({
   stableAnchors: z.array(z.string()),
@@ -93,8 +123,6 @@ export const SourceHintsSchema = z.object({
   unstableClasses: z.array(z.string()),
   tagName: z.string(),
 });
-
-export type CaliperMethod = z.infer<typeof CaliperMethodSchema>;
 
 export const CaliperActionResultSchema = z.union([
   z.object({
@@ -109,6 +137,7 @@ export const CaliperActionResultSchema = z.union([
     method: z.literal(CALIPER_METHODS.MEASURE),
     selector: z.string(),
     measurement: MeasurementResultSchema,
+    auditContext: CaliperAuditContextSchema.optional(),
     timestamp: z.number(),
   }),
   z.object({
@@ -129,6 +158,8 @@ export const CaliperActionResultSchema = z.union([
     descendantCount: z.number().optional(),
     descendantsTruncated: z.boolean().optional(),
     sourceHints: SourceHintsSchema.optional(),
+    visibility: CaliperVisibilitySchema.optional(),
+    auditContext: CaliperAuditContextSchema.optional(),
     timestamp: z.number(),
   }),
   z.object({
@@ -150,6 +181,7 @@ export const CaliperActionResultSchema = z.union([
       parent: CaliperElementSummarySchema.nullable(),
       children: z.array(CaliperElementSummarySchema),
     }),
+    auditContext: CaliperAuditContextSchema.optional(),
     timestamp: z.number(),
   }),
   z.object({
@@ -165,6 +197,7 @@ export const CaliperActionResultSchema = z.union([
       batchInstructions: z.string().optional(),
       continuationToken: z.string().optional(),
     }),
+    auditContext: CaliperAuditContextSchema.optional(),
     timestamp: z.number(),
     binaryPayload: z.custom<Uint8Array>().optional(),
   }),
@@ -172,11 +205,74 @@ export const CaliperActionResultSchema = z.union([
     success: z.literal(true),
     method: z.literal(CALIPER_METHODS.GET_CONTEXT),
     context: ContextMetricsSchema,
+    runtimeConnection: CaliperRuntimeConnectionSchema.optional(),
+    auditContext: CaliperAuditContextSchema.optional(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.SET_VIEWPORT),
+    viewport: ViewportSchema,
+    deviceScaleFactor: z.number(),
+    emulated: z.boolean(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS),
+    selector: z.string(),
+    audit: CaliperBreakpointAuditMatrixSchema,
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.GET_RUNTIME),
+    runtime: CaliperRuntimeBlockSchema,
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.CLEAR_RUNTIME),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.SCROLL),
+    scrollX: z.number(),
+    scrollY: z.number(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.SCROLL_INTO_VIEW),
+    selector: z.string(),
+    scrollX: z.number(),
+    scrollY: z.number(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS),
+    paused: z.literal(true),
+    playbackRate: z.number(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS),
+    paused: z.literal(false),
+    playbackRate: z.number(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.SCREENSHOT),
+    capture: CaliperScreenshotRefSchema,
     timestamp: z.number(),
   }),
   z.object({
     success: z.literal(false),
-    method: CaliperMethodSchema,
+    method: CaliperRpcMethodSchema,
     selector: z.string().optional(),
     error: z.string(),
     timestamp: z.number(),
@@ -205,42 +301,57 @@ export const IdSchema = z.union([z.string(), z.number()]);
 export type Id = z.infer<typeof IdSchema>;
 export type NullableId<T extends Id = Id> = T | null;
 
-export type JsonRpcRequest = JSONRPCRequest;
-export type JsonRpcResponse = JSONRPCResponse;
-export type JsonRpcNotification = JSONRPCNotification;
-
 export class RpcFactory {
-  static request<T extends Record<string, unknown>>(
-    method: CaliperMethod,
-    params: T,
+  static request(
+    method: CaliperRpcMethod,
+    params: CaliperRpcParamsByMethod[CaliperRpcMethod],
     id: Id
-  ): JsonRpcRequest {
-    return JSONRPCRequestSchema.parse({ jsonrpc: "2.0", method, params, id }) as JsonRpcRequest;
+  ): JSONRPCRequest {
+    return JSONRPCRequestSchema.parse({ jsonrpc: "2.0", method, params, id });
   }
 
-  static response<T extends Record<string, unknown>>(id: NullableId, result: T): JsonRpcResponse {
-    return JSONRPCResultResponseSchema.parse({ jsonrpc: "2.0", id, result }) as JsonRpcResponse;
+  static response(input: {
+    id: NullableId;
+    result: Record<string, unknown>;
+  }): JSONRPCResponse {
+    return JSONRPCResultResponseSchema.parse({
+      jsonrpc: "2.0",
+      id: input.id,
+      result: input.result,
+    });
   }
 
-  static error(id: NullableId, code: number, message: string, data?: unknown): JsonRpcResponse {
+  static error(input: {
+    id: NullableId;
+    code: number;
+    message: string;
+    data?: unknown;
+  }): JSONRPCErrorResponse {
     return JSONRPCErrorResponseSchema.parse({
       jsonrpc: "2.0",
-      id,
-      error: { code, message, data },
-    }) as JsonRpcResponse;
+      ...(input.id !== null ? { id: input.id } : {}),
+      error: {
+        code: input.code,
+        message: input.message,
+        ...(input.data !== undefined ? { data: input.data } : {}),
+      },
+    });
   }
 
-  static notification<T extends Record<string, unknown>>(
-    method: CaliperMethod,
-    params: T
-  ): JsonRpcNotification {
+  static notification(
+    method: CaliperBridgeNotificationMethod,
+    params: Record<string, unknown>
+  ): JSONRPCNotification {
     return JSONRPCNotificationSchema.parse({
       jsonrpc: "2.0",
       method,
       params,
-    }) as JsonRpcNotification;
+    });
   }
 }
+
+export type RpcErrorInput = Parameters<typeof RpcFactory.error>[0];
+export type RpcResultInput = Parameters<typeof RpcFactory.response>[0];
 
 export const isId = (value: unknown): value is Id => {
   return typeof value === "string" || typeof value === "number";
@@ -249,6 +360,17 @@ export const isId = (value: unknown): value is Id => {
 export const isCaliperActionResult = (value: unknown): value is CaliperActionResult => {
   return CaliperActionResultSchema.safeParse(value).success;
 };
+
+export function isCaliperActionResultFor<M extends CaliperRpcMethod>(
+  value: unknown,
+  method: M
+): value is CaliperActionResultFor<M> {
+  if (!isCaliperActionResult(value)) {
+    return false;
+  }
+
+  return value.method === method;
+}
 
 export const CaliperResponseSchema = z.union([
   z.object({
@@ -328,6 +450,11 @@ export const CaliperGetContextPayloadSchema = z.object({});
 export type ViewportState = z.infer<typeof ViewportSchema>;
 export type ElementGeometry = z.infer<typeof ElementGeometrySchema>;
 export type CaliperActionResult = z.infer<typeof CaliperActionResultSchema>;
+
+export type CaliperActionResultFor<M extends CaliperRpcMethod> =
+  | Extract<CaliperActionResult, { success: true; method: M }>
+  | (Extract<CaliperActionResult, { success: false }> & { method: M });
+  
 export type CaliperAgentState = z.infer<typeof CaliperAgentStateSchema>;
 export type CaliperSelectPayload = z.infer<typeof CaliperSelectPayloadSchema>;
 export type CaliperMeasurePayload = z.infer<typeof CaliperMeasurePayloadSchema>;
@@ -336,19 +463,27 @@ export type CaliperWalkDomPayload = z.infer<typeof CaliperWalkDomPayloadSchema>;
 export type CaliperWalkAndMeasurePayload = z.infer<typeof CaliperWalkAndMeasurePayloadSchema>;
 export type CaliperGetContextPayload = z.infer<typeof CaliperGetContextPayloadSchema>;
 
-export type CaliperIntent = JsonRpcRequest &
-  (
-    | { method: typeof CALIPER_METHODS.SELECT; params: CaliperSelectPayload }
-    | { method: typeof CALIPER_METHODS.MEASURE; params: CaliperMeasurePayload }
-    | { method: typeof CALIPER_METHODS.INSPECT; params: CaliperInspectPayload }
-    | { method: typeof CALIPER_METHODS.FREEZE; params: {} }
-    | { method: typeof CALIPER_METHODS.CLEAR; params: {} }
-    | { method: typeof CALIPER_METHODS.WALK_DOM; params: CaliperWalkDomPayload }
-    | { method: typeof CALIPER_METHODS.WALK_AND_MEASURE; params: CaliperWalkAndMeasurePayload }
-    | { method: typeof CALIPER_METHODS.GET_CONTEXT; params: CaliperGetContextPayload }
-  );
+export type CaliperBaseParamsByMethod = {
+  [CALIPER_METHODS.SELECT]: CaliperSelectPayload;
+  [CALIPER_METHODS.MEASURE]: CaliperMeasurePayload;
+  [CALIPER_METHODS.INSPECT]: CaliperInspectPayload;
+  [CALIPER_METHODS.FREEZE]: Record<string, never>;
+  [CALIPER_METHODS.CLEAR]: Record<string, never>;
+  [CALIPER_METHODS.WALK_DOM]: CaliperWalkDomPayload;
+  [CALIPER_METHODS.WALK_AND_MEASURE]: CaliperWalkAndMeasurePayload;
+  [CALIPER_METHODS.GET_CONTEXT]: CaliperGetContextPayload;
+};
 
-export type CaliperParams<M extends CaliperMethod> = Extract<
-  CaliperIntent,
-  { method: M }
->["params"];
+export type CaliperBaseRequest = {
+  [M in CaliperBaseMethod]: {
+    method: M;
+    params: CaliperBaseParamsByMethod[M];
+  };
+}[CaliperBaseMethod];
+
+export type CaliperParams<M extends CaliperBaseMethod> = CaliperBaseParamsByMethod[M];
+
+export type CaliperIntent = JSONRPCRequest & CaliperBaseRequest;
+
+export type CaliperRpcParamsByMethod = CaliperBaseParamsByMethod & CaliperEngineParamsByMethod;
+export type CaliperRpcParams<M extends CaliperRpcMethod> = CaliperRpcParamsByMethod[M];

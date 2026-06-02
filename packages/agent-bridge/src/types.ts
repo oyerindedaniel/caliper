@@ -8,6 +8,10 @@ import type {
 declare global {
   interface Window {
     dispatchCaliperIntent?: (intent: CaliperIntent) => Promise<CaliperActionResult>;
+    /** Set by engine CDP inject bootstrap before the Caliper bundle runs. */
+    __CALIPER_ENGINE_INJECTED__?: boolean;
+    /** Set while CaliperBridge is installing; cleared when dispatch is ready. */
+    __CALIPER_BRIDGE_BOOTING__?: boolean;
   }
 }
 

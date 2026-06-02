@@ -3,7 +3,8 @@ import { z } from "zod";
 import {
   BridgeMessageSchema,
   type CaliperActionResult,
-  type CaliperMethod,
+  type CaliperActionResultFor,
+  type CaliperBaseMethod,
   type CaliperAgentState,
   BitBridge,
   RpcFactory,
@@ -12,6 +13,7 @@ import {
   isId,
   type CaliperParams,
   isCaliperActionResult,
+  isCaliperActionResultFor,
   isBridgeNotification,
   isBridgeErrorResponse,
   isBridgeResultResponse,
@@ -218,11 +220,10 @@ export class BridgeService extends EventEmitter {
     logger.info(`WebSocket Relay initialized on port ${this.wss.options.port}`);
   }
 
-  async call<M extends CaliperMethod, T = CaliperActionResult>(
+  async call<M extends CaliperBaseMethod>(
     method: M,
-    params: CaliperParams<M>,
-    retries: number = 0
-  ): Promise<T> {
+    params: CaliperParams<M>
+  ): Promise<CaliperActionResultFor<M>> {
     if (this.startupError) {
       throw new Error(`Caliper Bridge Unavailable: ${this.startupError}`);
     }
@@ -234,54 +235,42 @@ export class BridgeService extends EventEmitter {
       );
     }
 
-    const callWithTimeout = async (attempt: number): Promise<T> => {
-      const callId = generateId("mcp-call");
+    const callId = generateId("mcp-call");
 
-      return new Promise<T>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          this.pendingCalls.delete(callId);
-          reject(new BridgeTimeoutError(method, attempt, retries));
-        }, BRIDGE_REQUEST_TIMEOUT_MS);
+    let timeoutHandle: ReturnType<typeof setTimeout>;
 
-        this.pendingCalls.set(callId, (res) => {
-          clearTimeout(timeout);
-          if ("error" in res && !("success" in res)) {
-            if (res.error === new BridgeValidationError().message) {
-              reject(new BridgeValidationError());
-            } else {
-              reject(new Error(res.error));
-            }
+    const responsePromise = new Promise<CaliperActionResultFor<M>>((resolve, reject) => {
+      this.pendingCalls.set(callId, (bridgeResponse) => {
+        clearTimeout(timeoutHandle);
+
+        if ("error" in bridgeResponse && !("success" in bridgeResponse)) {
+          if (bridgeResponse.error === new BridgeValidationError().message) {
+            reject(new BridgeValidationError());
           } else {
-            resolve(res as T);
+            reject(new Error(bridgeResponse.error));
           }
-        });
+          return;
+        }
 
-        tab.ws.send(JSON.stringify(RpcFactory.request(method, params, callId)));
+        if (isCaliperActionResultFor(bridgeResponse, method)) {
+          resolve(bridgeResponse);
+          return;
+        }
+
+        reject(new Error("Unexpected result format received from bridge"));
       });
-    };
 
-    let lastError: Error | null = null;
-    for (let i = 0; i <= retries; i++) {
-      try {
-        return await callWithTimeout(i);
-      } catch (err) {
-        lastError = err as Error;
-        const isRetryable =
-          lastError instanceof BridgeTimeoutError || lastError instanceof BridgeValidationError;
+      tab.ws.send(JSON.stringify(RpcFactory.request(method, params, callId)));
+    });
 
-        if (!isRetryable) {
-          throw lastError;
-        }
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        this.pendingCalls.delete(callId);
+        reject(new BridgeTimeoutError(method));
+      }, BRIDGE_REQUEST_TIMEOUT_MS);
+    });
 
-        if (i < retries) {
-          const delay = getExponentialBackoff(i, 300);
-          logger.warn(`${lastError.message}. Retrying in ${delay}ms...`);
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-    }
-
-    throw lastError || new Error(`Failed bridge call: ${method}`);
+    return Promise.race([responsePromise, timeoutPromise]);
   }
 
   async stop() {

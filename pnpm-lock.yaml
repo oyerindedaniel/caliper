@@ -320,6 +320,49 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  packages/engine:
+    dependencies:
+      '@oyerinde/caliper':
+        specifier: workspace:*
+        version: link:../caliper
+      '@oyerinde/caliper-schema':
+        specifier: workspace:*
+        version: link:../schema
+      ws:
+        specifier: 8.19.0
+        version: 8.19.0
+      zod:
+        specifier: 4.3.5
+        version: 4.3.5
+    devDependencies:
+      '@repo/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@repo/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^24.10.9
+        version: 24.10.12
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      eslint:
+        specifier: ^9.39.1
+        version: 9.39.2
+      prettier:
+        specifier: ^3.7.4
+        version: 3.8.1
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(@microsoft/api-extractor@7.56.3(@types/node@24.10.12))(postcss@8.5.6)(typescript@5.9.3)(yaml@2.8.2)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.18
+        version: 4.0.18(@types/node@24.10.12)(jsdom@27.4.0)(yaml@2.8.2)
+
   packages/eslint-config:
     devDependencies:
       '@eslint/js':
@@ -364,6 +407,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.25.3
         version: 1.25.3(hono@4.11.9)(zod@4.3.5)
+      '@oyerinde/caliper-schema':
+        specifier: workspace:*
+        version: link:../schema
       ws:
         specifier: 8.19.0
         version: 8.19.0
@@ -371,9 +417,6 @@ importers:
         specifier: 4.3.5
         version: 4.3.5
     devDependencies:
-      '@oyerinde/caliper-schema':
-        specifier: workspace:*
-        version: link:../schema
       '@repo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config

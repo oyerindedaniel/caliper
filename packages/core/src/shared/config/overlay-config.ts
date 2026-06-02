@@ -72,6 +72,8 @@ export interface AnimationConfig {
 export interface AgentBridgeConfig {
   /** Enable the agentic bridge for AI integration (default: false) */
   enabled?: boolean;
+  /** Connect to the MCP WebSocket relay (default: true). Engine inject sets false — CDP dispatch only. */
+  relay?: boolean;
   /** WebSocket port for the MCP relay (default: 9876) */
   wsPort?: number;
   /** Callback for agent state changes */

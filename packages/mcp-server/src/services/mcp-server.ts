@@ -5,9 +5,12 @@ import {
   MAX_DESCENDANT_COUNT,
   RECOMMENDED_PAGINATION_THRESHOLD,
   CALIPER_METHODS,
+  CALIPER_ENGINE_METHODS,
   type CaliperAgentState,
+  type CaliperMeasurementRouting,
 } from "@oyerinde/caliper-schema";
 import { bridgeService } from "./bridge-service.js";
+import { createMeasurementService, type MeasurementService } from "./measurement-service.js";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
 import { parseColor, calculateDeltaE, calculateContrastRatio } from "../utils/color-utils.js";
@@ -15,13 +18,27 @@ import { DEFAULT_BRIDGE_PORT } from "../shared/constants.js";
 import { BRIDGE_EVENTS } from "../shared/events.js";
 
 const logger = createLogger("mcp-server");
+export type CaliperMcpServerOptions = {
+  port?: number;
+  engineUrl?: string | null;
+  engineTargetUrl?: string | null;
+  runtimeRouting?: CaliperMeasurementRouting;
+};
+
 export class CaliperMcpServer {
   private server: McpServer;
   private port: number;
+  private measurementService: MeasurementService;
   private lastState: CaliperAgentState | null = null;
 
-  constructor(port: number = DEFAULT_BRIDGE_PORT) {
-    this.port = port;
+  constructor(options: CaliperMcpServerOptions = {}) {
+    this.port = options.port ?? DEFAULT_BRIDGE_PORT;
+    this.measurementService = createMeasurementService({
+      bridgePort: this.port,
+      engineUrl: options.engineUrl ?? null,
+      engineTargetUrl: options.engineTargetUrl ?? null,
+      runtimeRouting: options.runtimeRouting,
+    });
     this.server = new McpServer({
       name: "caliper-mcp-server",
       version: process.env.VERSION as string,
@@ -103,7 +120,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ selector }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.INSPECT, { selector });
+          const result = await this.measurementService.call(CALIPER_METHODS.INSPECT, { selector });
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -138,7 +155,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ primarySelector, secondarySelector }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.MEASURE, {
+          const result = await this.measurementService.call(CALIPER_METHODS.MEASURE, {
             primarySelector,
             secondarySelector,
           });
@@ -165,7 +182,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async () => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.CLEAR, {});
+          const result = await this.measurementService.call(CALIPER_METHODS.CLEAR, {});
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return {
@@ -196,7 +213,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
       },
       async ({ selector }) => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.WALK_DOM, { selector });
+          const result = await this.measurementService.call(CALIPER_METHODS.WALK_DOM, { selector });
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         } catch (error) {
           return {
@@ -284,7 +301,7 @@ The output includes:
       },
       async ({ selector, maxDepth, maxNodes, continueFrom, minElementSize, ignoreSelectors }) => {
         try {
-          const auditResult = await bridgeService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
+          const auditResult = await this.measurementService.call(CALIPER_METHODS.WALK_AND_MEASURE, {
             selector,
             maxDepth: maxDepth ?? 5,
             maxNodes,
@@ -292,13 +309,18 @@ The output includes:
             minElementSize,
             ignoreSelectors,
           });
-          const auditResponse = auditResult as {
-            walkResult?: { hasMore?: boolean; batchInstructions?: string };
-          };
+
+          if (!auditResult.success) {
+            return {
+              content: [{ type: "text", text: `Walk and Measure failed: ${auditResult.error}` }],
+              isError: true,
+            };
+          }
+
           let reportContent = JSON.stringify(auditResult);
 
-          if (auditResponse.walkResult?.hasMore && auditResponse.walkResult?.batchInstructions) {
-            reportContent = `${auditResponse.walkResult.batchInstructions}\n\n${reportContent}`;
+          if (auditResult.walkResult.hasMore && auditResult.walkResult.batchInstructions) {
+            reportContent = `${auditResult.walkResult.batchInstructions}\n\n${reportContent}`;
           }
 
           return { content: [{ type: "text", text: reportContent }] };
@@ -325,8 +347,14 @@ The output includes:
       },
       async () => {
         try {
-          const result = await bridgeService.call(CALIPER_METHODS.GET_CONTEXT, {});
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+          const result = await this.measurementService.call(CALIPER_METHODS.GET_CONTEXT, {});
+          const payload = result.success
+            ? {
+                ...result,
+                runtimeConnection: this.measurementService.getRuntimeConnection(),
+              }
+            : result;
+          return { content: [{ type: "text", text: JSON.stringify(payload) }] };
         } catch (error) {
           return {
             content: [
@@ -337,6 +365,240 @@ The output includes:
             ],
             isError: true,
           };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_set_viewport",
+      {
+        description:
+          "Set the emulated viewport for engine-mode audits. Requires MCP started with --runtime engine --engine.",
+        inputSchema: z.object({
+          width: z.number().int().positive().describe("Viewport width in CSS pixels"),
+          height: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Viewport height in CSS pixels (default 812)"),
+          deviceScaleFactor: z
+            .number()
+            .positive()
+            .optional()
+            .describe("Device pixel ratio override (default 1)"),
+        }),
+      },
+      async ({ width, height, deviceScaleFactor }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.SET_VIEWPORT,
+            {
+              width,
+              height,
+              deviceScaleFactor,
+            }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Set viewport failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_audit_breakpoints",
+      {
+        description:
+          "Audit an element at viewport widths derived from page @media rules (plus optional explicit widths). Returns visibility and geometry at each width.",
+        inputSchema: z.object({
+          selector: z.string().describe("CSS selector or caliper agent id"),
+          widths: z
+            .array(z.number().int().positive())
+            .optional()
+            .describe("Explicit viewport widths to audit"),
+          height: z.number().int().positive().optional().describe("Viewport height for each step"),
+        }),
+      },
+      async ({ selector, widths, height }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS,
+            {
+              selector,
+              widths,
+              height,
+            }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Breakpoint audit failed: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_get_runtime",
+      {
+        description:
+          "Read console messages, uncaught exceptions, browser logs, and failed network requests from the caliper-engine tab. Use when the user asks to check logs or debug runtime errors. Call caliper_engine_clear_runtime before a repro if you need a clean window.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.GET_RUNTIME,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Get runtime", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_clear_runtime",
+      {
+        description:
+          "Clear caliper-engine runtime buffers (console, exceptions, logs, network failures). Call before reproducing an issue, then use caliper_engine_get_runtime after.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.CLEAR_RUNTIME,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Clear runtime", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_scroll",
+      {
+        description:
+          "Scroll the caliper-engine page to an absolute scroll position. Requires MCP started with --runtime engine --engine.",
+        inputSchema: z.object({
+          scrollX: z.number().optional().describe("Horizontal scroll position in CSS pixels"),
+          scrollY: z.number().optional().describe("Vertical scroll position in CSS pixels"),
+        }),
+      },
+      async ({ scrollX, scrollY }) => {
+        try {
+          const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SCROLL, {
+            scrollX,
+            scrollY,
+          });
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Scroll", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_scroll_into_view",
+      {
+        description:
+          "Scroll the caliper-engine page until the target selector is in view. Requires engine mode.",
+        inputSchema: z.object({
+          selector: z.string().describe("CSS selector or caliper agent id"),
+        }),
+      },
+      async ({ selector }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.SCROLL_INTO_VIEW,
+            { selector }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Scroll into view", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_pause_animations",
+      {
+        description:
+          "Pause CSS and Web Animations on the caliper-engine page. Pair with caliper_engine_resume_animations when finished.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Pause animations", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_resume_animations",
+      {
+        description: "Restore animation playback on the caliper-engine page after pausing.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS,
+            {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Resume animations", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_screenshot",
+      {
+        description:
+          "Capture a PNG screenshot of the caliper-engine page. Returns a loopback URL to the image file.",
+        inputSchema: z.object({
+          fullPage: z.boolean().optional().describe("Capture the full scrollable page"),
+          format: z.enum(["png", "jpeg"]).optional().describe("Image format (default png)"),
+        }),
+      },
+      async ({ fullPage, format }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.SCREENSHOT,
+            {
+              fullPage,
+              format,
+            }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Screenshot", error);
         }
       }
     );
@@ -479,6 +741,27 @@ Returns the Delta E value and a human-readable interpretation:
               uri: "caliper://tabs",
               mimeType: "application/json",
               text: JSON.stringify(tabs, null, 2),
+            },
+          ],
+        };
+      }
+    );
+
+    this.server.registerResource(
+      "caliper-runtime",
+      "caliper://runtime",
+      {
+        description:
+          "Active Caliper runtime connection: attached bridge tab vs engine sandbox, routing mode, and engine health URL.",
+      },
+      async () => {
+        const runtimeConnection = this.measurementService.getRuntimeConnection();
+        return {
+          contents: [
+            {
+              uri: "caliper://runtime",
+              mimeType: "application/json",
+              text: JSON.stringify(runtimeConnection, null, 2),
             },
           ],
         };
@@ -709,7 +992,7 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
 
   async start() {
     try {
-      await bridgeService.start(this.port);
+      await this.measurementService.start();
     } catch (err) {
       logger.error("Bridge startup failed:", err);
     }
@@ -725,7 +1008,19 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
   }
 
   async stop() {
-    await bridgeService.stop();
+    await this.measurementService.stop();
     logger.info("Server stopped.");
   }
+}
+
+function formatEngineToolError(action: string, error: unknown) {
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: `${action} failed: ${error instanceof Error ? error.message : String(error)}`,
+      },
+    ],
+    isError: true,
+  };
 }

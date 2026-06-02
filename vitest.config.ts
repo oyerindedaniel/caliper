@@ -23,7 +23,7 @@ export default defineConfig({
       defineProject({
         test: {
           name: "node",
-          include: ["packages/mcp-server/**/*.test.ts", "packages/schema/**/*.test.ts"],
+          include: ["packages/mcp-server/**/*.test.ts", "packages/schema/**/*.test.ts", "packages/engine/**/*.test.ts"],
           environment: "node",
         },
       }),

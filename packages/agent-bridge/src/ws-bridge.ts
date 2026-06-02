@@ -3,7 +3,7 @@ import {
   type CaliperIntent,
   type NullableId,
   RpcFactory,
-  type JsonRpcRequest,
+  type JSONRPCRequest,
   CALIPER_METHODS,
   BitBridge,
   type CaliperAgentState,
@@ -57,7 +57,7 @@ export function createWSBridge(options: BridgeOptions) {
       socket.onmessage = async (event) => {
         let messageId: NullableId = null;
         try {
-          const message = JSON.parse(event.data) as JsonRpcRequest;
+          const message = JSON.parse(event.data) as JSONRPCRequest;
           messageId = message.id;
 
           const result = await onIntent(message as CaliperIntent);
@@ -67,10 +67,10 @@ export function createWSBridge(options: BridgeOptions) {
 
             if ("binaryPayload" in result && result.binaryPayload instanceof Uint8Array) {
               const { binaryPayload, ...metadata } = result;
-              const json = JSON.stringify(RpcFactory.response(id, metadata));
+              const json = JSON.stringify(RpcFactory.response({ id, result: metadata }));
               socket.send(BitBridge.packEnvelope(json, binaryPayload));
             } else {
-              socket.send(JSON.stringify(RpcFactory.response(id, result)));
+              socket.send(JSON.stringify(RpcFactory.response({ id, result })));
             }
           }
         } catch (error) {
@@ -78,11 +78,11 @@ export function createWSBridge(options: BridgeOptions) {
           if (messageId && socket.readyState === WebSocket.OPEN) {
             socket.send(
               JSON.stringify(
-                RpcFactory.error(
-                  messageId,
-                  -32603,
-                  error instanceof Error ? error.message : String(error)
-                )
+                RpcFactory.error({
+                  id: messageId,
+                  code: -32603,
+                  message: error instanceof Error ? error.message : String(error),
+                })
               )
             );
           }
