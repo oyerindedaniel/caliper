@@ -150,5 +150,5 @@ export type CaliperEngineRequest = {
 }[CaliperEngineMethod];
 
 export function isCaliperEngineMethod(method: string): method is CaliperEngineMethod {
-  return CaliperEngineMethodSchema.safeParse(method).success;
+  return (CaliperEngineMethodSchema.options as readonly string[]).includes(method);
 }

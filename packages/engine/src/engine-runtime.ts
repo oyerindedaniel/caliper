@@ -1,4 +1,4 @@
-import { CaliperActionResultSchema, type EngineRpcRequest } from "@oyerinde/caliper-schema";
+import type { CaliperRpcRequest } from "@oyerinde/caliper-schema";
 import { EngineBrowserSession } from "./engine-browser-session.js";
 import { type CaliperEngineServerOptions, createStartedEngineServer } from "./engine-server.js";
 
@@ -42,10 +42,6 @@ export async function createEngineRuntime(
   }
 }
 
-async function dispatchEngineRpc(
-  browserSession: EngineBrowserSession,
-  request: EngineRpcRequest
-): Promise<Record<string, unknown>> {
-  const actionResult = await browserSession.dispatch(request);
-  return CaliperActionResultSchema.parse(actionResult) as Record<string, unknown>;
+async function dispatchEngineRpc(browserSession: EngineBrowserSession, request: CaliperRpcRequest) {
+  return browserSession.dispatch(request);
 }

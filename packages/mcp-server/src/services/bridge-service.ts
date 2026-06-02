@@ -5,15 +5,13 @@ import {
   type CaliperActionResult,
   type CaliperActionResultFor,
   type CaliperBaseMethod,
-  type CaliperAgentState,
   BitBridge,
   RpcFactory,
   CALIPER_METHODS,
   type Id,
   isId,
   type CaliperParams,
-  isCaliperActionResult,
-  isCaliperActionResultFor,
+  isCaliperActionResultMethod,
   isBridgeNotification,
   isBridgeErrorResponse,
   isBridgeResultResponse,
@@ -38,7 +36,7 @@ export class BridgeService extends EventEmitter {
   private wss: WebSocketServer | null = null;
   private pendingCalls = new Map<
     string,
-    (result: CaliperActionResult | CaliperAgentState | { error: string }) => void
+    (result: CaliperActionResult | { error: string }) => void
   >();
   private startupError: string | null = null;
 
@@ -182,27 +180,34 @@ export class BridgeService extends EventEmitter {
 
             const finalResult = message.result;
 
-            if (isCaliperActionResult(finalResult)) {
-              if ("walkResult" in finalResult && binaryPayload) {
-                try {
-                  const raw = BitBridge.deserialize(binaryPayload);
-                  const parsed = CaliperNodeSchema.safeParse(raw);
-                  if (parsed.success) {
-                    finalResult.walkResult.root = parsed.data;
-                  } else {
-                    logger.error(
-                      "Bit-Bridge deserialized node failed schema validation",
-                      z.treeifyError(parsed.error)
-                    );
-                  }
-                } catch (error) {
-                  logger.error("Bit-Bridge reconstruction failed:", error);
+            if ("walkResult" in finalResult && binaryPayload) {
+              try {
+                const raw = BitBridge.deserialize(binaryPayload);
+                const parsed = CaliperNodeSchema.safeParse(raw);
+                if (!parsed.success) {
+                  logger.error(
+                    "Bit-Bridge deserialized node failed schema validation",
+                    z.treeifyError(parsed.error)
+                  );
+                  resolve({ error: "Walk and measure tree payload failed schema validation" });
+                  this.pendingCalls.delete(String(message.id));
+                  return;
                 }
+                finalResult.walkResult.root = parsed.data;
+              } catch (error) {
+                logger.error("Bit-Bridge reconstruction failed:", error);
+                resolve({
+                  error:
+                    error instanceof Error
+                      ? error.message
+                      : "Walk and measure tree payload could not be reconstructed",
+                });
+                this.pendingCalls.delete(String(message.id));
+                return;
               }
-              resolve(finalResult);
-            } else {
-              resolve({ error: "Unexpected result format received from bridge" });
             }
+
+            resolve(finalResult);
             this.pendingCalls.delete(String(message.id));
           }
         } catch (error: unknown) {
@@ -252,7 +257,7 @@ export class BridgeService extends EventEmitter {
           return;
         }
 
-        if (isCaliperActionResultFor(bridgeResponse, method)) {
+        if (isCaliperActionResultMethod(bridgeResponse, method)) {
           resolve(bridgeResponse);
           return;
         }

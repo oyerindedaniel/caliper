@@ -15,6 +15,8 @@ import {
 import {
   CALIPER_ENGINE_METHODS,
   CaliperEngineMethodSchema,
+  isCaliperEngineMethod,
+  type CaliperEngineMethod,
   type CaliperEngineParamsByMethod,
   CaliperRuntimeBlockSchema,
   CaliperScreenshotRefSchema,
@@ -357,19 +359,16 @@ export const isId = (value: unknown): value is Id => {
   return typeof value === "string" || typeof value === "number";
 };
 
-export const isCaliperActionResult = (value: unknown): value is CaliperActionResult => {
-  return CaliperActionResultSchema.safeParse(value).success;
-};
+export function parseCaliperActionResult(value: unknown): CaliperActionResult | null {
+  const parsed = CaliperActionResultSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 
-export function isCaliperActionResultFor<M extends CaliperRpcMethod>(
-  value: unknown,
+export function isCaliperActionResultMethod<M extends CaliperRpcMethod>(
+  result: CaliperActionResult,
   method: M
-): value is CaliperActionResultFor<M> {
-  if (!isCaliperActionResult(value)) {
-    return false;
-  }
-
-  return value.method === method;
+): result is CaliperActionResultFor<M> {
+  return result.method === method;
 }
 
 export const CaliperResponseSchema = z.union([
@@ -483,7 +482,41 @@ export type CaliperBaseRequest = {
 
 export type CaliperParams<M extends CaliperBaseMethod> = CaliperBaseParamsByMethod[M];
 
-export type CaliperIntent = JSONRPCRequest & CaliperBaseRequest;
-
 export type CaliperRpcParamsByMethod = CaliperBaseParamsByMethod & CaliperEngineParamsByMethod;
 export type CaliperRpcParams<M extends CaliperRpcMethod> = CaliperRpcParamsByMethod[M];
+
+export type CaliperRpcRequest = {
+  [M in CaliperRpcMethod]: JSONRPCRequest & {
+    method: M;
+    params: CaliperRpcParams<M>;
+  };
+}[CaliperRpcMethod];
+
+export type CaliperIntent = Extract<CaliperRpcRequest, { method: CaliperBaseMethod }>;
+
+export type CaliperEngineRpcRequest = Extract<CaliperRpcRequest, { method: CaliperEngineMethod }>;
+
+const CALIPER_RPC_METHODS = new Set<string>([
+  ...CaliperBaseMethodSchema.options,
+  ...CaliperEngineMethodSchema.options,
+]);
+
+export const CaliperRpcRequestSchema = JSONRPCRequestSchema.refine(
+  (request) => CALIPER_RPC_METHODS.has(request.method),
+  { message: "Unsupported Caliper RPC method" }
+);
+
+export function parseCaliperRpcRequest(value: unknown): CaliperRpcRequest | null {
+  const parsed = CaliperRpcRequestSchema.safeParse(value);
+  if (!parsed.success) {
+    return null;
+  }
+
+  return parsed.data as CaliperRpcRequest;
+}
+
+export function isCaliperEngineRpcRequest(
+  request: CaliperRpcRequest
+): request is CaliperEngineRpcRequest {
+  return isCaliperEngineMethod(request.method);
+}

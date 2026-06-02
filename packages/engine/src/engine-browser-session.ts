@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import type { CaliperActionResult, EngineRpcRequest } from "@oyerinde/caliper-schema";
+import type { CaliperActionResult, CaliperRpcRequest } from "@oyerinde/caliper-schema";
 import { buildEngineHttpUrl } from "@oyerinde/caliper-schema";
 import {
   launchChrome,
@@ -82,7 +82,7 @@ export class EngineBrowserSession {
     }
   }
 
-  async dispatch(request: EngineRpcRequest): Promise<CaliperActionResult> {
+  async dispatch(request: CaliperRpcRequest): Promise<CaliperActionResult> {
     return this.measurementSession.dispatchRpc(request);
   }
 

@@ -1,10 +1,10 @@
 import {
   CALIPER_ENGINE_METHODS,
-  isCaliperEngineMethod,
+  isCaliperEngineRpcRequest,
   type CaliperActionResult,
-  type CaliperEngineRequest,
+  type CaliperEngineRpcRequest,
   type CaliperIntent,
-  type EngineRpcRequest,
+  type CaliperRpcRequest,
 } from "@oyerinde/caliper-schema";
 import type { HarnessSession } from "./harness-session.js";
 import type { EmulationSession } from "./emulation-session.js";
@@ -60,12 +60,12 @@ export class EngineMeasurementSession {
     await this.runtimeCapture.enable();
   }
 
-  async dispatchRpc(request: EngineRpcRequest): Promise<CaliperActionResult> {
-    if (isCaliperEngineMethod(request.method)) {
-      return this.dispatchEngineMethod(toEngineRequest(request));
+  async dispatchRpc(request: CaliperRpcRequest): Promise<CaliperActionResult> {
+    if (isCaliperEngineRpcRequest(request)) {
+      return this.dispatchEngineMethod(request);
     }
 
-    return this.dispatchHarnessIntent(request as CaliperIntent);
+    return this.dispatchHarnessIntent(request);
   }
 
   private async dispatchHarnessIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
@@ -73,7 +73,9 @@ export class EngineMeasurementSession {
     return finalizeMeasurementResult(harnessResult, this.cssVisibility, this.emulation);
   }
 
-  private async dispatchEngineMethod(request: CaliperEngineRequest): Promise<CaliperActionResult> {
+  private async dispatchEngineMethod(
+    request: CaliperEngineRpcRequest
+  ): Promise<CaliperActionResult> {
     const timestamp = Date.now();
 
     switch (request.method) {
@@ -171,10 +173,4 @@ export class EngineMeasurementSession {
       }
     }
   }
-}
-function toEngineRequest(request: EngineRpcRequest): CaliperEngineRequest {
-  return {
-    method: request.method,
-    params: request.params ?? {},
-  } as CaliperEngineRequest;
 }
