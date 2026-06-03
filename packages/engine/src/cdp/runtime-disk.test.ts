@@ -45,7 +45,10 @@ function writeCaptureEnabledFlag(projectPaths: CaliperProjectPaths, enabled: boo
   );
 }
 
-function readChannelLines(projectPaths: CaliperProjectPaths, channel: CaliperRuntimeChannel): string[] {
+function readChannelLines(
+  projectPaths: CaliperProjectPaths,
+  channel: CaliperRuntimeChannel
+): string[] {
   const filePath = projectPaths.channelPaths[channel];
   if (!existsSync(filePath)) {
     return [];

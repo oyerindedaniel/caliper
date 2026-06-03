@@ -76,7 +76,8 @@ const VALUE_REDACTION_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: st
     replacement: "[PEM-PRIVATE-KEY-REDACTED]",
   },
   {
-    pattern: /([?&])(token|password|passwd|pwd|secret|api_key|apikey|access_token|auth)=([^&\s#]+)/gi,
+    pattern:
+      /([?&])(token|password|passwd|pwd|secret|api_key|apikey|access_token|auth)=([^&\s#]+)/gi,
     replacement: `$1$2=${REDACTED}`,
   },
   {
@@ -114,12 +115,7 @@ function redactStringValue(value: string, maxChars: number): string {
   return output;
 }
 
-function redactUnknown(
-  value: unknown,
-  maxChars: number,
-  depth: number,
-  maxDepth: number
-): unknown {
+function redactUnknown(value: unknown, maxChars: number, depth: number, maxDepth: number): unknown {
   if (depth > maxDepth) {
     return "[MAX_DEPTH]";
   }

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { isRuntimeRedactionEnabled, redactRuntimeEntry, redactRuntimeLine } from "./runtime-redact.js";
+import {
+  isRuntimeRedactionEnabled,
+  redactRuntimeEntry,
+  redactRuntimeLine,
+} from "./runtime-redact.js";
 
 const originalRedactFlag = process.env.CALIPER_RUNTIME_REDACT;
 

@@ -51,18 +51,14 @@ export class RuntimeDiskWriter {
 
   constructor(options: RuntimeDiskWriterOptions) {
     this.projectPaths = options.projectPaths;
-    this.maxChannelBytes =
-      options.maxChannelBytes ?? readMaxChannelBytesFromEnvironment();
+    this.maxChannelBytes = options.maxChannelBytes ?? readMaxChannelBytesFromEnvironment();
     mkdirSync(this.projectPaths.runtimeDir, { recursive: true });
     this.hydrateCountsFromDisk();
   }
 
   isCaptureEnabled(): boolean {
     const now = Date.now();
-    if (
-      this.captureFlagCache &&
-      now - this.captureFlagCache.checkedAt < CAPTURE_FLAG_CACHE_MS
-    ) {
+    if (this.captureFlagCache && now - this.captureFlagCache.checkedAt < CAPTURE_FLAG_CACHE_MS) {
       return this.captureFlagCache.enabled;
     }
 

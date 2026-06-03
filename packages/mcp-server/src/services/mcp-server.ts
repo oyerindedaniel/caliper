@@ -33,7 +33,6 @@ const CALIPER_ENGINE_RUNTIME_URI = "caliper://engine-runtime";
 const CALIPER_RUNTIME_URI = "caliper://runtime";
 const CALIPER_STATE_URI = "caliper://state";
 
-
 function createEmptyAgentState(): CaliperAgentState {
   return {
     viewport: { width: 0, height: 0, scrollX: 0, scrollY: 0 },
@@ -164,12 +163,9 @@ export class CaliperMcpServer {
     void this.checkEngineRuntimeFingerprintChanged();
 
     try {
-      this.engineRuntimeFingerprintWatcher = watch(
-        this.projectPaths.fingerprintPath,
-        () => {
-          void this.checkEngineRuntimeFingerprintChanged();
-        }
-      );
+      this.engineRuntimeFingerprintWatcher = watch(this.projectPaths.fingerprintPath, () => {
+        void this.checkEngineRuntimeFingerprintChanged();
+      });
     } catch (error) {
       logger.warn("Fingerprint file watch unavailable", error);
     }
@@ -754,7 +750,7 @@ The output includes:
               format,
             }
           );
-          
+
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return formatEngineToolError("Screenshot", error);
