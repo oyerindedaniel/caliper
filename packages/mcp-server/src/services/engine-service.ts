@@ -11,6 +11,7 @@ import {
   isCaliperActionResultMethod,
   isJSONRPCErrorResponse,
   isJSONRPCResultResponse,
+  resolveCaliperProjectRoot,
   type CaliperActionResultFor,
   type CaliperBaseMethod,
   type CaliperEngineMethod,
@@ -139,7 +140,10 @@ export class EngineService {
 
     this.spawnedProcess = spawn(process.execPath, [cliPath, ...args], {
       stdio: "ignore",
-      env: process.env,
+      env: {
+        ...process.env,
+        CALIPER_PROJECT_ROOT: resolveCaliperProjectRoot(),
+      },
     });
 
     this.spawnedProcess.on("exit", (code) => {
