@@ -3,13 +3,13 @@ import type {
   CaliperRuntimeExceptionEntry,
   CaliperRuntimeFingerprint,
   CaliperRuntimeLogEntry,
-  CaliperRuntimeNetworkFailure,
 } from "@oyerinde/caliper-schema";
 import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import type { CdpClient } from "./cdp-client.js";
 import type {
   LogEntryAddedEvent,
   NetworkLoadingFailedEvent,
+  NetworkRequestWillBeSentEvent,
   RuntimeConsoleApiCalledEvent,
   RuntimeExceptionThrownEvent,
   RuntimeRemoteObject,
@@ -54,22 +54,18 @@ export class RuntimeCaptureSession {
       this.diskWriter.appendChannel("logs", mapLogEvent(event));
     });
 
-    this.client.onEvent("Network.requestWillBeSent", (params) => {
-      const request = params as { requestId?: string; request?: { url?: string } };
-      if (request.requestId && request.request?.url) {
-        this.networkRequestUrls.set(request.requestId, request.request.url);
-      }
+    this.client.onEvent<NetworkRequestWillBeSentEvent>("Network.requestWillBeSent", (event) => {
+      this.networkRequestUrls.set(event.requestId, event.request.url);
     });
 
     this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
       const requestUrl = event.requestId ? this.networkRequestUrls.get(event.requestId) : undefined;
-      const networkFailure: CaliperRuntimeNetworkFailure = {
+      this.diskWriter.appendChannel("networkFailures", {
         url: requestUrl ?? "unknown",
         error: event.errorText ?? "unknown",
         resourceType: event.type,
         timestamp: event.timestamp,
-      };
-      this.diskWriter.appendChannel("networkFailures", networkFailure);
+      });
     });
 
     this.enabled = true;
