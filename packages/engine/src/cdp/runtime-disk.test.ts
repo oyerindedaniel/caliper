@@ -10,7 +10,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CaliperProjectPaths, CaliperRuntimeChannel } from "@oyerinde/caliper-schema";
+import type {
+  CaliperProjectPaths,
+  CaliperRuntimeChannel,
+  CaliperRuntimeConsoleEntry,
+} from "@oyerinde/caliper-schema";
 import { RuntimeDiskWriter } from "./runtime-disk.js";
 
 function createTestProjectPaths(rootDirectory: string): CaliperProjectPaths {
@@ -167,12 +171,17 @@ describe("RuntimeDiskWriter", () => {
     writeCaptureEnabledFlag(projectPaths, true);
     const writer = new RuntimeDiskWriter({ projectPaths });
 
-    writer.appendChannel("console", { password: "hunter2", message: "ok" });
+    const entryWithSecret = {
+      level: "log",
+      text: "ok",
+      password: "hunter2",
+    } as CaliperRuntimeConsoleEntry;
+    writer.appendChannel("console", entryWithSecret);
     await waitForFingerprint(projectPaths);
 
     const line = readChannelLines(projectPaths, "console")[0]!;
     expect(line).toContain('"password":"[REDACTED]"');
-    expect(line).toContain('"message":"ok"');
+    expect(line).toContain('"text":"ok"');
     expect(line).not.toContain("hunter2");
   });
 

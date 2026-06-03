@@ -13,6 +13,7 @@ import {
   CALIPER_RUNTIME_CHANNEL_FILES,
   type CaliperProjectPaths,
   type CaliperRuntimeChannel,
+  type CaliperRuntimeChannelEntry,
   type CaliperRuntimeChannelCounts,
   type CaliperRuntimeChannelRotation,
   type CaliperRuntimeChannelTimestamps,
@@ -75,7 +76,10 @@ export class RuntimeDiskWriter {
     return enabled;
   }
 
-  appendChannel(channel: CaliperRuntimeChannel, entry: unknown): void {
+  appendChannel<C extends CaliperRuntimeChannel>(
+    channel: C,
+    entry: CaliperRuntimeChannelEntry[C]
+  ): void {
     if (!this.isCaptureEnabled()) {
       return;
     }
@@ -87,9 +91,8 @@ export class RuntimeDiskWriter {
 
     const state = this.channelState[channel];
     state.lineCount += 1;
-    const timestamp = extractEntryTimestamp(entry);
-    if (timestamp !== undefined) {
-      state.lastTimestamp = timestamp;
+    if (entry.timestamp !== undefined) {
+      state.lastTimestamp = entry.timestamp;
     }
 
     this.scheduleFingerprintWrite();
@@ -227,12 +230,4 @@ function readMaxChannelBytesFromEnvironment(): number {
   }
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_CHANNEL_BYTES;
-}
-
-function extractEntryTimestamp(entry: unknown): number | undefined {
-  if (!entry || typeof entry !== "object") {
-    return undefined;
-  }
-  const timestamp = (entry as { timestamp?: unknown }).timestamp;
-  return typeof timestamp === "number" ? timestamp : undefined;
 }

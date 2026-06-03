@@ -3,6 +3,7 @@ import type {
   CaliperRuntimeExceptionEntry,
   CaliperRuntimeFingerprint,
   CaliperRuntimeLogEntry,
+  CaliperRuntimeNetworkFailure,
 } from "@oyerinde/caliper-schema";
 import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import type { CdpClient } from "./cdp-client.js";
@@ -62,12 +63,13 @@ export class RuntimeCaptureSession {
 
     this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
       const requestUrl = event.requestId ? this.networkRequestUrls.get(event.requestId) : undefined;
-      this.diskWriter.appendChannel("networkFailures", {
+      const networkFailure: CaliperRuntimeNetworkFailure = {
         url: requestUrl ?? "unknown",
         error: event.errorText ?? "unknown",
         resourceType: event.type,
         timestamp: event.timestamp,
-      });
+      };
+      this.diskWriter.appendChannel("networkFailures", networkFailure);
     });
 
     this.enabled = true;

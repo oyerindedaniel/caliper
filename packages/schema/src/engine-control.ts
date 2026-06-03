@@ -193,6 +193,14 @@ export type CaliperRuntimeConsoleEntry = z.infer<typeof CaliperRuntimeConsoleEnt
 export type CaliperRuntimeExceptionEntry = z.infer<typeof CaliperRuntimeExceptionEntrySchema>;
 export type CaliperRuntimeLogEntry = z.infer<typeof CaliperRuntimeLogEntrySchema>;
 export type CaliperRuntimeNetworkFailure = z.infer<typeof CaliperRuntimeNetworkFailureSchema>;
+
+/** NDJSON line shape per runtime channel (see {@link CaliperRuntimeChannel}). */
+export type CaliperRuntimeChannelEntry = {
+  console: CaliperRuntimeConsoleEntry;
+  exceptions: CaliperRuntimeExceptionEntry;
+  logs: CaliperRuntimeLogEntry;
+  networkFailures: CaliperRuntimeNetworkFailure;
+};
 export type CaliperRuntimeChannelCounts = z.infer<typeof CaliperRuntimeChannelCountsSchema>;
 export type CaliperRuntimeChannelRotation = z.infer<typeof CaliperRuntimeChannelRotationSchema>;
 export type CaliperRuntimeCaptureEnabled = z.infer<typeof CaliperRuntimeCaptureEnabledSchema>;
