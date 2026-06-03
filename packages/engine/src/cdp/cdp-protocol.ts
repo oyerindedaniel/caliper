@@ -220,6 +220,14 @@ export type LogEntryAddedEvent = {
   };
 };
 
+/** CDP Network.requestWillBeSent — https://chromedevtools.github.io/devtools-protocol/tot/Network/#event-requestWillBeSent */
+export type NetworkRequestWillBeSentEvent = {
+  requestId: string;
+  request: {
+    url: string;
+  };
+};
+
 /** CDP Network.loadingFailed — https://chromedevtools.github.io/devtools-protocol/tot/Network/#event-loadingFailed */
 export type NetworkLoadingFailedEvent = {
   requestId?: string;
