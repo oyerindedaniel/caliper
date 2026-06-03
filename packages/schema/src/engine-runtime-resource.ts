@@ -1,5 +1,5 @@
 import type { CaliperEngineRuntimeAgentDiscovery, CaliperEngineRuntimeResource } from "./engine-control.js";
-import type { CaliperProjectPaths } from "./caliper-project-dir.js";
+import type { CaliperProjectPaths } from "./caliper-runtime-paths.js";
 import type { CaliperRuntimeFingerprint } from "./engine-control.js";
 
 export function buildEngineRuntimeAgentDiscovery(): CaliperEngineRuntimeAgentDiscovery {

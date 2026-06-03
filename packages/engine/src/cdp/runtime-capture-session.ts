@@ -4,7 +4,7 @@ import type {
   CaliperRuntimeFingerprint,
   CaliperRuntimeLogEntry,
 } from "@oyerinde/caliper-schema";
-import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema";
+import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import type { CdpClient } from "./cdp-client.js";
 import type {
   LogEntryAddedEvent,

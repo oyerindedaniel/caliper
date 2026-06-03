@@ -12,13 +12,15 @@ import {
   RECOMMENDED_PAGINATION_THRESHOLD,
   CALIPER_METHODS,
   CALIPER_ENGINE_METHODS,
-  buildEngineRuntimeResourcePayload,
   CaliperRuntimeFingerprintSchema,
-  resolveCaliperProjectPaths,
   type CaliperAgentState,
   type CaliperMeasurementRouting,
   type CaliperRuntimeFingerprint,
 } from "@oyerinde/caliper-schema";
+import {
+  buildEngineRuntimeResourcePayload,
+  resolveCaliperProjectPaths,
+} from "@oyerinde/caliper-schema/node";
 import { bridgeService } from "./bridge-service.js";
 import { createMeasurementService, type MeasurementService } from "./measurement-service.js";
 import { tabManager } from "./tab-manager.js";

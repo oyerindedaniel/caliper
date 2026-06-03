@@ -11,7 +11,6 @@ import {
   isCaliperActionResultMethod,
   isJSONRPCErrorResponse,
   isJSONRPCResultResponse,
-  resolveCaliperProjectRoot,
   type CaliperActionResultFor,
   type CaliperBaseMethod,
   type CaliperEngineMethod,
@@ -22,6 +21,7 @@ import {
   type EngineHealth,
   type JSONRPCResponse,
 } from "@oyerinde/caliper-schema";
+import { resolveCaliperProjectRoot } from "@oyerinde/caliper-schema/node";
 import { generateId } from "../utils/id.js";
 import { createLogger } from "../utils/logger.js";
 import { pollUntil } from "../utils/poll-until.js";

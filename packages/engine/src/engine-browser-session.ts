@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import type { CaliperActionResult, CaliperRpcRequest } from "@oyerinde/caliper-schema";
-import { buildEngineHttpUrl, resolveCaliperProjectPaths } from "@oyerinde/caliper-schema";
+import { buildEngineHttpUrl } from "@oyerinde/caliper-schema";
+import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import {
   launchChrome,
   stopChrome,

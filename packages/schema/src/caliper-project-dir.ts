@@ -1,24 +1,11 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import {
+  CALIPER_RUNTIME_CHANNEL_FILES,
+  type CaliperProjectPaths,
+} from "./caliper-runtime-paths.js";
 
-export const CALIPER_RUNTIME_CHANNEL_FILES = {
-  console: "console.ndjson",
-  exceptions: "exceptions.ndjson",
-  logs: "logs.ndjson",
-  networkFailures: "network-failures.ndjson",
-} as const;
-
-export type CaliperRuntimeChannel = keyof typeof CALIPER_RUNTIME_CHANNEL_FILES;
-
-export type CaliperProjectPaths = {
-  projectRoot: string;
-  caliperDir: string;
-  runtimeDir: string;
-  capturesDir: string;
-  fingerprintPath: string;
-  captureEnabledPath: string;
-  channelPaths: Record<CaliperRuntimeChannel, string>;
-};
+export { CALIPER_RUNTIME_CHANNEL_FILES, type CaliperRuntimeChannel, type CaliperProjectPaths } from "./caliper-runtime-paths.js";
 
 /**
  * Resolves the Caliper project root directory.
@@ -64,7 +51,7 @@ export function resolveCaliperProjectPaths(
     exceptions: resolve(runtimeDir, CALIPER_RUNTIME_CHANNEL_FILES.exceptions),
     logs: resolve(runtimeDir, CALIPER_RUNTIME_CHANNEL_FILES.logs),
     networkFailures: resolve(runtimeDir, CALIPER_RUNTIME_CHANNEL_FILES.networkFailures),
-  } satisfies Record<CaliperRuntimeChannel, string>;
+  } satisfies CaliperProjectPaths["channelPaths"];
 
   return {
     projectRoot,
