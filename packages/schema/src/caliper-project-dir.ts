@@ -5,8 +5,6 @@ import {
   type CaliperProjectPaths,
 } from "./caliper-runtime-paths.js";
 
-export { CALIPER_RUNTIME_CHANNEL_FILES, type CaliperRuntimeChannel, type CaliperProjectPaths } from "./caliper-runtime-paths.js";
-
 /**
  * Resolves the Caliper project root directory.
  * Priority: CALIPER_PROJECT_ROOT → walk upward for .git or package.json → start directory.
