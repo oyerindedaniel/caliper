@@ -18,7 +18,7 @@ import {
   isCaliperEngineMethod,
   type CaliperEngineMethod,
   type CaliperEngineParamsByMethod,
-  CaliperRuntimeBlockSchema,
+  CaliperRuntimeFingerprintSchema,
   CaliperScreenshotRefSchema,
 } from "./engine-control.js";
 import {
@@ -229,7 +229,7 @@ export const CaliperActionResultSchema = z.union([
   z.object({
     success: z.literal(true),
     method: z.literal(CALIPER_ENGINE_METHODS.GET_RUNTIME),
-    runtime: CaliperRuntimeBlockSchema,
+    fingerprint: CaliperRuntimeFingerprintSchema.optional(),
     timestamp: z.number(),
   }),
   z.object({

@@ -98,6 +98,21 @@ export type DomDescribeNodeResponse = {
   node: DomNode;
 };
 
+/** CDP DOM.BoxModel — https://chromedevtools.github.io/devtools-protocol/tot/DOM/#type-BoxModel */
+export type DomBoxModel = {
+  content: number[];
+  padding: number[];
+  border: number[];
+  margin: number[];
+  width: number;
+  height: number;
+};
+
+/** CDP DOM.getBoxModel — https://chromedevtools.github.io/devtools-protocol/tot/DOM/#method-getBoxModel */
+export type DomGetBoxModelResponse = {
+  model: DomBoxModel;
+};
+
 /** CDP CSS.CSSStyleProperty — https://chromedevtools.github.io/devtools-protocol/tot/CSS/#type-CSSStyleProperty */
 export type CssStyleProperty = {
   name: string;

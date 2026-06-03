@@ -1,7 +1,6 @@
 import {
   CALIPER_ENGINE_METHODS,
   CALIPER_METHODS,
-  DEFAULT_AUDIT_VIEWPORT_HEIGHT,
   type CaliperActionResult,
   type CaliperAuditBreakpointsPayload,
   type CaliperBreakpointAuditMatrix,
@@ -11,6 +10,7 @@ import type { EmulationSession } from "./emulation-session.js";
 import { CssVisibilitySession } from "./visibility-css.js";
 import type { CdpClient } from "./cdp-client.js";
 import { finalizeMeasurementResult } from "./finalize-measurement-result.js";
+import { resolveAuditViewportHeight } from "./viewport-metrics.js";
 
 type FinalizeMeasurementResult = typeof finalizeMeasurementResult;
 
@@ -24,7 +24,7 @@ export class AuditBreakpointsSession {
   ) {}
 
   async run(payload: CaliperAuditBreakpointsPayload): Promise<CaliperActionResult> {
-    const height = payload.height ?? DEFAULT_AUDIT_VIEWPORT_HEIGHT;
+    const height = await resolveAuditViewportHeight(this.client, payload.height);
     const mediaQueries = await this.cssVisibility.listMediaQueries();
     const parsedWidths = extractWidthsFromMediaQueries(mediaQueries.map((media) => media.text));
     const requestedWidths = payload.widths ?? [];

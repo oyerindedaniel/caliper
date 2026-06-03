@@ -19,6 +19,7 @@ import { finalizeMeasurementResult } from "./finalize-measurement-result.js";
 
 export type EngineMeasurementSessionOptions = {
   screenshot?: ScreenshotSessionOptions;
+  projectRoot?: string;
 };
 
 export class EngineMeasurementSession {
@@ -36,7 +37,9 @@ export class EngineMeasurementSession {
     options: EngineMeasurementSessionOptions = {}
   ) {
     this.cssVisibility = new CssVisibilitySession(client);
-    this.runtimeCapture = new RuntimeCaptureSession(client);
+    this.runtimeCapture = new RuntimeCaptureSession(client, {
+      projectRoot: options.projectRoot,
+    });
     this.navigation = new NavigationSession(client);
     this.stabilization = new StabilizationSession(client);
     this.screenshot = options.screenshot ? new ScreenshotSession(client, options.screenshot) : null;
@@ -89,7 +92,7 @@ export class EngineMeasurementSession {
         return {
           success: true,
           method: CALIPER_ENGINE_METHODS.GET_RUNTIME,
-          runtime: this.runtimeCapture.getSnapshot(),
+          fingerprint: this.runtimeCapture.getFingerprint(),
           timestamp,
         };
 
@@ -161,6 +164,7 @@ export class EngineMeasurementSession {
 
         const capture = await this.screenshot.capture({
           fullPage: request.params.fullPage,
+          selector: request.params.selector,
           format: request.params.format,
         });
 

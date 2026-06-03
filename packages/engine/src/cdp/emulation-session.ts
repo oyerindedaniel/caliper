@@ -1,12 +1,12 @@
 import {
   CALIPER_ENGINE_METHODS,
-  DEFAULT_AUDIT_VIEWPORT_HEIGHT,
   type CaliperActionResult,
   type CaliperAuditContext,
   type CaliperSetViewportPayload,
 } from "@oyerinde/caliper-schema";
 import type { CdpClient } from "./cdp-client.js";
 import type { PageGetLayoutMetricsResponse } from "./cdp-protocol.js";
+import { resolveAuditViewportHeight } from "./viewport-metrics.js";
 
 export class EmulationSession {
   private emulated = false;
@@ -25,7 +25,7 @@ export class EmulationSession {
   }
 
   async setViewport(payload: CaliperSetViewportPayload): Promise<CaliperActionResult> {
-    const height = payload.height ?? DEFAULT_AUDIT_VIEWPORT_HEIGHT;
+    const height = await resolveAuditViewportHeight(this.client, payload.height);
     const deviceScaleFactor = payload.deviceScaleFactor ?? 1;
 
     await this.client.send("Emulation.setDeviceMetricsOverride", {

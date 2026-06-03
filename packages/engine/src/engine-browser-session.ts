@@ -1,7 +1,7 @@
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { mkdirSync } from "node:fs";
 import type { CaliperActionResult, CaliperRpcRequest } from "@oyerinde/caliper-schema";
 import { buildEngineHttpUrl } from "@oyerinde/caliper-schema";
+import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import {
   launchChrome,
   stopChrome,
@@ -103,13 +103,17 @@ function buildMeasurementSessionOptions(
     return {};
   }
 
-  const capturesDirectory = join(tmpdir(), "caliper-engine", options.sessionId, "captures");
+  const projectPaths = resolveCaliperProjectPaths();
+  mkdirSync(projectPaths.capturesDir, { recursive: true });
+  mkdirSync(projectPaths.runtimeDir, { recursive: true });
+
   const captureBaseUrl = buildEngineHttpUrl(options.engineHost, options.enginePort, "");
 
   return {
     screenshot: {
-      capturesDirectory,
+      capturesDirectory: projectPaths.capturesDir,
       captureBaseUrl,
     },
+    projectRoot: projectPaths.projectRoot,
   };
 }

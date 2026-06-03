@@ -1,10 +1,11 @@
 import type {
-  CaliperRuntimeBlock,
   CaliperRuntimeConsoleEntry,
   CaliperRuntimeExceptionEntry,
+  CaliperRuntimeFingerprint,
   CaliperRuntimeLogEntry,
   CaliperRuntimeNetworkFailure,
 } from "@oyerinde/caliper-schema";
+import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import type { CdpClient } from "./cdp-client.js";
 import type {
   LogEntryAddedEvent,
@@ -13,21 +14,24 @@ import type {
   RuntimeExceptionThrownEvent,
   RuntimeRemoteObject,
 } from "./cdp-protocol.js";
+import { RuntimeDiskWriter } from "./runtime-disk.js";
 
-const MAX_CONSOLE_ENTRIES = 30;
-const MAX_EXCEPTION_ENTRIES = 10;
-const MAX_LOG_ENTRIES = 20;
-const MAX_NETWORK_FAILURE_ENTRIES = 10;
+export type RuntimeCaptureSessionOptions = {
+  projectRoot?: string;
+};
 
 export class RuntimeCaptureSession {
-  private consoleEntries: CaliperRuntimeConsoleEntry[] = [];
-  private exceptionEntries: CaliperRuntimeExceptionEntry[] = [];
-  private logEntries: CaliperRuntimeLogEntry[] = [];
-  private networkFailureEntries: CaliperRuntimeNetworkFailure[] = [];
+  private readonly diskWriter: RuntimeDiskWriter;
   private networkRequestUrls = new Map<string, string>();
   private enabled = false;
 
-  constructor(private readonly client: CdpClient) {}
+  constructor(
+    private readonly client: CdpClient,
+    options: RuntimeCaptureSessionOptions = {}
+  ) {
+    const projectPaths = resolveCaliperProjectPaths(options.projectRoot ?? process.cwd());
+    this.diskWriter = new RuntimeDiskWriter({ projectPaths });
+  }
 
   async enable(): Promise<void> {
     if (this.enabled) {
@@ -39,18 +43,15 @@ export class RuntimeCaptureSession {
     await this.client.send("Network.enable");
 
     this.client.onEvent<RuntimeConsoleApiCalledEvent>("Runtime.consoleAPICalled", (event) => {
-      this.consoleEntries.push(mapConsoleEvent(event));
-      trimBuffer(this.consoleEntries, MAX_CONSOLE_ENTRIES);
+      this.diskWriter.appendChannel("console", mapConsoleEvent(event));
     });
 
     this.client.onEvent<RuntimeExceptionThrownEvent>("Runtime.exceptionThrown", (event) => {
-      this.exceptionEntries.push(mapExceptionEvent(event));
-      trimBuffer(this.exceptionEntries, MAX_EXCEPTION_ENTRIES);
+      this.diskWriter.appendChannel("exceptions", mapExceptionEvent(event));
     });
 
     this.client.onEvent<LogEntryAddedEvent>("Log.entryAdded", (event) => {
-      this.logEntries.push(mapLogEvent(event));
-      trimBuffer(this.logEntries, MAX_LOG_ENTRIES);
+      this.diskWriter.appendChannel("logs", mapLogEvent(event));
     });
 
     this.client.onEvent("Network.requestWillBeSent", (params) => {
@@ -62,42 +63,25 @@ export class RuntimeCaptureSession {
 
     this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
       const requestUrl = event.requestId ? this.networkRequestUrls.get(event.requestId) : undefined;
-      this.networkFailureEntries.push({
+      const networkFailure: CaliperRuntimeNetworkFailure = {
         url: requestUrl ?? "unknown",
         error: event.errorText ?? "unknown",
         resourceType: event.type,
         timestamp: event.timestamp,
-      });
-      trimBuffer(this.networkFailureEntries, MAX_NETWORK_FAILURE_ENTRIES);
+      };
+      this.diskWriter.appendChannel("networkFailures", networkFailure);
     });
 
     this.enabled = true;
   }
 
   clear(): void {
-    this.consoleEntries = [];
-    this.exceptionEntries = [];
-    this.logEntries = [];
-    this.networkFailureEntries = [];
     this.networkRequestUrls.clear();
+    this.diskWriter.clearAll();
   }
 
-  getSnapshot(): CaliperRuntimeBlock {
-    const capturedAt = Date.now();
-    const truncated =
-      this.consoleEntries.length >= MAX_CONSOLE_ENTRIES ||
-      this.exceptionEntries.length >= MAX_EXCEPTION_ENTRIES ||
-      this.logEntries.length >= MAX_LOG_ENTRIES ||
-      this.networkFailureEntries.length >= MAX_NETWORK_FAILURE_ENTRIES;
-
-    return {
-      console: [...this.consoleEntries],
-      exceptions: [...this.exceptionEntries],
-      logs: [...this.logEntries],
-      networkFailures: [...this.networkFailureEntries],
-      capturedAt,
-      truncated: truncated || undefined,
-    };
+  getFingerprint(): CaliperRuntimeFingerprint {
+    return this.diskWriter.readFingerprint();
   }
 }
 
@@ -178,10 +162,4 @@ function formatStackTrace(
       return `${name} (${url}:${line})`;
     })
     .join("\n");
-}
-
-function trimBuffer<T>(buffer: T[], maxEntries: number): void {
-  if (buffer.length > maxEntries) {
-    buffer.splice(0, buffer.length - maxEntries);
-  }
 }

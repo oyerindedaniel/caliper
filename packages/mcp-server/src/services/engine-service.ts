@@ -21,6 +21,7 @@ import {
   type EngineHealth,
   type JSONRPCResponse,
 } from "@oyerinde/caliper-schema";
+import { resolveCaliperProjectRoot } from "@oyerinde/caliper-schema/node";
 import { generateId } from "../utils/id.js";
 import { createLogger } from "../utils/logger.js";
 import { pollUntil } from "../utils/poll-until.js";
@@ -139,7 +140,10 @@ export class EngineService {
 
     this.spawnedProcess = spawn(process.execPath, [cliPath, ...args], {
       stdio: "ignore",
-      env: process.env,
+      env: {
+        ...process.env,
+        CALIPER_PROJECT_ROOT: resolveCaliperProjectRoot(),
+      },
     });
 
     this.spawnedProcess.on("exit", (code) => {
