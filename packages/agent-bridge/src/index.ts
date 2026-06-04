@@ -18,6 +18,7 @@
  */
 
 import type { CaliperIntent, CaliperActionResult } from "@oyerinde/caliper-schema";
+import { prepareWalkResultForJsonWire } from "@oyerinde/caliper-schema";
 import { createIntentHandler } from "./intent-handler.js";
 import { createWSBridge } from "./ws-bridge.js";
 import type {
@@ -151,7 +152,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
                 timestamp: Date.now(),
               };
             }
-            return intentHandler.dispatch(intent);
+            return prepareWalkResultForJsonWire(await intentHandler.dispatch(intent));
           };
 
           delete window.__CALIPER_BRIDGE_BOOTING__;

@@ -202,6 +202,8 @@ export const CaliperActionResultSchema = z.union([
     auditContext: CaliperAuditContextSchema.optional(),
     timestamp: z.number(),
     binaryPayload: z.custom<Uint8Array>().optional(),
+    /** JSON wire transport (engine HTTP/CDP); stripped after rehydrate */
+    binaryPayloadBase64: z.string().optional(),
   }),
   z.object({
     success: z.literal(true),

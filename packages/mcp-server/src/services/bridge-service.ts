@@ -8,6 +8,7 @@ import {
   BitBridge,
   RpcFactory,
   CALIPER_METHODS,
+  rehydrateWalkAndMeasureResult,
   type Id,
   isId,
   type CaliperParams,
@@ -15,7 +16,6 @@ import {
   isBridgeNotification,
   isBridgeErrorResponse,
   isBridgeResultResponse,
-  CaliperNodeSchema,
 } from "@oyerinde/caliper-schema";
 import { tabManager } from "./tab-manager.js";
 import { createLogger } from "../utils/logger.js";
@@ -180,31 +180,17 @@ export class BridgeService extends EventEmitter {
 
             const finalResult = message.result;
 
-            if ("walkResult" in finalResult && binaryPayload) {
-              try {
-                const raw = BitBridge.deserialize(binaryPayload);
-                const parsed = CaliperNodeSchema.safeParse(raw);
-                if (!parsed.success) {
-                  logger.error(
-                    "Bit-Bridge deserialized node failed schema validation",
-                    z.treeifyError(parsed.error)
-                  );
-                  resolve({ error: "Walk and measure tree payload failed schema validation" });
-                  this.pendingCalls.delete(String(message.id));
-                  return;
-                }
-                finalResult.walkResult.root = parsed.data;
-              } catch (error) {
-                logger.error("Bit-Bridge reconstruction failed:", error);
-                resolve({
-                  error:
-                    error instanceof Error
-                      ? error.message
-                      : "Walk and measure tree payload could not be reconstructed",
-                });
+            if (isCaliperActionResultMethod(finalResult, CALIPER_METHODS.WALK_AND_MEASURE)) {
+              const rehydrated = rehydrateWalkAndMeasureResult(finalResult, binaryPayload);
+              if (!rehydrated.ok) {
+                logger.error("Bit-Bridge reconstruction failed:", rehydrated.error);
+                resolve({ error: rehydrated.error });
                 this.pendingCalls.delete(String(message.id));
                 return;
               }
+              resolve(rehydrated.result);
+              this.pendingCalls.delete(String(message.id));
+              return;
             }
 
             resolve(finalResult);
