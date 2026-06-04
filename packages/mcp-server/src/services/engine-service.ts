@@ -10,6 +10,7 @@ import {
   RpcFactory,
   parseCaliperActionResult,
   rehydrateWalkAndMeasureResult,
+  isWalkAndMeasureSuccess,
   isCaliperActionResultMethod,
   isJSONRPCErrorResponse,
   isJSONRPCResultResponse,
@@ -98,7 +99,7 @@ export class EngineService {
       throw new Error("Engine RPC returned an invalid result shape");
     }
 
-    if (isCaliperActionResultMethod(parsed, CALIPER_METHODS.WALK_AND_MEASURE)) {
+    if (isWalkAndMeasureSuccess(parsed)) {
       const rehydrated = rehydrateWalkAndMeasureResult(parsed);
       if (!rehydrated.ok) {
         throw new Error(rehydrated.error);

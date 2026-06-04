@@ -9,6 +9,7 @@ import {
   RpcFactory,
   CALIPER_METHODS,
   rehydrateWalkAndMeasureResult,
+  isWalkAndMeasureSuccess,
   type Id,
   isId,
   type CaliperParams,
@@ -180,7 +181,7 @@ export class BridgeService extends EventEmitter {
 
             const finalResult = message.result;
 
-            if (isCaliperActionResultMethod(finalResult, CALIPER_METHODS.WALK_AND_MEASURE)) {
+            if (isWalkAndMeasureSuccess(finalResult)) {
               const rehydrated = rehydrateWalkAndMeasureResult(finalResult, binaryPayload);
               if (!rehydrated.ok) {
                 logger.error("Bit-Bridge reconstruction failed:", rehydrated.error);

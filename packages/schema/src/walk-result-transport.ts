@@ -12,7 +12,9 @@ export type RehydrateWalkResult =
   | { ok: true; result: WalkAndMeasureSuccess }
   | { ok: false; error: string };
 
-function isWalkAndMeasureSuccess(result: CaliperActionResult): result is WalkAndMeasureSuccess {
+export function isWalkAndMeasureSuccess(
+  result: CaliperActionResult
+): result is WalkAndMeasureSuccess {
   return (
     result.success === true &&
     isCaliperActionResultMethod(result, CALIPER_METHODS.WALK_AND_MEASURE)
