@@ -1,11 +1,20 @@
 #!/usr/bin/env node
-import { DEFAULT_ENGINE_HOST, DEFAULT_ENGINE_PORT } from "@oyerinde/caliper-schema";
+import { DEFAULT_ENGINE_HOST, DEFAULT_ENGINE_PORT, isLoopbackHost } from "@oyerinde/caliper-schema";
 import { createEngineRuntime } from "./engine-runtime.js";
+
+function resolveAllowScriptEval(argv: readonly string[]): boolean {
+  const envFlag = process.env.CALIPER_ENGINE_ALLOW_SCRIPT_EVAL;
+  if (envFlag === "1" || envFlag?.toLowerCase() === "true") {
+    return true;
+  }
+  return argv.includes("--allow-script-eval");
+}
 
 type CliOptions = {
   host: string;
   port: number;
   targetUrl: string | null;
+  allowScriptEval: boolean;
 };
 
 type CliParseResult = { ok: true; options: CliOptions } | { ok: false; message: string };
@@ -34,6 +43,7 @@ function parseCliOptions(argv: string[]): CliParseResult {
   let host = DEFAULT_ENGINE_HOST;
   let port = DEFAULT_ENGINE_PORT;
   let targetUrl: string | null = null;
+  const allowScriptEval = resolveAllowScriptEval(argv);
 
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -88,6 +98,10 @@ function parseCliOptions(argv: string[]): CliParseResult {
       continue;
     }
 
+    if (token === "--allow-script-eval") {
+      continue;
+    }
+
     if (token === "--help" || token === "-h") {
       printHelp();
       process.exit(0);
@@ -100,7 +114,14 @@ function parseCliOptions(argv: string[]): CliParseResult {
     return { ok: false, message: `Unexpected argument: ${token}` };
   }
 
-  return { ok: true, options: { host, port, targetUrl } };
+  if (allowScriptEval && !isLoopbackHost(host)) {
+    return {
+      ok: false,
+      message: `--allow-script-eval requires a loopback --host (got ${host})`,
+    };
+  }
+
+  return { ok: true, options: { host, port, targetUrl, allowScriptEval } };
 }
 
 function printHelp(): void {
@@ -114,6 +135,9 @@ Options:
   -u, --url <url>      Target page URL for the dedicated audit Chrome session
   -H, --host <host>    Bind host (default: ${DEFAULT_ENGINE_HOST})
   -p, --port <number>  Bind port (default: ${DEFAULT_ENGINE_PORT})
+      --allow-script-eval
+                       Opt in to page automation: eval script, trusted click, keys.
+                       Loopback host only. Also CALIPER_ENGINE_ALLOW_SCRIPT_EVAL=1.
   -h, --help           Show this help message
 `);
 }
@@ -143,6 +167,7 @@ async function main(): Promise<void> {
       host: parsedCli.options.host,
       port: parsedCli.options.port,
       targetUrl: parsedCli.options.targetUrl,
+      allowScriptEval: parsedCli.options.allowScriptEval,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -21,6 +21,7 @@ export type MeasurementServiceOptions = {
   engineUrl?: string | null;
   engineTargetUrl?: string | null;
   runtimeRouting?: CaliperMeasurementRouting;
+  allowScriptEval?: boolean;
 };
 
 export class MeasurementService {
@@ -36,6 +37,7 @@ export class MeasurementService {
       this.engineService = new EngineService({
         engineUrl: options.engineUrl,
         targetUrl: options.engineTargetUrl ?? null,
+        allowScriptEval: options.allowScriptEval ?? false,
       });
     }
 

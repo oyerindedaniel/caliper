@@ -24,6 +24,7 @@ export type EngineBrowserSessionOptions = {
   engineHost?: string;
   enginePort?: number;
   sessionId?: string;
+  allowScriptEval?: boolean;
 };
 
 export class EngineBrowserSession {
@@ -99,8 +100,12 @@ export class EngineBrowserSession {
 function buildMeasurementSessionOptions(
   options: EngineBrowserSessionOptions
 ): EngineMeasurementSessionOptions {
+  const measurementOptions: EngineMeasurementSessionOptions = {
+    allowScriptEval: options.allowScriptEval ?? false,
+  };
+
   if (!options.sessionId || options.engineHost === undefined || options.enginePort === undefined) {
-    return {};
+    return measurementOptions;
   }
 
   const projectPaths = resolveCaliperProjectPaths();
@@ -109,11 +114,11 @@ function buildMeasurementSessionOptions(
 
   const captureBaseUrl = buildEngineHttpUrl(options.engineHost, options.enginePort, "");
 
-  return {
-    screenshot: {
-      capturesDirectory: projectPaths.capturesDir,
-      captureBaseUrl,
-    },
-    projectRoot: projectPaths.projectRoot,
+  measurementOptions.screenshot = {
+    capturesDirectory: projectPaths.capturesDir,
+    captureBaseUrl,
   };
+  measurementOptions.projectRoot = projectPaths.projectRoot;
+
+  return measurementOptions;
 }

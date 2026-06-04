@@ -15,11 +15,14 @@ import { RuntimeCaptureSession } from "./runtime-capture-session.js";
 import { NavigationSession } from "./navigation-session.js";
 import { StabilizationSession } from "./stabilization-session.js";
 import { ScreenshotSession, type ScreenshotSessionOptions } from "./screenshot-session.js";
+import { ScriptEvalSession } from "./script-eval-session.js";
+import { TrustedInputSession } from "./trusted-input-session.js";
 import { finalizeMeasurementResult } from "./finalize-measurement-result.js";
 
 export type EngineMeasurementSessionOptions = {
   screenshot?: ScreenshotSessionOptions;
   projectRoot?: string;
+  allowScriptEval?: boolean;
 };
 
 export class EngineMeasurementSession {
@@ -29,6 +32,8 @@ export class EngineMeasurementSession {
   private readonly navigation: NavigationSession;
   private readonly stabilization: StabilizationSession;
   private readonly screenshot: ScreenshotSession | null;
+  private readonly scriptEval: ScriptEvalSession;
+  private readonly trustedInput: TrustedInputSession;
 
   constructor(
     private readonly client: CdpClient,
@@ -43,6 +48,13 @@ export class EngineMeasurementSession {
     this.navigation = new NavigationSession(client);
     this.stabilization = new StabilizationSession(client);
     this.screenshot = options.screenshot ? new ScreenshotSession(client, options.screenshot) : null;
+    const allowPageAutomation = options.allowScriptEval ?? false;
+    this.scriptEval = new ScriptEvalSession(client, {
+      allowScriptEval: allowPageAutomation,
+    });
+    this.trustedInput = new TrustedInputSession(client, this.navigation, {
+      allowPageAutomation,
+    });
 
     this.auditBreakpoints = new AuditBreakpointsSession(
       client,
@@ -175,6 +187,15 @@ export class EngineMeasurementSession {
           timestamp,
         };
       }
+
+      case CALIPER_ENGINE_METHODS.EVAL_SCRIPT:
+        return this.scriptEval.evaluate(request.params);
+
+      case CALIPER_ENGINE_METHODS.CLICK_AT:
+        return this.trustedInput.clickAt(request.params);
+
+      case CALIPER_ENGINE_METHODS.PRESS_KEY:
+        return this.trustedInput.pressKey(request.params);
     }
   }
 }

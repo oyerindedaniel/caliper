@@ -12,6 +12,7 @@ type CliOptions = {
   engineUrl: string | null;
   engineTargetUrl: string | null;
   runtimeRouting: CaliperMeasurementRouting;
+  allowScriptEval: boolean;
 };
 
 function parseRuntimeRouting(value: string): CaliperMeasurementRouting | null {
@@ -25,6 +26,7 @@ function parseArgs(): CliOptions {
   let engineUrl: string | null = null;
   let engineTargetUrl: string | null = null;
   let runtimeRouting: CaliperMeasurementRouting = CALIPER_MEASUREMENT_ROUTING.AUTO;
+  let allowScriptEval = false;
 
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -91,6 +93,11 @@ function parseArgs(): CliOptions {
       continue;
     }
 
+    if (token === "--allow-script-eval") {
+      allowScriptEval = true;
+      continue;
+    }
+
     if (token === "--help" || token === "-h") {
       console.error(`
 Caliper MCP Server - AI-powered UI measurement tool
@@ -104,6 +111,7 @@ Options:
       --engine [url]               Enable engine routing (default: ${DEFAULT_ENGINE_URL})
       --engine-url <url>           Explicit caliper-engine base URL
       --engine-target-url <url>    Page URL for MCP to spawn caliper-engine against
+      --allow-script-eval          Pass --allow-script-eval to spawned caliper-engine
   -d, --docs                       Open documentation: https://caliper.danieloyerinde.com/
   -h, --help                       Show this help message
 `);
@@ -116,7 +124,7 @@ Options:
     }
   }
 
-  return { port, engineUrl, engineTargetUrl, runtimeRouting };
+  return { port, engineUrl, engineTargetUrl, runtimeRouting, allowScriptEval };
 }
 
 const cliOptions = parseArgs();
@@ -125,6 +133,7 @@ const server = new CaliperMcpServer({
   engineUrl: cliOptions.engineUrl,
   engineTargetUrl: cliOptions.engineTargetUrl,
   runtimeRouting: cliOptions.runtimeRouting,
+  allowScriptEval: cliOptions.allowScriptEval,
 });
 server.start();
 

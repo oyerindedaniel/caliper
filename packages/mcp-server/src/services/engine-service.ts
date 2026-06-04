@@ -6,7 +6,6 @@ import {
   DEFAULT_ENGINE_HOST,
   DEFAULT_ENGINE_PORT,
   EngineHealthSchema,
-  CALIPER_METHODS,
   RpcFactory,
   parseCaliperActionResult,
   rehydrateWalkAndMeasureResult,
@@ -34,16 +33,19 @@ const logger = createLogger("engine-service");
 export type EngineServiceOptions = {
   engineUrl: string;
   targetUrl?: string | null;
+  allowScriptEval?: boolean;
 };
 
 export class EngineService {
   private readonly engineUrl: string;
   private readonly targetUrl: string | null;
+  private readonly allowScriptEval: boolean;
   private spawnedProcess: ChildProcess | null = null;
 
   constructor(options: EngineServiceOptions) {
     this.engineUrl = options.engineUrl.replace(/\/$/, "");
     this.targetUrl = options.targetUrl ?? null;
+    this.allowScriptEval = options.allowScriptEval ?? false;
   }
 
   get url(): string {
@@ -148,6 +150,10 @@ export class EngineService {
 
     if (this.targetUrl) {
       args.push("--url", this.targetUrl);
+    }
+
+    if (this.allowScriptEval) {
+      args.push("--allow-script-eval");
     }
 
     logger.info(`Starting caliper-engine at ${this.engineUrl}`);

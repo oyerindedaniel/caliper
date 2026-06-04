@@ -10,7 +10,22 @@ export const CALIPER_ENGINE_METHODS = {
   PAUSE_ANIMATIONS: "CALIPER_ENGINE_PAUSE_ANIMATIONS",
   RESUME_ANIMATIONS: "CALIPER_ENGINE_RESUME_ANIMATIONS",
   SCREENSHOT: "CALIPER_ENGINE_SCREENSHOT",
+  EVAL_SCRIPT: "CALIPER_ENGINE_EVAL_SCRIPT",
+  CLICK_AT: "CALIPER_ENGINE_CLICK_AT",
+  PRESS_KEY: "CALIPER_ENGINE_PRESS_KEY",
 } as const;
+
+export const CALIPER_ENGINE_CLICK_AT_MAX_COORD = 32_000;
+
+export const CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT = 3;
+
+export const CALIPER_ENGINE_PRESS_KEY_MAX_MODIFIERS = 15;
+
+export const CALIPER_ENGINE_EVAL_SCRIPT_MAX_SOURCE_LENGTH = 262_144;
+
+export const CALIPER_ENGINE_EVAL_SCRIPT_DEFAULT_TIMEOUT_MS = 30_000;
+
+export const CALIPER_ENGINE_EVAL_SCRIPT_MAX_TIMEOUT_MS = 120_000;
 
 export const CaliperEngineMethodSchema = z.enum([
   CALIPER_ENGINE_METHODS.SET_VIEWPORT,
@@ -22,6 +37,9 @@ export const CaliperEngineMethodSchema = z.enum([
   CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS,
   CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS,
   CALIPER_ENGINE_METHODS.SCREENSHOT,
+  CALIPER_ENGINE_METHODS.EVAL_SCRIPT,
+  CALIPER_ENGINE_METHODS.CLICK_AT,
+  CALIPER_ENGINE_METHODS.PRESS_KEY,
 ]);
 
 export type CaliperEngineMethod = z.infer<typeof CaliperEngineMethodSchema>;
@@ -175,6 +193,99 @@ export const CaliperEngineScreenshotPayloadSchema = z
     message: "fullPage and selector are mutually exclusive",
   });
 
+export const CaliperEngineEvalScriptPayloadSchema = z.object({
+  source: z
+    .string()
+    .min(1)
+    .max(CALIPER_ENGINE_EVAL_SCRIPT_MAX_SOURCE_LENGTH),
+  awaitPromise: z.boolean().optional(),
+  timeoutMs: z
+    .number()
+    .int()
+    .positive()
+    .max(CALIPER_ENGINE_EVAL_SCRIPT_MAX_TIMEOUT_MS)
+    .optional(),
+});
+
+export const CaliperEngineMouseButtonSchema = z.enum(["left", "right", "middle"]);
+
+export const CaliperEngineClickAtSharedPayloadSchema = z.object({
+  button: CaliperEngineMouseButtonSchema.optional(),
+  clickCount: z
+    .number()
+    .int()
+    .min(1)
+    .max(CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT)
+    .optional(),
+});
+
+export const CaliperEngineClickAtBySelectorPayloadSchema =
+  CaliperEngineClickAtSharedPayloadSchema.extend({
+    selector: z.string().min(1),
+    scrollIntoView: z.boolean().optional(),
+  });
+
+export const CaliperEngineClickAtByCoordsPayloadSchema =
+  CaliperEngineClickAtSharedPayloadSchema.extend({
+    x: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD),
+    y: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD),
+  });
+
+export const CaliperEngineClickAtPayloadSchema = z
+  .object({
+    selector: z.string().min(1).optional(),
+    scrollIntoView: z.boolean().optional(),
+    x: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD).optional(),
+    y: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD).optional(),
+    button: CaliperEngineMouseButtonSchema.optional(),
+    clickCount: z
+      .number()
+      .int()
+      .min(1)
+      .max(CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT)
+      .optional(),
+  })
+  .superRefine((payload, context) => {
+    const hasSelector = payload.selector !== undefined;
+    const hasX = payload.x !== undefined;
+    const hasY = payload.y !== undefined;
+
+    if (hasSelector && (hasX || hasY)) {
+      context.addIssue({
+        code: "custom",
+        message: "selector and x/y are mutually exclusive",
+      });
+    }
+
+    if (!hasSelector && (!hasX || !hasY)) {
+      context.addIssue({
+        code: "custom",
+        message: "provide selector or both x and y",
+      });
+    }
+  });
+
+export const CaliperEngineAllowlistedKeySchema = z.enum([
+  "Escape",
+  "Enter",
+  "Tab",
+  "Space",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+]);
+
+export const CaliperEnginePressKeyPayloadSchema = z.object({
+  key: CaliperEngineAllowlistedKeySchema,
+  modifiers: z
+    .number()
+    .int()
+    .min(0)
+    .max(CALIPER_ENGINE_PRESS_KEY_MAX_MODIFIERS)
+    .optional(),
+});
+
 export const CaliperEngineEmptyPayloadSchema = z.object({});
 
 export const CaliperSetViewportPayloadSchema = z.object({
@@ -220,6 +331,10 @@ export type CaliperEngineScrollIntoViewPayload = z.infer<
   typeof CaliperEngineScrollIntoViewPayloadSchema
 >;
 export type CaliperEngineScreenshotPayload = z.infer<typeof CaliperEngineScreenshotPayloadSchema>;
+export type CaliperEngineEvalScriptPayload = z.infer<typeof CaliperEngineEvalScriptPayloadSchema>;
+export type CaliperEngineClickAtPayload = z.infer<typeof CaliperEngineClickAtPayloadSchema>;
+export type CaliperEnginePressKeyPayload = z.infer<typeof CaliperEnginePressKeyPayloadSchema>;
+export type CaliperEngineAllowlistedKey = z.infer<typeof CaliperEngineAllowlistedKeySchema>;
 export type CaliperSetViewportPayload = z.infer<typeof CaliperSetViewportPayloadSchema>;
 export type CaliperAuditBreakpointsPayload = z.infer<typeof CaliperAuditBreakpointsPayloadSchema>;
 
@@ -233,6 +348,9 @@ export type CaliperEngineParamsByMethod = {
   [CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS]: Record<string, never>;
   [CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS]: Record<string, never>;
   [CALIPER_ENGINE_METHODS.SCREENSHOT]: CaliperEngineScreenshotPayload;
+  [CALIPER_ENGINE_METHODS.EVAL_SCRIPT]: CaliperEngineEvalScriptPayload;
+  [CALIPER_ENGINE_METHODS.CLICK_AT]: CaliperEngineClickAtPayload;
+  [CALIPER_ENGINE_METHODS.PRESS_KEY]: CaliperEnginePressKeyPayload;
 };
 
 export type CaliperEngineParams<M extends CaliperEngineMethod> = CaliperEngineParamsByMethod[M];

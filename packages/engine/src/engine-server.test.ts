@@ -31,6 +31,7 @@ describe("CaliperEngineServer", () => {
       runtime: "engine",
       activeUrl: "http://localhost:3000",
       chromeConnected: false,
+      allowScriptEval: false,
     });
   });
 

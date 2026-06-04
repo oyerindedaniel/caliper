@@ -275,6 +275,26 @@ export const CaliperActionResultSchema = z.union([
     timestamp: z.number(),
   }),
   z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.EVAL_SCRIPT),
+    value: z.unknown(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.CLICK_AT),
+    x: z.number(),
+    y: z.number(),
+    selector: z.string().optional(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.PRESS_KEY),
+    key: z.string(),
+    timestamp: z.number(),
+  }),
+  z.object({
     success: z.literal(false),
     method: CaliperRpcMethodSchema,
     selector: z.string().optional(),
