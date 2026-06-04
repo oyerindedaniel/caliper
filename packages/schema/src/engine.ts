@@ -50,6 +50,7 @@ export const EngineHealthSchema = z.object({
   sessionId: z.string(),
   activeUrl: z.string().nullable(),
   chromeConnected: z.boolean(),
+  allowScriptEval: z.boolean(),
   startedAt: z.number(),
 });
 

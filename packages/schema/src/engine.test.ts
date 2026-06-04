@@ -25,10 +25,12 @@ describe("engine schema", () => {
       sessionId: "session-1",
       activeUrl: "http://localhost:3000",
       chromeConnected: false,
+      allowScriptEval: false,
       startedAt: 1_700_000_000_000,
     });
 
     expect(health.chromeConnected).toBe(false);
+    expect(health.allowScriptEval).toBe(false);
   });
 
   it("parses connection targets for attached and engine runtimes", () => {

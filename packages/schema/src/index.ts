@@ -8,3 +8,4 @@ export * from "./visibility.js";
 export * from "./serialization.js";
 export * from "./walk-result-transport.js";
 export * from "./constants.js";
+export * from "./selector-target.js";

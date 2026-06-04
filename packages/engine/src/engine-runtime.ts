@@ -21,6 +21,7 @@ export async function createEngineRuntime(
         engineHost: server.host,
         enginePort: server.port,
         sessionId: server.sessionId,
+        allowScriptEval: options.allowScriptEval ?? false,
       });
       server.setActiveUrl(browserSession.url);
       server.setChromeConnected(true);

@@ -9,6 +9,8 @@ import {
   type ScrollState,
 } from "@caliper/core";
 import {
+  CALIPER_TARGET_RESOLUTION_MODES,
+  normalizeCaliperTargetSelector,
   type SelectionMetadata as BridgeSelectionMetadata,
   type MeasurementResult as BridgeMeasurementResult,
   type ScrollState as BridgeScrollState,
@@ -334,22 +336,20 @@ export function findElementByFingerprint(
  * @returns The resolved HTMLElement if found, otherwise null.
  */
 export function resolveElement(targetSelector: string): HTMLElement | null {
-  const trimmedSelector = targetSelector.trim();
+  const normalized = normalizeCaliperTargetSelector(targetSelector);
 
-  if (trimmedSelector.startsWith("{")) {
+  if (normalized.mode === CALIPER_TARGET_RESOLUTION_MODES.FINGERPRINT_JSON) {
     try {
-      const fingerprintData = JSON.parse(trimmedSelector) as CaliperSelectorInput;
+      const fingerprintData = JSON.parse(targetSelector.trim()) as CaliperSelectorInput;
       return findElementByFingerprint(fingerprintData);
-    } catch (parseError) {}
-  }
-
-  if (trimmedSelector.startsWith("caliper-")) {
-    return document.querySelector(`[data-caliper-agent-id="${trimmedSelector}"]`) as HTMLElement;
+    } catch {
+      return null;
+    }
   }
 
   try {
-    return document.querySelector(trimmedSelector) as HTMLElement;
-  } catch (selectorError) {
+    return document.querySelector(normalized.cssSelector) as HTMLElement;
+  } catch {
     return null;
   }
 }
@@ -361,21 +361,16 @@ export function resolveElement(targetSelector: string): HTMLElement | null {
  * @returns An array of resolved Elements.
  */
 export function resolveElements(targetSelector: string): Element[] {
-  const trimmedSelector = targetSelector.trim();
+  const normalized = normalizeCaliperTargetSelector(targetSelector);
 
-  if (trimmedSelector.startsWith("{")) {
-    const resolvedElement = resolveElement(trimmedSelector);
-    return resolvedElement ? [resolvedElement] : [];
-  }
-
-  if (trimmedSelector.startsWith("caliper-")) {
-    const resolvedElement = resolveElement(trimmedSelector);
+  if (normalized.mode === CALIPER_TARGET_RESOLUTION_MODES.FINGERPRINT_JSON) {
+    const resolvedElement = resolveElement(targetSelector);
     return resolvedElement ? [resolvedElement] : [];
   }
 
   try {
-    return Array.from(document.querySelectorAll(trimmedSelector));
-  } catch (selectorError) {
+    return Array.from(document.querySelectorAll(normalized.cssSelector));
+  } catch {
     return [];
   }
 }

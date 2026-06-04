@@ -12,6 +12,11 @@ import {
   RECOMMENDED_PAGINATION_THRESHOLD,
   CALIPER_METHODS,
   CALIPER_ENGINE_METHODS,
+  CALIPER_ENGINE_EVAL_SCRIPT_MAX_SOURCE_LENGTH,
+  CALIPER_ENGINE_EVAL_SCRIPT_MAX_TIMEOUT_MS,
+  CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT,
+  CALIPER_ENGINE_PRESS_KEY_MAX_MODIFIERS,
+  CaliperEngineAllowlistedKeySchema,
   CaliperRuntimeFingerprintSchema,
   type CaliperAgentState,
   type CaliperMeasurementRouting,
@@ -51,6 +56,7 @@ export type CaliperMcpServerOptions = {
   engineUrl?: string | null;
   engineTargetUrl?: string | null;
   runtimeRouting?: CaliperMeasurementRouting;
+  allowScriptEval?: boolean;
 };
 
 export class CaliperMcpServer {
@@ -71,6 +77,7 @@ export class CaliperMcpServer {
       engineUrl: options.engineUrl ?? null,
       engineTargetUrl: options.engineTargetUrl ?? null,
       runtimeRouting: options.runtimeRouting,
+      allowScriptEval: options.allowScriptEval ?? false,
     });
     this.server = new McpServer({
       name: "caliper-mcp-server",
@@ -756,6 +763,131 @@ The output includes:
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
           return formatEngineToolError("Screenshot", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_eval_script",
+      {
+        description:
+          "Evaluate JavaScript in the dedicated caliper-engine Chrome page via Runtime.evaluate (returnByValue). Requires engine mode and --allow-script-eval. Not available on attached tabs.",
+        inputSchema: z.object({
+          source: z
+            .string()
+            .min(1)
+            .max(CALIPER_ENGINE_EVAL_SCRIPT_MAX_SOURCE_LENGTH)
+            .describe("Script body (wrapped in an async IIFE; use return for the result value)"),
+          awaitPromise: z
+            .boolean()
+            .optional()
+            .describe("Await the script promise before returning (default true)"),
+          timeoutMs: z
+            .number()
+            .int()
+            .positive()
+            .max(CALIPER_ENGINE_EVAL_SCRIPT_MAX_TIMEOUT_MS)
+            .optional()
+            .describe("CDP Runtime.evaluate timeout in ms (omit for no protocol timeout)"),
+        }),
+      },
+      async ({ source, awaitPromise, timeoutMs }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.EVAL_SCRIPT,
+            { source, awaitPromise, timeoutMs }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Eval script", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_click_at",
+      {
+        description:
+          "Trusted click in the caliper-engine page (CDP Input.dispatchMouseEvent). Use selector or viewport x/y. Requires --allow-script-eval. Main frame only; may hit topmost element at coordinates.",
+        inputSchema: z
+          .object({
+            selector: z
+              .string()
+              .optional()
+              .describe("CSS selector or caliper agent id (mutually exclusive with x/y)"),
+            x: z
+              .number()
+              .optional()
+              .describe("Viewport X in CSS pixels (requires y, mutually exclusive with selector)"),
+            y: z.number().optional().describe("Viewport Y in CSS pixels (requires x)"),
+            scrollIntoView: z
+              .boolean()
+              .optional()
+              .describe("Scroll selector into view before click (default true when selector set)"),
+            button: z.enum(["left", "right", "middle"]).optional(),
+            clickCount: z
+              .number()
+              .int()
+              .min(1)
+              .max(CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT)
+              .optional(),
+          })
+          .refine(
+            (payload) => {
+              const hasSelector = payload.selector !== undefined && payload.selector.length > 0;
+              const hasCoords = payload.x !== undefined || payload.y !== undefined;
+              if (hasSelector && hasCoords) {
+                return false;
+              }
+              if (!hasSelector && (payload.x === undefined || payload.y === undefined)) {
+                return false;
+              }
+              return true;
+            },
+            { message: "Provide selector or both x and y, not both" }
+          ),
+      },
+      async ({ selector, x, y, scrollIntoView, button, clickCount }) => {
+        try {
+          const params = selector
+            ? { selector, scrollIntoView, button, clickCount }
+            : { x: x!, y: y!, button, clickCount };
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.CLICK_AT,
+            params
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Click at", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_press_key",
+      {
+        description:
+          "Press an allowlisted key (Escape, Enter, Tab, Space, arrows) via CDP Input.dispatchKeyEvent. Requires --allow-script-eval. For modals, menus, and focus — not arbitrary shortcuts.",
+        inputSchema: z.object({
+          key: CaliperEngineAllowlistedKeySchema,
+          modifiers: z
+            .number()
+            .int()
+            .min(0)
+            .max(CALIPER_ENGINE_PRESS_KEY_MAX_MODIFIERS)
+            .optional()
+            .describe("Modifier bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8"),
+        }),
+      },
+      async ({ key, modifiers }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.PRESS_KEY,
+            { key, modifiers }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Press key", error);
         }
       }
     );

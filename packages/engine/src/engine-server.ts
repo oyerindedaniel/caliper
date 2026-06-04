@@ -34,6 +34,7 @@ export type CaliperEngineServerOptions = {
   port?: number;
   version?: string;
   targetUrl?: string | null;
+  allowScriptEval?: boolean;
 };
 
 type EngineHttpErrorBody = {
@@ -62,6 +63,7 @@ export class CaliperEngineServer {
   private chromeConnected = false;
   private rpcHandler: RpcHandler | null = null;
   private captureHandler: CaptureHandler | null = null;
+  private readonly allowScriptEval: boolean;
 
   constructor(options: CaliperEngineServerOptions = {}) {
     this.host = options.host ?? DEFAULT_ENGINE_HOST;
@@ -70,6 +72,7 @@ export class CaliperEngineServer {
     this.sessionId = randomUUID();
     this.startedAt = Date.now();
     this.activeUrl = options.targetUrl ?? null;
+    this.allowScriptEval = options.allowScriptEval ?? false;
   }
 
   get port(): number {
@@ -100,6 +103,7 @@ export class CaliperEngineServer {
       sessionId: this.sessionId,
       activeUrl: this.activeUrl,
       chromeConnected: this.chromeConnected,
+      allowScriptEval: this.allowScriptEval,
       startedAt: this.startedAt,
     });
   }
