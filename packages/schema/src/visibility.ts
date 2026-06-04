@@ -61,6 +61,11 @@ export const CaliperRuntimeConnectionSchema = z.object({
   engineHealthUrl: z.string().nullable().optional(),
   activeTabId: z.string().nullable().optional(),
   activeTabUrl: z.string().nullable().optional(),
+  bridgePort: z.number().int().positive().optional(),
+  bridgeListening: z.boolean().optional(),
+  bridgeError: z.string().nullable().optional(),
+  bridgeSessionId: z.string().nullable().optional(),
+  connectedTabCount: z.number().int().nonnegative().optional(),
 });
 
 export const CaliperMediaQueryDescriptorSchema = z.object({
@@ -112,6 +117,10 @@ export function createDefaultRuntimeConnection(
     engineHealthUrl: null,
     activeTabId: null,
     activeTabUrl: null,
+    bridgeListening: false,
+    bridgeError: null,
+    bridgeSessionId: null,
+    connectedTabCount: 0,
     ...overrides,
   };
 }

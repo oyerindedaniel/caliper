@@ -1061,7 +1061,7 @@ Returns the Delta E value and a human-readable interpretation:
       CALIPER_RUNTIME_URI,
       {
         description:
-          "Active Caliper runtime connection: attached bridge tab vs engine sandbox, routing mode, and engine health URL.",
+          "Active Caliper runtime connection: attached bridge tab vs engine sandbox, routing mode, engine health URL, and bridge relay health (bridgeListening, bridgeSessionId, connectedTabCount).",
       },
       async () => {
         const runtimeConnection = this.measurementService.getRuntimeConnection();
@@ -1109,6 +1109,10 @@ Returns the Delta E value and a human-readable interpretation:
       this.server.server.sendResourceUpdated({ uri: CALIPER_STATE_URI }).catch((error) => {
         logger.warn("Failed to notify resource update", error);
       });
+    });
+
+    bridgeService.on(BRIDGE_EVENTS.CONNECTION, () => {
+      this.notifyRuntimeConnectionUpdated();
     });
   }
 
@@ -1304,7 +1308,11 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
       await this.measurementService.start();
       this.notifyRuntimeConnectionUpdated();
     } catch (err) {
-      logger.error("Bridge startup failed:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(
+        `Bridge startup failed: ${message}. Tools needing the browser relay will error until the port is free. Check caliper://runtime.`
+      );
+      this.notifyRuntimeConnectionUpdated();
     }
 
     try {

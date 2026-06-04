@@ -11,6 +11,7 @@ Model Context Protocol (MCP) server for Caliper. This server bridges AI agents (
 - **Semantic Reconciliation**: Agents can rediscover elements across HMR using stable markers, fingerprints, or Sub-pixel geometry.
 - **Multi-Tab Support**: Automatically targets and tracks the focused browser tab.
 - **Zero Config**: Standardized WebSocket relay on port 9876.
+- **Multi-IDE takeover**: If another Caliper MCP already holds the bridge port, a new instance preempts it (last-started wins). Set `CALIPER_BRIDGE_NO_PREEMPT=1` to disable.
 
 ## Installation & Setup
 
@@ -77,6 +78,12 @@ The following flags are available when running the server:
 | `-h, --help` | Show usage instructions and available options. | -       |
 
 > **Note**: Ensure the port used by the MCP server matches the one initialized in the `@oyerinde/caliper-bridge` in your web application.
+
+### Multiple Cursor / editor windows
+
+Global MCP config uses one bridge port (default **9876**). Only one process can listen at a time. When you open a new project window, Caliper MCP **terminates the prior Caliper MCP process** that held the port so the new relay can bind. Browser tabs reconnect automatically via the bridge client.
+
+Check `caliper://runtime` for `bridgeListening`, `bridgeSessionId`, and `connectedTabCount`. If takeover is unwanted, set `CALIPER_BRIDGE_NO_PREEMPT=1` or use a different `--port` per config.
 
 ### 4. Usage
 

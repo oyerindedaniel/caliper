@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { z } from "zod";
 import {
@@ -23,15 +24,12 @@ import { createLogger } from "../utils/logger.js";
 import { generateId } from "../utils/id.js";
 import { BridgeTimeoutError, BridgeValidationError } from "../utils/errors.js";
 import { DEFAULT_BRIDGE_PORT, BRIDGE_REQUEST_TIMEOUT_MS } from "../shared/constants.js";
+import { isBridgePreemptDisabled, preemptCaliperBridgePortHolder } from "../utils/port-holder.js";
 
 import { EventEmitter } from "events";
 import { BRIDGE_EVENTS } from "../shared/events.js";
 
 const logger = createLogger("mcp-bridge");
-
-function getExponentialBackoff(attempt: number, baseDelay: number): number {
-  return Math.pow(2, attempt) * baseDelay;
-}
 
 export class BridgeService extends EventEmitter {
   private wss: WebSocketServer | null = null;
@@ -40,66 +38,102 @@ export class BridgeService extends EventEmitter {
     (result: CaliperActionResult | { error: string }) => void
   >();
   private startupError: string | null = null;
+  private bridgeSessionId: string | null = null;
+  private boundPort: number | null = null;
 
   constructor() {
     super();
   }
 
-  async start(port: number = DEFAULT_BRIDGE_PORT, retries: number = 3): Promise<void> {
-    if (this.wss) return;
+  isListening(): boolean {
+    return this.wss !== null && this.startupError === null;
+  }
 
-    const attemptStart = (currentPort: number, remaining: number): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        try {
-          const server = new WebSocketServer({ port: currentPort });
+  getStartupError(): string | null {
+    return this.startupError;
+  }
 
-          server.on("listening", () => {
-            this.wss = server;
-            this.init();
-            resolve();
-          });
+  getBridgeSessionId(): string | null {
+    return this.bridgeSessionId;
+  }
 
-          server.on("error", (error: NodeJS.ErrnoException) => {
-            if (error.code === "EADDRINUSE" && remaining > 0) {
-              const attemptNum = retries - remaining + 1;
-              const delay = getExponentialBackoff(attemptNum - 1, 500);
+  getBoundPort(): number | null {
+    return this.boundPort;
+  }
 
-              logger.warn(
-                `Port ${currentPort} is currently in use. Retrying in ${delay}ms... (Attempt ${attemptNum}/${retries})`
-              );
-              server.close();
-              server.removeAllListeners();
+  getConnectedTabCount(): number {
+    return tabManager.getTabCount();
+  }
 
-              setTimeout(() => {
-                attemptStart(currentPort, remaining - 1)
-                  .then(resolve)
-                  .catch(reject);
-              }, delay);
-            } else {
-              const errorMessage =
-                error.code === "EADDRINUSE"
-                  ? `Port ${currentPort} is already in use by another process. Please close the other instance of Caliper or use a different port.`
-                  : `WebSocket server error: ${String(error)}`;
+  async start(port: number = DEFAULT_BRIDGE_PORT): Promise<void> {
+    if (this.wss) {
+      return;
+    }
 
-              logger.error(errorMessage);
-              this.startupError = errorMessage;
-              server.close();
-              reject(new Error(errorMessage));
-            }
-          });
-        } catch (error) {
-          reject(error);
-        }
-      });
-    };
+    this.startupError = null;
+    this.bridgeSessionId = null;
+    this.boundPort = null;
 
     try {
-      await attemptStart(port, retries);
+      await this.bindWebSocketServer(port);
     } catch (error: unknown) {
-      if (!this.startupError) {
-        this.startupError = `Failed to start WebSocket relay after multiple attempts: ${String(error)}`;
+      const errno = error as NodeJS.ErrnoException;
+      if (errno.code === "EADDRINUSE" && !isBridgePreemptDisabled()) {
+        const preempt = await preemptCaliperBridgePortHolder(port);
+        if (preempt.ok) {
+          logger.warn(`Preempted prior Caliper MCP bridge on port ${port} (pid ${preempt.pid})`);
+          await this.bindWebSocketServer(port);
+        } else if (preempt.reason === "not_caliper") {
+          const message = preempt.detail;
+          this.startupError = message;
+          throw new Error(message);
+        } else if (preempt.reason === "no_holder") {
+          await this.bindWebSocketServer(port);
+        } else {
+          const message =
+            preempt.reason === "disabled"
+              ? `Port ${port} is in use and bridge preempt is disabled (${preempt.detail})`
+              : preempt.detail;
+          this.startupError = message;
+          throw new Error(message);
+        }
+      } else {
+        const message =
+          errno.code === "EADDRINUSE"
+            ? `Port ${port} is already in use. Close the other Caliper MCP instance or use --port. Set CALIPER_BRIDGE_NO_PREEMPT=1 to disable automatic takeover.`
+            : `WebSocket server error: ${String(error)}`;
+
+        this.startupError = message;
+        throw new Error(message);
       }
     }
+
+    this.bridgeSessionId = randomUUID();
+    this.boundPort = port;
+    logger.info(
+      `WebSocket relay listening on port ${port} (bridgeSessionId=${this.bridgeSessionId})`
+    );
+  }
+
+  private bindWebSocketServer(port: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        const server = new WebSocketServer({ port });
+
+        server.once("listening", () => {
+          this.wss = server;
+          this.init();
+          resolve();
+        });
+
+        server.once("error", (error: NodeJS.ErrnoException) => {
+          server.close();
+          reject(error);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
   }
 
   private init() {
@@ -153,6 +187,8 @@ export class BridgeService extends EventEmitter {
                 title,
                 isFocused,
               });
+              // Listener: CaliperMcpServer.registerResources → notifyRuntimeConnectionUpdated (caliper://runtime)
+              this.emit(BRIDGE_EVENTS.CONNECTION);
             } else if (message.method === CALIPER_METHODS.TAB_UPDATE) {
               const { isFocused } = message.params;
               if (tabId) {
@@ -205,11 +241,10 @@ export class BridgeService extends EventEmitter {
       ws.on("close", () => {
         if (tabId) {
           tabManager.removeTab(tabId, ws);
+          this.emit(BRIDGE_EVENTS.CONNECTION);
         }
       });
     });
-
-    logger.info(`WebSocket Relay initialized on port ${this.wss.options.port}`);
   }
 
   async call<M extends CaliperBaseMethod>(
@@ -218,6 +253,12 @@ export class BridgeService extends EventEmitter {
   ): Promise<CaliperActionResultFor<M>> {
     if (this.startupError) {
       throw new Error(`Caliper Bridge Unavailable: ${this.startupError}`);
+    }
+
+    if (!this.wss) {
+      throw new Error(
+        "Caliper Bridge relay is not listening. Restart the MCP server or check caliper://runtime."
+      );
     }
 
     const tab = tabManager.getActiveTab();
@@ -268,10 +309,18 @@ export class BridgeService extends EventEmitter {
   async stop() {
     return new Promise<void>((resolve) => {
       if (!this.wss) {
+        this.bridgeSessionId = null;
+        this.boundPort = null;
         resolve();
         return;
       }
-      this.wss.close(() => {
+
+      const server = this.wss;
+      this.wss = null;
+      this.bridgeSessionId = null;
+      this.boundPort = null;
+
+      server.close(() => {
         logger.info("WebSocket relay stopped.");
         resolve();
       });
