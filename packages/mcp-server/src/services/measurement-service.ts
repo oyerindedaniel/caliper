@@ -55,6 +55,13 @@ export class MeasurementService {
   async start(): Promise<void> {
     await bridgeService.start(this.bridgePort);
 
+    if (!bridgeService.isListening()) {
+      throw new Error(
+        bridgeService.getStartupError() ??
+          `Caliper bridge failed to listen on port ${this.bridgePort}`
+      );
+    }
+
     logger.info(`Measurement routing: ${this.runtimeRouting}`);
 
     if (this.engineService && this.runtimeRouting !== CALIPER_MEASUREMENT_ROUTING.ATTACHED) {
@@ -135,6 +142,11 @@ export class MeasurementService {
       engineHealthUrl: this.engineService?.url ?? null,
       activeTabId: activeTab?.id ?? null,
       activeTabUrl: activeTab?.url ?? null,
+      bridgePort: bridgeService.getBoundPort() ?? this.bridgePort,
+      bridgeListening: bridgeService.isListening(),
+      bridgeError: bridgeService.getStartupError(),
+      bridgeSessionId: bridgeService.getBridgeSessionId(),
+      connectedTabCount: bridgeService.getConnectedTabCount(),
     };
   }
 

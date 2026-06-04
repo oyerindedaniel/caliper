@@ -107,6 +107,7 @@ Usage:
 
 Options:
   -p, --port <number>              WebSocket relay port (default: ${DEFAULT_BRIDGE_PORT})
+      CALIPER_BRIDGE_NO_PREEMPT=1  Do not terminate another Caliper MCP holding the bridge port
       --runtime <mode>             Measurement routing: auto, attached, or engine (default: auto)
       --engine [url]               Enable engine routing (default: ${DEFAULT_ENGINE_URL})
       --engine-url <url>           Explicit caliper-engine base URL
