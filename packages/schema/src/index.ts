@@ -6,4 +6,5 @@ export * from "./engine-control.js";
 export * from "./caliper-runtime-paths.js";
 export * from "./visibility.js";
 export * from "./serialization.js";
+export * from "./walk-result-transport.js";
 export * from "./constants.js";

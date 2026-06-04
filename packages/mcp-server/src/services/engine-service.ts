@@ -6,8 +6,11 @@ import {
   DEFAULT_ENGINE_HOST,
   DEFAULT_ENGINE_PORT,
   EngineHealthSchema,
+  CALIPER_METHODS,
   RpcFactory,
   parseCaliperActionResult,
+  rehydrateWalkAndMeasureResult,
+  isWalkAndMeasureSuccess,
   isCaliperActionResultMethod,
   isJSONRPCErrorResponse,
   isJSONRPCResultResponse,
@@ -91,12 +94,23 @@ export class EngineService {
       throw new Error("Engine RPC returned an unexpected response shape");
     }
 
-    const result = parseCaliperActionResult(payload.result);
-    if (!result || !isCaliperActionResultMethod(result, method)) {
+    const parsed = parseCaliperActionResult(payload.result);
+    if (!parsed || !isCaliperActionResultMethod(parsed, method)) {
       throw new Error("Engine RPC returned an invalid result shape");
     }
 
-    return result;
+    if (isWalkAndMeasureSuccess(parsed)) {
+      const rehydrated = rehydrateWalkAndMeasureResult(parsed);
+      if (!rehydrated.ok) {
+        throw new Error(rehydrated.error);
+      }
+      if (!isCaliperActionResultMethod(rehydrated.result, method)) {
+        throw new Error("Engine RPC returned an invalid result shape");
+      }
+      return rehydrated.result;
+    }
+
+    return parsed;
   }
 
   async stop(): Promise<void> {
