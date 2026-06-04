@@ -187,7 +187,6 @@ export class BridgeService extends EventEmitter {
                 title,
                 isFocused,
               });
-              // Listener: CaliperMcpServer.registerResources → notifyRuntimeConnectionUpdated (caliper://runtime)
               this.emit(BRIDGE_EVENTS.CONNECTION);
             } else if (message.method === CALIPER_METHODS.TAB_UPDATE) {
               const { isFocused } = message.params;
