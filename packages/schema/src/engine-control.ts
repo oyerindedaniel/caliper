@@ -105,6 +105,19 @@ export const CaliperRuntimeChannelRotationSchema = z.object({
   networkFailures: z.boolean().optional(),
 });
 
+export const CaliperRuntimeTripCodeSchema = z.enum([
+  "rate_exceeded",
+  "session_lines_exceeded",
+  "session_bytes_exceeded",
+  "duplicate_streak",
+]);
+
+export const CaliperRuntimeTripSchema = z.object({
+  code: CaliperRuntimeTripCodeSchema,
+  at: z.number(),
+  message: z.string(),
+});
+
 export const CaliperRuntimeFingerprintSchema = z.object({
   seq: z.number().int().nonnegative(),
   counts: CaliperRuntimeChannelCountsSchema,
@@ -112,12 +125,17 @@ export const CaliperRuntimeFingerprintSchema = z.object({
   capturedAt: z.number(),
   redactionApplied: z.boolean().optional(),
   rotated: CaliperRuntimeChannelRotationSchema.optional(),
+  tripped: CaliperRuntimeTripSchema.optional(),
 });
 
 export const CaliperRuntimeCaptureEnabledSchema = z.object({
   enabled: z.boolean(),
   subscribedAt: z.number().optional(),
   projectRoot: z.string().optional(),
+  trippedAt: z.number().optional(),
+  tripCode: CaliperRuntimeTripCodeSchema.optional(),
+  tripMessage: z.string().optional(),
+  trippedBy: z.literal("engine").optional(),
 });
 
 export const CaliperEngineRuntimePathsSchema = z.object({
@@ -151,6 +169,7 @@ export const CaliperEngineRuntimeResourceReadySchema = z.object({
   capturedAt: z.number(),
   redactionApplied: z.boolean().optional(),
   rotated: CaliperRuntimeChannelRotationSchema.optional(),
+  tripped: CaliperRuntimeTripSchema.optional(),
   agentDiscovery: CaliperEngineRuntimeAgentDiscoverySchema,
 });
 
@@ -324,6 +343,8 @@ export type CaliperRuntimeChannelTimestamps = z.infer<
   typeof CaliperRuntimeChannelTimestampsSchema
 >;
 export type CaliperRuntimeFingerprint = z.infer<typeof CaliperRuntimeFingerprintSchema>;
+export type CaliperRuntimeTripCode = z.infer<typeof CaliperRuntimeTripCodeSchema>;
+export type CaliperRuntimeTrip = z.infer<typeof CaliperRuntimeTripSchema>;
 export type CaliperEngineGetRuntimePayload = z.infer<typeof CaliperEngineGetRuntimePayloadSchema>;
 export type CaliperScreenshotRef = z.infer<typeof CaliperScreenshotRefSchema>;
 export type CaliperEngineScrollPayload = z.infer<typeof CaliperEngineScrollPayloadSchema>;
