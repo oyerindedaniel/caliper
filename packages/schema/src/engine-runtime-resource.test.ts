@@ -46,9 +46,7 @@ describe("buildEngineRuntimeResourcePayload", () => {
     expect(payload.captureEnabled).toBe(false);
     expect(payload.tripped?.code).toBe("rate_exceeded");
     expect(payload.channelSubscribeUris).toEqual(CALIPER_ENGINE_RUNTIME_CHANNEL_URIS);
-    expect(payload.agentDiscovery.workflow.some((step) => step.includes("caliper://engine-runtime/console"))).toBe(
-      true
-    );
+    expect(payload.agentDiscovery.workflow.some((step) => step.includes("channelSubscribeUris"))).toBe(true);
     expect(payload.agentDiscovery.workflow.some((step) => step.includes("CALIPER_RUNTIME_RATE_MAX_EVENTS"))).toBe(
       true
     );

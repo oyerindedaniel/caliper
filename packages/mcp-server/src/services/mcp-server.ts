@@ -719,7 +719,7 @@ The output includes:
       "caliper_engine_clear_runtime",
       {
         description:
-          "Clear caliper-engine runtime log files under .caliper/runtime (console, exceptions, logs, network failures). Read caliper://engine-runtime for paths, then subscribe to channel URIs (default caliper://engine-runtime/console) before repro.",
+          "Clear caliper-engine runtime log files under .caliper/runtime (console, exceptions, logs, network failures). Read caliper://engine-runtime for paths and channelSubscribeUris, then subscribe to channel URIs before repro.",
         inputSchema: z.object({}),
       },
       async () => {

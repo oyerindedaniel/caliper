@@ -23,7 +23,7 @@ export function buildEngineRuntimeAgentDiscovery(): CaliperEngineRuntimeAgentDis
     format: "NDJSON — one JSON object per line per channel file.",
     workflow: [
       "1. resources/read caliper://engine-runtime for paths, channelSubscribeUris, and workflow.",
-      "2. resources/subscribe channel URIs you need (default debug: caliper://engine-runtime/console). Subscribe enables only those CDP channels.",
+      "2. resources/subscribe channel URIs you need (from channelSubscribeUris). Subscribe enables only those CDP channels.",
       "3. On notifications/resources/updated, read the discovery resource or the channel resource for fresh seq.",
       "4. Tail/read the NDJSON path for the channel you subscribed to; compare seq to skip handled batches.",
       "5. If tripped is set, tail logs before resubscribe (resubscribe clears files after a trip). Fix the loop, unsubscribe channel URIs, then subscribe again.",
