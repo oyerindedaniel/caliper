@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from "node:fs";
+import type { CaliperRuntimeChannel } from "./caliper-runtime-paths.js";
 import type { CaliperRuntimeCaptureEnabled, CaliperRuntimeTrip } from "./engine-control.js";
 import { CaliperRuntimeCaptureEnabledSchema } from "./engine-control.js";
 
@@ -11,9 +12,17 @@ export function readCaptureEnabledFlag(captureEnabledPath: string): CaliperRunti
   }
 }
 
+export function readCaptureChannelsFromFlag(captureEnabledPath: string): CaliperRuntimeChannel[] {
+  const flag = readCaptureEnabledFlag(captureEnabledPath);
+  if (!flag?.enabled) {
+    return [];
+  }
+  return flag.channels ?? [];
+}
+
 export function isCaptureEnabledOnDisk(captureEnabledPath: string): boolean {
   const flag = readCaptureEnabledFlag(captureEnabledPath);
-  return flag?.enabled === true;
+  return flag?.enabled === true && (flag.channels?.length ?? 0) > 0;
 }
 
 export function writeCaptureEnabledFlag(
@@ -25,10 +34,13 @@ export function writeCaptureEnabledFlag(
 
 export function writeCaptureSubscribeFlag(
   captureEnabledPath: string,
-  projectRoot: string
+  projectRoot: string,
+  channels: readonly CaliperRuntimeChannel[]
 ): void {
+  const uniqueChannels = [...new Set(channels)];
   writeCaptureEnabledFlag(captureEnabledPath, {
     enabled: true,
+    channels: uniqueChannels,
     subscribedAt: Date.now(),
     projectRoot,
   });

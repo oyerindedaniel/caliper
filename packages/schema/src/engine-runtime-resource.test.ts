@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildEngineRuntimeResourcePayload } from "./engine-runtime-resource.js";
+import {
+  buildEngineRuntimeChannelResourcePayload,
+  buildEngineRuntimeResourcePayload,
+} from "./engine-runtime-resource.js";
+import { CALIPER_ENGINE_RUNTIME_CHANNEL_URIS } from "./engine-runtime-uris.js";
 import type { CaliperProjectPaths } from "./caliper-runtime-paths.js";
 
 const projectPaths: CaliperProjectPaths = {
@@ -18,7 +22,7 @@ const projectPaths: CaliperProjectPaths = {
 };
 
 describe("buildEngineRuntimeResourcePayload", () => {
-  it("exposes tripped state and disables capture in the resource body", () => {
+  it("exposes tripped state, channel URIs, and active channels", () => {
     const payload = buildEngineRuntimeResourcePayload({
       projectPaths,
       fingerprint: {
@@ -32,6 +36,7 @@ describe("buildEngineRuntimeResourcePayload", () => {
         },
       },
       captureEnabled: false,
+      activeChannels: [],
     });
 
     if ("available" in payload) {
@@ -40,9 +45,36 @@ describe("buildEngineRuntimeResourcePayload", () => {
 
     expect(payload.captureEnabled).toBe(false);
     expect(payload.tripped?.code).toBe("rate_exceeded");
-    expect(payload.agentDiscovery.workflow.some((step) => step.includes("tripped"))).toBe(true);
+    expect(payload.channelSubscribeUris).toEqual(CALIPER_ENGINE_RUNTIME_CHANNEL_URIS);
+    expect(payload.agentDiscovery.workflow.some((step) => step.includes("caliper://engine-runtime/console"))).toBe(
+      true
+    );
     expect(payload.agentDiscovery.workflow.some((step) => step.includes("CALIPER_RUNTIME_RATE_MAX_EVENTS"))).toBe(
       true
     );
+  });
+});
+
+describe("buildEngineRuntimeChannelResourcePayload", () => {
+  it("returns channel-specific subscribe metadata", () => {
+    const payload = buildEngineRuntimeChannelResourcePayload({
+      channel: "console",
+      projectPaths,
+      fingerprint: {
+        seq: 2,
+        counts: { console: 3, exceptions: 0, logs: 0, networkFailures: 0 },
+        capturedAt: 50,
+      },
+      captureEnabled: true,
+    });
+
+    if ("available" in payload) {
+      throw new Error("expected ready payload");
+    }
+
+    expect(payload.channel).toBe("console");
+    expect(payload.subscribeUri).toBe(CALIPER_ENGINE_RUNTIME_CHANNEL_URIS.console);
+    expect(payload.path).toBe(projectPaths.channelPaths.console);
+    expect(payload.count).toBe(3);
   });
 });

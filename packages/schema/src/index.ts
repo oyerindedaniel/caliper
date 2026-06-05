@@ -4,6 +4,8 @@ export * from "./audit.js";
 export * from "./engine.js";
 export * from "./engine-control.js";
 export * from "./caliper-runtime-paths.js";
+export * from "./engine-runtime-uris.js";
+export * from "./engine-runtime-resource.js";
 export * from "./visibility.js";
 export * from "./serialization.js";
 export * from "./walk-result-transport.js";

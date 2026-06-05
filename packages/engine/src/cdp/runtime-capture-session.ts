@@ -9,7 +9,12 @@ import type {
   CaliperRuntimeLogEntry,
   CaliperRuntimeTrip,
 } from "@oyerinde/caliper-schema";
-import { isCaptureEnabledOnDisk, writeCaptureTrippedFlag } from "@oyerinde/caliper-schema/node";
+import {
+  isCaptureEnabledOnDisk,
+  readCaptureChannelsFromFlag,
+  readCaptureEnabledFlag,
+  writeCaptureTrippedFlag,
+} from "@oyerinde/caliper-schema/node";
 import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import { BoundedLruMap } from "./bounded-lru-map.js";
 import type { CdpClient } from "./cdp-client.js";
@@ -42,7 +47,11 @@ export class RuntimeCaptureSession {
   private readonly projectRoot: string;
   private readonly maxLineBytes: number;
   private readonly networkRequestUrls: BoundedLruMap<string, string>;
+  private readonly activeChannels = new Set<CaliperRuntimeChannel>();
   private captureActive = false;
+  private runtimeDomainEnabled = false;
+  private logDomainEnabled = false;
+  private networkDomainEnabled = false;
   private started = false;
   private tripping = false;
   private captureFlagWatcher: FSWatcher | null = null;
@@ -114,16 +123,16 @@ export class RuntimeCaptureSession {
   }
 
   private captureFlagPollTimer: ReturnType<typeof setInterval> | null = null;
-  private lastPolledCaptureEnabled: boolean | null = null;
+  private lastPolledFlagSignature: string | null = null;
 
   private startCaptureFlagPolling(): void {
     this.stopCaptureFlagPolling();
     this.captureFlagPollTimer = setInterval(() => {
-      const enabled = isCaptureEnabledOnDisk(this.captureEnabledPath);
-      if (enabled === this.lastPolledCaptureEnabled) {
+      const signature = this.readCaptureFlagSignature();
+      if (signature === this.lastPolledFlagSignature) {
         return;
       }
-      this.lastPolledCaptureEnabled = enabled;
+      this.lastPolledFlagSignature = signature;
       void this.applyCaptureFlagFromDisk();
     }, 250);
   }
@@ -134,7 +143,7 @@ export class RuntimeCaptureSession {
     }
     clearInterval(this.captureFlagPollTimer);
     this.captureFlagPollTimer = null;
-    this.lastPolledCaptureEnabled = null;
+    this.lastPolledFlagSignature = null;
   }
 
   private stopCaptureFlagWatcher(): void {
@@ -143,11 +152,22 @@ export class RuntimeCaptureSession {
     this.stopCaptureFlagPolling();
   }
 
+  private readDesiredChannels(): CaliperRuntimeChannel[] {
+    return readCaptureChannelsFromFlag(this.captureEnabledPath);
+  }
+
+  private readCaptureFlagSignature(): string {
+    const flag = readCaptureEnabledFlag(this.captureEnabledPath);
+    return JSON.stringify({
+      enabled: flag?.enabled ?? false,
+      channels: flag?.channels ?? [],
+      trippedAt: flag?.trippedAt ?? null,
+    });
+  }
+
   private async applyCaptureFlagFromDisk(): Promise<void> {
-    const enabled = isCaptureEnabledOnDisk(this.captureEnabledPath);
-    await this.runCaptureTransition(() =>
-      enabled ? this.activateCapture() : this.deactivateCapture()
-    );
+    const desiredChannels = this.readDesiredChannels();
+    await this.runCaptureTransition(() => this.syncCaptureChannels(desiredChannels));
   }
 
   private runCaptureTransition(work: () => Promise<void>): Promise<void> {
@@ -156,49 +176,123 @@ export class RuntimeCaptureSession {
     return next;
   }
 
-  private async activateCapture(): Promise<void> {
-    if (this.captureActive) {
+  private channelsMatch(desired: CaliperRuntimeChannel[]): boolean {
+    if (desired.length !== this.activeChannels.size) {
+      return false;
+    }
+    return desired.every((channel) => this.activeChannels.has(channel));
+  }
+
+  private async syncCaptureChannels(desiredChannels: CaliperRuntimeChannel[]): Promise<void> {
+    if (desiredChannels.length === 0 || !isCaptureEnabledOnDisk(this.captureEnabledPath)) {
+      await this.deactivateCapture();
       return;
     }
 
-    if (this.diskWriter.readFingerprint().tripped !== undefined) {
-      this.diskWriter.clearAll();
+    const desiredSet = new Set(desiredChannels);
+    if (this.captureActive && this.channelsMatch(desiredChannels)) {
+      return;
     }
 
-    this.captureGuard.reset();
-    this.diskWriter.setCaptureEnabled(true);
+    if (!this.captureActive) {
+      if (this.diskWriter.readFingerprint().tripped !== undefined) {
+        this.diskWriter.clearAll();
+      }
+      this.captureGuard.reset();
+      this.diskWriter.setCaptureEnabled(true);
+      this.captureActive = true;
+    }
 
-    await this.client.send("Runtime.enable");
-    await this.client.send("Log.enable");
-    await this.client.send("Network.enable");
+    await this.syncCdpDomains(desiredSet);
+    this.rebuildEventHandlers(desiredSet);
+    this.activeChannels.clear();
+    for (const channel of desiredSet) {
+      this.activeChannels.add(channel);
+    }
+  }
 
-    this.unsubscribeHandlers = [
-      this.client.onEvent<RuntimeConsoleApiCalledEvent>("Runtime.consoleAPICalled", (event) => {
-        this.ingestMappedEntry("console", mapConsoleEvent(event, this.maxLineBytes));
-      }),
-      this.client.onEvent<RuntimeExceptionThrownEvent>("Runtime.exceptionThrown", (event) => {
-        this.ingestMappedEntry("exceptions", mapExceptionEvent(event, this.maxLineBytes));
-      }),
-      this.client.onEvent<LogEntryAddedEvent>("Log.entryAdded", (event) => {
-        this.ingestMappedEntry("logs", mapLogEvent(event, this.maxLineBytes));
-      }),
-      this.client.onEvent<NetworkRequestWillBeSentEvent>("Network.requestWillBeSent", (event) => {
-        this.networkRequestUrls.set(event.requestId, event.request.url);
-      }),
-      this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
-        const requestUrl = event.requestId
-          ? this.networkRequestUrls.get(event.requestId)
-          : undefined;
-        this.ingestMappedEntry("networkFailures", {
-          url: requestUrl ?? "unknown",
-          error: event.errorText ?? "unknown",
-          resourceType: event.type,
-          timestamp: event.timestamp,
-        });
-      }),
-    ];
+  private needsRuntimeDomain(channels: Set<CaliperRuntimeChannel>): boolean {
+    return channels.has("console") || channels.has("exceptions");
+  }
 
-    this.captureActive = true;
+  private async syncCdpDomains(channels: Set<CaliperRuntimeChannel>): Promise<void> {
+    const needRuntime = this.needsRuntimeDomain(channels);
+    const needLog = channels.has("logs");
+    const needNetwork = channels.has("networkFailures");
+
+    if (needRuntime && !this.runtimeDomainEnabled) {
+      await this.client.send("Runtime.enable");
+      this.runtimeDomainEnabled = true;
+    } else if (!needRuntime && this.runtimeDomainEnabled) {
+      await this.client.send("Runtime.disable");
+      this.runtimeDomainEnabled = false;
+    }
+
+    if (needLog && !this.logDomainEnabled) {
+      await this.client.send("Log.enable");
+      this.logDomainEnabled = true;
+    } else if (!needLog && this.logDomainEnabled) {
+      await this.client.send("Log.disable");
+      this.logDomainEnabled = false;
+    }
+
+    if (needNetwork && !this.networkDomainEnabled) {
+      await this.client.send("Network.enable");
+      this.networkDomainEnabled = true;
+    } else if (!needNetwork && this.networkDomainEnabled) {
+      await this.client.send("Network.disable");
+      this.networkDomainEnabled = false;
+    }
+  }
+
+  private rebuildEventHandlers(channels: Set<CaliperRuntimeChannel>): void {
+    for (const unsubscribe of this.unsubscribeHandlers) {
+      unsubscribe();
+    }
+    this.unsubscribeHandlers = [];
+
+    if (channels.has("console")) {
+      this.unsubscribeHandlers.push(
+        this.client.onEvent<RuntimeConsoleApiCalledEvent>("Runtime.consoleAPICalled", (event) => {
+          this.ingestMappedEntry("console", mapConsoleEvent(event, this.maxLineBytes));
+        })
+      );
+    }
+
+    if (channels.has("exceptions")) {
+      this.unsubscribeHandlers.push(
+        this.client.onEvent<RuntimeExceptionThrownEvent>("Runtime.exceptionThrown", (event) => {
+          this.ingestMappedEntry("exceptions", mapExceptionEvent(event, this.maxLineBytes));
+        })
+      );
+    }
+
+    if (channels.has("logs")) {
+      this.unsubscribeHandlers.push(
+        this.client.onEvent<LogEntryAddedEvent>("Log.entryAdded", (event) => {
+          this.ingestMappedEntry("logs", mapLogEvent(event, this.maxLineBytes));
+        })
+      );
+    }
+
+    if (channels.has("networkFailures")) {
+      this.unsubscribeHandlers.push(
+        this.client.onEvent<NetworkRequestWillBeSentEvent>("Network.requestWillBeSent", (event) => {
+          this.networkRequestUrls.set(event.requestId, event.request.url);
+        }),
+        this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
+          const requestUrl = event.requestId
+            ? this.networkRequestUrls.get(event.requestId)
+            : undefined;
+          this.ingestMappedEntry("networkFailures", {
+            url: requestUrl ?? "unknown",
+            error: event.errorText ?? "unknown",
+            resourceType: event.type,
+            timestamp: event.timestamp,
+          });
+        })
+      );
+    }
   }
 
   private async deactivateCapture(): Promise<void> {
@@ -207,14 +301,22 @@ export class RuntimeCaptureSession {
     }
     this.unsubscribeHandlers = [];
     this.networkRequestUrls.clear();
+    this.activeChannels.clear();
 
-    if (this.captureActive) {
+    if (this.runtimeDomainEnabled) {
       await this.client.send("Runtime.disable");
+      this.runtimeDomainEnabled = false;
+    }
+    if (this.logDomainEnabled) {
       await this.client.send("Log.disable");
+      this.logDomainEnabled = false;
+    }
+    if (this.networkDomainEnabled) {
       await this.client.send("Network.disable");
-      this.captureActive = false;
+      this.networkDomainEnabled = false;
     }
 
+    this.captureActive = false;
     this.diskWriter.setCaptureEnabled(false);
     this.tripping = false;
   }
