@@ -22,9 +22,17 @@ import {
   type CaliperMeasurementRouting,
   type CaliperRuntimeFingerprint,
 } from "@oyerinde/caliper-schema";
+import type { CaliperRuntimeChannel } from "@oyerinde/caliper-schema";
 import {
+  buildEngineRuntimeChannelResourcePayload,
   buildEngineRuntimeResourcePayload,
+  CALIPER_ENGINE_RUNTIME_URI,
+  engineRuntimeChannelSubscribeUri,
+  isCaptureEnabledOnDisk,
+  parseEngineRuntimeChannelSubscribeUri,
+  readCaptureChannelsFromFlag,
   resolveCaliperProjectPaths,
+  writeCaptureSubscribeFlag,
 } from "@oyerinde/caliper-schema/node";
 import { bridgeService } from "./bridge-service.js";
 import { createMeasurementService, type MeasurementService } from "./measurement-service.js";
@@ -36,7 +44,6 @@ import { BRIDGE_EVENTS } from "../shared/events.js";
 
 const logger = createLogger("mcp-server");
 
-const CALIPER_ENGINE_RUNTIME_URI = "caliper://engine-runtime";
 const CALIPER_RUNTIME_URI = "caliper://runtime";
 const CALIPER_STATE_URI = "caliper://state";
 
@@ -68,7 +75,9 @@ export class CaliperMcpServer {
   private readonly resourceSubscribeCounts = new Map<string, number>();
   private engineRuntimeFingerprintWatcher: FSWatcher | null = null;
   private lastNotifiedEngineRuntimeSeq = -1;
+  private lastNotifiedTripAt: number | null = null;
   private engineRuntimeCaptureEnabled = false;
+  private readonly subscribedRuntimeChannels = new Set<CaliperRuntimeChannel>();
 
   constructor(options: CaliperMcpServerOptions = {}) {
     this.port = options.port ?? DEFAULT_BRIDGE_PORT;
@@ -92,6 +101,7 @@ export class CaliperMcpServer {
 
   private registerResourceSubscriptionHandlers(): void {
     this.server.server.registerCapabilities({
+      logging: {},
       resources: {
         subscribe: true,
         listChanged: true,
@@ -122,49 +132,59 @@ export class CaliperMcpServer {
   }
 
   private onResourceSubscribed(uri: string): void {
-    if (uri === CALIPER_ENGINE_RUNTIME_URI) {
-      this.setEngineRuntimeCaptureEnabled(true);
+    const channel = parseEngineRuntimeChannelSubscribeUri(uri);
+    if (!channel) {
+      return;
+    }
+
+    const wasEmpty = this.subscribedRuntimeChannels.size === 0;
+    this.subscribedRuntimeChannels.add(channel);
+    this.syncCaptureFlagFromSubscriptions();
+    if (wasEmpty) {
       this.startEngineRuntimeWatcher();
     }
   }
 
   private onResourceUnsubscribed(uri: string): void {
-    if (uri === CALIPER_ENGINE_RUNTIME_URI) {
-      this.setEngineRuntimeCaptureEnabled(false);
+    const channel = parseEngineRuntimeChannelSubscribeUri(uri);
+    if (!channel) {
+      return;
+    }
+
+    this.subscribedRuntimeChannels.delete(channel);
+    this.syncCaptureFlagFromSubscriptions();
+    if (this.subscribedRuntimeChannels.size === 0) {
       this.stopEngineRuntimeWatcher();
     }
   }
 
-  private setEngineRuntimeCaptureEnabled(enabled: boolean): void {
-    this.engineRuntimeCaptureEnabled = enabled;
+  private syncCaptureFlagFromSubscriptions(): void {
     mkdirSync(dirname(this.projectPaths.captureEnabledPath), { recursive: true });
+    const fingerprint = this.readFingerprintFromDisk();
 
-    if (enabled) {
-      writeFileSync(
-        this.projectPaths.captureEnabledPath,
-        JSON.stringify(
-          {
-            enabled: true,
-            subscribedAt: Date.now(),
-            projectRoot: this.projectPaths.projectRoot,
-          },
-          null,
-          2
-        ),
-        "utf8"
-      );
+    if (this.subscribedRuntimeChannels.size === 0) {
+      this.engineRuntimeCaptureEnabled = false;
+      try {
+        unlinkSync(this.projectPaths.captureEnabledPath);
+      } catch {
+        writeFileSync(
+          this.projectPaths.captureEnabledPath,
+          JSON.stringify({ enabled: false }, null, 2),
+          "utf8"
+        );
+      }
       return;
     }
 
-    try {
-      unlinkSync(this.projectPaths.captureEnabledPath);
-    } catch {
-      writeFileSync(
-        this.projectPaths.captureEnabledPath,
-        JSON.stringify({ enabled: false }, null, 2),
-        "utf8"
-      );
+    if (fingerprint?.tripped) {
+      this.engineRuntimeCaptureEnabled = false;
+      return;
     }
+
+    writeCaptureSubscribeFlag(this.projectPaths.captureEnabledPath, this.projectPaths.projectRoot, [
+      ...this.subscribedRuntimeChannels,
+    ]);
+    this.engineRuntimeCaptureEnabled = true;
   }
 
   private startEngineRuntimeWatcher(): void {
@@ -191,15 +211,59 @@ export class CaliperMcpServer {
       return;
     }
 
+    if (fingerprint.tripped) {
+      this.engineRuntimeCaptureEnabled = false;
+      await this.notifyEngineRuntimeTrip(fingerprint);
+    } else if (
+      this.subscribedRuntimeChannels.size > 0 &&
+      !isCaptureEnabledOnDisk(this.projectPaths.captureEnabledPath)
+    ) {
+      this.syncCaptureFlagFromSubscriptions();
+    }
+
     if (fingerprint.seq === this.lastNotifiedEngineRuntimeSeq) {
       return;
     }
 
     this.lastNotifiedEngineRuntimeSeq = fingerprint.seq;
-    await this.server.server
-      .sendResourceUpdated({ uri: CALIPER_ENGINE_RUNTIME_URI })
-      .catch((error) => {
+    await this.notifyEngineRuntimeResourceUpdated();
+  }
+
+  private async notifyEngineRuntimeResourceUpdated(): Promise<void> {
+    const uris = [
+      CALIPER_ENGINE_RUNTIME_URI,
+      ...[...this.subscribedRuntimeChannels].map((channel) =>
+        engineRuntimeChannelSubscribeUri(channel)
+      ),
+    ];
+
+    for (const uri of uris) {
+      await this.server.server.sendResourceUpdated({ uri }).catch((error) => {
         logger.warn("Failed to notify engine-runtime resource update", error);
+      });
+    }
+  }
+
+  private async notifyEngineRuntimeTrip(fingerprint: CaliperRuntimeFingerprint): Promise<void> {
+    const trip = fingerprint.tripped;
+    if (!trip || trip.at === this.lastNotifiedTripAt) {
+      return;
+    }
+
+    this.lastNotifiedTripAt = trip.at;
+    await this.server.server
+      .sendLoggingMessage({
+        level: "error",
+        logger: "caliper-engine-runtime",
+        data: {
+          uri: CALIPER_ENGINE_RUNTIME_URI,
+          tripCode: trip.code,
+          message: trip.message,
+          trippedAt: trip.at,
+        },
+      })
+      .catch((error) => {
+        logger.warn("Failed to notify engine-runtime trip via logging", error);
       });
   }
 
@@ -217,8 +281,28 @@ export class CaliperMcpServer {
     return buildEngineRuntimeResourcePayload({
       projectPaths: this.projectPaths,
       fingerprint,
-      captureEnabled: this.engineRuntimeCaptureEnabled,
+      captureEnabled: this.resolveEngineRuntimeCaptureEnabled(fingerprint),
+      activeChannels: readCaptureChannelsFromFlag(this.projectPaths.captureEnabledPath),
     });
+  }
+
+  private buildEngineRuntimeChannelResourceBody(channel: CaliperRuntimeChannel) {
+    const fingerprint = this.readFingerprintFromDisk();
+    return buildEngineRuntimeChannelResourcePayload({
+      channel,
+      projectPaths: this.projectPaths,
+      fingerprint,
+      captureEnabled: this.resolveEngineRuntimeCaptureEnabled(fingerprint),
+    });
+  }
+
+  private resolveEngineRuntimeCaptureEnabled(
+    fingerprint: CaliperRuntimeFingerprint | null
+  ): boolean {
+    if (fingerprint?.tripped) {
+      return false;
+    }
+    return isCaptureEnabledOnDisk(this.projectPaths.captureEnabledPath);
   }
 
   private notifyRuntimeConnectionUpdated(): void {
@@ -635,7 +719,7 @@ The output includes:
       "caliper_engine_clear_runtime",
       {
         description:
-          "Clear caliper-engine runtime log files under .caliper/runtime (console, exceptions, logs, network failures). Subscribe to caliper://engine-runtime before repro, then read that resource for absolute paths and tail NDJSON files.",
+          "Clear caliper-engine runtime log files under .caliper/runtime (console, exceptions, logs, network failures). Read caliper://engine-runtime for paths and channelSubscribeUris, then subscribe to channel URIs before repro.",
         inputSchema: z.object({}),
       },
       async () => {
@@ -1040,7 +1124,8 @@ Returns the Delta E value and a human-readable interpretation:
       "caliper-engine-runtime",
       CALIPER_ENGINE_RUNTIME_URI,
       {
-        description: `Engine runtime log capture (subscribe-gated). Subscribe to start writing redacted NDJSON under .caliper/runtime/ and receive notifications when seq changes. Read this resource for absolute file paths and agentDiscovery (gitignored files require Read with full path — Glob/Grep often miss them). Primary workflow: subscribe → wait for update → read resource → tail/read channel files locally.`,
+        description:
+          "Engine runtime discovery (read-only). Returns absolute NDJSON paths, channelSubscribeUris, activeChannels, seq, trip state, and agentDiscovery. Subscribe to channel URIs (e.g. caliper://engine-runtime/console) to enable capture for those channels only.",
       },
       async () => {
         const payload = this.buildEngineRuntimeResourceBody();
@@ -1055,6 +1140,37 @@ Returns the Delta E value and a human-readable interpretation:
         };
       }
     );
+
+    const channelDescriptions: Record<CaliperRuntimeChannel, string> = {
+      console:
+        "Subscribe to capture console.log/warn/error (Runtime.consoleAPICalled) into console.ndjson.",
+      exceptions:
+        "Subscribe to capture uncaught JS exceptions (Runtime.exceptionThrown) into exceptions.ndjson.",
+      logs: "Subscribe to capture browser Log API entries (Log.entryAdded) into logs.ndjson.",
+      networkFailures:
+        "Subscribe to capture failed network requests (Network.loadingFailed) into network-failures.ndjson.",
+    };
+
+    for (const channel of ["console", "exceptions", "logs", "networkFailures"] as const) {
+      const uri = engineRuntimeChannelSubscribeUri(channel);
+      this.server.registerResource(
+        `caliper-engine-runtime-${channel}`,
+        uri,
+        { description: channelDescriptions[channel] },
+        async () => {
+          const payload = this.buildEngineRuntimeChannelResourceBody(channel);
+          return {
+            contents: [
+              {
+                uri,
+                mimeType: "application/json",
+                text: JSON.stringify(payload, null, 2),
+              },
+            ],
+          };
+        }
+      );
+    }
 
     this.server.registerResource(
       "caliper-runtime",
@@ -1326,7 +1442,8 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
   }
 
   async stop() {
-    this.setEngineRuntimeCaptureEnabled(false);
+    this.subscribedRuntimeChannels.clear();
+    this.syncCaptureFlagFromSubscriptions();
     this.stopEngineRuntimeWatcher();
     await this.measurementService.stop();
     logger.info("Server stopped.");

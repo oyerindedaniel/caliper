@@ -72,7 +72,11 @@ export class EngineMeasurementSession {
   async initialize(): Promise<void> {
     await this.emulation.enable();
     await this.cssVisibility.enable();
-    await this.runtimeCapture.enable();
+    await this.runtimeCapture.start();
+  }
+
+  async shutdown(): Promise<void> {
+    await this.runtimeCapture.stop();
   }
 
   async dispatchRpc(request: CaliperRpcRequest): Promise<CaliperActionResult> {

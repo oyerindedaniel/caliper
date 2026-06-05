@@ -1,6 +1,14 @@
-import type { CaliperEngineRuntimeAgentDiscovery, CaliperEngineRuntimeResource } from "./engine-control.js";
-import type { CaliperProjectPaths } from "./caliper-runtime-paths.js";
+import type {
+  CaliperEngineRuntimeAgentDiscovery,
+  CaliperEngineRuntimeChannelResource,
+  CaliperEngineRuntimeResource,
+} from "./engine-control.js";
+import type { CaliperProjectPaths, CaliperRuntimeChannel } from "./caliper-runtime-paths.js";
 import type { CaliperRuntimeFingerprint } from "./engine-control.js";
+import {
+  CALIPER_ENGINE_RUNTIME_CHANNEL_URIS,
+  engineRuntimeChannelSubscribeUri,
+} from "./engine-runtime-uris.js";
 
 export function buildEngineRuntimeAgentDiscovery(): CaliperEngineRuntimeAgentDiscovery {
   return {
@@ -14,10 +22,12 @@ export function buildEngineRuntimeAgentDiscovery(): CaliperEngineRuntimeAgentDis
     ],
     format: "NDJSON — one JSON object per line per channel file.",
     workflow: [
-      "1. resources/subscribe caliper://engine-runtime (enables capture and notifications).",
-      "2. On notifications/resources/updated, read this resource again for fresh paths and seq.",
-      "3. Read or tail the channel files you need; compare seq to skip already-handled batches.",
-      "4. Subscribe before repro — events before subscribe are not captured to disk.",
+      "1. resources/read caliper://engine-runtime for paths, channelSubscribeUris, and workflow.",
+      "2. resources/subscribe channel URIs you need (from channelSubscribeUris). Subscribe enables only those CDP channels.",
+      "3. On notifications/resources/updated, read the discovery resource or the channel resource for fresh seq.",
+      "4. Tail/read the NDJSON path for the channel you subscribed to; compare seq to skip handled batches.",
+      "5. If tripped is set, tail logs before resubscribe (resubscribe clears files after a trip). Fix the loop, unsubscribe channel URIs, then subscribe again.",
+      "6. Heavy intentional logging: raise Caliper engine env (default → value) — CALIPER_RUNTIME_RATE_MAX_EVENTS 2000, CALIPER_RUNTIME_RATE_WINDOW_MS 10000, CALIPER_RUNTIME_SESSION_MAX_LINES 50000, CALIPER_RUNTIME_SESSION_MAX_BYTES 64MiB (trip/subscribe), CALIPER_RUNTIME_MAX_LINE_BYTES 8192, CALIPER_RUNTIME_MAX_CHANNEL_BYTES 32MiB (file rotation).",
     ],
     redactionNote:
       "Log lines are redacted best-effort before append (keys and common secret patterns). Not compliance-grade; keep files local.",
@@ -28,6 +38,7 @@ export function buildEngineRuntimeResourcePayload(input: {
   projectPaths: CaliperProjectPaths;
   fingerprint: CaliperRuntimeFingerprint | null;
   captureEnabled: boolean;
+  activeChannels: CaliperRuntimeChannel[];
 }): CaliperEngineRuntimeResource {
   if (!input.fingerprint) {
     return { available: false };
@@ -36,6 +47,8 @@ export function buildEngineRuntimeResourcePayload(input: {
   return {
     seq: input.fingerprint.seq,
     captureEnabled: input.captureEnabled,
+    activeChannels: input.activeChannels,
+    channelSubscribeUris: CALIPER_ENGINE_RUNTIME_CHANNEL_URIS,
     projectRoot: input.projectPaths.projectRoot,
     paths: {
       runtimeDir: input.projectPaths.runtimeDir,
@@ -50,6 +63,28 @@ export function buildEngineRuntimeResourcePayload(input: {
     capturedAt: input.fingerprint.capturedAt,
     redactionApplied: input.fingerprint.redactionApplied,
     rotated: input.fingerprint.rotated,
+    tripped: input.fingerprint.tripped,
     agentDiscovery: buildEngineRuntimeAgentDiscovery(),
+  };
+}
+
+export function buildEngineRuntimeChannelResourcePayload(input: {
+  channel: CaliperRuntimeChannel;
+  projectPaths: CaliperProjectPaths;
+  fingerprint: CaliperRuntimeFingerprint | null;
+  captureEnabled: boolean;
+}): CaliperEngineRuntimeChannelResource {
+  if (!input.fingerprint) {
+    return { available: false };
+  }
+
+  return {
+    channel: input.channel,
+    subscribeUri: engineRuntimeChannelSubscribeUri(input.channel),
+    captureEnabled: input.captureEnabled,
+    seq: input.fingerprint.seq,
+    path: input.projectPaths.channelPaths[input.channel],
+    count: input.fingerprint.counts[input.channel],
+    tripped: input.fingerprint.tripped,
   };
 }

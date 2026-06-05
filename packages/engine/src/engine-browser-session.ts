@@ -92,6 +92,7 @@ export class EngineBrowserSession {
   }
 
   async stop(): Promise<void> {
+    await this.measurementSession.shutdown();
     await this.pageSession.close();
     await stopChrome(this.chromeLaunch);
   }
