@@ -181,11 +181,9 @@ export class CaliperMcpServer {
       return;
     }
 
-    writeCaptureSubscribeFlag(
-      this.projectPaths.captureEnabledPath,
-      this.projectPaths.projectRoot,
-      [...this.subscribedRuntimeChannels]
-    );
+    writeCaptureSubscribeFlag(this.projectPaths.captureEnabledPath, this.projectPaths.projectRoot, [
+      ...this.subscribedRuntimeChannels,
+    ]);
     this.engineRuntimeCaptureEnabled = true;
   }
 
@@ -216,7 +214,10 @@ export class CaliperMcpServer {
     if (fingerprint.tripped) {
       this.engineRuntimeCaptureEnabled = false;
       await this.notifyEngineRuntimeTrip(fingerprint);
-    } else if (this.subscribedRuntimeChannels.size > 0 && !isCaptureEnabledOnDisk(this.projectPaths.captureEnabledPath)) {
+    } else if (
+      this.subscribedRuntimeChannels.size > 0 &&
+      !isCaptureEnabledOnDisk(this.projectPaths.captureEnabledPath)
+    ) {
       this.syncCaptureFlagFromSubscriptions();
     }
 
@@ -1141,7 +1142,8 @@ Returns the Delta E value and a human-readable interpretation:
     );
 
     const channelDescriptions: Record<CaliperRuntimeChannel, string> = {
-      console: "Subscribe to capture console.log/warn/error (Runtime.consoleAPICalled) into console.ndjson.",
+      console:
+        "Subscribe to capture console.log/warn/error (Runtime.consoleAPICalled) into console.ndjson.",
       exceptions:
         "Subscribe to capture uncaught JS exceptions (Runtime.exceptionThrown) into exceptions.ndjson.",
       logs: "Subscribe to capture browser Log API entries (Log.entryAdded) into logs.ndjson.",
