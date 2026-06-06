@@ -73,14 +73,12 @@ export class EngineMeasurementSession {
     await this.cssVisibility.enable();
   }
 
-  async dispatchRpc(intent: CaliperIntent): Promise<CaliperActionResult> {
+  async dispatchIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
     const harnessResult = await this.harness.dispatchIntent(intent);
     return finalizeMeasurementResult(harnessResult, this.cssVisibility, this.emulation);
   }
 
-  async dispatchPageScopedEngineRpc(
-    request: CaliperPageScopedEngineRpcRequest
-  ): Promise<CaliperActionResult> {
+  async dispatchRpc(request: CaliperPageScopedEngineRpcRequest): Promise<CaliperActionResult> {
     const timestamp = Date.now();
 
     switch (request.method) {
