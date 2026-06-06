@@ -1,5 +1,5 @@
 import { caliperTargetToDomQuerySelector } from "@oyerinde/caliper-schema";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type {
   DomDescribeNodeResponse,
   DomGetBoxModelResponse,
@@ -37,7 +37,7 @@ export function boxContentQuadCenter(contentQuad: number[]): { x: number; y: num
 }
 
 export async function resolveSelectorClickPoint(
-  client: CdpClient,
+  client: CdpSendClient,
   selector: string
 ): Promise<{ x: number; y: number } | null> {
   const nodeId = await resolveSelectorToNodeId(client, selector);
@@ -50,7 +50,7 @@ export async function resolveSelectorClickPoint(
 }
 
 export async function resolveSelectorToNodeId(
-  client: CdpClient,
+  client: CdpSendClient,
   selector: string
 ): Promise<number | null> {
   const cssSelector = caliperTargetToDomQuerySelector(selector);
@@ -73,7 +73,7 @@ export async function resolveSelectorToNodeId(
   return queryResult.nodeId || null;
 }
 
-export async function describeNodeSelector(client: CdpClient, nodeId: number): Promise<string> {
+export async function describeNodeSelector(client: CdpSendClient, nodeId: number): Promise<string> {
   const description = await client.send<DomDescribeNodeResponse>("DOM.describeNode", { nodeId });
 
   const attributes = description.node.attributes ?? [];

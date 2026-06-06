@@ -1,13 +1,13 @@
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
 
 export class InjectSession {
   private registered = false;
 
-  constructor(private readonly client: CdpClient) {}
+  constructor(private readonly client: CdpSendClient) {}
 
   async registerCaliperBootstrap(): Promise<void> {
     if (this.registered) {
@@ -41,13 +41,20 @@ function readCaliperInjectScript(): string {
 }
 
 function buildBootstrapExpression(scriptSource: string): string {
-  const bridgeConfig = JSON.stringify({ bridge: { enabled: true, relay: false } });
+  const bridgeConfig = JSON.stringify({
+    bridge: { enabled: true, relay: false, engineStateBinding: true },
+  });
 
   return `(function () {
     if (window.__CALIPER_ENGINE_INJECTED__) {
       return;
     }
     window.__CALIPER_ENGINE_INJECTED__ = true;
+    window.__CALIPER_ENGINE_REPORT_STATE__ = function (state) {
+      if (typeof window.caliperEngineState === "function") {
+        window.caliperEngineState(JSON.stringify(state));
+      }
+    };
     const script = document.createElement("script");
     script.setAttribute("data-config", ${JSON.stringify(bridgeConfig)});
     script.textContent = ${JSON.stringify(scriptSource)};

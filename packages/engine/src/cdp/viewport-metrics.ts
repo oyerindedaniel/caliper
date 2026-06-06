@@ -1,9 +1,9 @@
 import { DEFAULT_AUDIT_VIEWPORT_HEIGHT } from "@oyerinde/caliper-schema";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { PageGetLayoutMetricsResponse } from "./cdp-protocol.js";
 
 export async function resolveAuditViewportHeight(
-  client: CdpClient,
+  client: CdpSendClient,
   explicitHeight?: number
 ): Promise<number> {
   if (explicitHeight !== undefined) {

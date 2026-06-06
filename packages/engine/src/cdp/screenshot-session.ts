@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CaliperScreenshotRef } from "@oyerinde/caliper-schema";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type {
   DomGetBoxModelResponse,
   PageCaptureScreenshotResponse,
@@ -26,7 +26,7 @@ type ScreenshotClip = {
 
 export class ScreenshotSession {
   constructor(
-    private readonly client: CdpClient,
+    private readonly client: CdpSendClient,
     private readonly options: ScreenshotSessionOptions
   ) {
     mkdirSync(options.capturesDirectory, { recursive: true });

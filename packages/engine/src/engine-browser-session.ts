@@ -8,17 +8,13 @@ import {
   waitForChromeDebugPort,
   type ChromeLaunchResult,
 } from "./cdp/chrome-launcher.js";
-import { EmulationSession } from "./cdp/emulation-session.js";
-import {
-  EngineMeasurementSession,
-  type EngineMeasurementSessionOptions,
-} from "./cdp/engine-measurement-session.js";
-import { HarnessSession } from "./cdp/harness-session.js";
-import { PageSession } from "./cdp/page-session.js";
+import { CdpClient } from "./cdp/cdp-client.js";
+import { PageRegistry } from "./cdp/page-registry.js";
 import { findFreePort } from "./cdp/find-free-port.js";
+import type { EngineMeasurementSessionOptions } from "./cdp/engine-measurement-session.js";
 
 export type EngineBrowserSessionOptions = {
-  targetUrl: string;
+  targetUrl?: string | null;
   headless?: boolean;
   chromeExecutablePath?: string;
   engineHost?: string;
@@ -28,55 +24,39 @@ export type EngineBrowserSessionOptions = {
 };
 
 export class EngineBrowserSession {
-  readonly targetUrl: string;
-  readonly measurementSession: EngineMeasurementSession;
+  readonly pageRegistry: PageRegistry;
+  private readonly chromeLaunch: ChromeLaunchResult;
 
-  private constructor(
-    targetUrl: string,
-    private readonly chromeLaunch: ChromeLaunchResult,
-    private readonly pageSession: PageSession,
-    measurementSession: EngineMeasurementSession
-  ) {
-    this.targetUrl = targetUrl;
-    this.measurementSession = measurementSession;
+  private constructor(chromeLaunch: ChromeLaunchResult, pageRegistry: PageRegistry) {
+    this.chromeLaunch = chromeLaunch;
+    this.pageRegistry = pageRegistry;
   }
 
   get url(): string {
-    return this.pageSession.url;
+    return this.pageRegistry.getActiveUrl() ?? "about:blank";
   }
 
-  static async launch(options: EngineBrowserSessionOptions): Promise<EngineBrowserSession> {
+  static async launch(options: EngineBrowserSessionOptions = {}): Promise<EngineBrowserSession> {
+    const launchUrl = options.targetUrl ?? "about:blank";
     const debugPort = await findFreePort();
     const chromeLaunch = await launchChrome({
       debugPort,
-      targetUrl: options.targetUrl,
+      targetUrl: launchUrl,
       executablePath: options.chromeExecutablePath,
       headless: options.headless,
     });
 
     try {
       await waitForChromeDebugPort(debugPort, chromeLaunch);
-      const pageSession = await PageSession.open(debugPort, options.targetUrl);
-      const harnessSession = new HarnessSession(pageSession.client);
-      const emulationSession = new EmulationSession(pageSession.client);
+      const browser = await CdpClient.connectBrowser(debugPort);
+      const pageRegistry = new PageRegistry(browser, {
+        debugPort,
+        measurementOptions: buildMeasurementSessionOptions(options),
+        initialUrl: options.targetUrl ?? null,
+      });
+      await pageRegistry.start();
 
-      const measurementOptions = buildMeasurementSessionOptions(options);
-      const measurementSession = new EngineMeasurementSession(
-        pageSession.client,
-        harnessSession,
-        emulationSession,
-        measurementOptions
-      );
-
-      await measurementSession.initialize();
-      await harnessSession.ensureReady();
-
-      return new EngineBrowserSession(
-        options.targetUrl,
-        chromeLaunch,
-        pageSession,
-        measurementSession
-      );
+      return new EngineBrowserSession(chromeLaunch, pageRegistry);
     } catch (error) {
       await stopChrome(chromeLaunch);
       throw error;
@@ -84,16 +64,15 @@ export class EngineBrowserSession {
   }
 
   async dispatch(request: CaliperRpcRequest): Promise<CaliperActionResult> {
-    return this.measurementSession.dispatchRpc(request);
+    return this.pageRegistry.dispatch(request);
   }
 
   resolveCapturePath(fileName: string): string | null {
-    return this.measurementSession.getScreenshotSession()?.resolveCapturePath(fileName) ?? null;
+    return this.pageRegistry.resolveCapturePath(fileName);
   }
 
   async stop(): Promise<void> {
-    await this.measurementSession.shutdown();
-    await this.pageSession.close();
+    await this.pageRegistry.stop();
     await stopChrome(this.chromeLaunch);
   }
 }

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  CaliperEngineDefaultViewportSchema,
+  CaliperEnginePageSummarySchema,
+} from "./engine-pages.js";
 
 export const CALIPER_RUNTIME_MODES = {
   ATTACHED: "attached",
@@ -43,12 +47,17 @@ export function buildEngineHttpUrl(
   return `http://${host}:${port}${normalizedPath}`;
 }
 
+export { buildEngineStateSseUrl, CALIPER_ENGINE_STATE_SSE_PATH } from "./engine-sse.js";
+
 export const EngineHealthSchema = z.object({
   ok: z.literal(true),
   runtime: z.literal(CALIPER_RUNTIME_MODES.ENGINE),
   version: z.string(),
   sessionId: z.string(),
   activeUrl: z.string().nullable(),
+  activePageId: z.string().nullable(),
+  pages: z.array(CaliperEnginePageSummarySchema),
+  defaultViewport: CaliperEngineDefaultViewportSchema,
   chromeConnected: z.boolean(),
   allowScriptEval: z.boolean(),
   startedAt: z.number(),
@@ -58,7 +67,7 @@ export type EngineHealth = z.infer<typeof EngineHealthSchema>;
 
 export type EngineSessionState = Pick<
   EngineHealth,
-  "sessionId" | "activeUrl" | "chromeConnected" | "startedAt"
+  "sessionId" | "activeUrl" | "activePageId" | "pages" | "chromeConnected" | "startedAt"
 >;
 
 export const CaliperConnectionTargetSchema = z.discriminatedUnion("runtime", [
@@ -70,6 +79,7 @@ export const CaliperConnectionTargetSchema = z.discriminatedUnion("runtime", [
     runtime: z.literal(CALIPER_RUNTIME_MODES.ENGINE),
     sessionId: z.string(),
     activeUrl: z.string().nullable(),
+    activePageId: z.string().nullable(),
   }),
 ]);
 

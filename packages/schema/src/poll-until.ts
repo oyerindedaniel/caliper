@@ -1,6 +1,7 @@
 export type PollUntilOptions = {
   intervalMs?: number;
   timeoutMs?: number;
+  /** Used only when the deadline passes without a truthy result. Throws from tryLoad abort immediately with that error. */
   errorMessage?: string;
 };
 
@@ -13,7 +14,12 @@ export async function pollUntil<T>(
   const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
-    const value = await tryLoad();
+    let value: T | null | undefined | false;
+    try {
+      value = await tryLoad();
+    } catch (error) {
+      throw error instanceof Error ? error : new Error(String(error));
+    }
     if (value) {
       return value;
     }

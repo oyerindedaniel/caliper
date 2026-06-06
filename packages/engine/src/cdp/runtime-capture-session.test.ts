@@ -10,7 +10,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
+import type { RuntimeCaptureGuardOptions } from "./runtime-capture-guard.js";
 import type {
   LogEntryAddedEvent,
   NetworkLoadingFailedEvent,
@@ -87,7 +88,7 @@ function createMockCdpClient() {
     };
   });
 
-  const client = { send, onEvent } as unknown as CdpClient;
+  const client = { send, onEvent } as unknown as CdpSendClient;
 
   return {
     client,
@@ -106,6 +107,21 @@ function createMockCdpClient() {
       return handlers.get(method)?.size ?? 0;
     },
   };
+}
+
+const TEST_PAGE_ID = "test-page-1";
+
+async function startCaptureSession(
+  mock: ReturnType<typeof createMockCdpClient>,
+  options: { projectRoot: string; guard?: RuntimeCaptureGuardOptions }
+): Promise<RuntimeCaptureSession> {
+  const session = new RuntimeCaptureSession({
+    projectRoot: options.projectRoot,
+    guard: options.guard,
+  });
+  await session.start();
+  await session.registerPage(TEST_PAGE_ID, mock.client);
+  return session;
 }
 
 async function waitUntil(
@@ -137,7 +153,7 @@ describe("RuntimeCaptureSession", () => {
 
   it("does not enable CDP domains on start when capture flag is absent", async () => {
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
+    const session = new RuntimeCaptureSession({ projectRoot: tempRoot });
 
     await session.start();
 
@@ -148,9 +164,7 @@ describe("RuntimeCaptureSession", () => {
   it("activates capture immediately when capture flag already exists", async () => {
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-
-    await session.start();
+    await startCaptureSession(mock, { projectRoot: tempRoot });
 
     expect(mock.send).toHaveBeenCalledWith("Runtime.enable");
     expect(mock.send).not.toHaveBeenCalledWith("Log.enable");
@@ -161,8 +175,7 @@ describe("RuntimeCaptureSession", () => {
 
   it("activates capture when capture flag is written after start", async () => {
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    await startCaptureSession(mock, { projectRoot: tempRoot });
 
     writeCaptureEnabledFlag(tempRoot, ["console"]);
 
@@ -174,8 +187,7 @@ describe("RuntimeCaptureSession", () => {
   it("deactivates capture and disables CDP domains when flag is removed", async () => {
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    await startCaptureSession(mock, { projectRoot: tempRoot });
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     removeCaptureEnabledFlag(tempRoot);
@@ -192,18 +204,30 @@ describe("RuntimeCaptureSession", () => {
     writeFileSync(captureEnabledPath(tempRoot), "{not-json", "utf8");
 
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    await startCaptureSession(mock, { projectRoot: tempRoot });
 
     expect(mock.send).not.toHaveBeenCalled();
+  });
+
+  it("enables CDP domains when a page registers into an already-active capture session", async () => {
+    writeCaptureEnabledFlag(tempRoot, ["console"]);
+    const mock = createMockCdpClient();
+    const session = new RuntimeCaptureSession({ projectRoot: tempRoot });
+    await session.start();
+
+    expect(mock.send).not.toHaveBeenCalledWith("Runtime.enable");
+
+    await session.registerPage(TEST_PAGE_ID, mock.client);
+
+    expect(mock.send).toHaveBeenCalledWith("Runtime.enable");
+    expect(mock.handlerCount("Runtime.consoleAPICalled")).toBe(1);
   });
 
   it("batches CDP console events through handlers into the disk writer debounce pipeline", async () => {
     vi.useFakeTimers();
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     for (const text of ["one", "two", "three"]) {
       mock.dispatch("Runtime.consoleAPICalled", {
@@ -228,8 +252,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     mock.dispatch("Runtime.consoleAPICalled", {
       type: "log",
@@ -263,8 +286,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["networkFailures"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     mock.dispatch("Network.requestWillBeSent", {
       requestId: "req-1",
@@ -293,8 +315,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     mock.dispatch("Runtime.consoleAPICalled", {
       type: "log",
@@ -316,8 +337,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["logs"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     mock.dispatch("Log.entryAdded", {
       entry: { source: "network", level: "error", text: "boom", timestamp: 3 },
@@ -334,8 +354,7 @@ describe("RuntimeCaptureSession", () => {
   it("stop closes watcher and deactivates capture", async () => {
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     await session.stop();
@@ -346,8 +365,7 @@ describe("RuntimeCaptureSession", () => {
 
   it("serializes subscribe, unsubscribe, and resubscribe transitions", async () => {
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     await waitUntil(() => mock.send.mock.calls.some((call) => call[0] === "Runtime.enable"));
@@ -369,7 +387,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, {
+    const session = await startCaptureSession(mock, {
       projectRoot: tempRoot,
       guard: {
         rateMaxEvents: 2,
@@ -377,7 +395,6 @@ describe("RuntimeCaptureSession", () => {
         duplicateStreakCount: 1_000,
       },
     });
-    await session.start();
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     for (let index = 0; index < 3; index += 1) {
@@ -414,7 +431,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, {
+    const session = await startCaptureSession(mock, {
       projectRoot: tempRoot,
       guard: {
         rateMaxEvents: 2,
@@ -422,7 +439,6 @@ describe("RuntimeCaptureSession", () => {
         duplicateStreakCount: 1_000,
       },
     });
-    await session.start();
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     for (let index = 0; index < 3; index += 1) {
@@ -460,11 +476,10 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, {
+    const session = await startCaptureSession(mock, {
       projectRoot: tempRoot,
       guard: { rateMaxEvents: 1, sessionMaxLines: 10_000, duplicateStreakCount: 1_000 },
     });
-    await session.start();
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     mock.dispatch("Runtime.consoleAPICalled", {
@@ -496,8 +511,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     mock.dispatch("Runtime.consoleAPICalled", {
@@ -533,8 +547,7 @@ describe("RuntimeCaptureSession", () => {
   it("enables only Log domain when logs channel is subscribed", async () => {
     writeCaptureEnabledFlag(tempRoot, ["logs"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    await startCaptureSession(mock, { projectRoot: tempRoot });
 
     expect(mock.send).toHaveBeenCalledWith("Log.enable");
     expect(mock.send).not.toHaveBeenCalledWith("Runtime.enable");
@@ -547,8 +560,7 @@ describe("RuntimeCaptureSession", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     writeCaptureEnabledFlag(tempRoot, ["logs"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     mock.dispatch("Runtime.consoleAPICalled", {
       type: "log",
@@ -563,8 +575,7 @@ describe("RuntimeCaptureSession", () => {
   it("adds Log capture when logs is added to an active console subscription", async () => {
     writeCaptureEnabledFlag(tempRoot, ["console"]);
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
     await waitUntil(() => mock.handlerCount("Runtime.consoleAPICalled") === 1);
 
     writeCaptureEnabledFlag(tempRoot, ["console", "logs"]);
@@ -579,8 +590,7 @@ describe("RuntimeCaptureSession", () => {
     writeFileSync(captureEnabledPath(tempRoot), JSON.stringify({ enabled: true }), "utf8");
 
     const mock = createMockCdpClient();
-    const session = new RuntimeCaptureSession(mock.client, { projectRoot: tempRoot });
-    await session.start();
+    const session = await startCaptureSession(mock, { projectRoot: tempRoot });
 
     expect(mock.send).not.toHaveBeenCalled();
     expect(mock.handlerCount("Runtime.consoleAPICalled")).toBe(0);

@@ -22,6 +22,11 @@ import {
   CaliperScreenshotRefSchema,
 } from "./engine-control.js";
 import {
+  CaliperEnginePageScopeSchema,
+  CaliperEnginePageSummarySchema,
+  withEnginePageScope,
+} from "./engine-pages.js";
+import {
   JSONRPCRequestSchema as _JSONRPCRequestSchema,
   JSONRPCNotificationSchema as _JSONRPCNotificationSchema,
   JSONRPCResultResponseSchema as _JSONRPCResultResponseSchema,
@@ -295,10 +300,40 @@ export const CaliperActionResultSchema = z.union([
     timestamp: z.number(),
   }),
   z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.LIST_PAGES),
+    pages: z.array(CaliperEnginePageSummarySchema),
+    activePageId: z.string().nullable(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.OPEN_PAGE),
+    pageId: z.string(),
+    url: z.string(),
+    title: z.string(),
+    reused: z.boolean(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.ACTIVATE_PAGE),
+    pageId: z.string(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_ENGINE_METHODS.CLOSE_PAGE),
+    pageId: z.string(),
+    timestamp: z.number(),
+  }),
+  z.object({
     success: z.literal(false),
     method: CaliperRpcMethodSchema,
     selector: z.string().optional(),
     error: z.string(),
+    code: z.string().optional(),
+    details: z.record(z.string(), z.unknown()).optional(),
     timestamp: z.number(),
     binaryPayload: z.custom<Uint8Array>().optional(),
   }),
@@ -317,6 +352,7 @@ export const CaliperAgentStateSchema = z.object({
       secondary: CaliperSelectorInputSchema,
     })
     .nullable(),
+  pageId: z.string().nullable().optional(),
   lastUpdated: z.number(),
 });
 
@@ -444,29 +480,29 @@ export function isBridgeResultResponse(msg: BridgeMessage): msg is BridgeResultR
   return "result" in msg;
 }
 
-export const CaliperSelectPayloadSchema = z.object({
+export const CaliperSelectPayloadSchema = withEnginePageScope({
   selector: z.string(),
 });
 
-export const CaliperMeasurePayloadSchema = z.object({
+export const CaliperMeasurePayloadSchema = withEnginePageScope({
   primarySelector: z.string(),
   secondarySelector: z.string(),
 });
 
-export const CaliperInspectPayloadSchema = z.object({
+export const CaliperInspectPayloadSchema = withEnginePageScope({
   selector: z.string(),
 });
 
-export const CaliperWalkDomPayloadSchema = z.object({
+export const CaliperWalkDomPayloadSchema = withEnginePageScope({
   selector: z.string(),
   depth: z.number().optional(),
 });
 
 export const CaliperWalkAndMeasurePayloadSchema = WalkOptionsSchema.extend({
   selector: z.string(),
-});
+}).extend(CaliperEnginePageScopeSchema.shape);
 
-export const CaliperGetContextPayloadSchema = z.object({});
+export const CaliperGetContextPayloadSchema = CaliperEnginePageScopeSchema;
 
 export type ViewportState = z.infer<typeof ViewportSchema>;
 export type ElementGeometry = z.infer<typeof ElementGeometrySchema>;

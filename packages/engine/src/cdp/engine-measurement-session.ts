@@ -1,17 +1,18 @@
 import {
   CALIPER_ENGINE_METHODS,
   isCaliperEngineRpcRequest,
+  isPageScopedEngineMethod,
   type CaliperActionResult,
   type CaliperEngineRpcRequest,
   type CaliperIntent,
+  type CaliperPageScopedEngineMethod,
   type CaliperRpcRequest,
 } from "@oyerinde/caliper-schema";
 import type { HarnessSession } from "./harness-session.js";
 import type { EmulationSession } from "./emulation-session.js";
 import { CssVisibilitySession } from "./visibility-css.js";
 import { AuditBreakpointsSession } from "./audit-breakpoints.js";
-import type { CdpClient } from "./cdp-client.js";
-import { RuntimeCaptureSession } from "./runtime-capture-session.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import { NavigationSession } from "./navigation-session.js";
 import { StabilizationSession } from "./stabilization-session.js";
 import { ScreenshotSession, type ScreenshotSessionOptions } from "./screenshot-session.js";
@@ -28,7 +29,6 @@ export type EngineMeasurementSessionOptions = {
 export class EngineMeasurementSession {
   private readonly cssVisibility: CssVisibilitySession;
   private readonly auditBreakpoints: AuditBreakpointsSession;
-  private readonly runtimeCapture: RuntimeCaptureSession;
   private readonly navigation: NavigationSession;
   private readonly stabilization: StabilizationSession;
   private readonly screenshot: ScreenshotSession | null;
@@ -36,15 +36,12 @@ export class EngineMeasurementSession {
   private readonly trustedInput: TrustedInputSession;
 
   constructor(
-    private readonly client: CdpClient,
+    private readonly client: CdpSendClient,
     private readonly harness: HarnessSession,
     private readonly emulation: EmulationSession,
     options: EngineMeasurementSessionOptions = {}
   ) {
     this.cssVisibility = new CssVisibilitySession(client);
-    this.runtimeCapture = new RuntimeCaptureSession(client, {
-      projectRoot: options.projectRoot,
-    });
     this.navigation = new NavigationSession(client);
     this.stabilization = new StabilizationSession(client);
     this.screenshot = options.screenshot ? new ScreenshotSession(client, options.screenshot) : null;
@@ -72,16 +69,19 @@ export class EngineMeasurementSession {
   async initialize(): Promise<void> {
     await this.emulation.enable();
     await this.cssVisibility.enable();
-    await this.runtimeCapture.start();
-  }
-
-  async shutdown(): Promise<void> {
-    await this.runtimeCapture.stop();
   }
 
   async dispatchRpc(request: CaliperRpcRequest): Promise<CaliperActionResult> {
     if (isCaliperEngineRpcRequest(request)) {
-      return this.dispatchEngineMethod(request);
+      if (!isPageScopedEngineMethod(request.method)) {
+        throw new Error(
+          `Engine method ${request.method} is handled by PageRegistry, not EngineMeasurementSession`
+        );
+      }
+
+      return this.dispatchEngineMethod(
+        request as Extract<CaliperEngineRpcRequest, { method: CaliperPageScopedEngineMethod }>
+      );
     }
 
     return this.dispatchHarnessIntent(request);
@@ -93,7 +93,7 @@ export class EngineMeasurementSession {
   }
 
   private async dispatchEngineMethod(
-    request: CaliperEngineRpcRequest
+    request: Extract<CaliperEngineRpcRequest, { method: CaliperPageScopedEngineMethod }>
   ): Promise<CaliperActionResult> {
     const timestamp = Date.now();
 
@@ -103,22 +103,6 @@ export class EngineMeasurementSession {
 
       case CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS:
         return this.auditBreakpoints.run(request.params);
-
-      case CALIPER_ENGINE_METHODS.GET_RUNTIME:
-        return {
-          success: true,
-          method: CALIPER_ENGINE_METHODS.GET_RUNTIME,
-          fingerprint: this.runtimeCapture.getFingerprint(),
-          timestamp,
-        };
-
-      case CALIPER_ENGINE_METHODS.CLEAR_RUNTIME:
-        this.runtimeCapture.clear();
-        return {
-          success: true,
-          method: CALIPER_ENGINE_METHODS.CLEAR_RUNTIME,
-          timestamp,
-        };
 
       case CALIPER_ENGINE_METHODS.SCROLL: {
         const position = await this.navigation.scrollTo(

@@ -8,7 +8,7 @@ import {
 import type { HarnessSession } from "./harness-session.js";
 import type { EmulationSession } from "./emulation-session.js";
 import { CssVisibilitySession } from "./visibility-css.js";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import { finalizeMeasurementResult } from "./finalize-measurement-result.js";
 import { resolveAuditViewportHeight } from "./viewport-metrics.js";
 
@@ -16,7 +16,7 @@ type FinalizeMeasurementResult = typeof finalizeMeasurementResult;
 
 export class AuditBreakpointsSession {
   constructor(
-    private readonly client: CdpClient,
+    private readonly client: CdpSendClient,
     private readonly harness: HarnessSession,
     private readonly emulation: EmulationSession,
     private readonly cssVisibility: CssVisibilitySession,

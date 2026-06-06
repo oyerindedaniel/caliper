@@ -30,6 +30,7 @@ import type {
 import { createLogger } from "@caliper/core";
 import { DEFAULT_WS_PORT } from "./constants.js";
 import { createStateStore, initStateSync } from "./state-store.js";
+import { resolveCaliperGlobalStateHandler } from "./types.js";
 import "./types.js";
 
 const logger = createLogger("agent-bridge");
@@ -130,14 +131,12 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
 
           const disposeSync = initStateSync(stateStore, systems, (state) => {
             wsBridge?.sendStateUpdate(state);
+            if (config.engineStateBinding) {
+              window.__CALIPER_ENGINE_REPORT_STATE__?.(state);
+            }
             config.onStateChange?.(state);
             if (config.onStateChangeGlobal) {
-              const globalCallback = (window as unknown as Record<string, unknown>)[
-                config.onStateChangeGlobal
-              ];
-              if (typeof globalCallback === "function") {
-                (globalCallback as (s: typeof state) => void)(state);
-              }
+              resolveCaliperGlobalStateHandler(config.onStateChangeGlobal)?.(state);
             }
           });
 

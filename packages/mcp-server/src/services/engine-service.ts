@@ -26,7 +26,8 @@ import {
 import { resolveCaliperProjectRoot } from "@oyerinde/caliper-schema/node";
 import { generateId } from "../utils/id.js";
 import { createLogger } from "../utils/logger.js";
-import { pollUntil } from "../utils/poll-until.js";
+import { pollUntil } from "@oyerinde/caliper-schema";
+import { EngineStateSseClient, type EngineStateSseCallback } from "./engine-state-sse-client.js";
 
 const logger = createLogger("engine-service");
 
@@ -40,16 +41,30 @@ export class EngineService {
   private readonly engineUrl: string;
   private readonly targetUrl: string | null;
   private readonly allowScriptEval: boolean;
+  private readonly stateSseClient: EngineStateSseClient;
   private spawnedProcess: ChildProcess | null = null;
 
   constructor(options: EngineServiceOptions) {
     this.engineUrl = options.engineUrl.replace(/\/$/, "");
     this.targetUrl = options.targetUrl ?? null;
     this.allowScriptEval = options.allowScriptEval ?? false;
+    this.stateSseClient = new EngineStateSseClient(this.engineUrl);
   }
 
   get url(): string {
     return this.engineUrl;
+  }
+
+  setStateSseCallback(callback: EngineStateSseCallback | null): void {
+    this.stateSseClient.setCallback(callback);
+  }
+
+  startStateSse(): void {
+    this.stateSseClient.start();
+  }
+
+  stopStateSse(): void {
+    this.stateSseClient.stop();
   }
 
   async ensureReady(): Promise<EngineHealth> {
@@ -96,7 +111,25 @@ export class EngineService {
       throw new Error("Engine RPC returned an unexpected response shape");
     }
 
-    const parsed = parseCaliperActionResult(payload.result);
+    return this.parseRpcResult(method, payload.result);
+  }
+
+  async stop(): Promise<void> {
+    this.stopStateSse();
+
+    if (!this.spawnedProcess || this.spawnedProcess.exitCode !== null) {
+      return;
+    }
+
+    this.spawnedProcess.kill();
+    this.spawnedProcess = null;
+  }
+
+  private parseRpcResult<M extends CaliperRpcMethod>(
+    method: M,
+    result: unknown
+  ): CaliperActionResultFor<M> {
+    const parsed = parseCaliperActionResult(result);
     if (!parsed || !isCaliperActionResultMethod(parsed, method)) {
       throw new Error("Engine RPC returned an invalid result shape");
     }
@@ -113,15 +146,6 @@ export class EngineService {
     }
 
     return parsed;
-  }
-
-  async stop(): Promise<void> {
-    if (!this.spawnedProcess || this.spawnedProcess.exitCode !== null) {
-      return;
-    }
-
-    this.spawnedProcess.kill();
-    this.spawnedProcess = null;
   }
 
   private async fetchHealth(): Promise<EngineHealth | null> {

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_ENGINE_HOST, buildEngineHttpUrl } from "@oyerinde/caliper-schema";
-import { pollUntil } from "@engine/utils/poll-until.js";
+import { pollUntil } from "@oyerinde/caliper-schema";
 import { resolveChromeExecutable } from "./resolve-chrome-paths.js";
 
 export type ChromeLaunchOptions = {
