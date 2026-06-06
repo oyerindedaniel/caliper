@@ -7,12 +7,17 @@ import { z } from "zod";
 import {
   DEFAULT_ENGINE_HOST,
   DEFAULT_ENGINE_PORT,
+  CALIPER_ENGINE_STATE_SSE_PATH,
   EngineHealthSchema,
   CaliperRpcRequestSchema,
+  CaliperEngineStateSnapshotSchema,
   RpcFactory,
   buildEngineHttpUrl,
   isId,
   type CaliperActionResult,
+  type CaliperEngineDefaultViewport,
+  type CaliperEnginePageSummary,
+  type CaliperEngineStateSnapshot,
   type CaliperRpcRequest,
   type EngineHealth,
   type EngineSessionState,
@@ -20,6 +25,8 @@ import {
   type RpcErrorInput,
   type RpcResultInput,
 } from "@oyerinde/caliper-schema";
+import { readEngineDefaultViewport } from "./cdp/engine-viewport-config.js";
+import { EngineStateSseHub } from "./engine-state-sse.js";
 
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const packageJsonPath = join(packageRoot, "..", "package.json");
@@ -44,12 +51,21 @@ type EngineHttpErrorBody = {
 
 type EngineHttpJsonBody =
   | EngineHealth
+  | CaliperEngineStateSnapshot
   | ReturnType<typeof RpcFactory.error>
   | ReturnType<typeof RpcFactory.response>
   | EngineHttpErrorBody;
 
 type RpcHandler = (request: CaliperRpcRequest) => Promise<CaliperActionResult>;
 type CaptureHandler = (fileName: string) => string | null;
+
+export type EngineLiveSessionProvider = {
+  getActiveUrl: () => string | null;
+  getActivePageId: () => string | null;
+  listPages: () => CaliperEnginePageSummary[];
+  getDefaultViewport: () => CaliperEngineDefaultViewport;
+  getStateSnapshot: () => CaliperEngineStateSnapshot;
+};
 
 export class CaliperEngineServer {
   readonly host: string;
@@ -63,7 +79,9 @@ export class CaliperEngineServer {
   private chromeConnected = false;
   private rpcHandler: RpcHandler | null = null;
   private captureHandler: CaptureHandler | null = null;
+  private liveSessionProvider: EngineLiveSessionProvider | null = null;
   private readonly allowScriptEval: boolean;
+  private readonly stateSseHub: EngineStateSseHub;
 
   constructor(options: CaliperEngineServerOptions = {}) {
     this.host = options.host ?? DEFAULT_ENGINE_HOST;
@@ -73,6 +91,7 @@ export class CaliperEngineServer {
     this.startedAt = Date.now();
     this.activeUrl = options.targetUrl ?? null;
     this.allowScriptEval = options.allowScriptEval ?? false;
+    this.stateSseHub = new EngineStateSseHub();
   }
 
   get port(): number {
@@ -95,25 +114,52 @@ export class CaliperEngineServer {
     this.chromeConnected = chromeConnected;
   }
 
+  setLiveSessionProvider(provider: EngineLiveSessionProvider | null): void {
+    this.liveSessionProvider = provider;
+  }
+
+  publishState(snapshot: CaliperEngineStateSnapshot): void {
+    this.stateSseHub.publish(snapshot);
+  }
+
   getHealth(): EngineHealth {
+    const live = this.liveSessionProvider;
     return EngineHealthSchema.parse({
       ok: true,
       runtime: "engine",
       version: this.version,
       sessionId: this.sessionId,
-      activeUrl: this.activeUrl,
+      activeUrl: live?.getActiveUrl() ?? this.activeUrl,
+      activePageId: live?.getActivePageId() ?? null,
+      pages: live?.listPages() ?? [],
+      defaultViewport: live?.getDefaultViewport() ?? readEngineDefaultViewport(),
       chromeConnected: this.chromeConnected,
       allowScriptEval: this.allowScriptEval,
       startedAt: this.startedAt,
     });
   }
 
-  getState(): EngineSessionState {
+  getState(): CaliperEngineStateSnapshot {
+    if (this.liveSessionProvider) {
+      return CaliperEngineStateSnapshotSchema.parse(this.liveSessionProvider.getStateSnapshot());
+    }
+
+    return CaliperEngineStateSnapshotSchema.parse({
+      stateSeq: 0,
+      activePageId: null,
+      pages: {},
+    });
+  }
+
+  getSessionState(): EngineSessionState {
+    const health = this.getHealth();
     return {
-      sessionId: this.sessionId,
-      activeUrl: this.activeUrl,
-      chromeConnected: this.chromeConnected,
-      startedAt: this.startedAt,
+      sessionId: health.sessionId,
+      activeUrl: health.activeUrl,
+      activePageId: health.activePageId,
+      pages: health.pages,
+      chromeConnected: health.chromeConnected,
+      startedAt: health.startedAt,
     };
   }
 
@@ -143,6 +189,8 @@ export class CaliperEngineServer {
       return;
     }
 
+    this.stateSseHub.close();
+
     const currentServer = this.server;
     this.server = null;
 
@@ -166,6 +214,16 @@ export class CaliperEngineServer {
 
       if (incoming.method === "GET" && requestUrl.pathname === "/health") {
         this.writeJson(outgoing, 200, this.getHealth());
+        return;
+      }
+
+      if (incoming.method === "GET" && requestUrl.pathname === "/state") {
+        this.writeJson(outgoing, 200, this.getState());
+        return;
+      }
+
+      if (incoming.method === "GET" && requestUrl.pathname === CALIPER_ENGINE_STATE_SSE_PATH) {
+        this.stateSseHub.attachClient(outgoing, this.getState());
         return;
       }
 

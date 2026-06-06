@@ -9,6 +9,7 @@ import {
   type CaliperParams,
   type CaliperRuntimeConnection,
 } from "@oyerinde/caliper-schema";
+import type { EngineStateSseCallback } from "./engine-state-sse-client.js";
 import { tabManager } from "./tab-manager.js";
 import { bridgeService } from "./bridge-service.js";
 import { EngineService } from "./engine-service.js";
@@ -127,6 +128,18 @@ export class MeasurementService {
 
   getEngineHealthUrl(): string | null {
     return this.engineService?.url ?? null;
+  }
+
+  setEngineStateSseCallback(callback: EngineStateSseCallback | null): void {
+    this.engineService?.setStateSseCallback(callback);
+  }
+
+  startEngineStateSse(): void {
+    this.engineService?.startStateSse();
+  }
+
+  stopEngineStateSse(): void {
+    this.engineService?.stopStateSse();
   }
 
   getRuntimeConnection(): CaliperRuntimeConnection {

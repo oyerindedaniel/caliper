@@ -3,7 +3,7 @@ import {
   type CaliperActionResult,
   type CaliperEngineEvalScriptPayload,
 } from "@oyerinde/caliper-schema";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse, RuntimeExceptionDetails } from "./cdp-protocol.js";
 
 import { PAGE_AUTOMATION_DISABLED_MESSAGE } from "./page-automation.js";
@@ -39,7 +39,7 @@ export type ScriptEvalSessionOptions = {
 
 export class ScriptEvalSession {
   constructor(
-    private readonly client: CdpClient,
+    private readonly client: CdpSendClient,
     private readonly options: ScriptEvalSessionOptions
   ) {}
 

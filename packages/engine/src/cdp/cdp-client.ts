@@ -3,9 +3,9 @@ import WebSocket from "ws";
 import { DEFAULT_ENGINE_HOST, buildEngineHttpUrl, isLoopbackHost } from "@oyerinde/caliper-schema";
 import type { CdpPageTarget } from "./cdp-protocol.js";
 
-/** Command response envelope: `{ id, result?, error? }`. Domain result shapes live in cdp-protocol.ts and connect via `send<T>()`. */
 type CdpCommandResponseEnvelope = {
   id: number;
+  sessionId?: string;
   result?: unknown;
   error?: {
     code: number;
@@ -14,9 +14,9 @@ type CdpCommandResponseEnvelope = {
   };
 };
 
-/** Event envelope: `{ method, params? }`. Event param shapes live in cdp-protocol.ts and connect via `onEvent<T>()`. */
 type CdpEventEnvelope = {
   method: string;
+  sessionId?: string;
   params?: unknown;
 };
 
@@ -27,11 +27,16 @@ type PendingCommand = {
   reject: (reason: Error) => void;
 };
 
-type CdpEventHandler = (params: unknown) => void;
+type CdpEventHandler = (params: unknown, sessionId?: string) => void;
+
+type RegisteredEventHandler = {
+  handler: CdpEventHandler;
+  sessionId?: string;
+};
 
 export class CdpClient {
   private readonly pendingCommands = new Map<number, PendingCommand>();
-  private readonly eventHandlers = new Map<string, Set<CdpEventHandler>>();
+  private readonly eventHandlers = new Map<string, Set<RegisteredEventHandler>>();
   private nextCommandId = 1;
 
   private constructor(private readonly socket: WebSocket) {
@@ -53,27 +58,55 @@ export class CdpClient {
     return new CdpClient(socket);
   }
 
-  static async listPageTargets(debugPort: number): Promise<CdpPageTarget[]> {
-    const response = await fetch(buildEngineHttpUrl(DEFAULT_ENGINE_HOST, debugPort, "/json/list"));
+  static async connectBrowser(debugPort: number): Promise<CdpClient> {
+    const response = await fetch(
+      buildEngineHttpUrl(DEFAULT_ENGINE_HOST, debugPort, "/json/version")
+    );
     if (!response.ok) {
-      throw new Error(`Failed to list Chrome debug targets (${response.status})`);
+      throw new Error(`Failed to read Chrome browser debug endpoint (${response.status})`);
     }
 
-    return (await response.json()) as CdpPageTarget[];
+    const version = (await response.json()) as { webSocketDebuggerUrl: string };
+    return CdpClient.connect(version.webSocketDebuggerUrl);
   }
 
-  onEvent<TParams = unknown>(method: string, handler: (params: TParams) => void): () => void {
-    const wrapped: CdpEventHandler = (params) => handler(params as TParams);
-    const handlers = this.eventHandlers.get(method) ?? new Set<CdpEventHandler>();
-    handlers.add(wrapped);
+  static async listPageTargets(debugPort: number): Promise<CdpPageTarget[]> {
+    try {
+      const response = await fetch(
+        buildEngineHttpUrl(DEFAULT_ENGINE_HOST, debugPort, "/json/list")
+      );
+      if (!response.ok) {
+        return [];
+      }
+
+      return (await response.json()) as CdpPageTarget[];
+    } catch {
+      return [];
+    }
+  }
+
+  onEvent<TParams = unknown>(
+    method: string,
+    handler: (params: TParams, eventSessionId?: string) => void,
+    sessionId?: string
+  ): () => void {
+    const wrapped: CdpEventHandler = (params, eventSessionId) =>
+      handler(params as TParams, eventSessionId);
+    const registration: RegisteredEventHandler = { handler: wrapped, sessionId };
+    const handlers = this.eventHandlers.get(method) ?? new Set<RegisteredEventHandler>();
+    handlers.add(registration);
     this.eventHandlers.set(method, handlers);
 
     return () => {
-      handlers.delete(wrapped);
+      handlers.delete(registration);
     };
   }
 
-  async send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
+  async send<T = unknown>(
+    method: string,
+    params?: Record<string, unknown>,
+    sessionId?: string
+  ): Promise<T> {
     const commandId = this.nextCommandId;
     this.nextCommandId += 1;
 
@@ -83,22 +116,31 @@ export class CdpClient {
         reject,
       });
 
-      this.socket.send(JSON.stringify({ id: commandId, method, params }));
+      const envelope: Record<string, unknown> = { id: commandId, method, params };
+      if (sessionId) {
+        envelope.sessionId = sessionId;
+      }
+
+      this.socket.send(JSON.stringify(envelope));
     });
   }
 
-  async waitForEvent(method: string, timeoutMs = 30_000): Promise<void> {
+  async waitForEvent(method: string, timeoutMs = 30_000, sessionId?: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         unsubscribe();
         reject(new Error(`Timed out waiting for CDP event ${method}`));
       }, timeoutMs);
 
-      const unsubscribe = this.onEvent(method, () => {
-        clearTimeout(timer);
-        unsubscribe();
-        resolve();
-      });
+      const unsubscribe = this.onEvent(
+        method,
+        () => {
+          clearTimeout(timer);
+          unsubscribe();
+          resolve();
+        },
+        sessionId
+      );
     });
   }
 
@@ -117,7 +159,7 @@ export class CdpClient {
     const message = JSON.parse(rawMessage) as CdpWireMessage;
 
     if (!isCommandResponse(message)) {
-      this.dispatchEvent(message.method, message.params);
+      this.dispatchEvent(message.method, message.params, message.sessionId);
       return;
     }
 
@@ -136,14 +178,18 @@ export class CdpClient {
     pendingCommand.resolve(message.result);
   }
 
-  private dispatchEvent(method: string, params: unknown): void {
+  private dispatchEvent(method: string, params: unknown, sessionId?: string): void {
     const handlers = this.eventHandlers.get(method);
     if (!handlers) {
       return;
     }
 
-    for (const handler of handlers) {
-      handler(params);
+    for (const registration of handlers) {
+      if (registration.sessionId !== undefined && registration.sessionId !== sessionId) {
+        continue;
+      }
+
+      registration.handler(params, sessionId);
     }
   }
 }

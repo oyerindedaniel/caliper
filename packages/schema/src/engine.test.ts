@@ -15,6 +15,11 @@ import {
   EngineHealthSchema,
   isLoopbackHost,
 } from "./engine.js";
+import {
+  DEFAULT_ENGINE_VIEWPORT_WIDTH,
+  DEFAULT_ENGINE_VIEWPORT_HEIGHT,
+  DEFAULT_ENGINE_VIEWPORT_DEVICE_SCALE_FACTOR,
+} from "./engine-pages.js";
 
 describe("engine schema", () => {
   it("parses engine health", () => {
@@ -24,6 +29,13 @@ describe("engine schema", () => {
       version: "0.0.0",
       sessionId: "session-1",
       activeUrl: "http://localhost:3000",
+      activePageId: null,
+      pages: [],
+      defaultViewport: {
+        width: DEFAULT_ENGINE_VIEWPORT_WIDTH,
+        height: DEFAULT_ENGINE_VIEWPORT_HEIGHT,
+        deviceScaleFactor: DEFAULT_ENGINE_VIEWPORT_DEVICE_SCALE_FACTOR,
+      },
       chromeConnected: false,
       allowScriptEval: false,
       startedAt: 1_700_000_000_000,
@@ -46,6 +58,7 @@ describe("engine schema", () => {
         runtime: CALIPER_RUNTIME_MODES.ENGINE,
         sessionId: "session-1",
         activeUrl: null,
+        activePageId: null,
       }).runtime
     ).toBe("engine");
   });
@@ -81,7 +94,10 @@ describe("engine schema", () => {
   });
 
   it("builds loopback engine URLs from shared host constants", () => {
-    expect(buildEngineHttpUrl(DEFAULT_ENGINE_HOST, DEFAULT_ENGINE_PORT, "/health")).toBe(
+    expect(buildEngineHttpUrl(DEFAULT_ENGINE_HOST, DEFAULT_ENGINE_PORT, "/captures/test.png")).toBe(
+      `http://${DEFAULT_ENGINE_HOST}:${DEFAULT_ENGINE_PORT}/captures/test.png`
+    );
+     expect(buildEngineHttpUrl(DEFAULT_ENGINE_HOST, DEFAULT_ENGINE_PORT, "/health")).toBe(
       `http://${DEFAULT_ENGINE_HOST}:${DEFAULT_ENGINE_PORT}/health`
     );
     expect(isLoopbackHost(DEFAULT_ENGINE_HOST)).toBe(true);

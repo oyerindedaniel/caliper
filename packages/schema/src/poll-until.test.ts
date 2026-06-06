@@ -25,4 +25,12 @@ describe("pollUntil", () => {
       })
     ).rejects.toThrow("not ready");
   });
+
+  it("aborts immediately when the callback throws", async () => {
+    await expect(
+      pollUntil(async () => {
+        throw new Error("fatal");
+      }, { intervalMs: 1, timeoutMs: 500, errorMessage: "not ready" })
+    ).rejects.toThrow("fatal");
+  });
 });

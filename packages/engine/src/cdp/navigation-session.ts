@@ -1,10 +1,10 @@
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
 import { resolveSelectorToNodeId } from "./dom-resolver.js";
 import { readWindowScrollPosition } from "./window-scroll.js";
 
 export class NavigationSession {
-  constructor(private readonly client: CdpClient) {}
+  constructor(private readonly client: CdpSendClient) {}
 
   async scrollTo(
     scrollX?: number,

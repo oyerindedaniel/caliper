@@ -1,10 +1,10 @@
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { AnimationGetPlaybackRateResponse } from "./cdp-protocol.js";
 
 export class StabilizationSession {
   private savedPlaybackRate: number | null = null;
 
-  constructor(private readonly client: CdpClient) {}
+  constructor(private readonly client: CdpSendClient) {}
 
   async pauseAnimations(): Promise<{ playbackRate: number }> {
     await this.client.send("Animation.enable");

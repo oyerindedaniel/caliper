@@ -247,3 +247,42 @@ export type AnimationGetPlaybackRateResponse = {
 export type PageCaptureScreenshotResponse = {
   data: string;
 };
+
+/** CDP Target.TargetInfo — https://chromedevtools.github.io/devtools-protocol/tot/Target/#type-TargetInfo */
+export type TargetInfo = {
+  targetId: string;
+  type: string;
+  title: string;
+  url: string;
+  attached: boolean;
+};
+
+/** CDP Target.attachedToTarget — https://chromedevtools.github.io/devtools-protocol/tot/Target/#event-attachedToTarget */
+export type TargetAttachedToTargetEvent = {
+  sessionId: string;
+  targetInfo: TargetInfo;
+  waitingForDebugger: boolean;
+};
+
+/** CDP Target.detachedFromTarget */
+export type TargetDetachedFromTargetEvent = {
+  sessionId: string;
+  targetId?: string;
+};
+
+/** CDP Target.targetInfoChanged */
+export type TargetTargetInfoChangedEvent = {
+  targetInfo: TargetInfo;
+};
+
+/** CDP Target.targetDestroyed */
+export type TargetTargetDestroyedEvent = {
+  targetId: string;
+};
+
+/** CDP Runtime.bindingCalled */
+export type RuntimeBindingCalledEvent = {
+  name: string;
+  payload: string;
+  executionContextId: number;
+};

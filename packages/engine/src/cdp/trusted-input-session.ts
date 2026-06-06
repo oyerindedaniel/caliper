@@ -4,7 +4,7 @@ import {
   type CaliperEngineClickAtPayload,
   type CaliperEnginePressKeyPayload,
 } from "@oyerinde/caliper-schema";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import { buildKeyEventSequence } from "./engine-key-events.js";
 import { resolveSelectorClickPoint } from "./dom-resolver.js";
 import { PAGE_AUTOMATION_DISABLED_MESSAGE } from "./page-automation.js";
@@ -29,7 +29,7 @@ function mouseButtonsForPress(button: MouseButton): number {
 
 export class TrustedInputSession {
   constructor(
-    private readonly client: CdpClient,
+    private readonly client: CdpSendClient,
     private readonly navigation: NavigationSession,
     private readonly options: TrustedInputSessionOptions
   ) {}

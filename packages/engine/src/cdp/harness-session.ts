@@ -1,6 +1,6 @@
 import type { CaliperActionResult, CaliperIntent } from "@oyerinde/caliper-schema";
-import { pollUntil } from "@engine/utils/poll-until.js";
-import type { CdpClient } from "./cdp-client.js";
+import { pollUntil } from "@oyerinde/caliper-schema";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
 import { InjectSession } from "./inject-session.js";
 
@@ -21,7 +21,7 @@ export class CaliperHarnessLoadError extends Error {
 export class HarnessSession {
   private readonly injectSession: InjectSession;
 
-  constructor(private readonly client: CdpClient) {
+  constructor(private readonly client: CdpSendClient) {
     this.injectSession = new InjectSession(client);
   }
 

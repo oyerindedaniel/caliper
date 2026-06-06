@@ -17,7 +17,7 @@ import {
 } from "@oyerinde/caliper-schema/node";
 import { resolveCaliperProjectPaths } from "@oyerinde/caliper-schema/node";
 import { BoundedLruMap } from "./bounded-lru-map.js";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type {
   LogEntryAddedEvent,
   NetworkLoadingFailedEvent,
@@ -40,38 +40,71 @@ export type RuntimeCaptureSessionOptions = {
   guard?: RuntimeCaptureGuardOptions;
 };
 
+type RuntimeCapturePageState = {
+  client: CdpSendClient;
+  runtimeDomainEnabled: boolean;
+  logDomainEnabled: boolean;
+  networkDomainEnabled: boolean;
+  unsubscribeHandlers: Array<() => void>;
+  networkRequestUrls: BoundedLruMap<string, string>;
+};
+
 export class RuntimeCaptureSession {
   private readonly diskWriter: RuntimeDiskWriter;
   private readonly captureGuard: RuntimeCaptureGuard;
   private readonly captureEnabledPath: string;
   private readonly projectRoot: string;
   private readonly maxLineBytes: number;
-  private readonly networkRequestUrls: BoundedLruMap<string, string>;
+  private readonly pageStates = new Map<string, RuntimeCapturePageState>();
   private readonly activeChannels = new Set<CaliperRuntimeChannel>();
   private captureActive = false;
-  private runtimeDomainEnabled = false;
-  private logDomainEnabled = false;
-  private networkDomainEnabled = false;
   private started = false;
   private tripping = false;
   private captureFlagWatcher: FSWatcher | null = null;
-  private unsubscribeHandlers: Array<() => void> = [];
   private transitionChain: Promise<void> = Promise.resolve();
 
-  constructor(
-    private readonly client: CdpClient,
-    options: RuntimeCaptureSessionOptions = {}
-  ) {
+  constructor(options: RuntimeCaptureSessionOptions = {}) {
     const projectPaths = resolveCaliperProjectPaths(options.projectRoot ?? process.cwd());
     this.projectRoot = projectPaths.projectRoot;
     this.captureEnabledPath = projectPaths.captureEnabledPath;
     this.maxLineBytes =
       options.maxLineBytes ?? readMaxRuntimeLineBytesFromEnvironment(DEFAULT_MAX_LINE_BYTES);
-    this.networkRequestUrls = new BoundedLruMap(
-      options.networkUrlMapMax ?? readNetworkUrlMapMaxFromEnvironment(DEFAULT_NETWORK_URL_MAP_MAX)
-    );
     this.diskWriter = new RuntimeDiskWriter({ projectPaths });
     this.captureGuard = new RuntimeCaptureGuard(options.guard);
+  }
+
+  async registerPage(pageId: string, client: CdpSendClient): Promise<void> {
+    if (this.pageStates.has(pageId)) {
+      return;
+    }
+
+    const pageState: RuntimeCapturePageState = {
+      client,
+      runtimeDomainEnabled: false,
+      logDomainEnabled: false,
+      networkDomainEnabled: false,
+      unsubscribeHandlers: [],
+      networkRequestUrls: new BoundedLruMap(
+        readNetworkUrlMapMaxFromEnvironment(DEFAULT_NETWORK_URL_MAP_MAX)
+      ),
+    };
+    this.pageStates.set(pageId, pageState);
+
+    if (this.captureActive && this.activeChannels.size > 0) {
+      const channels = new Set(this.activeChannels);
+      await this.syncCdpDomains(pageState, channels);
+      this.rebuildEventHandlers(pageState, channels);
+    }
+  }
+
+  async unregisterPage(pageId: string): Promise<void> {
+    const pageState = this.pageStates.get(pageId);
+    if (!pageState) {
+      return;
+    }
+
+    await this.teardownPageHandlers(pageState);
+    this.pageStates.delete(pageId);
   }
 
   async start(): Promise<void> {
@@ -90,7 +123,9 @@ export class RuntimeCaptureSession {
   }
 
   clear(): void {
-    this.networkRequestUrls.clear();
+    for (const pageState of this.pageStates.values()) {
+      pageState.networkRequestUrls.clear();
+    }
     this.diskWriter.clearAll();
     this.captureGuard.reset();
   }
@@ -203,8 +238,11 @@ export class RuntimeCaptureSession {
       this.captureActive = true;
     }
 
-    await this.syncCdpDomains(desiredSet);
-    this.rebuildEventHandlers(desiredSet);
+    for (const pageState of this.pageStates.values()) {
+      await this.syncCdpDomains(pageState, desiredSet);
+      this.rebuildEventHandlers(pageState, desiredSet);
+    }
+
     this.activeChannels.clear();
     for (const channel of desiredSet) {
       this.activeChannels.add(channel);
@@ -215,76 +253,100 @@ export class RuntimeCaptureSession {
     return channels.has("console") || channels.has("exceptions");
   }
 
-  private async syncCdpDomains(channels: Set<CaliperRuntimeChannel>): Promise<void> {
+  private async syncCdpDomains(
+    pageState: RuntimeCapturePageState,
+    channels: Set<CaliperRuntimeChannel>
+  ): Promise<void> {
     const needRuntime = this.needsRuntimeDomain(channels);
     const needLog = channels.has("logs");
     const needNetwork = channels.has("networkFailures");
 
-    if (needRuntime && !this.runtimeDomainEnabled) {
-      await this.client.send("Runtime.enable");
-      this.runtimeDomainEnabled = true;
-    } else if (!needRuntime && this.runtimeDomainEnabled) {
-      await this.client.send("Runtime.disable");
-      this.runtimeDomainEnabled = false;
+    if (needRuntime && !pageState.runtimeDomainEnabled) {
+      await pageState.client.send("Runtime.enable");
+      pageState.runtimeDomainEnabled = true;
+    } else if (!needRuntime && pageState.runtimeDomainEnabled) {
+      await pageState.client.send("Runtime.disable");
+      pageState.runtimeDomainEnabled = false;
     }
 
-    if (needLog && !this.logDomainEnabled) {
-      await this.client.send("Log.enable");
-      this.logDomainEnabled = true;
-    } else if (!needLog && this.logDomainEnabled) {
-      await this.client.send("Log.disable");
-      this.logDomainEnabled = false;
+    if (needLog && !pageState.logDomainEnabled) {
+      await pageState.client.send("Log.enable");
+      pageState.logDomainEnabled = true;
+    } else if (!needLog && pageState.logDomainEnabled) {
+      await pageState.client.send("Log.disable");
+      pageState.logDomainEnabled = false;
     }
 
-    if (needNetwork && !this.networkDomainEnabled) {
-      await this.client.send("Network.enable");
-      this.networkDomainEnabled = true;
-    } else if (!needNetwork && this.networkDomainEnabled) {
-      await this.client.send("Network.disable");
-      this.networkDomainEnabled = false;
+    if (needNetwork && !pageState.networkDomainEnabled) {
+      await pageState.client.send("Network.enable");
+      pageState.networkDomainEnabled = true;
+    } else if (!needNetwork && pageState.networkDomainEnabled) {
+      await pageState.client.send("Network.disable");
+      pageState.networkDomainEnabled = false;
     }
   }
 
-  private rebuildEventHandlers(channels: Set<CaliperRuntimeChannel>): void {
-    for (const unsubscribe of this.unsubscribeHandlers) {
+  private rebuildEventHandlers(
+    pageState: RuntimeCapturePageState,
+    channels: Set<CaliperRuntimeChannel>
+  ): void {
+    for (const unsubscribe of pageState.unsubscribeHandlers) {
       unsubscribe();
     }
-    this.unsubscribeHandlers = [];
+    pageState.unsubscribeHandlers = [];
+
+    const pageId = this.pageIdForState(pageState);
+    if (!pageId) {
+      return;
+    }
 
     if (channels.has("console")) {
-      this.unsubscribeHandlers.push(
-        this.client.onEvent<RuntimeConsoleApiCalledEvent>("Runtime.consoleAPICalled", (event) => {
-          this.ingestMappedEntry("console", mapConsoleEvent(event, this.maxLineBytes));
-        })
+      pageState.unsubscribeHandlers.push(
+        pageState.client.onEvent<RuntimeConsoleApiCalledEvent>(
+          "Runtime.consoleAPICalled",
+          (event) => {
+            this.ingestMappedEntry(pageId, "console", mapConsoleEvent(event, this.maxLineBytes));
+          }
+        )
       );
     }
 
     if (channels.has("exceptions")) {
-      this.unsubscribeHandlers.push(
-        this.client.onEvent<RuntimeExceptionThrownEvent>("Runtime.exceptionThrown", (event) => {
-          this.ingestMappedEntry("exceptions", mapExceptionEvent(event, this.maxLineBytes));
-        })
+      pageState.unsubscribeHandlers.push(
+        pageState.client.onEvent<RuntimeExceptionThrownEvent>(
+          "Runtime.exceptionThrown",
+          (event) => {
+            this.ingestMappedEntry(
+              pageId,
+              "exceptions",
+              mapExceptionEvent(event, this.maxLineBytes)
+            );
+          }
+        )
       );
     }
 
     if (channels.has("logs")) {
-      this.unsubscribeHandlers.push(
-        this.client.onEvent<LogEntryAddedEvent>("Log.entryAdded", (event) => {
-          this.ingestMappedEntry("logs", mapLogEvent(event, this.maxLineBytes));
+      pageState.unsubscribeHandlers.push(
+        pageState.client.onEvent<LogEntryAddedEvent>("Log.entryAdded", (event) => {
+          this.ingestMappedEntry(pageId, "logs", mapLogEvent(event, this.maxLineBytes));
         })
       );
     }
 
     if (channels.has("networkFailures")) {
-      this.unsubscribeHandlers.push(
-        this.client.onEvent<NetworkRequestWillBeSentEvent>("Network.requestWillBeSent", (event) => {
-          this.networkRequestUrls.set(event.requestId, event.request.url);
-        }),
-        this.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
+      pageState.unsubscribeHandlers.push(
+        pageState.client.onEvent<NetworkRequestWillBeSentEvent>(
+          "Network.requestWillBeSent",
+          (event) => {
+            pageState.networkRequestUrls.set(event.requestId, event.request.url);
+          }
+        ),
+        pageState.client.onEvent<NetworkLoadingFailedEvent>("Network.loadingFailed", (event) => {
           const requestUrl = event.requestId
-            ? this.networkRequestUrls.get(event.requestId)
+            ? pageState.networkRequestUrls.get(event.requestId)
             : undefined;
-          this.ingestMappedEntry("networkFailures", {
+          this.ingestMappedEntry(pageId, "networkFailures", {
             url: requestUrl ?? "unknown",
             error: event.errorText ?? "unknown",
             resourceType: event.type,
@@ -295,33 +357,48 @@ export class RuntimeCaptureSession {
     }
   }
 
-  private async deactivateCapture(): Promise<void> {
-    for (const unsubscribe of this.unsubscribeHandlers) {
+  private pageIdForState(pageState: RuntimeCapturePageState): string | null {
+    for (const [pageId, state] of this.pageStates.entries()) {
+      if (state === pageState) {
+        return pageId;
+      }
+    }
+    return null;
+  }
+
+  private async teardownPageHandlers(pageState: RuntimeCapturePageState): Promise<void> {
+    for (const unsubscribe of pageState.unsubscribeHandlers) {
       unsubscribe();
     }
-    this.unsubscribeHandlers = [];
-    this.networkRequestUrls.clear();
+    pageState.unsubscribeHandlers = [];
+    pageState.networkRequestUrls.clear();
+
+    if (pageState.runtimeDomainEnabled) {
+      await pageState.client.send("Runtime.disable");
+      pageState.runtimeDomainEnabled = false;
+    }
+    if (pageState.logDomainEnabled) {
+      await pageState.client.send("Log.disable");
+      pageState.logDomainEnabled = false;
+    }
+    if (pageState.networkDomainEnabled) {
+      await pageState.client.send("Network.disable");
+      pageState.networkDomainEnabled = false;
+    }
+  }
+
+  private async deactivateCapture(): Promise<void> {
+    for (const pageState of this.pageStates.values()) {
+      await this.teardownPageHandlers(pageState);
+    }
     this.activeChannels.clear();
-
-    if (this.runtimeDomainEnabled) {
-      await this.client.send("Runtime.disable");
-      this.runtimeDomainEnabled = false;
-    }
-    if (this.logDomainEnabled) {
-      await this.client.send("Log.disable");
-      this.logDomainEnabled = false;
-    }
-    if (this.networkDomainEnabled) {
-      await this.client.send("Network.disable");
-      this.networkDomainEnabled = false;
-    }
-
     this.captureActive = false;
     this.diskWriter.setCaptureEnabled(false);
     this.tripping = false;
   }
 
   private ingestMappedEntry<C extends CaliperRuntimeChannel>(
+    pageId: string,
     channel: C,
     entry: CaliperRuntimeChannelEntry[C]
   ): void {
@@ -340,7 +417,7 @@ export class RuntimeCaptureSession {
       return;
     }
 
-    this.diskWriter.appendChannel(channel, entry);
+    this.diskWriter.appendChannel(channel, { ...entry, pageId });
   }
 
   private async tripCapture(trip: CaliperRuntimeTrip): Promise<void> {

@@ -18,7 +18,9 @@ import {
   CALIPER_ENGINE_PRESS_KEY_MAX_MODIFIERS,
   CaliperEngineAllowlistedKeySchema,
   CaliperRuntimeFingerprintSchema,
+  CaliperAgentStateSchema,
   type CaliperAgentState,
+  type CaliperEngineStateSnapshot,
   type CaliperMeasurementRouting,
   type CaliperRuntimeFingerprint,
 } from "@oyerinde/caliper-schema";
@@ -46,6 +48,10 @@ const logger = createLogger("mcp-server");
 
 const CALIPER_RUNTIME_URI = "caliper://runtime";
 const CALIPER_STATE_URI = "caliper://state";
+
+const enginePageIdField = {
+  pageId: z.string().optional().describe("Target engine page id (defaults to the active page)"),
+};
 
 function createEmptyAgentState(): CaliperAgentState {
   return {
@@ -76,8 +82,9 @@ export class CaliperMcpServer {
   private engineRuntimeFingerprintWatcher: FSWatcher | null = null;
   private lastNotifiedEngineRuntimeSeq = -1;
   private lastNotifiedTripAt: number | null = null;
-  private engineRuntimeCaptureEnabled = false;
   private readonly subscribedRuntimeChannels = new Set<CaliperRuntimeChannel>();
+  private lastEngineStateSeq = -1;
+  private engineStateSseActive = false;
 
   constructor(options: CaliperMcpServerOptions = {}) {
     this.port = options.port ?? DEFAULT_BRIDGE_PORT;
@@ -91,6 +98,10 @@ export class CaliperMcpServer {
     this.server = new McpServer({
       name: "caliper-mcp-server",
       version: process.env.VERSION as string,
+    });
+
+    this.measurementService.setEngineStateSseCallback((snapshot) => {
+      void this.handleEngineStateSnapshot(snapshot);
     });
 
     this.registerResourceSubscriptionHandlers();
@@ -132,6 +143,14 @@ export class CaliperMcpServer {
   }
 
   private onResourceSubscribed(uri: string): void {
+    if (uri === CALIPER_STATE_URI) {
+      if (!this.engineStateSseActive) {
+        this.engineStateSseActive = true;
+        this.measurementService.startEngineStateSse();
+      }
+      return;
+    }
+
     const channel = parseEngineRuntimeChannelSubscribeUri(uri);
     if (!channel) {
       return;
@@ -146,6 +165,14 @@ export class CaliperMcpServer {
   }
 
   private onResourceUnsubscribed(uri: string): void {
+    if (uri === CALIPER_STATE_URI) {
+      if (this.engineStateSseActive) {
+        this.engineStateSseActive = false;
+        this.measurementService.stopEngineStateSse();
+      }
+      return;
+    }
+
     const channel = parseEngineRuntimeChannelSubscribeUri(uri);
     if (!channel) {
       return;
@@ -163,7 +190,6 @@ export class CaliperMcpServer {
     const fingerprint = this.readFingerprintFromDisk();
 
     if (this.subscribedRuntimeChannels.size === 0) {
-      this.engineRuntimeCaptureEnabled = false;
       try {
         unlinkSync(this.projectPaths.captureEnabledPath);
       } catch {
@@ -177,14 +203,12 @@ export class CaliperMcpServer {
     }
 
     if (fingerprint?.tripped) {
-      this.engineRuntimeCaptureEnabled = false;
       return;
     }
 
     writeCaptureSubscribeFlag(this.projectPaths.captureEnabledPath, this.projectPaths.projectRoot, [
       ...this.subscribedRuntimeChannels,
     ]);
-    this.engineRuntimeCaptureEnabled = true;
   }
 
   private startEngineRuntimeWatcher(): void {
@@ -212,7 +236,6 @@ export class CaliperMcpServer {
     }
 
     if (fingerprint.tripped) {
-      this.engineRuntimeCaptureEnabled = false;
       await this.notifyEngineRuntimeTrip(fingerprint);
     } else if (
       this.subscribedRuntimeChannels.size > 0 &&
@@ -308,6 +331,29 @@ export class CaliperMcpServer {
   private notifyRuntimeConnectionUpdated(): void {
     this.server.server.sendResourceUpdated({ uri: CALIPER_RUNTIME_URI }).catch((error) => {
       logger.warn("Failed to notify runtime resource update", error);
+    });
+  }
+
+  private async handleEngineStateSnapshot(snapshot: CaliperEngineStateSnapshot): Promise<void> {
+    if (snapshot.stateSeq === this.lastEngineStateSeq) {
+      return;
+    }
+
+    this.lastEngineStateSeq = snapshot.stateSeq;
+    const activePageId = snapshot.activePageId;
+    if (!activePageId) {
+      return;
+    }
+
+    const rawState = snapshot.pages[activePageId];
+    const parsedState = CaliperAgentStateSchema.safeParse(rawState);
+    if (!parsedState.success) {
+      return;
+    }
+
+    this.lastState = parsedState.data;
+    await this.server.server.sendResourceUpdated({ uri: CALIPER_STATE_URI }).catch((error) => {
+      logger.warn("Failed to notify engine state resource update", error);
     });
   }
 
@@ -649,9 +695,10 @@ The output includes:
             .positive()
             .optional()
             .describe("Device pixel ratio override (default 1)"),
+          ...enginePageIdField,
         }),
       },
-      async ({ width, height, deviceScaleFactor }) => {
+      async ({ width, height, deviceScaleFactor, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.SET_VIEWPORT,
@@ -659,6 +706,7 @@ The output includes:
               width,
               height,
               deviceScaleFactor,
+              pageId,
             }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
@@ -688,9 +736,10 @@ The output includes:
             .optional()
             .describe("Explicit viewport widths to audit"),
           height: z.number().int().positive().optional().describe("Viewport height for each step"),
+          ...enginePageIdField,
         }),
       },
-      async ({ selector, widths, height }) => {
+      async ({ selector, widths, height, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS,
@@ -698,6 +747,7 @@ The output includes:
               selector,
               widths,
               height,
+              pageId,
             }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
@@ -716,17 +766,108 @@ The output includes:
     );
 
     this.server.registerTool(
-      "caliper_engine_clear_runtime",
+      "caliper_engine_list_pages",
       {
-        description:
-          "Clear caliper-engine runtime log files under .caliper/runtime (console, exceptions, logs, network failures). Read caliper://engine-runtime for paths and channelSubscribeUris, then subscribe to channel URIs before repro.",
+        description: "List Chrome pages managed by caliper-engine, including the active page id.",
         inputSchema: z.object({}),
       },
       async () => {
         try {
           const result = await this.measurementService.callEngine(
-            CALIPER_ENGINE_METHODS.CLEAR_RUNTIME,
+            CALIPER_ENGINE_METHODS.LIST_PAGES,
             {}
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("List pages", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_open_page",
+      {
+        description:
+          "Open or reuse a page in caliper-engine. Same normalized URL reactivates an existing page by default.",
+        inputSchema: z.object({
+          url: z.url().describe("URL to open"),
+          waitUntil: z
+            .enum(["domcontentloaded", "load"])
+            .optional()
+            .describe("Navigation wait condition (default domcontentloaded)"),
+          reuse: z
+            .boolean()
+            .optional()
+            .describe("Reuse an existing page for the same URL (default true)"),
+        }),
+      },
+      async ({ url, waitUntil, reuse }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.OPEN_PAGE,
+            { url, waitUntil, reuse }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Open page", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_activate_page",
+      {
+        description: "Activate an existing caliper-engine page for subsequent scoped RPC calls.",
+        inputSchema: z.object({
+          pageId: z.string().describe("Chrome target id from caliper_engine_list_pages"),
+        }),
+      },
+      async ({ pageId }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.ACTIVATE_PAGE,
+            { pageId }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Activate page", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_close_page",
+      {
+        description: "Close a caliper-engine page. Cannot close the last remaining page.",
+        inputSchema: z.object({
+          pageId: z.string().describe("Chrome target id to close"),
+        }),
+      },
+      async ({ pageId }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.CLOSE_PAGE,
+            { pageId }
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return formatEngineToolError("Close page", error);
+        }
+      }
+    );
+
+    this.server.registerTool(
+      "caliper_engine_clear_runtime",
+      {
+        description:
+          "Clear caliper-engine runtime log files under .caliper/runtime (console, exceptions, logs, network failures). Read caliper://engine-runtime for paths and channelSubscribeUris, then subscribe to channel URIs before repro.",
+        inputSchema: z.object({ ...enginePageIdField }),
+      },
+      async ({ pageId }) => {
+        try {
+          const result = await this.measurementService.callEngine(
+            CALIPER_ENGINE_METHODS.CLEAR_RUNTIME,
+            { pageId }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -743,13 +884,15 @@ The output includes:
         inputSchema: z.object({
           scrollX: z.number().optional().describe("Horizontal scroll position in CSS pixels"),
           scrollY: z.number().optional().describe("Vertical scroll position in CSS pixels"),
+          ...enginePageIdField,
         }),
       },
-      async ({ scrollX, scrollY }) => {
+      async ({ scrollX, scrollY, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(CALIPER_ENGINE_METHODS.SCROLL, {
             scrollX,
             scrollY,
+            pageId,
           });
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -765,13 +908,14 @@ The output includes:
           "Scroll the caliper-engine page until the target selector is in view. Requires engine mode.",
         inputSchema: z.object({
           selector: z.string().describe("CSS selector or caliper agent id"),
+          ...enginePageIdField,
         }),
       },
-      async ({ selector }) => {
+      async ({ selector, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.SCROLL_INTO_VIEW,
-            { selector }
+            { selector, pageId }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -785,13 +929,13 @@ The output includes:
       {
         description:
           "Pause CSS and Web Animations on the caliper-engine page. Pair with caliper_engine_resume_animations when finished.",
-        inputSchema: z.object({}),
+        inputSchema: z.object({ ...enginePageIdField }),
       },
-      async () => {
+      async ({ pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS,
-            {}
+            { pageId }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -804,13 +948,13 @@ The output includes:
       "caliper_engine_resume_animations",
       {
         description: "Restore animation playback on the caliper-engine page after pausing.",
-        inputSchema: z.object({}),
+        inputSchema: z.object({ ...enginePageIdField }),
       },
-      async () => {
+      async ({ pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS,
-            {}
+            { pageId }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -831,9 +975,10 @@ The output includes:
             .optional()
             .describe("CSS selector or caliper agent id (mutually exclusive with fullPage)"),
           format: z.enum(["png", "jpeg"]).optional().describe("Image format (default png)"),
+          ...enginePageIdField,
         }),
       },
-      async ({ fullPage, selector, format }) => {
+      async ({ fullPage, selector, format, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.SCREENSHOT,
@@ -841,6 +986,7 @@ The output includes:
               fullPage,
               selector,
               format,
+              pageId,
             }
           );
 
@@ -873,13 +1019,14 @@ The output includes:
             .max(CALIPER_ENGINE_EVAL_SCRIPT_MAX_TIMEOUT_MS)
             .optional()
             .describe("CDP Runtime.evaluate timeout in ms (omit for no protocol timeout)"),
+          ...enginePageIdField,
         }),
       },
-      async ({ source, awaitPromise, timeoutMs }) => {
+      async ({ source, awaitPromise, timeoutMs, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.EVAL_SCRIPT,
-            { source, awaitPromise, timeoutMs }
+            { source, awaitPromise, timeoutMs, pageId }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -915,6 +1062,7 @@ The output includes:
               .min(1)
               .max(CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT)
               .optional(),
+            ...enginePageIdField,
           })
           .refine(
             (payload) => {
@@ -931,11 +1079,11 @@ The output includes:
             { message: "Provide selector or both x and y, not both" }
           ),
       },
-      async ({ selector, x, y, scrollIntoView, button, clickCount }) => {
+      async ({ selector, x, y, scrollIntoView, button, clickCount, pageId }) => {
         try {
           const params = selector
-            ? { selector, scrollIntoView, button, clickCount }
-            : { x: x!, y: y!, button, clickCount };
+            ? { selector, scrollIntoView, button, clickCount, pageId }
+            : { x: x!, y: y!, button, clickCount, pageId };
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.CLICK_AT,
             params
@@ -961,13 +1109,14 @@ The output includes:
             .max(CALIPER_ENGINE_PRESS_KEY_MAX_MODIFIERS)
             .optional()
             .describe("Modifier bitmask: Alt=1, Ctrl=2, Meta=4, Shift=8"),
+          ...enginePageIdField,
         }),
       },
-      async ({ key, modifiers }) => {
+      async ({ key, modifiers, pageId }) => {
         try {
           const result = await this.measurementService.callEngine(
             CALIPER_ENGINE_METHODS.PRESS_KEY,
-            { key, modifiers }
+            { key, modifiers, pageId }
           );
           return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
         } catch (error) {
@@ -1444,6 +1593,12 @@ ${tabIdB ? (tabIdA ? "9" : "8") : tabIdA ? "8" : "7"}. **Verify**
   async stop() {
     this.subscribedRuntimeChannels.clear();
     this.syncCaptureFlagFromSubscriptions();
+
+    if (this.engineStateSseActive) {
+      this.measurementService.stopEngineStateSse();
+      this.engineStateSseActive = false;
+    }
+
     this.stopEngineRuntimeWatcher();
     await this.measurementService.stop();
     logger.info("Server stopped.");

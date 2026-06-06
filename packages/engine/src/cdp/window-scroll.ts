@@ -1,4 +1,4 @@
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
 
 export type WindowScrollPosition = {
@@ -7,7 +7,7 @@ export type WindowScrollPosition = {
 };
 
 export async function readWindowScrollPosition(
-  client: CdpClient,
+  client: CdpSendClient,
   options: { onMissing?: "zero" | "throw" } = {}
 ): Promise<WindowScrollPosition> {
   const onMissing = options.onMissing ?? "throw";

@@ -1,4 +1,12 @@
 import { z } from "zod";
+import {
+  CaliperEngineActivatePagePayloadSchema,
+  CaliperEngineClosePagePayloadSchema,
+  CaliperEngineListPagesPayloadSchema,
+  CaliperEngineOpenPagePayloadSchema,
+  CaliperEnginePageScopeSchema,
+  withEnginePageScope,
+} from "./engine-pages.js";
 
 export const CALIPER_ENGINE_METHODS = {
   SET_VIEWPORT: "CALIPER_SET_VIEWPORT",
@@ -13,6 +21,10 @@ export const CALIPER_ENGINE_METHODS = {
   EVAL_SCRIPT: "CALIPER_ENGINE_EVAL_SCRIPT",
   CLICK_AT: "CALIPER_ENGINE_CLICK_AT",
   PRESS_KEY: "CALIPER_ENGINE_PRESS_KEY",
+  LIST_PAGES: "CALIPER_ENGINE_LIST_PAGES",
+  OPEN_PAGE: "CALIPER_ENGINE_OPEN_PAGE",
+  ACTIVATE_PAGE: "CALIPER_ENGINE_ACTIVATE_PAGE",
+  CLOSE_PAGE: "CALIPER_ENGINE_CLOSE_PAGE",
 } as const;
 
 export const CALIPER_ENGINE_CLICK_AT_MAX_COORD = 32_000;
@@ -40,9 +52,30 @@ export const CaliperEngineMethodSchema = z.enum([
   CALIPER_ENGINE_METHODS.EVAL_SCRIPT,
   CALIPER_ENGINE_METHODS.CLICK_AT,
   CALIPER_ENGINE_METHODS.PRESS_KEY,
+  CALIPER_ENGINE_METHODS.LIST_PAGES,
+  CALIPER_ENGINE_METHODS.OPEN_PAGE,
+  CALIPER_ENGINE_METHODS.ACTIVATE_PAGE,
+  CALIPER_ENGINE_METHODS.CLOSE_PAGE,
 ]);
 
 export type CaliperEngineMethod = z.infer<typeof CaliperEngineMethodSchema>;
+
+/** Handled by PageRegistry before per-page EngineMeasurementSession dispatch. */
+export const CALIPER_ENGINE_REGISTRY_METHODS = [
+  CALIPER_ENGINE_METHODS.LIST_PAGES,
+  CALIPER_ENGINE_METHODS.OPEN_PAGE,
+  CALIPER_ENGINE_METHODS.ACTIVATE_PAGE,
+  CALIPER_ENGINE_METHODS.CLOSE_PAGE,
+  CALIPER_ENGINE_METHODS.GET_RUNTIME,
+  CALIPER_ENGINE_METHODS.CLEAR_RUNTIME,
+] as const;
+
+export type CaliperEngineRegistryMethod = (typeof CALIPER_ENGINE_REGISTRY_METHODS)[number];
+
+export type CaliperPageScopedEngineMethod = Exclude<
+  CaliperEngineMethod,
+  CaliperEngineRegistryMethod
+>;
 
 export const CaliperRuntimeConsoleLevelSchema = z.enum([
   "log",
@@ -219,7 +252,7 @@ export const CaliperEngineRuntimeResourcePayloadSchema = z.union([
   CaliperEngineRuntimeResourceReadySchema,
 ]);
 
-export const CaliperEngineGetRuntimePayloadSchema = z.object({
+export const CaliperEngineGetRuntimePayloadSchema = withEnginePageScope({
   fingerprintOnly: z.boolean().optional(),
 });
 
@@ -234,26 +267,24 @@ export const CaliperScreenshotRefSchema = z.object({
   capturedAt: z.number(),
 });
 
-export const CaliperEngineScrollPayloadSchema = z.object({
+export const CaliperEngineScrollPayloadSchema = withEnginePageScope({
   scrollX: z.number().optional(),
   scrollY: z.number().optional(),
 });
 
-export const CaliperEngineScrollIntoViewPayloadSchema = z.object({
+export const CaliperEngineScrollIntoViewPayloadSchema = withEnginePageScope({
   selector: z.string(),
 });
 
-export const CaliperEngineScreenshotPayloadSchema = z
-  .object({
-    fullPage: z.boolean().optional(),
-    selector: z.string().optional(),
-    format: z.enum(["png", "jpeg"]).optional(),
-  })
-  .refine((payload) => !(payload.fullPage && payload.selector), {
-    message: "fullPage and selector are mutually exclusive",
-  });
+export const CaliperEngineScreenshotPayloadSchema = withEnginePageScope({
+  fullPage: z.boolean().optional(),
+  selector: z.string().optional(),
+  format: z.enum(["png", "jpeg"]).optional(),
+}).refine((payload) => !(payload.fullPage && payload.selector), {
+  message: "fullPage and selector are mutually exclusive",
+});
 
-export const CaliperEngineEvalScriptPayloadSchema = z.object({
+export const CaliperEngineEvalScriptPayloadSchema = withEnginePageScope({
   source: z
     .string()
     .min(1)
@@ -291,21 +322,19 @@ export const CaliperEngineClickAtByCoordsPayloadSchema =
     y: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD),
   });
 
-export const CaliperEngineClickAtPayloadSchema = z
-  .object({
-    selector: z.string().min(1).optional(),
-    scrollIntoView: z.boolean().optional(),
-    x: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD).optional(),
-    y: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD).optional(),
-    button: CaliperEngineMouseButtonSchema.optional(),
-    clickCount: z
-      .number()
-      .int()
-      .min(1)
-      .max(CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT)
-      .optional(),
-  })
-  .superRefine((payload, context) => {
+export const CaliperEngineClickAtPayloadSchema = withEnginePageScope({
+  selector: z.string().min(1).optional(),
+  scrollIntoView: z.boolean().optional(),
+  x: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD).optional(),
+  y: z.number().min(0).max(CALIPER_ENGINE_CLICK_AT_MAX_COORD).optional(),
+  button: CaliperEngineMouseButtonSchema.optional(),
+  clickCount: z
+    .number()
+    .int()
+    .min(1)
+    .max(CALIPER_ENGINE_CLICK_AT_MAX_CLICK_COUNT)
+    .optional(),
+}).superRefine((payload, context) => {
     const hasSelector = payload.selector !== undefined;
     const hasX = payload.x !== undefined;
     const hasY = payload.y !== undefined;
@@ -336,7 +365,7 @@ export const CaliperEngineAllowlistedKeySchema = z.enum([
   "ArrowRight",
 ]);
 
-export const CaliperEnginePressKeyPayloadSchema = z.object({
+export const CaliperEnginePressKeyPayloadSchema = withEnginePageScope({
   key: CaliperEngineAllowlistedKeySchema,
   modifiers: z
     .number()
@@ -348,13 +377,15 @@ export const CaliperEnginePressKeyPayloadSchema = z.object({
 
 export const CaliperEngineEmptyPayloadSchema = z.object({});
 
-export const CaliperSetViewportPayloadSchema = z.object({
+export const CaliperEngineScopedEmptyPayloadSchema = CaliperEnginePageScopeSchema;
+
+export const CaliperSetViewportPayloadSchema = withEnginePageScope({
   width: z.number().int().positive(),
   height: z.number().int().positive().optional(),
   deviceScaleFactor: z.number().positive().optional(),
 });
 
-export const CaliperAuditBreakpointsPayloadSchema = z.object({
+export const CaliperAuditBreakpointsPayloadSchema = withEnginePageScope({
   selector: z.string(),
   widths: z.array(z.number().int().positive()).optional(),
   height: z.number().int().positive().optional(),
@@ -403,21 +434,36 @@ export type CaliperEngineAllowlistedKey = z.infer<typeof CaliperEngineAllowliste
 export type CaliperSetViewportPayload = z.infer<typeof CaliperSetViewportPayloadSchema>;
 export type CaliperAuditBreakpointsPayload = z.infer<typeof CaliperAuditBreakpointsPayloadSchema>;
 
+export type CaliperEngineListPagesPayload = z.infer<typeof CaliperEngineListPagesPayloadSchema>;
+export type CaliperEngineOpenPagePayload = z.infer<typeof CaliperEngineOpenPagePayloadSchema>;
+export type CaliperEngineActivatePagePayload = z.infer<
+  typeof CaliperEngineActivatePagePayloadSchema
+>;
+export type CaliperEngineClosePagePayload = z.infer<typeof CaliperEngineClosePagePayloadSchema>;
+
 export type CaliperEngineParamsByMethod = {
   [CALIPER_ENGINE_METHODS.SET_VIEWPORT]: CaliperSetViewportPayload;
   [CALIPER_ENGINE_METHODS.AUDIT_BREAKPOINTS]: CaliperAuditBreakpointsPayload;
   [CALIPER_ENGINE_METHODS.GET_RUNTIME]: CaliperEngineGetRuntimePayload;
-  [CALIPER_ENGINE_METHODS.CLEAR_RUNTIME]: Record<string, never>;
+  [CALIPER_ENGINE_METHODS.CLEAR_RUNTIME]: CaliperEngineScopedEmptyPayload;
   [CALIPER_ENGINE_METHODS.SCROLL]: CaliperEngineScrollPayload;
   [CALIPER_ENGINE_METHODS.SCROLL_INTO_VIEW]: CaliperEngineScrollIntoViewPayload;
-  [CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS]: Record<string, never>;
-  [CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS]: Record<string, never>;
+  [CALIPER_ENGINE_METHODS.PAUSE_ANIMATIONS]: CaliperEngineScopedEmptyPayload;
+  [CALIPER_ENGINE_METHODS.RESUME_ANIMATIONS]: CaliperEngineScopedEmptyPayload;
   [CALIPER_ENGINE_METHODS.SCREENSHOT]: CaliperEngineScreenshotPayload;
   [CALIPER_ENGINE_METHODS.EVAL_SCRIPT]: CaliperEngineEvalScriptPayload;
   [CALIPER_ENGINE_METHODS.CLICK_AT]: CaliperEngineClickAtPayload;
   [CALIPER_ENGINE_METHODS.PRESS_KEY]: CaliperEnginePressKeyPayload;
+  [CALIPER_ENGINE_METHODS.LIST_PAGES]: CaliperEngineListPagesPayload;
+  [CALIPER_ENGINE_METHODS.OPEN_PAGE]: CaliperEngineOpenPagePayload;
+  [CALIPER_ENGINE_METHODS.ACTIVATE_PAGE]: CaliperEngineActivatePagePayload;
+  [CALIPER_ENGINE_METHODS.CLOSE_PAGE]: CaliperEngineClosePagePayload;
 };
 
+export type CaliperEngineEmptyPayload = z.infer<typeof CaliperEngineEmptyPayloadSchema>;
+export type CaliperEngineScopedEmptyPayload = z.infer<
+  typeof CaliperEngineScopedEmptyPayloadSchema
+>;
 export type CaliperEngineParams<M extends CaliperEngineMethod> = CaliperEngineParamsByMethod[M];
 
 export type CaliperEngineRequest = {
@@ -429,4 +475,16 @@ export type CaliperEngineRequest = {
 
 export function isCaliperEngineMethod(method: string): method is CaliperEngineMethod {
   return (CaliperEngineMethodSchema.options as readonly string[]).includes(method);
+}
+
+export function isCaliperEngineRegistryMethod(
+  method: CaliperEngineMethod
+): method is CaliperEngineRegistryMethod {
+  return (CALIPER_ENGINE_REGISTRY_METHODS as readonly string[]).includes(method);
+}
+
+export function isPageScopedEngineMethod(
+  method: CaliperEngineMethod
+): method is CaliperPageScopedEngineMethod {
+  return !isCaliperEngineRegistryMethod(method);
 }

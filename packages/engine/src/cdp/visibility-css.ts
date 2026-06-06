@@ -4,7 +4,7 @@ import {
   type CaliperVisibility,
   type CaliperVisibilityHiddenBy,
 } from "@oyerinde/caliper-schema";
-import type { CdpClient } from "./cdp-client.js";
+import type { CdpSendClient } from "./cdp-page-session.js";
 import type {
   CssGetMatchedStylesForNodeResponse,
   CssGetMediaQueriesResponse,
@@ -18,7 +18,7 @@ import { resolveSelectorToNodeId } from "./dom-resolver.js";
 export class CssVisibilitySession {
   private stylesheetUrls = new Map<string, string>();
 
-  constructor(private readonly client: CdpClient) {}
+  constructor(private readonly client: CdpSendClient) {}
 
   async enable(): Promise<void> {
     await this.client.send("CSS.enable");
