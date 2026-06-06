@@ -477,14 +477,3 @@ export function isCaliperEngineMethod(method: string): method is CaliperEngineMe
   return (CaliperEngineMethodSchema.options as readonly string[]).includes(method);
 }
 
-export function isCaliperEngineRegistryMethod(
-  method: CaliperEngineMethod
-): method is CaliperEngineRegistryMethod {
-  return (CALIPER_ENGINE_REGISTRY_METHODS as readonly string[]).includes(method);
-}
-
-export function isPageScopedEngineMethod(
-  method: CaliperEngineMethod
-): method is CaliperPageScopedEngineMethod {
-  return !isCaliperEngineRegistryMethod(method);
-}

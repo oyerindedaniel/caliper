@@ -243,7 +243,7 @@ export class PageRegistry {
 
       default: {
         const page = this.resolvePage(request.params.pageId);
-        return page.measurementSession.dispatchRpc(request);
+        return page.measurementSession.dispatchPageScopedEngineRpc(request);
       }
     }
   }
