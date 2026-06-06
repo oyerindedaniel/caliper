@@ -1,12 +1,9 @@
 import {
   CALIPER_ENGINE_METHODS,
-  isCaliperEngineRpcRequest,
-  isPageScopedEngineMethod,
   type CaliperActionResult,
   type CaliperEngineRpcRequest,
   type CaliperIntent,
   type CaliperPageScopedEngineMethod,
-  type CaliperRpcRequest,
 } from "@oyerinde/caliper-schema";
 import type { HarnessSession } from "./harness-session.js";
 import type { EmulationSession } from "./emulation-session.js";
@@ -19,6 +16,11 @@ import { ScreenshotSession, type ScreenshotSessionOptions } from "./screenshot-s
 import { ScriptEvalSession } from "./script-eval-session.js";
 import { TrustedInputSession } from "./trusted-input-session.js";
 import { finalizeMeasurementResult } from "./finalize-measurement-result.js";
+
+type CaliperPageScopedEngineRpcRequest = Extract<
+  CaliperEngineRpcRequest,
+  { method: CaliperPageScopedEngineMethod }
+>;
 
 export type EngineMeasurementSessionOptions = {
   screenshot?: ScreenshotSessionOptions;
@@ -71,30 +73,12 @@ export class EngineMeasurementSession {
     await this.cssVisibility.enable();
   }
 
-  async dispatchRpc(request: CaliperRpcRequest): Promise<CaliperActionResult> {
-    if (isCaliperEngineRpcRequest(request)) {
-      if (!isPageScopedEngineMethod(request.method)) {
-        throw new Error(
-          `Engine method ${request.method} is handled by PageRegistry, not EngineMeasurementSession`
-        );
-      }
-
-      return this.dispatchEngineMethod(
-        request as Extract<CaliperEngineRpcRequest, { method: CaliperPageScopedEngineMethod }>
-      );
-    }
-
-    return this.dispatchHarnessIntent(request);
-  }
-
-  private async dispatchHarnessIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
+  async dispatchIntent(intent: CaliperIntent): Promise<CaliperActionResult> {
     const harnessResult = await this.harness.dispatchIntent(intent);
     return finalizeMeasurementResult(harnessResult, this.cssVisibility, this.emulation);
   }
 
-  private async dispatchEngineMethod(
-    request: Extract<CaliperEngineRpcRequest, { method: CaliperPageScopedEngineMethod }>
-  ): Promise<CaliperActionResult> {
+  async dispatchRpc(request: CaliperPageScopedEngineRpcRequest): Promise<CaliperActionResult> {
     const timestamp = Date.now();
 
     switch (request.method) {

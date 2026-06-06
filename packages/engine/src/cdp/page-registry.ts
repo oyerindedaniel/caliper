@@ -186,7 +186,7 @@ export class PageRegistry {
     }
 
     const page = this.resolvePage(request.params.pageId);
-    return page.measurementSession.dispatchRpc(request);
+    return page.measurementSession.dispatchIntent(request);
   }
 
   private async dispatchEngineMethod(
