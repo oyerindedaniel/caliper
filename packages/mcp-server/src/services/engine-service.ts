@@ -67,6 +67,11 @@ export class EngineService {
     this.stateSseClient.stop();
   }
 
+  async isHealthy(): Promise<boolean> {
+    const health = await this.fetchHealth();
+    return health?.ok === true;
+  }
+
   async ensureReady(): Promise<EngineHealth> {
     const existingHealth = await this.fetchHealth();
     if (existingHealth) {

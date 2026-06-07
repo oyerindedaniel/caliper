@@ -1,4 +1,5 @@
 import {
+  CALIPER_ENGINE_FOCUS_BINDING,
   CALIPER_ENGINE_METHODS,
   CALIPER_ENGINE_STATE_BINDING,
   type CaliperActionResult,
@@ -23,7 +24,7 @@ import type {
   TargetTargetDestroyedEvent,
   TargetTargetInfoChangedEvent,
 } from "./cdp-protocol.js";
-import type { CdpPageTarget } from "./cdp-protocol.js";
+import type { CdpPageTarget, RuntimeEvaluateResponse } from "./cdp-protocol.js";
 import { PageHandle } from "./page-handle.js";
 import type { EngineMeasurementSessionOptions } from "./engine-measurement-session.js";
 import { RuntimeCaptureSession } from "./runtime-capture-session.js";
@@ -63,6 +64,7 @@ export class PageRegistry {
   private readonly initialUrl: string | null;
   private callbacks: PageRegistryCallbacks;
   private attachQueue: Promise<void> = Promise.resolve();
+  private readonly attachFailures = new Map<string, Error>();
 
   constructor(
     private readonly browser: CdpClient,
@@ -134,10 +136,18 @@ export class PageRegistry {
       void this.removePage(event.targetId);
     });
     this.browser.onEvent<RuntimeBindingCalledEvent>("Runtime.bindingCalled", (event, sessionId) => {
-      if (event.name !== CALIPER_ENGINE_STATE_BINDING || !sessionId) {
+      if (!sessionId) {
         return;
       }
-      this.ingestBindingState(sessionId, event);
+
+      if (event.name === CALIPER_ENGINE_STATE_BINDING) {
+        this.ingestBindingState(sessionId, event);
+        return;
+      }
+
+      if (event.name === CALIPER_ENGINE_FOCUS_BINDING) {
+        this.ingestBindingFocus(sessionId, event);
+      }
     });
 
     await this.browser.send("Target.setDiscoverTargets", { discover: true });
@@ -147,11 +157,23 @@ export class PageRegistry {
       waitForDebuggerOnStart: false,
     });
 
-    await pollUntil(async () => (this.pages.size > 0 ? true : null), {
-      intervalMs: 100,
-      timeoutMs: 30_000,
-      errorMessage: "Chrome did not attach a page target",
-    });
+    await pollUntil(
+      async () => {
+        if (this.pages.size > 0) {
+          return true;
+        }
+        const firstFailure = this.attachFailures.values().next();
+        if (!firstFailure.done) {
+          throw firstFailure.value;
+        }
+        return null;
+      },
+      {
+        intervalMs: 100,
+        timeoutMs: 30_000,
+        errorMessage: "Chrome did not attach a page target",
+      }
+    );
 
     await this.runtimeCapture.start();
 
@@ -291,13 +313,20 @@ export class PageRegistry {
     }
 
     const created = await this.createPageTarget(params.url);
-    await pollUntil(async () => (this.pages.has(created.id) ? this.pages.get(created.id)! : null), {
-      intervalMs: 50,
-      timeoutMs: 10_000,
-      errorMessage: "Timed out waiting for new page attach",
-    });
-
-    const page = this.pages.get(created.id)!;
+    const page = await pollUntil(
+      async () => {
+        const failure = this.attachFailures.get(created.id);
+        if (failure) {
+          throw failure;
+        }
+        return this.pages.get(created.id) ?? null;
+      },
+      {
+        intervalMs: 50,
+        timeoutMs: 10_000,
+        errorMessage: "Timed out waiting for new page attach",
+      }
+    );
     await this.activatePage(page.pageId);
     try {
       await this.navigatePage(page, params.url, waitUntil, params.timeoutMs);
@@ -389,8 +418,11 @@ export class PageRegistry {
   }
 
   private enqueueAttach(event: TargetAttachedToTargetEvent): Promise<void> {
+    const targetId = event.targetInfo.targetId;
     const work = this.attachQueue.then(() => this.handleAttachedToTarget(event));
-    this.attachQueue = work.catch(() => undefined);
+    this.attachQueue = work.catch((error: unknown) => {
+      this.attachFailures.set(targetId, error instanceof Error ? error : new Error(String(error)));
+    });
     return work;
   }
 
@@ -411,6 +443,13 @@ export class PageRegistry {
       this.defaultViewport
     );
 
+    try {
+      await page.initialize();
+    } catch (error) {
+      await page.shutdown().catch(() => undefined);
+      throw error;
+    }
+
     this.pages.set(targetInfo.targetId, page);
     this.sessionToPageId.set(sessionId, targetInfo.targetId);
 
@@ -418,7 +457,8 @@ export class PageRegistry {
       this.activePageId = targetInfo.targetId;
     }
 
-    await page.initialize();
+    this.attachFailures.delete(targetInfo.targetId);
+    await this.syncInitialPageFocus(page.pageId, page.client);
   }
 
   private async removePage(pageId: string): Promise<void> {
@@ -427,18 +467,22 @@ export class PageRegistry {
       return;
     }
 
-    await page.shutdown();
-    this.pages.delete(pageId);
-    this.pageStates.delete(pageId);
+    try {
+      await page.shutdown();
+    } finally {
+      this.pages.delete(pageId);
+      this.pageStates.delete(pageId);
+      this.attachFailures.delete(pageId);
 
-    for (const [sessionId, mappedPageId] of this.sessionToPageId.entries()) {
-      if (mappedPageId === pageId) {
-        this.sessionToPageId.delete(sessionId);
+      for (const [sessionId, mappedPageId] of this.sessionToPageId.entries()) {
+        if (mappedPageId === pageId) {
+          this.sessionToPageId.delete(sessionId);
+        }
       }
-    }
 
-    if (this.activePageId === pageId) {
-      this.activePageId = this.pages.keys().next().value ?? null;
+      if (this.activePageId === pageId) {
+        this.activePageId = this.pages.keys().next().value ?? null;
+      }
     }
   }
 
@@ -449,6 +493,62 @@ export class PageRegistry {
     }
     page.url = url;
     page.title = title;
+  }
+
+  private async syncInitialPageFocus(pageId: string, client: PageHandle["client"]): Promise<void> {
+    try {
+      const evaluation = await client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
+        expression: "document.visibilityState === 'visible'",
+        returnByValue: true,
+      });
+      if (evaluation.result?.value !== true) {
+        return;
+      }
+    } catch {
+      return;
+    }
+
+    this.setActivePageId(pageId);
+  }
+
+  private ingestBindingFocus(sessionId: string, event: RuntimeBindingCalledEvent): void {
+    const pageId = this.sessionToPageId.get(sessionId);
+    if (!pageId) {
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(event.payload);
+    } catch {
+      return;
+    }
+
+    if (!parsed || typeof parsed !== "object") {
+      return;
+    }
+
+    const value = parsed as Record<string, unknown>;
+    if (value.focused !== true) {
+      return;
+    }
+
+    const reportedPageId = typeof value.pageId === "string" ? value.pageId : pageId;
+    if (!this.pages.has(reportedPageId)) {
+      return;
+    }
+
+    this.setActivePageId(reportedPageId);
+  }
+
+  private setActivePageId(pageId: string): void {
+    if (pageId === this.activePageId) {
+      return;
+    }
+
+    this.activePageId = pageId;
+    this.stateSeq += 1;
+    this.callbacks.onStateSnapshot?.(this.getStateSnapshot());
   }
 
   private ingestBindingState(sessionId: string, event: RuntimeBindingCalledEvent): void {

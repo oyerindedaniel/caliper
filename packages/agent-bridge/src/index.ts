@@ -35,6 +35,20 @@ import "./types.js";
 
 const logger = createLogger("agent-bridge");
 
+function resolveEffectiveBridgeConfig(config: AgentBridgeConfig): AgentBridgeConfig {
+  const isEngineManaged =
+    typeof window !== "undefined" && window.__CALIPER_ENGINE_MANAGED__ === true;
+  if (!isEngineManaged) {
+    return config;
+  }
+
+  return {
+    ...config,
+    relay: false,
+    engineStateBinding: true,
+  };
+}
+
 /**
  * CaliperBridge Plugin Factory
  *
@@ -69,6 +83,8 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
   let isInitialized = false;
   let intentHandler: ReturnType<typeof createIntentHandler> | null = null;
   let stateStore: ReturnType<typeof createStateStore> | null = null;
+  let wsBridge: ReturnType<typeof createWSBridge> | null = null;
+  let reportEngineState = false;
 
   return {
     name: "agent-bridge",
@@ -76,6 +92,8 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
       const cleanup = () => {
         delete window.dispatchCaliperIntent;
         delete window.__CALIPER_BRIDGE_BOOTING__;
+        delete window.__CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__;
+        wsBridge = null;
         isInitialized = false;
         intentHandler = null;
         if (stateStore) {
@@ -118,11 +136,13 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
           stateStore = createStateStore();
           intentHandler = createIntentHandler(systems, stateStore);
 
-          const relayEnabled = config.relay !== false;
-          const wsPort = config.wsPort ?? DEFAULT_WS_PORT;
+          const effectiveConfig = resolveEffectiveBridgeConfig(config);
+          const relayEnabled = effectiveConfig.relay !== false;
+          reportEngineState = effectiveConfig.engineStateBinding === true;
+          const wsPort = effectiveConfig.wsPort ?? DEFAULT_WS_PORT;
           const wsUrl = `ws://localhost:${wsPort}`;
 
-          const wsBridge = relayEnabled
+          wsBridge = relayEnabled
             ? createWSBridge({
                 onIntent: (intent) => intentHandler!.dispatch(intent),
                 wsUrl,
@@ -130,13 +150,15 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
             : null;
 
           const disposeSync = initStateSync(stateStore, systems, (state) => {
-            wsBridge?.sendStateUpdate(state);
-            if (config.engineStateBinding) {
+            if (wsBridge) {
+              wsBridge.sendStateUpdate(state);
+            }
+            if (reportEngineState) {
               window.__CALIPER_ENGINE_REPORT_STATE__?.(state);
             }
-            config.onStateChange?.(state);
-            if (config.onStateChangeGlobal) {
-              resolveCaliperGlobalStateHandler(config.onStateChangeGlobal)?.(state);
+            effectiveConfig.onStateChange?.(state);
+            if (effectiveConfig.onStateChangeGlobal) {
+              resolveCaliperGlobalStateHandler(effectiveConfig.onStateChangeGlobal)?.(state);
             }
           });
 
@@ -154,6 +176,14 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
             return prepareWalkResultForJsonWire(await intentHandler.dispatch(intent));
           };
 
+          window.__CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__ = () => {
+            if (wsBridge) {
+              wsBridge.destroy();
+              wsBridge = null;
+            }
+            reportEngineState = true;
+          };
+
           delete window.__CALIPER_BRIDGE_BOOTING__;
 
           isInitialized = true;
@@ -166,6 +196,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
           bridgeDispose = () => {
             disposeSync();
             wsBridge?.destroy();
+            wsBridge = null;
             cleanup();
             logger.info("Bridge stopped. Connections closed.");
           };

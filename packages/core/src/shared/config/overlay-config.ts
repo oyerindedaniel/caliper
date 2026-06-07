@@ -74,10 +74,7 @@ export interface AgentBridgeConfig {
   enabled?: boolean;
   /** Connect to the MCP WebSocket relay (default: true). Engine inject sets false — CDP dispatch only. */
   relay?: boolean;
-  /**
-   * Report overlay state via CDP Runtime binding (engine mode). Engine inject sets true;
-   * attached tabs leave this unset so state flows through the MCP relay only.
-   */
+  /** Report overlay state via CDP Runtime binding. Engine-managed tabs force this on. */
   engineStateBinding?: boolean;
   /** WebSocket port for the MCP relay (default: 9876) */
   wsPort?: number;
