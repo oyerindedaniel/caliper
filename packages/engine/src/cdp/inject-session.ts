@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
+import { INSTALL_ENGINE_STATE_REPORTER_EXPRESSION } from "./engine-state-reporter.js";
 
 export class InjectSession {
   private registered = false;
@@ -14,7 +15,6 @@ export class InjectSession {
       return;
     }
 
-    await this.client.send("Page.enable");
     const injectSource = readCaliperInjectScript();
     const bootstrapExpression = buildBootstrapExpression(injectSource);
 
@@ -33,10 +33,12 @@ export class InjectSession {
   }
 }
 
+const CALIPER_ENGINE_INJECT_BUNDLE = "index.global.js";
+
 function readCaliperInjectScript(): string {
   const require = createRequire(import.meta.url);
-  const caliperPackageJsonPath = require.resolve("@oyerinde/caliper/package.json");
-  const injectPath = join(dirname(caliperPackageJsonPath), "dist", "index.js");
+  const caliperPackageEntry = require.resolve("@oyerinde/caliper");
+  const injectPath = join(dirname(caliperPackageEntry), CALIPER_ENGINE_INJECT_BUNDLE);
   return readFileSync(injectPath, "utf8");
 }
 
@@ -46,15 +48,12 @@ function buildBootstrapExpression(scriptSource: string): string {
   });
 
   return `(function () {
+    window.__CALIPER_ENGINE_MANAGED__ = true;
     if (window.__CALIPER_ENGINE_INJECTED__) {
       return;
     }
     window.__CALIPER_ENGINE_INJECTED__ = true;
-    window.__CALIPER_ENGINE_REPORT_STATE__ = function (state) {
-      if (typeof window.caliperEngineState === "function") {
-        window.caliperEngineState(JSON.stringify(state));
-      }
-    };
+    ${INSTALL_ENGINE_STATE_REPORTER_EXPRESSION}
     const script = document.createElement("script");
     script.setAttribute("data-config", ${JSON.stringify(bridgeConfig)});
     script.textContent = ${JSON.stringify(scriptSource)};

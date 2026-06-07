@@ -15,6 +15,7 @@ export const DEFAULT_ENGINE_NAVIGATION_TIMEOUT_LOAD_MS = 90_000;
 export const CALIPER_ENGINE_NAVIGATION_TIMEOUT_CODE = "navigation_timeout";
 
 export const CALIPER_ENGINE_STATE_BINDING = "caliperEngineState";
+export const CALIPER_ENGINE_FOCUS_BINDING = "caliperEngineFocus";
 
 export const CaliperEnginePageSummarySchema = z.object({
   pageId: z.string(),

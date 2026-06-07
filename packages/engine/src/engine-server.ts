@@ -302,11 +302,19 @@ export class CaliperEngineServer {
       return;
     }
 
-    const result = await this.rpcHandler(request);
-    this.writeRpcResult(outgoing, {
-      id: request.id,
-      result,
-    });
+    try {
+      const result = await this.rpcHandler(request);
+      this.writeRpcResult(outgoing, {
+        id: request.id,
+        result,
+      });
+    } catch (error) {
+      this.writeRpcError(outgoing, 500, {
+        id: request.id,
+        code: -32603,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private writeJson(

@@ -96,19 +96,23 @@ export class MeasurementService {
         return this.engineService.call(method, params);
 
       case CALIPER_MEASUREMENT_ROUTING.AUTO:
-      default:
-        if (tabManager.getActiveTab()) {
-          return bridgeService.call(method, params);
-        }
+      default: {
+        const activeTab = tabManager.getActiveTab();
+        const engineHealthy = this.engineService ? await this.engineService.isHealthy() : false;
 
-        if (this.engineService) {
+        if (this.engineService && (engineHealthy || !activeTab)) {
           logger.info(`Routing ${method} to caliper-engine`);
           return this.engineService.call(method, params);
+        }
+
+        if (activeTab) {
+          return bridgeService.call(method, params);
         }
 
         throw new Error(
           "No Caliper runtime is available. Connect a browser tab with CaliperBridge or start caliper-engine."
         );
+      }
     }
   }
 
@@ -173,11 +177,11 @@ export class MeasurementService {
         return CALIPER_RUNTIME_MODES.ENGINE;
       case CALIPER_MEASUREMENT_ROUTING.AUTO:
       default:
-        if (tabManager.getActiveTab()) {
-          return CALIPER_RUNTIME_MODES.ATTACHED;
-        }
         if (this.engineService) {
           return CALIPER_RUNTIME_MODES.ENGINE;
+        }
+        if (tabManager.getActiveTab()) {
+          return CALIPER_RUNTIME_MODES.ATTACHED;
         }
         return CALIPER_RUNTIME_MODES.ATTACHED;
     }

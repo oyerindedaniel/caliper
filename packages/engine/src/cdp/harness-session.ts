@@ -2,9 +2,13 @@ import type { CaliperActionResult, CaliperIntent } from "@oyerinde/caliper-schem
 import { pollUntil } from "@oyerinde/caliper-schema";
 import type { CdpSendClient } from "./cdp-page-session.js";
 import type { RuntimeEvaluateResponse } from "./cdp-protocol.js";
+import {
+  APPLY_ENGINE_MANAGED_TRANSPORT_EXPRESSION,
+  PREPARE_ENGINE_MANAGED_PAGE_EXPRESSION,
+} from "./engine-state-reporter.js";
 import { InjectSession } from "./inject-session.js";
 
-type HarnessPageProbe = {
+export type HarnessPageProbe = {
   dispatchReady: boolean;
   engineInjected: boolean;
   pageCaliperPresent: boolean;
@@ -26,8 +30,12 @@ export class HarnessSession {
   }
 
   async ensureReady(): Promise<void> {
+    await this.injectSession.registerCaliperBootstrap();
+    await this.prepareEngineManagedPage();
+
     let probe = await this.probePage();
     if (probe.dispatchReady) {
+      await this.applyManagedTransportIfForeignBridge(probe);
       return;
     }
 
@@ -51,17 +59,15 @@ export class HarnessSession {
         }
       }
 
-      if (probe.dispatchReady) {
-        return;
+      if (!probe.dispatchReady) {
+        probe = await this.waitForDispatch(
+          "CaliperBridge is booting on the target page but dispatchCaliperIntent never became available."
+        );
       }
 
-      await this.waitForDispatch(
-        "CaliperBridge is booting on the target page but dispatchCaliperIntent never became available."
-      );
+      await this.applyManagedTransportIfForeignBridge(probe);
       return;
     }
-
-    await this.injectSession.registerCaliperBootstrap();
 
     if (!probe.engineInjected) {
       await this.injectSession.injectIntoCurrentDocument();
@@ -106,15 +112,44 @@ export class HarnessSession {
     return actionResult as CaliperActionResult;
   }
 
-  private async waitForDispatch(errorMessage: string): Promise<void> {
-    await pollUntil(async () => ((await this.probePage()).dispatchReady ? true : null), {
-      intervalMs: 250,
-      timeoutMs: 20_000,
-      errorMessage,
+  private async prepareEngineManagedPage(): Promise<void> {
+    await this.client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
+      expression: PREPARE_ENGINE_MANAGED_PAGE_EXPRESSION,
     });
   }
 
-  private async probePage(): Promise<HarnessPageProbe> {
+  private async applyManagedTransportIfForeignBridge(probe: HarnessPageProbe): Promise<void> {
+    if (probe.engineInjected) {
+      return;
+    }
+
+    await this.client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
+      expression: APPLY_ENGINE_MANAGED_TRANSPORT_EXPRESSION,
+    });
+  }
+
+  private async waitForDispatch(errorMessage: string): Promise<HarnessPageProbe> {
+    try {
+      const probe = await pollUntil(
+        async () => {
+          const next = await this.probePage();
+          return next.dispatchReady ? next : null;
+        },
+        { intervalMs: 250, timeoutMs: 20_000, errorMessage }
+      );
+      if (!probe.dispatchReady) {
+        throw new CaliperHarnessLoadError(errorMessage);
+      }
+      return probe;
+    } catch (error) {
+      if (error instanceof CaliperHarnessLoadError) {
+        throw error;
+      }
+      throw new CaliperHarnessLoadError(errorMessage, { cause: error });
+    }
+  }
+
+  async probePage(): Promise<HarnessPageProbe> {
     const evaluation = await this.client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
       expression: `({
         dispatchReady: typeof window.dispatchCaliperIntent === "function",
@@ -129,12 +164,7 @@ export class HarnessSession {
 
     const probe = evaluation.result?.value;
     if (!probe || typeof probe !== "object") {
-      return {
-        dispatchReady: false,
-        engineInjected: false,
-        pageCaliperPresent: false,
-        bridgeBooting: false,
-      };
+      return emptyHarnessProbe();
     }
 
     const value = probe as Record<string, unknown>;
@@ -145,4 +175,13 @@ export class HarnessSession {
       bridgeBooting: value.bridgeBooting === true,
     };
   }
+}
+
+export function emptyHarnessProbe(): HarnessPageProbe {
+  return {
+    dispatchReady: false,
+    engineInjected: false,
+    pageCaliperPresent: false,
+    bridgeBooting: false,
+  };
 }

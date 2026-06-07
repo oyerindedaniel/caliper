@@ -15,13 +15,19 @@ declare global {
     __CALIPER_ENGINE_INJECTED__?: boolean;
     /**
      * Forwards overlay state into the CDP Runtime binding installed by the engine.
-     * Set by engine inject bootstrap; invoked by CaliperBridge when engineStateBinding is true.
+     * Set by engine bootstrap; invoked when engine-managed or engineStateBinding is enabled.
      */
     __CALIPER_ENGINE_REPORT_STATE__?: CaliperGlobalStateHandler;
     /** CDP Runtime binding callback (engine installs via Runtime.addBinding). */
     caliperEngineState?: (payload: string) => void;
     /** Set while CaliperBridge is installing; cleared when dispatch is ready. */
     __CALIPER_BRIDGE_BOOTING__?: boolean;
+    /** Set by engine bootstrap/harness before page CaliperBridge init on engine-attached tabs. */
+    __CALIPER_ENGINE_MANAGED__?: boolean;
+    /** Tears down MCP relay and enables CDP state reporting on an already-initialized bridge. */
+    __CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__?: () => void;
+    /** CDP Runtime binding callback for tab focus (engine installs via Runtime.addBinding). */
+    caliperEngineFocus?: (payload: string) => void;
   }
 }
 
