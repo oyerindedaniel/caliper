@@ -18,10 +18,6 @@ export type HarnessPageProbe = {
 /** Must match @caliper/core OVERLAY_CONTAINER_ID */
 const CALIPER_OVERLAY_ROOT_ID = "caliper-overlay-root";
 
-export class CaliperHarnessLoadError extends Error {
-  readonly name = "CaliperHarnessLoadError";
-}
-
 export class HarnessSession {
   private readonly injectSession: InjectSession;
 
@@ -43,35 +39,33 @@ export class HarnessSession {
 
     if (probe.pageCaliperPresent && !probe.engineInjected) {
       if (!probe.bridgeBooting) {
-        const errorMessage =
-          "Target page has Caliper overlay but CaliperBridge is not enabled. Engine mode requires bridge with dispatchCaliperIntent.";
-        try {
-          probe = await pollUntil(
-            async () => {
-              const next = await this.probePage();
-              return next.dispatchReady || next.bridgeBooting ? next : null;
-            },
-            { intervalMs: 100, timeoutMs: 2_000, errorMessage }
-          );
-        } catch (error) {
-          throw new CaliperHarnessLoadError(errorMessage, { cause: error });
-        }
+        probe = await pollUntil(
+          async () => {
+            const next = await this.probePage();
+            return next.dispatchReady || next.bridgeBooting ? next : null;
+          },
+          {
+            intervalMs: 100,
+            timeoutMs: 2_000,
+            errorMessage:
+              "Target page has Caliper overlay but CaliperBridge is not enabled. Engine mode requires bridge with dispatchCaliperIntent.",
+          }
+        );
       }
 
       if (!probe.dispatchReady) {
-        const errorMessage =
-          "CaliperBridge is booting on the target page but dispatchCaliperIntent never became available.";
-        try {
-          probe = await pollUntil(
-            async () => {
-              const next = await this.probePage();
-              return next.dispatchReady ? next : null;
-            },
-            { intervalMs: 250, timeoutMs: 20_000, errorMessage }
-          );
-        } catch (error) {
-          throw new CaliperHarnessLoadError(errorMessage, { cause: error });
-        }
+        probe = await pollUntil(
+          async () => {
+            const next = await this.probePage();
+            return next.dispatchReady ? next : null;
+          },
+          {
+            intervalMs: 250,
+            timeoutMs: 20_000,
+            errorMessage:
+              "CaliperBridge is booting on the target page but dispatchCaliperIntent never became available.",
+          }
+        );
       }
 
       await this.applyManagedTransportIfForeignBridge(probe);
@@ -82,19 +76,18 @@ export class HarnessSession {
       await this.injectSession.injectIntoCurrentDocument();
     }
 
-    const errorMessage =
-      "Caliper harness did not become ready after engine inject. Engine mode requires CaliperBridge.";
-    try {
-      await pollUntil(
-        async () => {
-          const next = await this.probePage();
-          return next.dispatchReady ? next : null;
-        },
-        { intervalMs: 250, timeoutMs: 20_000, errorMessage }
-      );
-    } catch (error) {
-      throw new CaliperHarnessLoadError(errorMessage, { cause: error });
-    }
+    await pollUntil(
+      async () => {
+        const next = await this.probePage();
+        return next.dispatchReady ? next : null;
+      },
+      {
+        intervalMs: 250,
+        timeoutMs: 20_000,
+        errorMessage:
+          "Caliper harness did not become ready after engine inject. Engine mode requires CaliperBridge.",
+      }
+    );
   }
 
   async dispatchIntent(intent: CaliperIntent): Promise<CaliperActionResult> {

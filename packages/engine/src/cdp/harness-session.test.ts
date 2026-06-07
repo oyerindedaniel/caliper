@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CALIPER_METHODS, RpcFactory } from "@oyerinde/caliper-schema";
 import type { CdpSendClient } from "./cdp-page-session.js";
-import {
-  CaliperHarnessLoadError,
-  HarnessSession,
-  type HarnessPageProbe,
-  emptyHarnessProbe,
-} from "./harness-session.js";
+import { HarnessSession, type HarnessPageProbe, emptyHarnessProbe } from "./harness-session.js";
 
 const injectIntoCurrentDocument = vi.fn(async () => undefined);
 const registerCaliperBootstrap = vi.fn(async () => undefined);
@@ -196,7 +191,9 @@ describe("HarnessSession.ensureReady", () => {
       });
 
       const pending = new HarnessSession(client).ensureReady();
-      const rejection = expect(pending).rejects.toBeInstanceOf(CaliperHarnessLoadError);
+      const rejection = expect(pending).rejects.toThrow(
+        "Target page has Caliper overlay but CaliperBridge is not enabled. Engine mode requires bridge with dispatchCaliperIntent."
+      );
       await vi.runAllTimersAsync();
       await rejection;
     } finally {
