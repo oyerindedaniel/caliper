@@ -108,9 +108,9 @@ describe("HarnessSession.ensureReady", () => {
     expect(registerCaliperBootstrap).toHaveBeenCalledOnce();
     expect(mockClient.getTransportExpressions().length).toBeGreaterThan(0);
     expect(
-      mockClient.getTransportExpressions().some((expression: string) =>
-        expression.includes("__CALIPER_ENGINE_MANAGED__")
-      )
+      mockClient
+        .getTransportExpressions()
+        .some((expression: string) => expression.includes("__CALIPER_ENGINE_MANAGED__"))
     ).toBe(true);
   });
 
@@ -130,9 +130,11 @@ describe("HarnessSession.ensureReady", () => {
     await expect(new HarnessSession(mockClient).ensureReady()).resolves.toBeUndefined();
     expect(injectIntoCurrentDocument).not.toHaveBeenCalled();
     expect(
-      mockClient.getTransportExpressions().some((expression: string) =>
-        expression.includes("__CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__")
-      )
+      mockClient
+        .getTransportExpressions()
+        .some((expression: string) =>
+          expression.includes("__CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__")
+        )
     ).toBe(true);
   });
 
@@ -151,9 +153,11 @@ describe("HarnessSession.ensureReady", () => {
     const mockClient = client as CdpSendClient & { getTransportExpressions: () => string[] };
     await expect(new HarnessSession(mockClient).ensureReady()).resolves.toBeUndefined();
     expect(
-      mockClient.getTransportExpressions().some((expression: string) =>
-        expression.includes("__CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__")
-      )
+      mockClient
+        .getTransportExpressions()
+        .some((expression: string) =>
+          expression.includes("__CALIPER_ENGINE_APPLY_MANAGED_TRANSPORT__")
+        )
     ).toBe(false);
   });
 

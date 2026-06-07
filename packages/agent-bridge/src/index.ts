@@ -35,9 +35,9 @@ import "./types.js";
 
 const logger = createLogger("agent-bridge");
 
-
 function resolveEffectiveBridgeConfig(config: AgentBridgeConfig): AgentBridgeConfig {
-  const isEngineManaged = typeof window !== "undefined" && window.__CALIPER_ENGINE_MANAGED__ === true;
+  const isEngineManaged =
+    typeof window !== "undefined" && window.__CALIPER_ENGINE_MANAGED__ === true;
   if (!isEngineManaged) {
     return config;
   }

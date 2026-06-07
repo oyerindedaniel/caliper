@@ -183,7 +183,6 @@ export class PageRegistry {
         await this.navigatePage(active, this.initialUrl, "load");
       }
     }
-
   }
 
   async stop(): Promise<void> {
@@ -422,10 +421,7 @@ export class PageRegistry {
     const targetId = event.targetInfo.targetId;
     const work = this.attachQueue.then(() => this.handleAttachedToTarget(event));
     this.attachQueue = work.catch((error: unknown) => {
-      this.attachFailures.set(
-        targetId,
-        error instanceof Error ? error : new Error(String(error))
-      );
+      this.attachFailures.set(targetId, error instanceof Error ? error : new Error(String(error)));
     });
     return work;
   }
@@ -499,10 +495,7 @@ export class PageRegistry {
     page.title = title;
   }
 
-  private async syncInitialPageFocus(
-    pageId: string,
-    client: PageHandle["client"]
-  ): Promise<void> {
+  private async syncInitialPageFocus(pageId: string, client: PageHandle["client"]): Promise<void> {
     try {
       const evaluation = await client.send<RuntimeEvaluateResponse>("Runtime.evaluate", {
         expression: "document.visibilityState === 'visible'",
