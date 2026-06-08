@@ -3,6 +3,7 @@ import {
   deduceGeometry,
   filterRuntimeClasses,
   getElementDirectText,
+  resolveElementFromFingerprint,
   waitPostRaf,
   type CaliperCoreSystems,
 } from "@caliper/core";
@@ -30,7 +31,7 @@ import { DEFAULT_WALK_DEPTH } from "./constants.js";
 import type { CaliperStateStore } from "./state-store.js";
 
 export function createIntentHandler(systems: CaliperCoreSystems, stateStore: CaliperStateStore) {
-  const { measurementSystem, selectionSystem } = systems;
+  const { measurementSystem, selectionSystem, handoffRegistry } = systems;
 
   function handleSelect(selectParams: CaliperSelectPayload): Promise<CaliperActionResult> {
     return new Promise((resolve) => {
@@ -259,12 +260,45 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
         case CALIPER_METHODS.CLEAR:
           measurementSystem.abort();
           selectionSystem.clear();
+          handoffRegistry.clear();
+          stateStore.clearHandoff();
           result = {
             success: true,
             method: CALIPER_METHODS.CLEAR,
             timestamp: Date.now(),
           };
           break;
+        case CALIPER_METHODS.HANDOFF_RESTORE: {
+          const snapshot = stateStore.getState()?.handoff;
+          if (!snapshot || snapshot.items.length === 0) {
+            result = {
+              success: false,
+              method: CALIPER_METHODS.HANDOFF_RESTORE,
+              error: "No handoff state to restore",
+              timestamp: Date.now(),
+            };
+            break;
+          }
+
+          const restoredCount = handoffRegistry.restoreFromState(
+            snapshot,
+            resolveElementFromFingerprint
+          );
+          const active = handoffRegistry.getActiveItem();
+          if (active) {
+            selectionSystem.select(active.element);
+          } else {
+            selectionSystem.clear();
+          }
+
+          result = {
+            success: true,
+            method: CALIPER_METHODS.HANDOFF_RESTORE,
+            restoredCount,
+            timestamp: Date.now(),
+          };
+          break;
+        }
         case CALIPER_METHODS.WALK_AND_MEASURE:
           try {
             const walkResult = await waitPostRaf(() =>

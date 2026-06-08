@@ -57,6 +57,32 @@ export {
   type MeasurementSystemListener,
 } from "./measurement-model/utils/measurement-system.js";
 export {
+  createHandoffRegistry,
+  type HandoffRegistry,
+  type HandoffRegistryItem,
+  type HandoffRegistryListener,
+  type HandoffCommitListener,
+  type HandoffUIState,
+  type HandoffPresentation,
+} from "./handoff-model/utils/handoff-registry.js";
+export {
+  resolveHandoffNote,
+  handoffItemLabel,
+  filterHandoffItems,
+  HANDOFF_AGENT_ID_PATTERN,
+} from "./handoff-model/utils/handoff-note.js";
+export {
+  HANDOFF_COLOR_COUNT,
+  HANDOFF_PALETTE,
+  assignColorIndex,
+} from "./handoff-model/utils/handoff-colors.js";
+export { sanitizeHandoffSelection } from "./handoff-model/utils/sanitize-handoff-selection.js";
+export {
+  resolveHandoffPanelPosition,
+  type HandoffPanelPosition,
+  type HandoffPanelPositionInput,
+} from "./geometry/utils/handoff-panel-position.js";
+export {
   createSelectionSystem,
   type SelectionSystem,
   type SelectionMetadata,
@@ -101,6 +127,7 @@ export type {
   ProjectionShortcuts,
   CaliperAgentState,
 } from "./shared/config/overlay-config.js";
+export type { CaliperHandoffState } from "@oyerinde/caliper-schema";
 export {
   applyTheme,
   mergeCommands,
@@ -116,6 +143,7 @@ export { getElementDirectText } from "./shared/utils/text-content.js";
 export { getOverlayRoot } from "./shared/utils/dom-utils.js";
 export { filterRuntimeClasses } from "./shared/utils/class-filter.js";
 export { buildSelectorInfo, caliperProps } from "./shared/utils/selector.js";
+export { resolveElementFromFingerprint } from "./shared/utils/fingerprint-resolve.js";
 export { waitPostRaf } from "./shared/utils/raf.js";
 export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";
 export { getNormalizedModifiers, getLogicalKey, isKeyMatch } from "./shared/utils/keyboard.js";

@@ -7,6 +7,8 @@ import type {
   DeepRequired,
   ProjectionState,
   RulerState,
+  HandoffRegistry,
+  HandoffUIState,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
 
@@ -24,6 +26,9 @@ export interface OverlayProps {
     height: number;
     version: number;
   }>;
+  handoffRegistry?: HandoffRegistry;
+  handoffState?: Accessor<HandoffUIState | null>;
+  onMentionOpenChange?: (open: boolean) => void;
   calculatorState?: Accessor<CalculatorState | null>;
   projectionState?: Accessor<ProjectionState>;
   rulerState?: Accessor<RulerState>;

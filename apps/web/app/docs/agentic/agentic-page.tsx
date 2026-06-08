@@ -54,10 +54,42 @@ export default function AgenticDocsPage() {
 
         <h3 className={styles.subHeader}>Step 3: Handoff Selection</h3>
         <p className="mb-12 op-8">
-          Use the Caliper UI to select an element, then use shortcuts to copy its metadata and paste
-          it directly into your IDE or TUI chat:
+          Build a multi-select handoff set, annotate elements for your agent, and send the committed{" "}
+          <code>handoff</code> batch on save to <code>caliper://state</code>.
         </p>
         <ul className={styles.instructionList}>
+          <li className={styles.instructionItem}>
+            <strong>Ctrl/Cmd + hold (~250ms)</strong> — Pick or unpick handoff items (same
+            deliberate hold for every item in the set).
+          </li>
+          <li className={styles.instructionItem}>
+            <strong>While the set is active</strong> — Hover no longer moves the measurement
+            selection; hold the modifier again to add or remove items.
+          </li>
+          <li className={styles.instructionItem}>
+            <strong>Enter</strong> — Open the note panel (anchored to the last picked item). Press
+            Enter again to save the batch to the agent; boxes animate out but the handoff state is
+            kept for re-open. Shift+Enter inserts a newline in the textarea.
+          </li>
+          <li className={styles.instructionItem}>
+            <strong>@ mentions</strong> — Type <code>@</code> in the note to tag picked elements by
+            agent id. ArrowUp/ArrowDown move the highlight (matching colored boundary boxes). Enter
+            inserts the tag; Space closes the picker.
+          </li>
+          <li className={styles.instructionItem}>
+            <strong>Multi-select colors</strong> — Each picked element gets a distinct boundary
+            color in a set so tags and boxes stay visually paired.
+          </li>
+          <li className={styles.instructionItem}>
+            <strong>Escape</strong> — Panel open: close and discard unsaved typing; picked items
+            stay until you save or clear. Panel closed: clears measurement / calculator / projection
+            only — does <em>not</em> wipe the in-progress handoff set.
+          </li>
+          <li className={styles.instructionItem}>
+            <strong>Shift + clear key</strong> (default <strong>Shift + Escape</strong>) — Cancel
+            the in-progress handoff set without sending it to the agent. Uses your configured{" "}
+            <code>commands.clear</code> binding.
+          </li>
           <li className={styles.instructionItem}>
             <strong>Right-Click Selection</strong> — Copy the <code>data-caliper-agent-id</code> to
             target a single element. With a measurement active, copies both primary and secondary
@@ -68,6 +100,10 @@ export default function AgenticDocsPage() {
             handoff. With a measurement active, copies both primary and secondary fingerprints.
           </li>
         </ul>
+        <p className="mb-12 op-8">
+          After navigation or HMR, agents can call <code>caliper_handoff_restore</code> (or dispatch{" "}
+          <code>CALIPER_HANDOFF_RESTORE</code>) to re-bind DOM elements from stored fingerprints.
+        </p>
       </section>
 
       <section id="stable-selectors" className={styles.section}>

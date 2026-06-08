@@ -5,7 +5,7 @@ import {
   type MeasurementLine as CoreMeasurementLine,
   filterRuntimeClasses,
   getElementDirectText,
-  getLiveGeometry,
+  resolveElementFromFingerprint,
   type ScrollState,
 } from "@caliper/core";
 import {
@@ -264,71 +264,6 @@ export function getContextMetrics(): ContextMetrics {
   };
 }
 
-export function findElementByFingerprint(
-  fingerprintData: CaliperSelectorInput
-): HTMLElement | null {
-  // 1. Try stable marker
-  if (fingerprintData.marker) {
-    const markedElement = document.querySelector(
-      `[data-caliper-marker="${fingerprintData.marker}"]`
-    );
-    if (markedElement) return markedElement as HTMLElement;
-  }
-
-  // 2. Try the original agent-id (might work if no HMR happened)
-  const agentIdElement = document.querySelector(
-    `[data-caliper-agent-id="${fingerprintData.selector}"]`
-  );
-  if (agentIdElement) return agentIdElement as HTMLElement;
-
-  // 3. Try HTML ID
-  if (fingerprintData.id) {
-    const idElement = document.getElementById(fingerprintData.id);
-    if (idElement && idElement.tagName.toLowerCase() === fingerprintData.tag) return idElement;
-  }
-
-  // 4. Try semantic rediscovery using coordinates and tag
-  if (fingerprintData.x !== undefined && fingerprintData.y !== undefined) {
-    let searchX = fingerprintData.x - (fingerprintData.initialWindowX || window.scrollX);
-    let searchY = fingerprintData.y - (fingerprintData.initialWindowY || window.scrollY);
-
-    if (fingerprintData.rect && fingerprintData.scrollHierarchy) {
-      const liveGeometry = getLiveGeometry(
-        fingerprintData.rect as DOMRect,
-        fingerprintData.scrollHierarchy as ScrollState[],
-        fingerprintData.position || "static",
-        fingerprintData.stickyConfig,
-        fingerprintData.initialWindowX || 0,
-        fingerprintData.initialWindowY || 0,
-        fingerprintData.hasContainingBlock || false
-      );
-
-      if (liveGeometry) {
-        searchX = liveGeometry.left - (typeof window !== "undefined" ? window.scrollX : 0);
-        searchY = liveGeometry.top - (typeof window !== "undefined" ? window.scrollY : 0);
-      }
-    } else {
-      searchX = fingerprintData.x - window.scrollX;
-      searchY = fingerprintData.y - window.scrollY;
-    }
-
-    const elementsAtPoint = document.elementsFromPoint(searchX, searchY);
-
-    for (const targetElement of elementsAtPoint) {
-      if (targetElement.tagName.toLowerCase() === fingerprintData.tag) {
-        const targetClasses = filterRuntimeClasses(targetElement.classList);
-        const classMatch = fingerprintData.classes?.every((className: string) =>
-          targetClasses.includes(className)
-        );
-
-        if (classMatch) return targetElement as HTMLElement;
-      }
-    }
-  }
-
-  return null;
-}
-
 /**
  * Attempts to find a DOM element by its unique Caliper fingerprint or a standard selector.
  *
@@ -341,17 +276,13 @@ export function resolveElement(targetSelector: string): HTMLElement | null {
   if (normalized.mode === CALIPER_TARGET_RESOLUTION_MODES.FINGERPRINT_JSON) {
     try {
       const fingerprintData = JSON.parse(targetSelector.trim()) as CaliperSelectorInput;
-      return findElementByFingerprint(fingerprintData);
+      return resolveElementFromFingerprint(fingerprintData);
     } catch {
       return null;
     }
   }
 
-  try {
-    return document.querySelector(normalized.cssSelector) as HTMLElement;
-  } catch {
-    return null;
-  }
+  return document.querySelector(normalized.cssSelector) as HTMLElement | null;
 }
 
 /**
@@ -368,11 +299,7 @@ export function resolveElements(targetSelector: string): Element[] {
     return resolvedElement ? [resolvedElement] : [];
   }
 
-  try {
-    return Array.from(document.querySelectorAll(normalized.cssSelector));
-  } catch {
-    return [];
-  }
+  return Array.from(document.querySelectorAll(normalized.cssSelector));
 }
 
 /**

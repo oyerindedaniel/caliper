@@ -14,6 +14,8 @@ import { BoundaryBoxes } from "./render-boundary-boxes.jsx";
 import { SelectionLabel } from "./render-selection-label.jsx";
 import { ProjectionOverlay } from "./projection.jsx";
 import { RulerOverlay } from "./ruler.jsx";
+import { HandoffBoxes } from "./handoff-boxes.jsx";
+import { HandoffPanel } from "./handoff-panel.jsx";
 import { PREFIX } from "../../css/styles.js";
 import type { OverlayProps } from "../../types.js";
 
@@ -166,6 +168,19 @@ export function Overlay(props: OverlayProps) {
             onLineClick={props.onLineClick}
           />
         </Portal>
+      </Show>
+      <Show when={props.handoffRegistry && props.handoffState}>
+        <HandoffBoxes
+          handoffRegistry={props.handoffRegistry!}
+          handoffState={props.handoffState!}
+          viewport={props.viewport()}
+        />
+        <HandoffPanel
+          handoffRegistry={props.handoffRegistry!}
+          handoffState={props.handoffState!}
+          viewport={props.viewport}
+          onMentionOpenChange={props.onMentionOpenChange}
+        />
       </Show>
     </>
   );

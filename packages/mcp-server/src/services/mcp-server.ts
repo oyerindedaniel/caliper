@@ -56,10 +56,7 @@ const enginePageIdField = {
 function createEmptyAgentState(): CaliperAgentState {
   return {
     viewport: { width: 0, height: 0, scrollX: 0, scrollY: 0 },
-    activeSelection: null,
-    selectionFingerprint: null,
-    lastMeasurement: null,
-    measurementFingerprint: null,
+    handoff: null,
     lastUpdated: 0,
   };
 }
@@ -422,7 +419,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
           selector: z
             .string()
             .describe(
-              "Element identifier. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for maximum stabilization."
+              "Element identifier. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
         }),
       },
@@ -452,12 +449,12 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
           primarySelector: z
             .string()
             .describe(
-              "Identifier for the primary element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector."
+              "Identifier for the primary element. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
           secondarySelector: z
             .string()
             .describe(
-              "Identifier for the target element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector."
+              "Identifier for the target element. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
         }),
       },
@@ -507,6 +504,31 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
     );
 
     this.server.registerTool(
+      "caliper_handoff_restore",
+      {
+        description:
+          "Re-resolve DOM elements from the current handoff state after navigation or HMR. Restores multi-select boundary boxes and the note panel to match stored handoff items.",
+        inputSchema: z.object({}),
+      },
+      async () => {
+        try {
+          const result = await this.measurementService.call(CALIPER_METHODS.HANDOFF_RESTORE, {});
+          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Error restoring handoff: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+    );
+
+    this.server.registerTool(
       "caliper_walk_dom",
       {
         description:
@@ -515,7 +537,7 @@ If descendantCount > ${RECOMMENDED_PAGINATION_THRESHOLD} or descendantsTruncated
           selector: z
             .string()
             .describe(
-              "Element identifier. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for maximum stabilization."
+              "Element identifier. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
         }),
       },
@@ -582,7 +604,7 @@ The output includes:
           selector: z
             .string()
             .describe(
-              "Root element identifier. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for maximum stabilization."
+              "Root element identifier. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
           maxDepth: z.number().optional().describe("Maximum depth to walk (default: 5)"),
           maxNodes: z
@@ -1350,11 +1372,9 @@ Returns the Delta E value and a human-readable interpretation:
         
         It contains:
         - viewport: Current scroll positions and dimensions.
-        - activeSelection: Visual metadata of the currently selected element.
-        - selectionFingerprint: A stable JSON identifier (agentId, tag, text content) for the active selection. Use the 'selector' property from this object as input for 'caliper_inspect' or 'caliper_walk_and_measure' to perform high-precision audits on what the user just picked.
-        - lastMeasurement & measurementFingerprint: Context for the most recent distance measurement between two elements.
+        - handoff: Last committed handoff batch (items with colorIndex, group note with resolved agent ids, fingerprints). Restored from sessionStorage on reload. Primary passive context for user-annotated elements.
         
-        USE CASE: When you receive a notification that this resource has updated, read it to understand the user's current focus. If a 'selectionFingerprint' is present, you can immediately offer to 'Inspect' or 'Audit' that element without asking the user for a selector.`,
+        USE CASE: When you receive a notification that this resource has updated, read it to understand the user's current focus. If handoff.items is non-empty, iterate items and read note fields for user intent. Use caliper_handoff_restore after navigation if boxes are missing but handoff state persists.`,
       },
       async () => {
         return {
@@ -1391,7 +1411,7 @@ Returns the Delta E value and a human-readable interpretation:
           selector: z
             .string()
             .describe(
-              "The Caliper Selector (JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector) to audit. PRIORITIZE JSON Fingerprint for maximum stabilization."
+              "The Caliper Selector (fingerprint JSON, caliper-*** agent ID, or CSS selector) to audit."
             ),
         },
       },
@@ -1436,12 +1456,12 @@ BEGIN PHASE 1 NOW. Do not skip any steps.`,
           selectorA: z
             .string()
             .describe(
-              "Caliper Selector for the REFERENCE element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for stabilization."
+              "Caliper Selector for the REFERENCE element. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
           selectorB: z
             .string()
             .describe(
-              "Caliper Selector for the TARGET element. PRIORITIZE JSON Fingerprint, Caliper Agent ID (caliper-***), or CSS selector for stabilization."
+              "Caliper Selector for the TARGET element. fingerprint JSON, caliper-*** agent ID, or CSS selector."
             ),
           tabIdA: z
             .string()

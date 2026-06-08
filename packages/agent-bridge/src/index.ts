@@ -149,7 +149,7 @@ export function CaliperBridge(config: AgentBridgeConfig): CaliperPlugin {
               })
             : null;
 
-          const disposeSync = initStateSync(stateStore, systems, (state) => {
+          const disposeSync = initStateSync(stateStore, systems.handoffRegistry, (state) => {
             if (wsBridge) {
               wsBridge.sendStateUpdate(state);
             }
