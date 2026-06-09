@@ -455,8 +455,27 @@ export const OVERLAY_STYLES = `
   box-sizing: border-box;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.16) transparent;
   box-shadow: none;
   outline: none;
+}
+
+.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar {
+  width: 4px;
+}
+
+.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
+}
+
+.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(0, 0, 0, 0.22);
 }
 
 .${CALIPER_PREFIX}handoff-textarea-overlay {

@@ -25,6 +25,7 @@ import { createMentionController } from "../../handoff/create-mention-controller
 import {
   measureNoteCursor,
   resolveNoteCursorFromPoint,
+  snapNoteCursorOutOfMentionInterior,
   type NoteCursorRect,
 } from "../../handoff/measure-handoff-note-cursor.js";
 import { PresenceHost } from "../../handoff/presence-host.jsx";
@@ -327,8 +328,26 @@ export function HandoffPanel(props: HandoffPanelProps) {
     mirror.scrollTop = textarea.scrollTop;
   };
 
-  const placeCaretFromPointer = (textarea: HTMLTextAreaElement, clientX: number) => {
-    const resolved = resolveNoteCursorFromPoint(textarea, clientX, {
+  const ensureNoteCursorNotInsideMention = (textarea: HTMLTextAreaElement): boolean => {
+    const cursor = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? cursor;
+    if (cursor !== end) {
+      return false;
+    }
+    const snapped = snapNoteCursorOutOfMentionInterior(textarea.value, cursor);
+    if (snapped === cursor) {
+      return false;
+    }
+    textarea.setSelectionRange(snapped, snapped);
+    return true;
+  };
+
+  const placeCaretFromPointer = (
+    textarea: HTMLTextAreaElement,
+    clientX: number,
+    clientY: number
+  ) => {
+    const resolved = resolveNoteCursorFromPoint(textarea, clientX, clientY, {
       note: textarea.value,
       colorByAgentId: colorByAgentId(),
     });
@@ -460,10 +479,10 @@ export function HandoffPanel(props: HandoffPanelProps) {
             aria-autocomplete="list"
             aria-activedescendant={activeDescendant()}
             onInput={(event) => {
-              const value = event.currentTarget.value;
-              props.handoffRegistry.setPendingNote(value);
+              const textarea = event.currentTarget;
+              props.handoffRegistry.setPendingNote(textarea.value);
               setNoteRevision((revision) => revision + 1);
-              mentionController.handleInput(event.currentTarget);
+              mentionController.handleInput(textarea);
               if (mentionController.isOpen()) {
                 setMentionListTick((tick) => tick + 1);
               }
@@ -477,7 +496,13 @@ export function HandoffPanel(props: HandoffPanelProps) {
                 setMentionAnchorTick((tick) => tick + 1);
               }
             }}
-            onSelect={() => syncCaret()}
+            onSelect={() => {
+              const textarea = textareaRef;
+              if (textarea) {
+                ensureNoteCursorNotInsideMention(textarea);
+              }
+              syncCaret();
+            }}
             onMouseDown={(event) => {
               if (event.button !== 0) {
                 return;
@@ -485,9 +510,15 @@ export function HandoffPanel(props: HandoffPanelProps) {
               event.preventDefault();
               const textarea = event.currentTarget;
               textarea.focus();
-              placeCaretFromPointer(textarea, event.clientX);
+              placeCaretFromPointer(textarea, event.clientX, event.clientY);
             }}
-            onFocus={() => syncCaret()}
+            onFocus={() => {
+              const textarea = textareaRef;
+              if (textarea) {
+                ensureNoteCursorNotInsideMention(textarea);
+              }
+              syncCaret();
+            }}
             onBlur={() => setCaretVisible(false)}
             onKeyDown={(event) => {
               const textarea = event.currentTarget;

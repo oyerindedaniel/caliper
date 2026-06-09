@@ -16,6 +16,78 @@ export type NoteCursorSpace = "viewport" | "wrap";
 
 const CURSOR_PROBE = "\u200b";
 
+export type NoteCursorMentionContext =
+  | { kind: "text" }
+  | { kind: "mention-boundary"; start: number; end: number; edge: "start" | "end" }
+  | { kind: "mention-interior"; start: number; end: number; agentId: string };
+
+/** Classify a raw textarea index against parsed `@caliper-*` mention spans. */
+export function describeNoteCursorContext(note: string, index: number): NoteCursorMentionContext {
+  let offset = 0;
+
+  for (const segment of parseHandoffNoteSegments(note)) {
+    if (segment.type === "text") {
+      const end = offset + segment.value.length;
+      if (index < end) {
+        return { kind: "text" };
+      }
+      offset = end;
+      continue;
+    }
+
+    const start = offset;
+    const end = offset + 1 + segment.agentId.length;
+    if (index === start || index === end) {
+      return { kind: "mention-boundary", start, end, edge: index === start ? "start" : "end" };
+    }
+    if (index > start && index < end) {
+      return { kind: "mention-interior", start, end, agentId: segment.agentId };
+    }
+    offset = end;
+  }
+
+  return { kind: "text" };
+}
+
+/**
+ * Indices where the pill mirror places a unique caret marker.
+ * Mention interiors share one visual point (full pill rendered) and must not be hit-tested.
+ */
+export function collectNoteCaretProbeIndices(
+  note: string,
+  segments: HandoffNoteSegment[] = parseHandoffNoteSegments(note)
+): number[] {
+  const indices = new Set<number>([0]);
+
+  let offset = 0;
+  for (const segment of segments) {
+    if (segment.type === "text") {
+      for (let i = 0; i <= segment.value.length; i++) {
+        indices.add(offset + i);
+      }
+      offset += segment.value.length;
+      continue;
+    }
+
+    const start = offset;
+    const end = offset + 1 + segment.agentId.length;
+    indices.add(start);
+    indices.add(end);
+    offset = end;
+  }
+
+  return [...indices].sort((a, b) => a - b);
+}
+
+/** Move a raw index out of `@caliper-*` interiors (keyboard / native selection). */
+export function snapNoteCursorOutOfMentionInterior(note: string, index: number): number {
+  const context = describeNoteCursorContext(note, index);
+  if (context.kind === "mention-interior") {
+    return context.end;
+  }
+  return index;
+}
+
 function appendPill(parent: HTMLElement, agentId: string, color: string) {
   const pill = document.createElement("span");
   pill.className = `${PREFIX}handoff-mention-pill`;
@@ -166,15 +238,18 @@ function snapCursorInsideMentions(
         colorByAgentId: options.colorByAgentId,
         space: "wrap" as const,
       };
-      const leftStart = measureNoteCursor(textarea, {
+      const startRect = measureNoteCursor(textarea, {
         ...measureOpts,
         selectionStart: start,
-      })?.left;
-      const leftEnd = measureNoteCursor(textarea, { ...measureOpts, selectionStart: end })?.left;
-      if (leftStart === undefined || leftEnd === undefined) {
+      });
+      const endRect = measureNoteCursor(textarea, {
+        ...measureOpts,
+        selectionStart: end,
+      });
+      if (!startRect || !endRect) {
         return index;
       }
-      return clickX < (leftStart + leftEnd) / 2 ? start : end;
+      return clickX < (startRect.left + endRect.left) / 2 ? start : end;
     }
 
     offset = end;
@@ -189,6 +264,7 @@ function snapCursorInsideMentions(
 export function resolveNoteCursorFromPoint(
   textarea: HTMLTextAreaElement,
   clientX: number,
+  clientY: number,
   options: {
     note: string;
     colorByAgentId: Map<string, string>;
@@ -201,29 +277,32 @@ export function resolveNoteCursorFromPoint(
     return { index: nativeIndex, clickXInWrap: 0, nativeIndex };
   }
 
-  const clickXInWrap = clientX - wrap.getBoundingClientRect().left;
+  const wrapRect = wrap.getBoundingClientRect();
+  const clickXInWrap = clientX - wrapRect.left;
+  const clickYInWrap = clientY - wrapRect.top;
+  const segments = parseHandoffNoteSegments(options.note);
+  const probeIndices = collectNoteCaretProbeIndices(options.note, segments);
   const measureOpts = {
     note: options.note,
     colorByAgentId: options.colorByAgentId,
     space: "wrap" as const,
   };
-  const len = options.note.length;
 
-  let bestIndex = 0;
-  let bestDistance = Infinity;
+  let bestIndex = probeIndices[0] ?? 0;
+  let bestDistance2D = Infinity;
 
-  for (let index = 0; index <= len; index++) {
+  for (const index of probeIndices) {
     const rect = measureNoteCursor(textarea, { ...measureOpts, selectionStart: index });
     if (!rect) {
       continue;
     }
-    const distance = Math.abs(rect.left - clickXInWrap);
-    if (distance < bestDistance) {
-      bestDistance = distance;
+    const distance2D = Math.hypot(rect.left - clickXInWrap, rect.top - clickYInWrap);
+    if (distance2D < bestDistance2D) {
+      bestDistance2D = distance2D;
       bestIndex = index;
     }
   }
 
-  const index = snapCursorInsideMentions(textarea, bestIndex, clickXInWrap, options);
-  return { index, clickXInWrap, nativeIndex };
+  const chosenIndex = snapCursorInsideMentions(textarea, bestIndex, clickXInWrap, options);
+  return { index: chosenIndex, clickXInWrap, nativeIndex };
 }
