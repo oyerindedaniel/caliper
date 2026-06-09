@@ -43,6 +43,44 @@ function readHandoffNoteMetrics(textarea: HTMLTextAreaElement) {
   };
 }
 
+type PanelPinStyle = Record<string, string | undefined>;
+
+type PanelPlacement = {
+  side: "top" | "bottom";
+  align: "start" | "center";
+};
+
+type PanelChrome = {
+  pinStyle: PanelPinStyle;
+  placement: PanelPlacement;
+};
+
+const DEFAULT_PANEL_PLACEMENT: PanelPlacement = { side: "bottom", align: "start" };
+
+function resolvePanelPlacement(
+  anchor: NonNullable<ReturnType<typeof getLiveGeometry>>,
+  position: { left: number; top: number },
+  viewport: { scrollX: number; scrollY: number; width: number; height: number },
+  margin = 10
+): PanelPlacement {
+  const viewportMargin = 16;
+  const windowTop = anchor.top - viewport.scrollY;
+  const windowBottom = windowTop + anchor.height;
+  const belowTop = windowBottom + margin;
+  const placedAbove = position.top < belowTop - 1;
+
+  const visibleLeft = Math.max(anchor.visibleMinX - viewport.scrollX, viewportMargin);
+  const visibleRight = Math.min(
+    anchor.visibleMaxX - viewport.scrollX,
+    viewport.width - viewportMargin
+  );
+
+  return {
+    side: placedAbove ? "top" : "bottom",
+    align: visibleRight > visibleLeft ? "center" : "start",
+  };
+}
+
 interface HandoffPanelProps {
   handoffRegistry: HandoffRegistry;
   handoffState: Accessor<HandoffUIState | null>;
@@ -70,7 +108,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   const [caretRect, setCaretRect] = createSignal<NoteCursorRect | null>(null);
   const [caretVisible, setCaretVisible] = createSignal(false);
   let mirrorRef: HTMLDivElement | undefined;
-  let lastPanelStyle: Record<string, string | undefined> | undefined;
+  let lastPanelChrome: PanelChrome | undefined;
 
   const pendingNote = () => {
     noteRevision();
@@ -96,6 +134,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
     onOpenChange: (open) => {
       setMentionOpen(open);
       props.onMentionOpenChange?.(open);
+      setMentionListTick((tick) => tick + 1);
       if (open) {
         setMentionAnchorTick((tick) => tick + 1);
       }
@@ -121,13 +160,27 @@ export function HandoffPanel(props: HandoffPanelProps) {
     textarea: textareaEl,
   });
 
-  const panelStyle = createMemo((): Record<string, string | undefined> => {
+  const panelChrome = createMemo((): PanelChrome => {
     props.viewport().version;
+    if (!panelPresent()) {
+      return (
+        lastPanelChrome ?? {
+          pinStyle: { width: `${HANDOFF_PANEL_WIDTH}px` },
+          placement: DEFAULT_PANEL_PLACEMENT,
+        }
+      );
+    }
+
     panelLayoutHeight();
 
     const item = activeItem();
     if (!item) {
-      return lastPanelStyle ?? { width: `${HANDOFF_PANEL_WIDTH}px` };
+      return (
+        lastPanelChrome ?? {
+          pinStyle: { width: `${HANDOFF_PANEL_WIDTH}px` },
+          placement: DEFAULT_PANEL_PLACEMENT,
+        }
+      );
     }
 
     const live = getLiveGeometry(
@@ -140,7 +193,12 @@ export function HandoffPanel(props: HandoffPanelProps) {
       item.metadata.hasContainingBlock
     );
     if (!live) {
-      return lastPanelStyle ?? { width: `${HANDOFF_PANEL_WIDTH}px` };
+      return (
+        lastPanelChrome ?? {
+          pinStyle: { width: `${HANDOFF_PANEL_WIDTH}px` },
+          placement: DEFAULT_PANEL_PLACEMENT,
+        }
+      );
     }
 
     const measured = panelLayoutHeight();
@@ -152,21 +210,27 @@ export function HandoffPanel(props: HandoffPanelProps) {
           ? readHandoffNoteMetrics(textarea).minHeight
           : HANDOFF_NOTE_MAX_HEIGHT;
 
+    const viewport = props.viewport();
     const position = resolveHandoffPanelPosition({
       anchor: live,
-      viewport: props.viewport(),
+      viewport,
       panelWidth: HANDOFF_PANEL_WIDTH,
       panelHeight,
     });
 
-    lastPanelStyle = {
-      top: "0",
-      left: "0",
-      transform: `translate3d(${position.left}px, ${position.top}px, 0)`,
-      width: `${position.maxWidth}px`,
+    lastPanelChrome = {
+      pinStyle: {
+        translate: `${position.left}px ${position.top}px 0`,
+        width: `${position.maxWidth}px`,
+      },
+      placement: resolvePanelPlacement(live, position, viewport),
     };
-    return lastPanelStyle;
+    return lastPanelChrome;
   });
+
+  const panelStyle = createMemo(() => panelChrome().pinStyle);
+  const panelSide = createMemo(() => panelChrome().placement.side);
+  const panelAlign = createMemo(() => panelChrome().placement.align);
 
   const syncExpanded = (textarea: HTMLTextAreaElement, contentHeight = textarea.scrollHeight) => {
     const { minHeight } = readHandoffNoteMetrics(textarea);
@@ -200,7 +264,6 @@ export function HandoffPanel(props: HandoffPanelProps) {
       () => [panelPresent(), textareaEl()] as const,
       ([present, textarea]) => {
         if (!present) {
-          setPanelLayoutHeight(0);
           setCaretVisible(false);
           return;
         }
@@ -374,11 +437,14 @@ export function HandoffPanel(props: HandoffPanelProps) {
       <PresenceHost
         present={panelPresent}
         onExitComplete={() => {
-          lastPanelStyle = undefined;
+          setPanelLayoutHeight(0);
+          lastPanelChrome = undefined;
         }}
         ref={panelRootRef}
-        class={`${PREFIX}handoff-panel`}
+        class={`${PREFIX}handoff-presence ${PREFIX}handoff-panel`}
         style={panelStyle}
+        dataSide={panelSide}
+        dataAlign={panelAlign}
         dataCaliperIgnore
       >
         <div class={`${PREFIX}handoff-note-wrap`} data-expanded={expanded() ? "true" : undefined}>
@@ -464,6 +530,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
         <HandoffMentionPopover
           ref={popoverRootRef}
           controller={mentionController}
+          mentionOpen={mentionOpen}
           mentionListTick={mentionListTick}
           mentionAnchorTick={mentionAnchorTick}
           highlightedAgentId={() => props.handoffState()?.highlightedAgentId ?? null}

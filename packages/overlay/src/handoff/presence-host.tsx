@@ -10,10 +10,15 @@ import {
 import { wirePresenceExit, type PresenceDataState } from "./create-presence.js";
 import { mergeRefs } from "./assign-ref.js";
 
+export type PresencePlacementSide = "top" | "bottom" | "left" | "right";
+export type PresencePlacementAlign = "start" | "center" | "end";
+
 type PresenceHostProps = {
   present: Accessor<boolean>;
   class?: string;
   style?: Accessor<Record<string, string | undefined>>;
+  dataSide?: Accessor<PresencePlacementSide | undefined>;
+  dataAlign?: Accessor<PresencePlacementAlign | undefined>;
   dataCaliperIgnore?: boolean;
   role?: JSX.IntrinsicElements["div"]["role"];
   ariaLabel?: string;
@@ -66,6 +71,8 @@ export function PresenceHost(props: PresenceHostProps) {
         class={props.class}
         style={props.style?.()}
         data-state={dataState()}
+        data-side={props.dataSide?.()}
+        data-align={props.dataAlign?.()}
         role={props.role}
         aria-label={props.ariaLabel}
         data-caliper-ignore={props.dataCaliperIgnore ? "" : undefined}

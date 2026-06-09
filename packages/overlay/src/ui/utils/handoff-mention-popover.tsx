@@ -1,20 +1,35 @@
-import { For, Show, createEffect, createMemo, type Accessor, type Ref } from "solid-js";
+import {
+  For,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  type Accessor,
+  type Ref,
+} from "solid-js";
 import { Portal } from "solid-js/web";
-import { getOverlayRoot, HANDOFF_PALETTE, handoffItemLabel } from "@caliper/core";
+import {
+  getOverlayRoot,
+  HANDOFF_PALETTE,
+  handoffItemLabel,
+  type HandoffRegistryItem,
+} from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 import type { MentionController } from "../../handoff/create-mention-controller.js";
 import { mergeRefs } from "../../handoff/assign-ref.js";
 import { measureNoteCursor } from "../../handoff/measure-handoff-note-cursor.js";
-import { PresenceHost } from "../../handoff/presence-host.jsx";
+import { PresenceHost, type PresencePlacementSide } from "../../handoff/presence-host.jsx";
 import { HandoffMentionPill } from "./handoff-mention-pill.jsx";
 
 const POPOVER_WIDTH = 280;
 const POPOVER_MAX_HEIGHT = 200;
-const POPOVER_ESTIMATED_HEIGHT = 160;
+const POPOVER_EMPTY_HEIGHT = 36;
+const POPOVER_ROW_HEIGHT = 44;
 
 interface HandoffMentionPopoverProps {
   ref?: Ref<HTMLDivElement>;
   controller: MentionController;
+  mentionOpen: Accessor<boolean>;
   /** Bumps when the @ filter query or session membership changes (list content). */
   mentionListTick: Accessor<number>;
   /** Bumps when popover anchor geometry should remeasure (open, scroll, layout, viewport). */
@@ -31,19 +46,36 @@ interface HandoffMentionPopoverProps {
   onSelect: (agentId: string) => void;
 }
 
+type PopoverChrome = {
+  pinStyle: Record<string, string>;
+  side: PresencePlacementSide;
+};
+
+const DEFAULT_POPOVER_SIDE: PresencePlacementSide = "bottom";
+
 export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
   let listRef: HTMLDivElement | undefined;
-  let lastPosition: Record<string, string> | undefined;
+  let lastChrome: PopoverChrome | undefined;
+  const [displayItems, setDisplayItems] = createSignal<HandoffRegistryItem[]>([]);
 
   const filteredItems = createMemo(() => {
     props.mentionListTick();
     return props.controller.getFilteredItems();
   });
-  const session = createMemo(() => {
+  const showEmptyFallback = createMemo(() => {
     props.mentionListTick();
-    return props.controller.getSession();
+    const session = props.controller.getSession();
+    return props.mentionOpen() && session.open && filteredItems().length === 0;
   });
-  const popoverPresent = createMemo(() => session().open);
+  const popoverPresent = () => props.mentionOpen();
+
+  // Live while open; on close the effect stops updating so the signal keeps the last frame.
+  createEffect(() => {
+    if (!props.mentionOpen()) {
+      return;
+    }
+    setDisplayItems(filteredItems());
+  });
 
   const steadyUnpositioned = (): Record<string, string> => ({
     visibility: "hidden",
@@ -52,17 +84,46 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
     maxHeight: `${POPOVER_MAX_HEIGHT}px`,
   });
 
-  const popoverStyle = createMemo((): Record<string, string | undefined> => {
+  const resolvePopoverHeight = (itemCount: number) => {
+    if (itemCount === 0) {
+      return POPOVER_EMPTY_HEIGHT;
+    }
+    return Math.min(POPOVER_MAX_HEIGHT, itemCount * POPOVER_ROW_HEIGHT + 8);
+  };
+
+  const popoverChrome = createMemo((): PopoverChrome => {
     props.mentionAnchorTick();
 
+    if (!props.mentionOpen()) {
+      return (
+        lastChrome ?? {
+          pinStyle: { width: `${POPOVER_WIDTH}px`, maxHeight: `${POPOVER_MAX_HEIGHT}px` },
+          side: DEFAULT_POPOVER_SIDE,
+        }
+      );
+    }
+
     const activeSession = props.controller.getSession();
+
     if (!activeSession.open) {
-      return lastPosition ?? {};
+      if (lastChrome) {
+        return lastChrome;
+      }
+      return {
+        pinStyle: { width: `${POPOVER_WIDTH}px`, maxHeight: `${POPOVER_MAX_HEIGHT}px` },
+        side: DEFAULT_POPOVER_SIDE,
+      };
     }
 
     const textarea = props.textareaRef();
     if (!textarea || activeSession.queryStart < 0) {
-      return { ...lastPosition, ...steadyUnpositioned() };
+      if (lastChrome) {
+        return lastChrome;
+      }
+      return {
+        pinStyle: steadyUnpositioned(),
+        side: DEFAULT_POPOVER_SIDE,
+      };
     }
 
     const anchor = measureNoteCursor(textarea, {
@@ -72,23 +133,37 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
       space: "viewport",
     });
     if (!anchor) {
-      return { ...lastPosition, ...steadyUnpositioned() };
+      if (lastChrome) {
+        return lastChrome;
+      }
+      return {
+        pinStyle: steadyUnpositioned(),
+        side: DEFAULT_POPOVER_SIDE,
+      };
     }
 
+    const viewport = props.viewport();
+    const itemCount = filteredItems().length;
+    const popoverHeight = resolvePopoverHeight(itemCount);
     const position = props.controller.resolveMentionPopoverPosition(
       anchor,
-      props.viewport(),
+      viewport,
       POPOVER_WIDTH,
-      POPOVER_ESTIMATED_HEIGHT
+      popoverHeight
     );
-    lastPosition = {
-      top: `${position.top}px`,
-      left: `${position.left}px`,
-      width: `${position.maxWidth}px`,
-      maxHeight: `${POPOVER_MAX_HEIGHT}px`,
+    lastChrome = {
+      pinStyle: {
+        translate: `${position.left}px ${position.top}px 0`,
+        width: `${position.maxWidth}px`,
+        maxHeight: `${POPOVER_MAX_HEIGHT}px`,
+      },
+      side: position.side,
     };
-    return lastPosition;
+    return lastChrome;
   });
+
+  const popoverStyle = createMemo(() => popoverChrome().pinStyle);
+  const popoverSide = createMemo(() => popoverChrome().side);
 
   createEffect(() => {
     const agentId = props.highlightedAgentId();
@@ -106,27 +181,32 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
       <PresenceHost
         present={popoverPresent}
         onExitComplete={() => {
-          lastPosition = undefined;
+          lastChrome = undefined;
+          setDisplayItems([]);
         }}
+        dataSide={popoverSide}
+        dataAlign={() => "start"}
         ref={mergeRefs(props.ref, (element) => {
           listRef = element;
         })}
         id={`${PREFIX}handoff-mention-list`}
-        class={`${PREFIX}handoff-mention-popover`}
+        class={`${PREFIX}handoff-presence ${PREFIX}handoff-mention-popover`}
         style={popoverStyle}
         role="listbox"
         ariaLabel="Mention handoff item"
         dataCaliperIgnore
       >
         <Show
-          when={filteredItems().length > 0}
+          when={displayItems().length > 0}
           fallback={
-            <div class={`${PREFIX}handoff-mention-empty`} tabindex="0">
-              No matching items
-            </div>
+            <Show when={showEmptyFallback()}>
+              <div class={`${PREFIX}handoff-mention-empty`} tabindex="0">
+                No matching items
+              </div>
+            </Show>
           }
         >
-          <For each={filteredItems()}>
+          <For each={displayItems()}>
             {(item) => {
               const pillColor =
                 HANDOFF_PALETTE[item.colorIndex % HANDOFF_PALETTE.length] ?? HANDOFF_PALETTE[0]!;

@@ -359,8 +359,26 @@ export const OVERLAY_STYLES = `
   animation: ${CALIPER_PREFIX}handoff-box-shake 380ms ease-in-out;
 }
 
+.${CALIPER_PREFIX}handoff-presence[data-side="bottom"][data-align="start"] {
+  transform-origin: top left;
+}
+
+.${CALIPER_PREFIX}handoff-presence[data-side="bottom"][data-align="center"] {
+  transform-origin: top center;
+}
+
+.${CALIPER_PREFIX}handoff-presence[data-side="top"][data-align="start"] {
+  transform-origin: bottom left;
+}
+
+.${CALIPER_PREFIX}handoff-presence[data-side="top"][data-align="center"] {
+  transform-origin: bottom center;
+}
+
 .${CALIPER_PREFIX}handoff-panel {
   position: fixed;
+  top: 0;
+  left: 0;
   pointer-events: auto;
   z-index: 1000006;
   display: flex;
@@ -369,7 +387,8 @@ export const OVERLAY_STYLES = `
   background: transparent;
   border: none;
   box-shadow: none;
-  transform-origin: top left;
+  scale: 1;
+  will-change: translate, scale;
 }
 
 .${CALIPER_PREFIX}handoff-panel[data-state="open"] {
@@ -377,7 +396,7 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}handoff-panel[data-state="closed"] {
-  animation: ${CALIPER_PREFIX}handoff-panel-out 100ms ease-in forwards;
+  animation: ${CALIPER_PREFIX}handoff-panel-out 100ms ease-out forwards;
 }
 
 .${CALIPER_PREFIX}handoff-note-wrap {
@@ -393,7 +412,7 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}handoff-note-wrap:focus-within {
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.12),
-    inset 0 0 0 2px var(--caliper-primary);
+    inset 0 0 0 1px var(--caliper-primary);
 }
 
 .${CALIPER_PREFIX}handoff-note-wrap[data-expanded="true"] {
@@ -476,6 +495,8 @@ export const OVERLAY_STYLES = `
 
 .${CALIPER_PREFIX}handoff-mention-popover {
   position: fixed;
+  top: 0;
+  left: 0;
   pointer-events: auto;
   z-index: 1000007;
   display: flex;
@@ -489,7 +510,8 @@ export const OVERLAY_STYLES = `
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
-  transform-origin: top left;
+  scale: 1;
+  will-change: translate, scale;
 }
 
 .${CALIPER_PREFIX}handoff-mention-popover[data-state="open"] {
@@ -570,29 +592,33 @@ export const OVERLAY_STYLES = `
 @keyframes ${CALIPER_PREFIX}handoff-panel-in {
   from {
     opacity: 0;
+    scale: 0.97;
   }
   to {
     opacity: 1;
+    scale: 1;
   }
 }
 
 @keyframes ${CALIPER_PREFIX}handoff-panel-out {
   from {
     opacity: 1;
+    scale: 1;
   }
   to {
     opacity: 0;
+    scale: 0.97;
   }
 }
 
 @keyframes ${CALIPER_PREFIX}handoff-mention-in {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    scale: 0.98;
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    scale: 1;
   }
 }
 
@@ -618,9 +644,11 @@ export const OVERLAY_STYLES = `
 @keyframes ${CALIPER_PREFIX}handoff-mention-out {
   from {
     opacity: 1;
+    scale: 1;
   }
   to {
     opacity: 0;
+    scale: 0.98;
   }
 }
 `;

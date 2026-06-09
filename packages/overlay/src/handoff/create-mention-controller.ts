@@ -40,8 +40,8 @@ export function createMentionController(options: MentionControllerOptions) {
       return;
     }
     session = { ...CLOSED };
-    options.onHighlight(null);
     notifyOpen();
+    options.onHighlight(null);
   }
 
   function parseSession(text: string, cursor: number): MentionSession {
@@ -98,9 +98,15 @@ export function createMentionController(options: MentionControllerOptions) {
     const maxWidth = Math.min(popoverWidth, viewport.width - viewportMargin * 2);
 
     let top = anchor.top + margin;
+    let side: "top" | "bottom" = "bottom";
     if (top + popoverHeight > viewport.height - viewportMargin) {
       const above = anchor.top - popoverHeight - margin;
-      top = above >= viewportMargin ? above : viewport.height - viewportMargin - popoverHeight;
+      if (above >= viewportMargin) {
+        top = above;
+        side = "top";
+      } else {
+        top = viewport.height - viewportMargin - popoverHeight;
+      }
     }
 
     let left = anchor.left;
@@ -109,7 +115,7 @@ export function createMentionController(options: MentionControllerOptions) {
     }
     left = Math.max(viewportMargin, left);
 
-    return { top, left, maxWidth };
+    return { top, left, maxWidth, side };
   }
 
   function insertMention(textarea: HTMLTextAreaElement, agentId: string) {
