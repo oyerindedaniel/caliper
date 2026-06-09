@@ -222,8 +222,8 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
                   onMouseEnter={() => props.onHighlight(item.agentId)}
                   onMouseDown={(event) => {
                     event.preventDefault();
-                    props.onSelect(item.agentId);
                   }}
+                  onClick={() => props.onSelect(item.agentId)}
                   onFocus={() => props.onHighlight(item.agentId)}
                 >
                   <span class={`${PREFIX}handoff-mention-label`}>

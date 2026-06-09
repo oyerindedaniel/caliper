@@ -7,7 +7,7 @@ import { deduceGeometry } from "@/geometry/utils/scroll-aware.js";
 import type { SelectionMetadata } from "@/measurement-model/utils/selection-system.js";
 import { buildSelectorInfo } from "@/shared/utils/selector.js";
 import { assignColorIndex } from "./handoff-colors.js";
-import { resolveHandoffNote } from "./handoff-note.js";
+import { isHandoffPendingNoteEmpty, resolveHandoffNote } from "./handoff-note.js";
 import { sanitizeHandoffSelection } from "./sanitize-handoff-selection.js";
 
 type InternalHandoffItem = {
@@ -290,6 +290,10 @@ export function createHandoffRegistry(
 
     commitSession() {
       if (items.size === 0) {
+        return null;
+      }
+
+      if (isHandoffPendingNoteEmpty(pendingNote)) {
         return null;
       }
 

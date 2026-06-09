@@ -67,6 +67,7 @@ export {
 } from "./handoff-model/utils/handoff-registry.js";
 export {
   resolveHandoffNote,
+  isHandoffPendingNoteEmpty,
   resolveHandoffNoteAtomicEdit,
   type HandoffNoteAtomicEdit,
   isExactHandoffMentionQuery,

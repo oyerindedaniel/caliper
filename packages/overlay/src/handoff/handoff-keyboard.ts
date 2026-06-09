@@ -1,4 +1,5 @@
 import {
+  isHandoffPendingNoteEmpty,
   isKeyMatch,
   resolveElementFromFingerprint,
   type HandoffRegistry,
@@ -10,10 +11,11 @@ export type HandoffKeyboardControllerOptions = {
   registry: HandoffRegistry;
   commands: DeepRequired<CommandsConfig>;
   isMentionOpen: () => boolean;
+  onRejectEmptySubmit?: () => void;
 };
 
 export function createHandoffKeyboardController(options: HandoffKeyboardControllerOptions) {
-  const { registry, commands, isMentionOpen } = options;
+  const { registry, commands, isMentionOpen, onRejectEmptySubmit } = options;
 
   return function handleHandoffKeyboard(e: KeyboardEvent): boolean {
     if (isMentionOpen()) {
@@ -55,6 +57,10 @@ export function createHandoffKeyboardController(options: HandoffKeyboardControll
       e.stopImmediatePropagation();
 
       if (registry.isInputOpen()) {
+        if (isHandoffPendingNoteEmpty(registry.getPendingNote())) {
+          onRejectEmptySubmit?.();
+          return true;
+        }
         registry.commitSession();
       } else if (hasItems) {
         registry.setInputOpen(true);

@@ -50,12 +50,25 @@ function containsFocusableScope(scope: HTMLElement[], target: Node | null): bool
   return scope.some((root) => root === target || root.contains(target));
 }
 
+export type HandoffMentionListKeyboardOptions = {
+  mentionOpen: Accessor<boolean>;
+  isSessionOpen: Accessor<boolean>;
+  textarea: Accessor<HTMLTextAreaElement | undefined>;
+  popoverRoot: Accessor<HTMLElement | undefined>;
+  highlightedAgentId: Accessor<string | null>;
+  optionIdPrefix: string;
+  handleKeyDown: (textarea: HTMLTextAreaElement, event: KeyboardEvent) => boolean;
+  onHandled: () => void;
+};
+
 export type HandoffFocusTrapOptions = {
   enabled: Accessor<boolean>;
   mentionOpen: Accessor<boolean>;
   panelRoot: Accessor<HTMLElement | undefined>;
   popoverRoot: Accessor<HTMLElement | undefined>;
   textarea: Accessor<HTMLTextAreaElement | undefined>;
+  /** Routes listbox keys while the popover has focus (Tab trap moves focus off the textarea). */
+  mentionListKeyboard?: HandoffMentionListKeyboardOptions;
 };
 
 export function wireHandoffFocusTrap(options: HandoffFocusTrapOptions): () => void {
@@ -146,20 +159,86 @@ export function wireHandoffFocusTrap(options: HandoffFocusTrapOptions): () => vo
   };
 }
 
+const MENTION_LIST_KEYBOARD_KEYS = new Set(["Enter", "ArrowUp", "ArrowDown", "Escape", " "]);
+
+export function wireHandoffMentionListKeyboard(
+  options: HandoffMentionListKeyboardOptions
+): () => void {
+  const focusHighlightedOption = () => {
+    const agentId = options.highlightedAgentId();
+    const popover = options.popoverRoot();
+    if (!agentId || !popover) {
+      return;
+    }
+    const option = popover.querySelector<HTMLElement>(
+      `#${CSS.escape(`${options.optionIdPrefix}${agentId}`)}`
+    );
+    option?.focus();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (!options.mentionOpen() || !options.isSessionOpen()) {
+      return;
+    }
+
+    if (!MENTION_LIST_KEYBOARD_KEYS.has(event.key)) {
+      return;
+    }
+
+    if (event.key === "Enter" && event.shiftKey) {
+      return;
+    }
+
+    const textarea = options.textarea();
+    if (!textarea) {
+      return;
+    }
+
+    const handled = options.handleKeyDown(textarea, event);
+    if (!handled) {
+      return;
+    }
+
+    options.onHandled();
+
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      focusHighlightedOption();
+      return;
+    }
+
+    if (event.key === "Enter") {
+      textarea.focus();
+    }
+  };
+
+  window.addEventListener("keydown", handleKeyDown, true);
+
+  return () => {
+    window.removeEventListener("keydown", handleKeyDown, true);
+  };
+}
+
 export function createHandoffFocusTrap(options: HandoffFocusTrapOptions): void {
   createEffect(() => {
     if (!options.enabled()) {
       return;
     }
 
-    return wireHandoffFocusTrap(options);
-  });
+    options.mentionOpen();
 
-  createEffect(() => {
-    if (!options.enabled() || options.mentionOpen()) {
-      return;
+    const cleanups: (() => void)[] = [wireHandoffFocusTrap(options)];
+
+    const mentionKeyboard = options.mentionListKeyboard;
+    if (options.mentionOpen() && mentionKeyboard) {
+      cleanups.push(wireHandoffMentionListKeyboard(mentionKeyboard));
+    } else {
+      queueMicrotask(() => options.textarea()?.focus());
     }
 
-    queueMicrotask(() => options.textarea()?.focus());
+    return () => {
+      for (const cleanup of cleanups) {
+        cleanup();
+      }
+    };
   });
 }

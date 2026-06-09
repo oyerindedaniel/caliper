@@ -20,6 +20,7 @@ import {
   type HandoffUIState,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
+import { createCssAnimationPulse } from "../../handoff/create-css-animation-pulse.js";
 import { createHandoffFocusTrap } from "../../handoff/create-handoff-focus-trap.js";
 import { createMentionController } from "../../handoff/create-mention-controller.js";
 import {
@@ -93,6 +94,7 @@ interface HandoffPanelProps {
     version: number;
   }>;
   onMentionOpenChange?: (open: boolean) => void;
+  submitShakeTick?: Accessor<number>;
 }
 
 export function HandoffPanel(props: HandoffPanelProps) {
@@ -130,7 +132,10 @@ export function HandoffPanel(props: HandoffPanelProps) {
       props.handoffState();
       return props.handoffRegistry.getItems();
     },
-    onNoteChange: (note) => props.handoffRegistry.setPendingNote(note),
+    onNoteChange: (note) => {
+      props.handoffRegistry.setPendingNote(note);
+      setNoteRevision((revision) => revision + 1);
+    },
     onHighlight: (agentId) => props.handoffRegistry.setHighlightedAgentId(agentId),
     onOpenChange: (open) => {
       setMentionOpen(open);
@@ -153,13 +158,37 @@ export function HandoffPanel(props: HandoffPanelProps) {
     )
   );
 
-  createHandoffFocusTrap({
-    enabled: panelPresent,
-    mentionOpen,
-    panelRoot: () => panelRootRef,
-    popoverRoot: () => popoverRootRef,
-    textarea: textareaEl,
-  });
+  const submitShakePulse = createCssAnimationPulse();
+  let lastBumpedShakeTick = 0;
+
+  createEffect(
+    on(
+      () => {
+        panelPresent();
+        if (!panelPresent() || !props.submitShakeTick) {
+          return null;
+        }
+        return props.submitShakeTick();
+      },
+      (tick) => {
+        if (!panelPresent()) {
+          submitShakePulse.dispose();
+          const currentTick = props.submitShakeTick?.();
+          if (currentTick !== undefined && currentTick > 0) {
+            lastBumpedShakeTick = currentTick;
+          }
+          return;
+        }
+        if (tick === null || tick <= 0 || tick <= lastBumpedShakeTick) {
+          return;
+        }
+        lastBumpedShakeTick = tick;
+        submitShakePulse.bump(tick);
+      }
+    )
+  );
+
+  onCleanup(() => submitShakePulse.dispose());
 
   const panelChrome = createMemo((): PanelChrome => {
     props.viewport().version;
@@ -381,6 +410,27 @@ export function HandoffPanel(props: HandoffPanelProps) {
     queueMicrotask(() => syncCaret());
   };
 
+  createHandoffFocusTrap({
+    enabled: panelPresent,
+    mentionOpen,
+    panelRoot: () => panelRootRef,
+    popoverRoot: () => popoverRootRef,
+    textarea: textareaEl,
+    mentionListKeyboard: {
+      mentionOpen,
+      isSessionOpen: () => mentionController.isOpen(),
+      textarea: textareaEl,
+      popoverRoot: () => popoverRootRef,
+      highlightedAgentId: () => props.handoffState()?.highlightedAgentId ?? null,
+      optionIdPrefix: `${PREFIX}handoff-mention-`,
+      handleKeyDown: (textarea, event) => mentionController.handleKeyDown(textarea, event),
+      onHandled: () => {
+        resizeTextarea();
+        scheduleCaretSync();
+      },
+    },
+  });
+
   const handleAtomicMentionEdit = (
     textarea: HTMLTextAreaElement,
     event: KeyboardEvent
@@ -466,7 +516,11 @@ export function HandoffPanel(props: HandoffPanelProps) {
         dataAlign={panelAlign}
         dataCaliperIgnore
       >
-        <div class={`${PREFIX}handoff-note-wrap`} data-expanded={expanded() ? "true" : undefined}>
+        <div
+          class={`${PREFIX}handoff-note-wrap`}
+          data-expanded={expanded() ? "true" : undefined}
+          data-shake={submitShakePulse.value()}
+        >
           <textarea
             ref={(node) => {
               textareaRef = node;

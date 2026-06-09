@@ -7,6 +7,7 @@ import {
   resolveHandoffNote,
   resolveHandoffNoteAtomicEdit,
   isExactHandoffMentionQuery,
+  isHandoffPendingNoteEmpty,
 } from "./handoff-note.js";
 
 describe("resolveHandoffNote", () => {
@@ -111,6 +112,18 @@ describe("isExactHandoffMentionQuery", () => {
 
   it("rejects empty queries", () => {
     expect(isExactHandoffMentionQuery("", agentIds)).toBe(false);
+  });
+});
+
+describe("isHandoffPendingNoteEmpty", () => {
+  it("treats blank and whitespace-only notes as empty", () => {
+    expect(isHandoffPendingNoteEmpty("")).toBe(true);
+    expect(isHandoffPendingNoteEmpty("   ")).toBe(true);
+  });
+
+  it("allows committed mention tokens and plain text", () => {
+    expect(isHandoffPendingNoteEmpty("@caliper-abc123 ")).toBe(false);
+    expect(isHandoffPendingNoteEmpty("ship it")).toBe(false);
   });
 });
 

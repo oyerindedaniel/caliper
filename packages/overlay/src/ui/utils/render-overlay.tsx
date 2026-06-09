@@ -180,6 +180,7 @@ export function Overlay(props: OverlayProps) {
           handoffState={props.handoffState!}
           viewport={props.viewport}
           onMentionOpenChange={props.onMentionOpenChange}
+          submitShakeTick={props.submitShakeTick}
         />
       </Show>
     </>

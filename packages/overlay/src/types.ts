@@ -29,6 +29,7 @@ export interface OverlayProps {
   handoffRegistry?: HandoffRegistry;
   handoffState?: Accessor<HandoffUIState | null>;
   onMentionOpenChange?: (open: boolean) => void;
+  submitShakeTick?: Accessor<number>;
   calculatorState?: Accessor<CalculatorState | null>;
   projectionState?: Accessor<ProjectionState>;
   rulerState?: Accessor<RulerState>;

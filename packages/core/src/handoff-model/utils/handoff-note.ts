@@ -81,6 +81,11 @@ export function resolveHandoffNote(note: string): string {
   return note.replace(MENTION_PATTERN, "$1");
 }
 
+/** True when a pending composer note has no submit-worthy content. */
+export function isHandoffPendingNoteEmpty(note: string): boolean {
+  return !resolveHandoffNote(note).trim();
+}
+
 export function handoffItemLabel(fingerprint: {
   text?: string;
   tag?: string;

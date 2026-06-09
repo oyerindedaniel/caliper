@@ -409,6 +409,10 @@ export const OVERLAY_STYLES = `
   transition: box-shadow 0.15s ease;
 }
 
+.${CALIPER_PREFIX}handoff-note-wrap[data-shake] {
+  animation: ${CALIPER_PREFIX}handoff-box-shake 380ms ease-in-out;
+}
+
 .${CALIPER_PREFIX}handoff-note-wrap:focus-within {
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.12),
@@ -556,8 +560,11 @@ export const OVERLAY_STYLES = `
 }
 
 .${CALIPER_PREFIX}handoff-mention-option-active,
-.${CALIPER_PREFIX}handoff-mention-option:hover {
+.${CALIPER_PREFIX}handoff-mention-option:hover,
+.${CALIPER_PREFIX}handoff-mention-option:focus,
+.${CALIPER_PREFIX}handoff-mention-option:focus-visible {
   background: rgba(0, 0, 0, 0.03);
+  outline: none;
 }
 
 .${CALIPER_PREFIX}handoff-mention-label {

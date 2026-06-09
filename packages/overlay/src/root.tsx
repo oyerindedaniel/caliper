@@ -101,6 +101,7 @@ export function Root(config: RootConfig) {
   const [handoffState, setHandoffState] = createSignal<HandoffUIState | null>(null);
   const [handoffRegistryRef, setHandoffRegistryRef] = createSignal<HandoffRegistry | null>(null);
   const [mentionOpen, setMentionOpen] = createSignal(false);
+  const [handoffSubmitShakeTick, setHandoffSubmitShakeTick] = createSignal(0);
 
   let copyTimeoutId: number | null = null;
 
@@ -185,6 +186,7 @@ export function Root(config: RootConfig) {
       registry: handoffRegistry,
       commands,
       isMentionOpen: () => mentionOpen(),
+      onRejectEmptySubmit: () => setHandoffSubmitShakeTick((tick) => tick + 1),
     });
     projectionSystem = system.getProjection();
     rulerSystem = system.getRuler();
@@ -1189,6 +1191,7 @@ export function Root(config: RootConfig) {
       handoffRegistry={handoffRegistryRef() ?? undefined}
       handoffState={handoffState}
       onMentionOpenChange={setMentionOpen}
+      submitShakeTick={handoffSubmitShakeTick}
       calculatorState={calculatorState}
       projectionState={projectionState}
       rulerState={rulerState}
