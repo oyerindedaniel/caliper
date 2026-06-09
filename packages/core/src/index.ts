@@ -67,9 +67,15 @@ export {
 } from "./handoff-model/utils/handoff-registry.js";
 export {
   resolveHandoffNote,
+  resolveHandoffNoteAtomicEdit,
+  type HandoffNoteAtomicEdit,
+  isExactHandoffMentionQuery,
   handoffItemLabel,
   filterHandoffItems,
+  parseHandoffNoteSegments,
+  formatHandoffAgentIdPill,
   HANDOFF_AGENT_ID_PATTERN,
+  type HandoffNoteSegment,
 } from "./handoff-model/utils/handoff-note.js";
 export {
   HANDOFF_COLOR_COUNT,

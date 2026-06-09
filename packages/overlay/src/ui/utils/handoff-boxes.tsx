@@ -1,4 +1,4 @@
-import { For, Show, createMemo } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   getLiveGeometry,
@@ -23,6 +23,8 @@ interface HandoffBoxesProps {
 }
 
 export function HandoffBoxes(props: HandoffBoxesProps) {
+  const [shakeTick, setShakeTick] = createSignal(0);
+
   const items = createMemo(() => {
     props.handoffState();
     props.viewport.version;
@@ -31,13 +33,22 @@ export function HandoffBoxes(props: HandoffBoxesProps) {
 
   const visible = createMemo(() => (props.handoffState()?.presentation ?? "hidden") === "visible");
   const highlightedAgentId = createMemo(() => props.handoffState()?.highlightedAgentId ?? null);
-  const isSingle = createMemo(() => items().length === 1);
+
+  createEffect(() => {
+    const id = highlightedAgentId();
+    if (!id) {
+      return;
+    }
+    setShakeTick((tick) => tick + 1);
+  });
 
   return (
     <Show when={visible() && items().length > 0}>
       <Portal mount={getOverlayRoot()}>
         <For each={items()}>
           {(item) => {
+            const isActive = createMemo(() => highlightedAgentId() === item.agentId);
+
             const boxStyle = createMemo(() => {
               props.viewport.version;
               const live = getLiveGeometry(
@@ -64,22 +75,15 @@ export function HandoffBoxes(props: HandoffBoxesProps) {
               };
             });
 
-            const innerClass = createMemo(() => {
-              const classes = [`${PREFIX}handoff-box-inner`];
-              if (highlightedAgentId() === item.agentId) {
-                classes.push(`${PREFIX}handoff-box-highlighted`);
-              } else if (isSingle()) {
-                classes.push(`${PREFIX}handoff-box-single`);
-              }
-              return classes.join(" ");
-            });
-
             return (
               <div
-                class={`${PREFIX}handoff-box ${PREFIX}handoff-box-color-${item.colorIndex % HANDOFF_PALETTE.length}`}
+                class={`${PREFIX}handoff-box ${isActive() ? `${PREFIX}handoff-box-active` : ""}`}
                 style={boxStyle()}
               >
-                <div class={innerClass()} />
+                <div
+                  class={`${PREFIX}handoff-box-inner`}
+                  data-shake={isActive() ? shakeTick() : undefined}
+                />
               </div>
             );
           }}

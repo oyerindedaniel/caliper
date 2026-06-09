@@ -345,17 +345,18 @@ export const OVERLAY_STYLES = `
   box-sizing: border-box;
   border-radius: 2px;
   box-shadow: inset 0 0 0 2px var(--caliper-handoff-item-color, var(--caliper-primary));
-  transition: box-shadow 120ms ease;
 }
 
-.${CALIPER_PREFIX}handoff-box-highlighted,
-.${CALIPER_PREFIX}handoff-box-single {
-  z-index: 999999;
+.${CALIPER_PREFIX}handoff-box-active .${CALIPER_PREFIX}handoff-box-inner {
+  background: color-mix(
+    in srgb,
+    var(--caliper-handoff-item-color, var(--caliper-primary)) 18%,
+    transparent
+  );
 }
 
-.${CALIPER_PREFIX}handoff-box-highlighted .${CALIPER_PREFIX}handoff-box-inner,
-.${CALIPER_PREFIX}handoff-box-single .${CALIPER_PREFIX}handoff-box-inner {
-  box-shadow: inset 0 0 0 3px var(--caliper-handoff-item-color, var(--caliper-primary));
+.${CALIPER_PREFIX}handoff-box-inner[data-shake] {
+  animation: ${CALIPER_PREFIX}handoff-box-shake 380ms ease-in-out;
 }
 
 .${CALIPER_PREFIX}handoff-panel {
@@ -379,7 +380,44 @@ export const OVERLAY_STYLES = `
   animation: ${CALIPER_PREFIX}handoff-panel-out 100ms ease-in forwards;
 }
 
+.${CALIPER_PREFIX}handoff-note-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 24px;
+  background: var(--caliper-handoff-bg, #fff);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  transition: box-shadow 0.15s ease;
+}
+
+.${CALIPER_PREFIX}handoff-note-wrap:focus-within {
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    inset 0 0 0 2px var(--caliper-primary);
+}
+
+.${CALIPER_PREFIX}handoff-note-wrap[data-expanded="true"] {
+  border-radius: 6px;
+}
+
+.${CALIPER_PREFIX}handoff-note-mirror {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: var(--caliper-handoff-note-py) 14px;
+  font-family: var(--caliper-font-sans);
+  font-size: var(--caliper-handoff-note-font-size);
+  line-height: var(--caliper-handoff-note-line-height);
+  color: #1a1a1a;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow: hidden;
+  scrollbar-gutter: stable;
+  pointer-events: none;
+}
+
 .${CALIPER_PREFIX}handoff-textarea {
+  display: block;
   width: 100%;
   min-height: calc(
     (var(--caliper-handoff-note-py) * 2) +
@@ -388,33 +426,52 @@ export const OVERLAY_STYLES = `
   max-height: 120px;
   resize: none;
   border: none;
-  border-radius: 24px;
+  border-radius: inherit;
   padding: var(--caliper-handoff-note-py) 14px;
   font-family: var(--caliper-font-sans);
   font-size: var(--caliper-handoff-note-font-size);
   line-height: var(--caliper-handoff-note-line-height);
   color: #1a1a1a;
-  background: var(--caliper-handoff-bg, #fff);
+  background: transparent;
   box-sizing: border-box;
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  scrollbar-gutter: stable;
+  box-shadow: none;
   outline: none;
 }
 
-.${CALIPER_PREFIX}handoff-textarea[data-expanded="true"] {
-  border-radius: 6px;
+.${CALIPER_PREFIX}handoff-textarea-overlay {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  caret-color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.${CALIPER_PREFIX}handoff-textarea-overlay::placeholder {
+  color: #8a8a8a;
+  -webkit-text-fill-color: #8a8a8a;
+  opacity: 1;
+}
+
+.${CALIPER_PREFIX}handoff-note-caret {
+  position: absolute;
+  width: 1px;
+  background: #1a1a1a;
+  pointer-events: none;
+  z-index: 3;
+  animation: ${CALIPER_PREFIX}handoff-caret-blink 1s step-end infinite;
+}
+
+@keyframes ${CALIPER_PREFIX}handoff-caret-blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 .${CALIPER_PREFIX}handoff-textarea:focus,
 .${CALIPER_PREFIX}handoff-textarea:focus-visible {
   outline: none;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
-
-.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar {
-  display: none;
 }
 
 .${CALIPER_PREFIX}handoff-mention-popover {
@@ -430,6 +487,7 @@ export const OVERLAY_STYLES = `
   border: 1px solid rgba(0, 0, 0, 0.1);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
   overflow-y: auto;
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   transform-origin: top left;
 }
@@ -458,14 +516,7 @@ export const OVERLAY_STYLES = `
 
 .${CALIPER_PREFIX}handoff-mention-option-active,
 .${CALIPER_PREFIX}handoff-mention-option:hover {
-  background: rgba(24, 160, 251, 0.08);
-}
-
-.${CALIPER_PREFIX}handoff-mention-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  flex: 0 0 auto;
+  background: rgba(0, 0, 0, 0.03);
 }
 
 .${CALIPER_PREFIX}handoff-mention-label {
@@ -478,15 +529,36 @@ export const OVERLAY_STYLES = `
   white-space: nowrap;
 }
 
-.${CALIPER_PREFIX}handoff-mention-id {
-  font-size: 10px;
-  font-family: ui-monospace, monospace;
-  color: #666;
-  flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.${CALIPER_PREFIX}handoff-mention-pill {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+  margin: 0 1px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--caliper-handoff-pill-color, var(--caliper-primary));
+  background: color-mix(
+    in srgb,
+    var(--caliper-handoff-pill-color, var(--caliper-primary)) 14%,
+    transparent
+  );
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.3;
+  color: #1a1a1a;
+  pointer-events: auto;
+  cursor: pointer;
   white-space: nowrap;
-  max-width: 42%;
+}
+
+.${CALIPER_PREFIX}handoff-mention-pill-highlighted {
+  background: color-mix(
+    in srgb,
+    var(--caliper-handoff-pill-color, var(--caliper-primary)) 22%,
+    transparent
+  );
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--caliper-handoff-pill-color, var(--caliper-primary)) 35%, transparent);
 }
 
 .${CALIPER_PREFIX}handoff-mention-empty {
@@ -521,6 +593,25 @@ export const OVERLAY_STYLES = `
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+@keyframes ${CALIPER_PREFIX}handoff-box-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  20% {
+    transform: translate3d(-3px, 0, 0);
+  }
+  40% {
+    transform: translate3d(3px, 0, 0);
+  }
+  60% {
+    transform: translate3d(-2px, 0, 0);
+  }
+  80% {
+    transform: translate3d(2px, 0, 0);
   }
 }
 

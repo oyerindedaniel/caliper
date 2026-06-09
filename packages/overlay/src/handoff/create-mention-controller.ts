@@ -1,5 +1,5 @@
 import type { HandoffRegistryItem } from "@caliper/core";
-import { filterHandoffItems } from "@caliper/core";
+import { filterHandoffItems, isExactHandoffMentionQuery } from "@caliper/core";
 
 export type MentionSession = {
   open: boolean;
@@ -46,21 +46,20 @@ export function createMentionController(options: MentionControllerOptions) {
 
   function parseSession(text: string, cursor: number): MentionSession {
     const beforeCursor = text.slice(0, cursor);
-    const atIndex = beforeCursor.lastIndexOf("@");
-    if (atIndex === -1) {
+    const activeMatch = beforeCursor.match(/@([^\s@]*)$/);
+    if (!activeMatch || activeMatch.index === undefined) {
       return { ...CLOSED };
     }
 
-    const query = beforeCursor.slice(atIndex + 1);
-    if (/\s/.test(query)) {
-      return { ...CLOSED };
-    }
+    const query = activeMatch[1] ?? "";
+    const queryStart = activeMatch.index;
 
     return {
       open: true,
-      queryStart: atIndex,
+      queryStart,
       query,
-      highlightIndex: session.open && session.queryStart === atIndex ? session.highlightIndex : 0,
+      highlightIndex:
+        session.open && session.queryStart === queryStart ? session.highlightIndex : 0,
     };
   }
 
@@ -86,65 +85,6 @@ export function createMentionController(options: MentionControllerOptions) {
       session = { ...session, highlightIndex: index };
     }
     options.onHighlight(items[index]?.agentId ?? null);
-  }
-
-  /** Mirror the textarea layout off-screen so the caret position can be measured in pixels. */
-  function getCaretAnchorRect(textarea: HTMLTextAreaElement): MentionAnchorRect | null {
-    const selectionStart = textarea.selectionStart ?? 0;
-    const style = getComputedStyle(textarea);
-    const mirror = document.createElement("div");
-    const properties = [
-      "fontFamily",
-      "fontSize",
-      "fontWeight",
-      "fontStyle",
-      "letterSpacing",
-      "textTransform",
-      "wordSpacing",
-      "textIndent",
-      "boxSizing",
-      "borderTopWidth",
-      "borderRightWidth",
-      "borderBottomWidth",
-      "borderLeftWidth",
-      "paddingTop",
-      "paddingRight",
-      "paddingBottom",
-      "paddingLeft",
-      "lineHeight",
-      "width",
-    ] as const;
-
-    mirror.style.position = "absolute";
-    mirror.style.visibility = "hidden";
-    mirror.style.whiteSpace = "pre-wrap";
-    mirror.style.overflowWrap = "break-word";
-    mirror.style.overflow = "hidden";
-    mirror.style.top = "0";
-    mirror.style.left = "-9999px";
-
-    for (const prop of properties) {
-      mirror.style[prop] = style[prop];
-    }
-
-    const value = textarea.value.slice(0, selectionStart);
-    mirror.textContent = value;
-    const marker = document.createElement("span");
-    marker.textContent = "\u200b";
-    mirror.appendChild(marker);
-    document.body.appendChild(mirror);
-
-    const textareaRect = textarea.getBoundingClientRect();
-    const markerRect = marker.getBoundingClientRect();
-    const mirrorRect = mirror.getBoundingClientRect();
-    const lineHeight = markerRect.height || parseFloat(style.lineHeight) || 16;
-    const top =
-      textareaRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop + lineHeight;
-    const left = textareaRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft;
-
-    document.body.removeChild(mirror);
-
-    return { top, left, height: lineHeight };
   }
 
   function resolveMentionPopoverPosition(
@@ -200,13 +140,22 @@ export function createMentionController(options: MentionControllerOptions) {
     isOpen: () => session.open,
     getSession: () => session,
     getFilteredItems,
-    getCaretAnchorRect,
     resolveMentionPopoverPosition,
     handleInput(textarea: HTMLTextAreaElement) {
       const cursor = textarea.selectionStart ?? textarea.value.length;
       const wasOpen = session.open;
       const previousQuery = session.query;
-      const next = parseSession(textarea.value, cursor);
+      let next = parseSession(textarea.value, cursor);
+      if (
+        next.open &&
+        !wasOpen &&
+        isExactHandoffMentionQuery(
+          next.query,
+          options.getItems().map((item) => item.agentId)
+        )
+      ) {
+        next = { ...CLOSED };
+      }
       session = next;
       if (session.open) {
         if (!wasOpen || session.query !== previousQuery) {
@@ -268,6 +217,7 @@ export function createMentionController(options: MentionControllerOptions) {
 
       if (event.key === " ") {
         closeSession();
+        event.stopImmediatePropagation();
         return false;
       }
 

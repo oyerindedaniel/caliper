@@ -4,7 +4,9 @@ import { getOverlayRoot, HANDOFF_PALETTE, handoffItemLabel } from "@caliper/core
 import { PREFIX } from "../../css/styles.js";
 import type { MentionController } from "../../handoff/create-mention-controller.js";
 import { mergeRefs } from "../../handoff/assign-ref.js";
+import { measureNoteCursor } from "../../handoff/measure-handoff-note-cursor.js";
 import { PresenceHost } from "../../handoff/presence-host.jsx";
+import { HandoffMentionPill } from "./handoff-mention-pill.jsx";
 
 const POPOVER_WIDTH = 280;
 const POPOVER_MAX_HEIGHT = 200;
@@ -13,52 +15,79 @@ const POPOVER_ESTIMATED_HEIGHT = 160;
 interface HandoffMentionPopoverProps {
   ref?: Ref<HTMLDivElement>;
   controller: MentionController;
-  mentionTick: Accessor<number>;
+  /** Bumps when the @ filter query or session membership changes (list content). */
+  mentionListTick: Accessor<number>;
+  /** Bumps when popover anchor geometry should remeasure (open, scroll, layout, viewport). */
+  mentionAnchorTick: Accessor<number>;
   highlightedAgentId: Accessor<string | null>;
   viewport: Accessor<{
     width: number;
     height: number;
+    version: number;
   }>;
   textareaRef: () => HTMLTextAreaElement | undefined;
+  colorByAgentId: Accessor<Map<string, string>>;
   onHighlight: (agentId: string) => void;
   onSelect: (agentId: string) => void;
 }
 
 export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
   let listRef: HTMLDivElement | undefined;
+  let lastPosition: Record<string, string> | undefined;
 
   const filteredItems = createMemo(() => {
-    props.mentionTick();
+    props.mentionListTick();
     return props.controller.getFilteredItems();
   });
   const session = createMemo(() => {
-    props.mentionTick();
+    props.mentionListTick();
     return props.controller.getSession();
   });
   const popoverPresent = createMemo(() => session().open);
 
+  const steadyUnpositioned = (): Record<string, string> => ({
+    visibility: "hidden",
+    pointerEvents: "none",
+    width: `${POPOVER_WIDTH}px`,
+    maxHeight: `${POPOVER_MAX_HEIGHT}px`,
+  });
+
   const popoverStyle = createMemo((): Record<string, string | undefined> => {
-    props.mentionTick();
+    props.mentionAnchorTick();
+
+    const activeSession = props.controller.getSession();
+    if (!activeSession.open) {
+      return lastPosition ?? {};
+    }
+
     const textarea = props.textareaRef();
-    if (!textarea) {
-      return { visibility: "hidden", pointerEvents: "none" };
+    if (!textarea || activeSession.queryStart < 0) {
+      return { ...lastPosition, ...steadyUnpositioned() };
     }
-    const anchor = props.controller.getCaretAnchorRect(textarea);
+
+    const anchor = measureNoteCursor(textarea, {
+      note: textarea.value,
+      colorByAgentId: props.colorByAgentId(),
+      selectionStart: activeSession.queryStart,
+      space: "viewport",
+    });
     if (!anchor) {
-      return { visibility: "hidden", pointerEvents: "none" };
+      return { ...lastPosition, ...steadyUnpositioned() };
     }
+
     const position = props.controller.resolveMentionPopoverPosition(
       anchor,
       props.viewport(),
       POPOVER_WIDTH,
       POPOVER_ESTIMATED_HEIGHT
     );
-    return {
+    lastPosition = {
       top: `${position.top}px`,
       left: `${position.left}px`,
       width: `${position.maxWidth}px`,
       maxHeight: `${POPOVER_MAX_HEIGHT}px`,
     };
+    return lastPosition;
   });
 
   createEffect(() => {
@@ -76,6 +105,9 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
     <Portal mount={getOverlayRoot()}>
       <PresenceHost
         present={popoverPresent}
+        onExitComplete={() => {
+          lastPosition = undefined;
+        }}
         ref={mergeRefs(props.ref, (element) => {
           listRef = element;
         })}
@@ -95,33 +127,37 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
           }
         >
           <For each={filteredItems()}>
-            {(item) => (
-              <button
-                type="button"
-                id={`${PREFIX}handoff-mention-${item.agentId}`}
-                class={`${PREFIX}handoff-mention-option ${props.highlightedAgentId() === item.agentId ? `${PREFIX}handoff-mention-option-active` : ""}`}
-                role="option"
-                aria-selected={props.highlightedAgentId() === item.agentId}
-                onMouseEnter={() => props.onHighlight(item.agentId)}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  props.onSelect(item.agentId);
-                }}
-                onFocus={() => props.onHighlight(item.agentId)}
-              >
-                <span
-                  class={`${PREFIX}handoff-mention-swatch`}
-                  style={{
-                    "background-color": HANDOFF_PALETTE[item.colorIndex % HANDOFF_PALETTE.length],
+            {(item) => {
+              const pillColor =
+                HANDOFF_PALETTE[item.colorIndex % HANDOFF_PALETTE.length] ?? HANDOFF_PALETTE[0]!;
+              const isHighlighted = () => props.highlightedAgentId() === item.agentId;
+
+              return (
+                <button
+                  type="button"
+                  id={`${PREFIX}handoff-mention-${item.agentId}`}
+                  class={`${PREFIX}handoff-mention-option ${isHighlighted() ? `${PREFIX}handoff-mention-option-active` : ""}`}
+                  role="option"
+                  aria-selected={isHighlighted()}
+                  onMouseEnter={() => props.onHighlight(item.agentId)}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    props.onSelect(item.agentId);
                   }}
-                  aria-hidden="true"
-                />
-                <span class={`${PREFIX}handoff-mention-label`}>
-                  {handoffItemLabel(item.fingerprint)}
-                </span>
-                <span class={`${PREFIX}handoff-mention-id`}>{item.agentId}</span>
-              </button>
-            )}
+                  onFocus={() => props.onHighlight(item.agentId)}
+                >
+                  <span class={`${PREFIX}handoff-mention-label`}>
+                    {handoffItemLabel(item.fingerprint)}
+                  </span>
+                  <HandoffMentionPill
+                    agentId={item.agentId}
+                    color={pillColor}
+                    highlighted={isHighlighted()}
+                    onPress={(agentId) => props.onHighlight(agentId)}
+                  />
+                </button>
+              );
+            }}
           </For>
         </Show>
       </PresenceHost>

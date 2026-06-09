@@ -177,6 +177,8 @@ export function createHandoffRegistry(
       item.fingerprint = buildSelectorInfo(item.element, item.metadata);
       touchItem(item);
     }
+    // Intentionally no notifyUI: touchItem bumps updatedAt every scroll frame, which would
+    // re-emit UI state continuously. Overlay re-reads metadata via viewport.version instead.
   }
 
   function showBoxesIfNeeded() {
@@ -359,6 +361,7 @@ export function createHandoffRegistry(
       return restored;
     },
 
+    /** Updates in-memory geometry only — no notifyUI (see touchItem + handoffUIStateEquals). */
     refreshGeometry() {
       refreshGeometry();
     },

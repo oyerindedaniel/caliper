@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { filterHandoffItems, handoffItemLabel, resolveHandoffNote } from "./handoff-note.js";
+import {
+  filterHandoffItems,
+  formatHandoffAgentIdPill,
+  handoffItemLabel,
+  parseHandoffNoteSegments,
+  resolveHandoffNote,
+  resolveHandoffNoteAtomicEdit,
+  isExactHandoffMentionQuery,
+} from "./handoff-note.js";
 
 describe("resolveHandoffNote", () => {
   it("strips @ from agent id mentions", () => {
@@ -45,6 +53,70 @@ describe("filterHandoffItems", () => {
       },
     ];
     expect(filterHandoffItems(prose, "theboy")).toEqual(prose);
+  });
+});
+
+describe("parseHandoffNoteSegments", () => {
+  it("splits text and mention tokens", () => {
+    expect(parseHandoffNoteSegments("Fix @caliper-abc123 next")).toEqual([
+      { type: "text", value: "Fix " },
+      { type: "mention", agentId: "caliper-abc123" },
+      { type: "text", value: " next" },
+    ]);
+  });
+});
+
+describe("resolveHandoffNoteAtomicEdit", () => {
+  it("backspace removes an entire mention when cursor is inside it", () => {
+    const note = "Hi @caliper-abc123 there";
+    const mentionStart = note.indexOf("@");
+    expect(resolveHandoffNoteAtomicEdit(note, mentionStart + 5, "backspace")).toEqual({
+      note: "Hi  there",
+      cursor: mentionStart,
+    });
+  });
+
+  it("backspace removes an entire mention when cursor is after it", () => {
+    const note = "Hi @caliper-abc123";
+    expect(resolveHandoffNoteAtomicEdit(note, note.length, "backspace")).toEqual({
+      note: "Hi ",
+      cursor: 3,
+    });
+  });
+
+  it("backspace leaves plain text alone", () => {
+    expect(resolveHandoffNoteAtomicEdit("hello", 3, "backspace")).toBeNull();
+  });
+
+  it("delete removes an entire mention when cursor is inside it", () => {
+    const note = "Hi @caliper-abc123 there";
+    const mentionStart = note.indexOf("@");
+    expect(resolveHandoffNoteAtomicEdit(note, mentionStart + 1, "delete")).toEqual({
+      note: "Hi  there",
+      cursor: mentionStart,
+    });
+  });
+});
+
+describe("isExactHandoffMentionQuery", () => {
+  const agentIds = ["caliper-abc123", "caliper-xyz789"];
+
+  it("matches a full registered agent id", () => {
+    expect(isExactHandoffMentionQuery("caliper-abc123", agentIds)).toBe(true);
+  });
+
+  it("rejects partial queries still being typed", () => {
+    expect(isExactHandoffMentionQuery("caliper-ab", agentIds)).toBe(false);
+  });
+
+  it("rejects empty queries", () => {
+    expect(isExactHandoffMentionQuery("", agentIds)).toBe(false);
+  });
+});
+
+describe("formatHandoffAgentIdPill", () => {
+  it("drops caliper- prefix for display", () => {
+    expect(formatHandoffAgentIdPill("caliper-abc123")).toBe("abc123");
   });
 });
 
