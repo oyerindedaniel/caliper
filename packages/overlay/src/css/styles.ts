@@ -426,7 +426,7 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}handoff-note-mirror {
   position: absolute;
   inset: 0;
-  z-index: 0;
+  z-index: 2;
   padding: var(--caliper-handoff-note-py) 14px;
   font-family: var(--caliper-font-sans);
   font-size: var(--caliper-handoff-note-font-size);

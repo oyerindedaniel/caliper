@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, on, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   getLiveGeometry,
@@ -8,6 +8,7 @@ import {
   type HandoffUIState,
 } from "@caliper/core";
 import type { Accessor } from "solid-js";
+import { createCssAnimationPulse } from "../../handoff/create-css-animation-pulse.js";
 import { PREFIX } from "../../css/styles.js";
 
 interface HandoffBoxesProps {
@@ -23,7 +24,7 @@ interface HandoffBoxesProps {
 }
 
 export function HandoffBoxes(props: HandoffBoxesProps) {
-  const [shakeTick, setShakeTick] = createSignal(0);
+  const highlightShakePulse = createCssAnimationPulse();
 
   const items = createMemo(() => {
     props.handoffState();
@@ -34,13 +35,25 @@ export function HandoffBoxes(props: HandoffBoxesProps) {
   const visible = createMemo(() => (props.handoffState()?.presentation ?? "hidden") === "visible");
   const highlightedAgentId = createMemo(() => props.handoffState()?.highlightedAgentId ?? null);
 
-  createEffect(() => {
-    const id = highlightedAgentId();
-    if (!id) {
-      return;
-    }
-    setShakeTick((tick) => tick + 1);
-  });
+  createEffect(
+    on(
+      () => {
+        const state = props.handoffState();
+        if (!state?.highlightedAgentId) {
+          return null;
+        }
+        return state.highlightShakeTick;
+      },
+      (tick) => {
+        if (tick === null || tick <= 0) {
+          return;
+        }
+        highlightShakePulse.bump(tick);
+      }
+    )
+  );
+
+  onCleanup(() => highlightShakePulse.dispose());
 
   return (
     <Show when={visible() && items().length > 0}>
@@ -82,7 +95,7 @@ export function HandoffBoxes(props: HandoffBoxesProps) {
               >
                 <div
                   class={`${PREFIX}handoff-box-inner`}
-                  data-shake={isActive() ? shakeTick() : undefined}
+                  data-shake={isActive() ? highlightShakePulse.value() : undefined}
                 />
               </div>
             );

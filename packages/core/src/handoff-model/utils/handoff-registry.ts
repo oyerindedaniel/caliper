@@ -32,6 +32,7 @@ export type HandoffUIState = {
   items: CaliperHandoffItem[];
   activeItemId: string | null;
   highlightedAgentId: string | null;
+  highlightShakeTick: number;
   inputOpen: boolean;
   presentation: HandoffPresentation;
 };
@@ -101,6 +102,7 @@ function handoffUIStateEquals(a: HandoffUIState | null, b: HandoffUIState | null
   if (
     a.activeItemId !== b.activeItemId ||
     a.highlightedAgentId !== b.highlightedAgentId ||
+    a.highlightShakeTick !== b.highlightShakeTick ||
     a.inputOpen !== b.inputOpen ||
     a.presentation !== b.presentation ||
     a.items.length !== b.items.length
@@ -130,6 +132,7 @@ export function createHandoffRegistry(
   const items = new Map<string, InternalHandoffItem>();
   let activeItemId: string | null = null;
   let highlightedAgentId: string | null = null;
+  let highlightShakeTick = 0;
   let inputOpen = false;
   let presentation: HandoffPresentation = "hidden";
   let pendingNote = "";
@@ -146,6 +149,7 @@ export function createHandoffRegistry(
       items: [...items.values()].map(serializeItem),
       activeItemId,
       highlightedAgentId,
+      highlightShakeTick,
       inputOpen,
       presentation,
     };
@@ -252,6 +256,7 @@ export function createHandoffRegistry(
       items.clear();
       activeItemId = null;
       highlightedAgentId = null;
+      highlightShakeTick = 0;
       inputOpen = false;
       presentation = "hidden";
       pendingNote = "";
@@ -283,6 +288,9 @@ export function createHandoffRegistry(
     setHighlightedAgentId(agentId) {
       if (agentId !== null && !items.has(agentId)) {
         return;
+      }
+      if (agentId !== null) {
+        highlightShakeTick += 1;
       }
       highlightedAgentId = agentId;
       notifyUI();
@@ -353,6 +361,7 @@ export function createHandoffRegistry(
           ? snapshot.activeItemId
           : ([...items.keys()].pop() ?? null);
       highlightedAgentId = null;
+      highlightShakeTick = 0;
       inputOpen = "inputOpen" in snapshot ? snapshot.inputOpen && items.size > 0 : false;
       presentation =
         items.size === 0
