@@ -15,6 +15,8 @@ import {
   HANDOFF_PALETTE,
   parseHandoffNoteSegments,
   resolveHandoffNoteAtomicEdit,
+  resolveHandoffNoteArrowMove,
+  snapHandoffNoteCursorOutOfMentionInterior,
   resolveHandoffPanelPosition,
   type HandoffRegistry,
   type HandoffUIState,
@@ -26,7 +28,6 @@ import { createMentionController } from "../../handoff/create-mention-controller
 import {
   measureNoteCursor,
   resolveNoteCursorFromPoint,
-  snapNoteCursorOutOfMentionInterior,
   type NoteCursorRect,
 } from "../../handoff/measure-handoff-note-cursor.js";
 import { PresenceHost } from "../../handoff/presence-host.jsx";
@@ -110,6 +111,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   const [caretVisible, setCaretVisible] = createSignal(false);
   let mirrorRef: HTMLDivElement | undefined;
   let lastPanelChrome: PanelChrome | undefined;
+  let lastSelectionStart = 0;
 
   const pendingNote = () => {
     noteRevision();
@@ -364,13 +366,20 @@ export function HandoffPanel(props: HandoffPanelProps) {
     const cursor = textarea.selectionStart ?? 0;
     const end = textarea.selectionEnd ?? cursor;
     if (cursor !== end) {
+      lastSelectionStart = cursor;
       return false;
     }
-    const snapped = snapNoteCursorOutOfMentionInterior(textarea.value, cursor);
+    const snapped = snapHandoffNoteCursorOutOfMentionInterior(
+      textarea.value,
+      cursor,
+      lastSelectionStart
+    );
     if (snapped === cursor) {
+      lastSelectionStart = cursor;
       return false;
     }
     textarea.setSelectionRange(snapped, snapped);
+    lastSelectionStart = snapped;
     return true;
   };
 
@@ -400,13 +409,16 @@ export function HandoffPanel(props: HandoffPanelProps) {
       return;
     }
 
+    const selectionStart = textarea.selectionStart ?? 0;
     const rect = measureNoteCursor(textarea, {
       note: textarea.value,
       colorByAgentId: colorByAgentId(),
+      selectionStart,
       space: "wrap",
     });
     setCaretRect(rect);
     setCaretVisible(!!rect);
+    lastSelectionStart = selectionStart;
   };
 
   const scheduleCaretSync = () => {
@@ -433,6 +445,33 @@ export function HandoffPanel(props: HandoffPanelProps) {
       },
     },
   });
+
+  const handleMentionArrowMove = (textarea: HTMLTextAreaElement, event: KeyboardEvent): boolean => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return false;
+    }
+    if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+      return false;
+    }
+
+    const cursor = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? cursor;
+    if (cursor !== end) {
+      return false;
+    }
+
+    const direction = event.key === "ArrowLeft" ? "left" : "right";
+    const move = resolveHandoffNoteArrowMove(textarea.value, cursor, direction);
+    if (!move.handled) {
+      return false;
+    }
+
+    event.preventDefault();
+    textarea.setSelectionRange(move.cursor, move.cursor);
+    lastSelectionStart = move.cursor;
+    syncCaret();
+    return true;
+  };
 
   const handleAtomicMentionEdit = (
     textarea: HTMLTextAreaElement,
@@ -534,6 +573,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
             aria-activedescendant={activeDescendant()}
             onInput={(event) => {
               const textarea = event.currentTarget;
+              ensureNoteCursorNotInsideMention(textarea);
               props.handoffRegistry.setPendingNote(textarea.value);
               setNoteRevision((revision) => revision + 1);
               mentionController.handleInput(textarea);
@@ -573,6 +613,10 @@ export function HandoffPanel(props: HandoffPanelProps) {
               if (handleAtomicMentionEdit(textarea, event)) {
                 return;
               }
+              if (handleMentionArrowMove(textarea, event)) {
+                return;
+              }
+              ensureNoteCursorNotInsideMention(textarea);
               if (mentionController.handleKeyDown(textarea, event)) {
                 resizeTextarea();
               }

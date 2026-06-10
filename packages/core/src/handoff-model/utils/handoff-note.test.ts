@@ -6,6 +6,8 @@ import {
   parseHandoffNoteSegments,
   resolveHandoffNote,
   resolveHandoffNoteAtomicEdit,
+  resolveHandoffNoteArrowMove,
+  snapHandoffNoteCursorOutOfMentionInterior,
   isExactHandoffMentionQuery,
   isHandoffPendingNoteEmpty,
 } from "./handoff-note.js";
@@ -96,6 +98,72 @@ describe("resolveHandoffNoteAtomicEdit", () => {
       note: "Hi  there",
       cursor: mentionStart,
     });
+  });
+});
+
+describe("resolveHandoffNoteArrowMove", () => {
+  const note = "Hi @caliper-abc123 there";
+  const mentionStart = note.indexOf("@");
+  const mentionEnd = mentionStart + 1 + "caliper-abc123".length;
+
+  it("jumps from after a mention to its start on ArrowLeft", () => {
+    expect(resolveHandoffNoteArrowMove(note, mentionEnd, "left")).toEqual({
+      cursor: mentionStart,
+      handled: true,
+    });
+  });
+
+  it("jumps from before a mention to its end on ArrowRight", () => {
+    expect(resolveHandoffNoteArrowMove(note, mentionStart, "right")).toEqual({
+      cursor: mentionEnd,
+      handled: true,
+    });
+  });
+
+  it("jumps out of mention interiors toward the arrow direction", () => {
+    expect(resolveHandoffNoteArrowMove(note, mentionStart + 3, "left")).toEqual({
+      cursor: mentionStart,
+      handled: true,
+    });
+    expect(resolveHandoffNoteArrowMove(note, mentionStart + 3, "right")).toEqual({
+      cursor: mentionEnd,
+      handled: true,
+    });
+  });
+
+  it("steps through plain text normally", () => {
+    expect(resolveHandoffNoteArrowMove(note, mentionEnd + 1, "left")).toEqual({
+      cursor: mentionEnd + 1,
+      handled: false,
+    });
+  });
+
+  it("crosses a trailing space before jumping over the mention", () => {
+    const spaced = "Hi @caliper-abc123 there";
+    const end = spaced.indexOf("@") + 1 + "caliper-abc123".length;
+    const spaceIndex = end;
+    expect(resolveHandoffNoteArrowMove(spaced, spaceIndex, "left")).toEqual({
+      cursor: spaced.indexOf("@"),
+      handled: true,
+    });
+  });
+});
+
+describe("snapHandoffNoteCursorOutOfMentionInterior", () => {
+  const note = "Hi @caliper-abc123 there";
+  const mentionStart = note.indexOf("@");
+  const mentionEnd = mentionStart + 1 + "caliper-abc123".length;
+
+  it("snaps toward start when moving left into a mention", () => {
+    expect(snapHandoffNoteCursorOutOfMentionInterior(note, mentionEnd - 1, mentionEnd)).toBe(
+      mentionStart
+    );
+  });
+
+  it("snaps toward end when moving right into a mention", () => {
+    expect(snapHandoffNoteCursorOutOfMentionInterior(note, mentionStart + 1, mentionStart)).toBe(
+      mentionEnd
+    );
   });
 });
 

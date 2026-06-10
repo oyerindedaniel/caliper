@@ -29,39 +29,6 @@ function readTextareaLineHeightPx(style: CSSStyleDeclaration): number {
   return fontSize * 1.4;
 }
 
-export type NoteCursorMentionContext =
-  | { kind: "text" }
-  | { kind: "mention-boundary"; start: number; end: number; edge: "start" | "end" }
-  | { kind: "mention-interior"; start: number; end: number; agentId: string };
-
-/** Classify a raw textarea index against parsed `@caliper-*` mention spans. */
-export function describeNoteCursorContext(note: string, index: number): NoteCursorMentionContext {
-  let offset = 0;
-
-  for (const segment of parseHandoffNoteSegments(note)) {
-    if (segment.type === "text") {
-      const end = offset + segment.value.length;
-      if (index < end) {
-        return { kind: "text" };
-      }
-      offset = end;
-      continue;
-    }
-
-    const start = offset;
-    const end = offset + 1 + segment.agentId.length;
-    if (index === start || index === end) {
-      return { kind: "mention-boundary", start, end, edge: index === start ? "start" : "end" };
-    }
-    if (index > start && index < end) {
-      return { kind: "mention-interior", start, end, agentId: segment.agentId };
-    }
-    offset = end;
-  }
-
-  return { kind: "text" };
-}
-
 /**
  * Indices where the pill mirror places a unique caret marker.
  * Mention interiors share one visual point (full pill rendered) and must not be hit-tested.
@@ -90,15 +57,6 @@ export function collectNoteCaretProbeIndices(
   }
 
   return [...indices].sort((a, b) => a - b);
-}
-
-/** Move a raw index out of `@caliper-*` interiors (keyboard / native selection). */
-export function snapNoteCursorOutOfMentionInterior(note: string, index: number): number {
-  const context = describeNoteCursorContext(note, index);
-  if (context.kind === "mention-interior") {
-    return context.end;
-  }
-  return index;
 }
 
 function appendPill(parent: HTMLElement, agentId: string, color: string) {
