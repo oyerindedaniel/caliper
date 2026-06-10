@@ -109,6 +109,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   const [noteRevision, setNoteRevision] = createSignal(0);
   const [caretRect, setCaretRect] = createSignal<NoteCursorRect | null>(null);
   const [caretVisible, setCaretVisible] = createSignal(false);
+  const [visualScrollTop, setVisualScrollTop] = createSignal(0);
   let mirrorRef: HTMLDivElement | undefined;
   let lastPanelChrome: PanelChrome | undefined;
   let lastSelectionStart = 0;
@@ -354,12 +355,32 @@ export function HandoffPanel(props: HandoffPanelProps) {
   });
 
   const syncMirrorScroll = () => {
-    const textarea = textareaEl();
     const mirror = mirrorRef;
-    if (!textarea || !mirror) {
+    if (!mirror) {
       return;
     }
-    mirror.scrollTop = textarea.scrollTop;
+    mirror.scrollTop = visualScrollTop();
+  };
+
+  const visualScrollMax = (textarea: HTMLTextAreaElement): number => {
+    const mirrorHeight = mirrorRef?.scrollHeight ?? textarea.scrollHeight;
+    return Math.max(0, mirrorHeight - textarea.clientHeight);
+  };
+
+  const clampVisualScrollTop = (textarea: HTMLTextAreaElement, scrollTop: number): number =>
+    Math.max(0, Math.min(scrollTop, visualScrollMax(textarea)));
+
+  const syncVisualScrollFromTextarea = (textarea: HTMLTextAreaElement) => {
+    const rawMax = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+    if (rawMax <= 0) {
+      setVisualScrollTop(0);
+      syncMirrorScroll();
+      return;
+    }
+    setVisualScrollTop(
+      clampVisualScrollTop(textarea, (textarea.scrollTop / rawMax) * visualScrollMax(textarea))
+    );
+    syncMirrorScroll();
   };
 
   const ensureNoteCursorNotInsideMention = (textarea: HTMLTextAreaElement): boolean => {
@@ -391,6 +412,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
     const resolved = resolveNoteCursorFromPoint(textarea, clientX, clientY, {
       note: textarea.value,
       colorByAgentId: colorByAgentId(),
+      scrollTop: visualScrollTop(),
     });
     if (textarea.selectionStart !== resolved.index || textarea.selectionEnd !== resolved.index) {
       textarea.setSelectionRange(resolved.index, resolved.index);
@@ -411,12 +433,40 @@ export function HandoffPanel(props: HandoffPanelProps) {
 
     const selectionStart = textarea.selectionStart ?? 0;
     const selectionEnd = textarea.selectionEnd ?? selectionStart;
-    const rect = measureNoteCursor(textarea, {
+    let scrollTop = clampVisualScrollTop(textarea, visualScrollTop());
+    let rect = measureNoteCursor(textarea, {
       note: textarea.value,
       colorByAgentId: colorByAgentId(),
       selectionStart,
+      scrollTop,
       space: "wrap",
     });
+    if (rect) {
+      const style = getComputedStyle(textarea);
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      const paddingBottom = parseFloat(style.paddingBottom) || 0;
+      const visibleTop = paddingTop;
+      const visibleBottom = textarea.clientHeight - paddingBottom;
+      const caretBottom = rect.top + rect.height;
+
+      if (rect.top < visibleTop) {
+        scrollTop = clampVisualScrollTop(textarea, scrollTop + rect.top - visibleTop);
+      } else if (caretBottom > visibleBottom) {
+        scrollTop = clampVisualScrollTop(textarea, scrollTop + caretBottom - visibleBottom);
+      }
+
+      if (scrollTop !== visualScrollTop()) {
+        setVisualScrollTop(scrollTop);
+        syncMirrorScroll();
+        rect = measureNoteCursor(textarea, {
+          note: textarea.value,
+          colorByAgentId: colorByAgentId(),
+          selectionStart,
+          scrollTop,
+          space: "wrap",
+        });
+      }
+    }
     setCaretRect(rect);
     setCaretVisible(!!rect && selectionStart === selectionEnd);
     lastSelectionStart = selectionStart;
@@ -601,7 +651,10 @@ export function HandoffPanel(props: HandoffPanelProps) {
               syncCaret();
             }}
             onScroll={() => {
-              syncMirrorScroll();
+              const textarea = textareaEl();
+              if (textarea) {
+                syncVisualScrollFromTextarea(textarea);
+              }
               syncCaret();
               if (mentionOpen()) {
                 setMentionAnchorTick((tick) => tick + 1);
@@ -642,6 +695,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
           />
           <Show when={caretVisible() && caretRect()}>
             <div
+              id={`${PREFIX}handoff-note-caret`}
               class={`${PREFIX}handoff-note-caret`}
               style={{
                 top: `${caretRect()!.top}px`,

@@ -123,10 +123,14 @@ export function measureNoteCursor(
     note: string;
     colorByAgentId: Map<string, string>;
     selectionStart?: number;
+    scrollTop?: number;
+    scrollLeft?: number;
     space: NoteCursorSpace;
   }
 ): NoteCursorRect | null {
   const cursor = options.selectionStart ?? textarea.selectionStart ?? 0;
+  const scrollTop = options.scrollTop ?? textarea.scrollTop;
+  const scrollLeft = options.scrollLeft ?? textarea.scrollLeft;
   const style = getComputedStyle(textarea);
   const segments = parseHandoffNoteSegments(options.note);
 
@@ -168,15 +172,15 @@ export function measureNoteCursor(
   if (options.space === "viewport") {
     const textareaRect = textarea.getBoundingClientRect();
     return {
-      top: textareaRect.top + markerTop - textarea.scrollTop + lineHeight,
-      left: textareaRect.left + markerLeft - textarea.scrollLeft,
+      top: textareaRect.top + markerTop - scrollTop + lineHeight,
+      left: textareaRect.left + markerLeft - scrollLeft,
       height: lineHeight,
     };
   }
 
   return {
-    top: markerTop - textarea.scrollTop,
-    left: markerLeft - textarea.scrollLeft,
+    top: markerTop - scrollTop,
+    left: markerLeft - scrollLeft,
     height: lineHeight,
   };
 }
@@ -188,6 +192,8 @@ function snapCursorInsideMentions(
   options: {
     note: string;
     colorByAgentId: Map<string, string>;
+    scrollTop?: number;
+    scrollLeft?: number;
   }
 ): number {
   const segments = parseHandoffNoteSegments(options.note);
@@ -207,6 +213,8 @@ function snapCursorInsideMentions(
       const measureOpts = {
         note: options.note,
         colorByAgentId: options.colorByAgentId,
+        scrollTop: options.scrollTop,
+        scrollLeft: options.scrollLeft,
         space: "wrap" as const,
       };
       const startRect = measureNoteCursor(textarea, {
@@ -239,6 +247,8 @@ export function resolveNoteCursorFromPoint(
   options: {
     note: string;
     colorByAgentId: Map<string, string>;
+    scrollTop?: number;
+    scrollLeft?: number;
   }
 ): { index: number; clickXInWrap: number; nativeIndex: number } {
   const wrap = textarea.closest(`.${PREFIX}handoff-note-wrap`);
@@ -256,6 +266,8 @@ export function resolveNoteCursorFromPoint(
   const measureOpts = {
     note: options.note,
     colorByAgentId: options.colorByAgentId,
+    scrollTop: options.scrollTop,
+    scrollLeft: options.scrollLeft,
     space: "wrap" as const,
   };
 
