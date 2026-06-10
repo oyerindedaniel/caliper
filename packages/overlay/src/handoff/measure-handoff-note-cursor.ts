@@ -16,6 +16,19 @@ export type NoteCursorSpace = "viewport" | "wrap";
 
 const CURSOR_PROBE = "\u200b";
 
+function readTextareaLineHeightPx(style: CSSStyleDeclaration): number {
+  const fontSize = parseFloat(style.fontSize) || 13;
+  const lineHeight = style.lineHeight;
+  if (lineHeight.endsWith("px")) {
+    return parseFloat(lineHeight) || fontSize * 1.4;
+  }
+  const ratio = parseFloat(lineHeight);
+  if (Number.isFinite(ratio)) {
+    return ratio * fontSize;
+  }
+  return fontSize * 1.4;
+}
+
 export type NoteCursorMentionContext =
   | { kind: "text" }
   | { kind: "mention-boundary"; start: number; end: number; edge: "start" | "end" }
@@ -187,7 +200,7 @@ export function measureNoteCursor(
 
   const rootRect = measureRoot.getBoundingClientRect();
   const markerRect = marker.getBoundingClientRect();
-  const lineHeight = markerRect.height || parseFloat(style.lineHeight) || 16;
+  const lineHeight = readTextareaLineHeightPx(style);
 
   document.body.removeChild(measureRoot);
 

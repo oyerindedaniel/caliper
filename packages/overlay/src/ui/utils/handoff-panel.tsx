@@ -33,7 +33,6 @@ import { PresenceHost } from "../../handoff/presence-host.jsx";
 import { HandoffMentionPill } from "./handoff-mention-pill.jsx";
 import { HandoffMentionPopover } from "./handoff-mention-popover.jsx";
 
-/** Matches `.handoff-textarea` in styles.ts */
 const HANDOFF_PANEL_WIDTH = 320;
 const HANDOFF_NOTE_MAX_HEIGHT = 120;
 
@@ -98,7 +97,6 @@ interface HandoffPanelProps {
 }
 
 export function HandoffPanel(props: HandoffPanelProps) {
-  let textareaRef: HTMLTextAreaElement | undefined;
   let panelRootRef: HTMLDivElement | undefined;
   let popoverRootRef: HTMLDivElement | undefined;
   const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | undefined>();
@@ -232,7 +230,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
     }
 
     const measured = panelLayoutHeight();
-    const textarea = textareaRef;
+    const textarea = textareaEl();
     const panelHeight =
       measured > 0
         ? measured
@@ -268,7 +266,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   };
 
   const resizeTextarea = () => {
-    const textarea = textareaRef;
+    const textarea = textareaEl();
     if (!textarea) return;
 
     const { maxHeight } = readHandoffNoteMetrics(textarea);
@@ -318,12 +316,17 @@ export function HandoffPanel(props: HandoffPanelProps) {
 
   createEffect(() => {
     noteSegments();
-    if (document.activeElement === textareaRef) {
+    const textarea = textareaEl();
+    if (textarea && document.activeElement === textarea) {
       syncCaret();
     }
   });
 
   createEffect(() => {
+    if (!panelPresent()) {
+      return;
+    }
+
     const textarea = textareaEl();
     if (!textarea) {
       return;
@@ -349,7 +352,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   });
 
   const syncMirrorScroll = () => {
-    const textarea = textareaRef;
+    const textarea = textareaEl();
     const mirror = mirrorRef;
     if (!textarea || !mirror) {
       return;
@@ -387,7 +390,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   };
 
   const syncCaret = () => {
-    const textarea = textareaRef;
+    const textarea = textareaEl();
     if (!textarea) {
       setCaretVisible(false);
       return;
@@ -473,7 +476,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
   });
 
   const handleSelectMention = (agentId: string) => {
-    const textarea = textareaRef;
+    const textarea = textareaEl();
     if (!textarea) {
       return;
     }
@@ -522,10 +525,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
           data-shake={submitShakePulse.value()}
         >
           <textarea
-            ref={(node) => {
-              textareaRef = node;
-              setTextareaEl(node);
-            }}
+            ref={setTextareaEl}
             class={`${PREFIX}handoff-textarea ${PREFIX}handoff-textarea-overlay`}
             rows={1}
             placeholder="Note · @ to tag"
@@ -550,11 +550,8 @@ export function HandoffPanel(props: HandoffPanelProps) {
                 setMentionAnchorTick((tick) => tick + 1);
               }
             }}
-            onSelect={() => {
-              const textarea = textareaRef;
-              if (textarea) {
-                ensureNoteCursorNotInsideMention(textarea);
-              }
+            onSelect={(event) => {
+              ensureNoteCursorNotInsideMention(event.currentTarget);
               syncCaret();
             }}
             onMouseDown={(event) => {
@@ -566,11 +563,8 @@ export function HandoffPanel(props: HandoffPanelProps) {
               textarea.focus();
               placeCaretFromPointer(textarea, event.clientX, event.clientY);
             }}
-            onFocus={() => {
-              const textarea = textareaRef;
-              if (textarea) {
-                ensureNoteCursorNotInsideMention(textarea);
-              }
+            onFocus={(event) => {
+              ensureNoteCursorNotInsideMention(event.currentTarget);
               syncCaret();
             }}
             onBlur={() => setCaretVisible(false)}

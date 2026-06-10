@@ -580,9 +580,11 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}handoff-mention-pill {
   display: inline-flex;
   align-items: center;
-  vertical-align: baseline;
+  vertical-align: top;
+  box-sizing: border-box;
+  height: calc(var(--caliper-handoff-note-font-size) * var(--caliper-handoff-note-line-height));
   margin: 0 1px;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 6px;
   border: 1px solid var(--caliper-handoff-pill-color, var(--caliper-primary));
   background: color-mix(
@@ -592,7 +594,7 @@ export const OVERLAY_STYLES = `
   );
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  line-height: 1.3;
+  line-height: 1;
   color: #1a1a1a;
   pointer-events: auto;
   cursor: pointer;
