@@ -426,7 +426,7 @@ export const OVERLAY_STYLES = `
 .${CALIPER_PREFIX}handoff-note-mirror {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 0;
   padding: var(--caliper-handoff-note-py) 14px;
   font-family: var(--caliper-font-sans);
   font-size: var(--caliper-handoff-note-font-size);
@@ -488,6 +488,17 @@ export const OVERLAY_STYLES = `
   color: transparent;
   caret-color: transparent;
   -webkit-text-fill-color: transparent;
+}
+
+.${CALIPER_PREFIX}handoff-textarea-overlay::selection {
+  background: color-mix(in srgb, var(--caliper-primary) 28%, transparent);
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.${CALIPER_PREFIX}handoff-textarea-overlay::-moz-selection {
+  background: color-mix(in srgb, var(--caliper-primary) 28%, transparent);
+  color: transparent;
 }
 
 .${CALIPER_PREFIX}handoff-textarea-overlay::placeholder {

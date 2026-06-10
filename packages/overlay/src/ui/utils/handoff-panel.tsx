@@ -410,6 +410,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
     }
 
     const selectionStart = textarea.selectionStart ?? 0;
+    const selectionEnd = textarea.selectionEnd ?? selectionStart;
     const rect = measureNoteCursor(textarea, {
       note: textarea.value,
       colorByAgentId: colorByAgentId(),
@@ -417,7 +418,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
       space: "wrap",
     });
     setCaretRect(rect);
-    setCaretVisible(!!rect);
+    setCaretVisible(!!rect && selectionStart === selectionEnd);
     lastSelectionStart = selectionStart;
   };
 
@@ -563,6 +564,22 @@ export function HandoffPanel(props: HandoffPanelProps) {
           data-expanded={expanded() ? "true" : undefined}
           data-shake={submitShakePulse.value()}
         >
+          <div ref={mirrorRef} class={`${PREFIX}handoff-note-mirror`} aria-hidden="true">
+            <For each={noteSegments()}>
+              {(segment) =>
+                segment.type === "mention" ? (
+                  <HandoffMentionPill
+                    agentId={segment.agentId}
+                    color={colorByAgentId().get(segment.agentId) ?? HANDOFF_PALETTE[0]!}
+                    highlighted={props.handoffState()?.highlightedAgentId === segment.agentId}
+                    onPress={(agentId) => props.handoffRegistry.setHighlightedAgentId(agentId)}
+                  />
+                ) : (
+                  <span>{segment.value}</span>
+                )
+              }
+            </For>
+          </div>
           <textarea
             ref={setTextareaEl}
             class={`${PREFIX}handoff-textarea ${PREFIX}handoff-textarea-overlay`}
@@ -623,22 +640,6 @@ export function HandoffPanel(props: HandoffPanelProps) {
               scheduleCaretSync();
             }}
           />
-          <div ref={mirrorRef} class={`${PREFIX}handoff-note-mirror`} aria-hidden="true">
-            <For each={noteSegments()}>
-              {(segment) =>
-                segment.type === "mention" ? (
-                  <HandoffMentionPill
-                    agentId={segment.agentId}
-                    color={colorByAgentId().get(segment.agentId) ?? HANDOFF_PALETTE[0]!}
-                    highlighted={props.handoffState()?.highlightedAgentId === segment.agentId}
-                    onPress={(agentId) => props.handoffRegistry.setHighlightedAgentId(agentId)}
-                  />
-                ) : (
-                  <span>{segment.value}</span>
-                )
-              }
-            </For>
-          </div>
           <Show when={caretVisible() && caretRect()}>
             <div
               class={`${PREFIX}handoff-note-caret`}
