@@ -1,7 +1,7 @@
 import { createEffect, type Accessor } from "solid-js";
 
 const FOCUSABLE_SELECTOR =
-  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+  'a[href], button:not([disabled]), textarea, input, select, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
 
 function queryFocusable(root: HTMLElement): HTMLElement[] {
   return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
@@ -16,7 +16,7 @@ function getTrapFocusables(
   mentionOpen: boolean,
   panelRoot: HTMLElement | undefined,
   popoverRoot: HTMLElement | undefined,
-  textarea: HTMLTextAreaElement | undefined
+  editorRoot: HTMLElement | undefined
 ): HTMLElement[] {
   if (mentionOpen && popoverRoot) {
     const popoverFocusables = queryFocusable(popoverRoot);
@@ -29,8 +29,8 @@ function getTrapFocusables(
     return [popoverRoot];
   }
 
-  if (textarea) {
-    return [textarea];
+  if (editorRoot) {
+    return [editorRoot];
   }
 
   if (panelRoot) {
@@ -53,11 +53,11 @@ function containsFocusableScope(scope: HTMLElement[], target: Node | null): bool
 export type HandoffMentionListKeyboardOptions = {
   mentionOpen: Accessor<boolean>;
   isSessionOpen: Accessor<boolean>;
-  textarea: Accessor<HTMLTextAreaElement | undefined>;
+  editorRoot: Accessor<HTMLElement | undefined>;
   popoverRoot: Accessor<HTMLElement | undefined>;
   highlightedAgentId: Accessor<string | null>;
   optionIdPrefix: string;
-  handleKeyDown: (textarea: HTMLTextAreaElement, event: KeyboardEvent) => boolean;
+  handleKeyDown: (event: KeyboardEvent) => boolean;
   onHandled: () => void;
 };
 
@@ -66,8 +66,8 @@ export type HandoffFocusTrapOptions = {
   mentionOpen: Accessor<boolean>;
   panelRoot: Accessor<HTMLElement | undefined>;
   popoverRoot: Accessor<HTMLElement | undefined>;
-  textarea: Accessor<HTMLTextAreaElement | undefined>;
-  /** Routes listbox keys while the popover has focus (Tab trap moves focus off the textarea). */
+  editorRoot: Accessor<HTMLElement | undefined>;
+  /** Routes listbox keys while the popover has focus (Tab trap moves focus off the editor). */
   mentionListKeyboard?: HandoffMentionListKeyboardOptions;
 };
 
@@ -90,12 +90,12 @@ export function wireHandoffFocusTrap(options: HandoffFocusTrapOptions): () => vo
       options.mentionOpen(),
       options.panelRoot(),
       options.popoverRoot(),
-      options.textarea()
+      options.editorRoot()
     );
 
   const restoreFocus = () => {
     const focusables = getFocusables();
-    const preferred = focusables[0] ?? options.textarea();
+    const preferred = focusables[0] ?? options.editorRoot();
     preferred?.focus();
   };
 
@@ -189,12 +189,11 @@ export function wireHandoffMentionListKeyboard(
       return;
     }
 
-    const textarea = options.textarea();
-    if (!textarea) {
+    if (!options.editorRoot()) {
       return;
     }
 
-    const handled = options.handleKeyDown(textarea, event);
+    const handled = options.handleKeyDown(event);
     if (!handled) {
       return;
     }
@@ -207,7 +206,7 @@ export function wireHandoffMentionListKeyboard(
     }
 
     if (event.key === "Enter") {
-      textarea.focus();
+      options.editorRoot()?.focus();
     }
   };
 
@@ -232,7 +231,7 @@ export function createHandoffFocusTrap(options: HandoffFocusTrapOptions): void {
     if (options.mentionOpen() && mentionKeyboard) {
       cleanups.push(wireHandoffMentionListKeyboard(mentionKeyboard));
     } else {
-      queueMicrotask(() => options.textarea()?.focus());
+      queueMicrotask(() => options.editorRoot()?.focus());
     }
 
     return () => {

@@ -1,9 +1,36 @@
-import type { HandoffRegistryItem } from "@caliper/core";
-import { filterHandoffItems, isExactHandoffMentionQuery } from "@caliper/core";
+import type { HandoffNoteDocPos, HandoffRegistryItem } from "@caliper/core";
+
+import {
+  docPosEqual,
+  docPosToWireOffset,
+  filterHandoffItems,
+  isExactHandoffMentionQuery,
+  resolveActiveHandoffMentionQueryDoc,
+  wireOffsetToDocPos,
+  type HandoffNoteDoc,
+  type HandoffNoteSelection,
+} from "@caliper/core";
+
+import { flattenHandoffNoteLog } from "./handoff-note-debug.js";
+import type { HandoffNoteEditorHost } from "./note-editor/create-handoff-note-editor.js";
+
+/** Doc end for an active `@query` token — always consumes the leading `@`. */
+export function resolveActiveMentionReplaceEnd(
+  session: Pick<MentionSession, "open" | "queryStart" | "query">,
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos
+): HandoffNoteDocPos {
+  if (!session.open || !session.queryStart) {
+    return focus;
+  }
+  const startWire = docPosToWireOffset(doc, session.queryStart);
+  const endWire = startWire + 1 + session.query.length;
+  return wireOffsetToDocPos(doc, endWire);
+}
 
 export type MentionSession = {
   open: boolean;
-  queryStart: number;
+  queryStart: HandoffNoteDocPos | null;
   query: string;
   highlightIndex: number;
 };
@@ -16,7 +43,7 @@ export type MentionAnchorRect = {
 
 const CLOSED: MentionSession = {
   open: false,
-  queryStart: -1,
+  queryStart: null,
   query: "",
   highlightIndex: 0,
 };
@@ -44,22 +71,20 @@ export function createMentionController(options: MentionControllerOptions) {
     options.onHighlight(null);
   }
 
-  function parseSession(text: string, cursor: number): MentionSession {
-    const beforeCursor = text.slice(0, cursor);
-    const activeMatch = beforeCursor.match(/@([^\s@]*)$/);
-    if (!activeMatch || activeMatch.index === undefined) {
+  function parseSession(doc: HandoffNoteDoc, selection: HandoffNoteSelection): MentionSession {
+    const active = resolveActiveHandoffMentionQueryDoc(doc, selection);
+    if (!active) {
       return { ...CLOSED };
     }
 
-    const query = activeMatch[1] ?? "";
-    const queryStart = activeMatch.index;
-
     return {
       open: true,
-      queryStart,
-      query,
+      queryStart: active.queryStart,
+      query: active.query,
       highlightIndex:
-        session.open && session.queryStart === queryStart ? session.highlightIndex : 0,
+        session.open && session.queryStart && docPosEqual(session.queryStart, active.queryStart)
+          ? session.highlightIndex
+          : 0,
     };
   }
 
@@ -118,27 +143,41 @@ export function createMentionController(options: MentionControllerOptions) {
     return { top, left, maxWidth, side };
   }
 
-  function insertMention(textarea: HTMLTextAreaElement, agentId: string) {
-    const cursor = textarea.selectionStart ?? textarea.value.length;
-    const before = textarea.value.slice(0, session.queryStart);
-    const after = textarea.value.slice(cursor);
-    const token = `@${agentId} `;
-    const nextValue = `${before}${token}${after}`;
-    const nextCursor = before.length + token.length;
-    textarea.value = nextValue;
-    textarea.setSelectionRange(nextCursor, nextCursor);
-    options.onNoteChange(nextValue);
+  function insertMention(editor: HandoffNoteEditorHost, agentId: string) {
+    const activeSession = { ...session };
+    const doc = editor.getDoc();
+    const selection = editor.getSelectionState();
+    const wire = editor.getWire();
+    const replaceStart = activeSession.queryStart!;
+    const replaceEnd = resolveActiveMentionReplaceEnd(activeSession, doc, selection.focus);
+
+    editor.insertMentionAtomAt(agentId, replaceStart, replaceEnd);
+
+    flattenHandoffNoteLog("mention.insert", {
+      agentId,
+      wireBefore: wire,
+      wireAfter: editor.getWire(),
+      queryStart: docPosToWireOffset(doc, replaceStart),
+      replaceEnd: docPosToWireOffset(doc, replaceEnd),
+      liveCursorAtCommit: editor.getCursor(),
+      cursorAfter: editor.getCursor(),
+    });
+
+    options.onNoteChange(editor.getWire());
+
     closeSession();
   }
 
-  function selectHighlighted(textarea: HTMLTextAreaElement): boolean {
+  function selectHighlighted(editor: HandoffNoteEditorHost): boolean {
     const items = getFilteredItems();
     const item = items[session.highlightIndex];
     if (!item) {
       closeSession();
       return false;
     }
-    insertMention(textarea, item.agentId);
+
+    insertMention(editor, item.agentId);
+
     return true;
   }
 
@@ -147,62 +186,83 @@ export function createMentionController(options: MentionControllerOptions) {
     getSession: () => session,
     getFilteredItems,
     resolveMentionPopoverPosition,
-    handleInput(textarea: HTMLTextAreaElement) {
-      const cursor = textarea.selectionStart ?? textarea.value.length;
+    handleInput(editor: HandoffNoteEditorHost) {
+      const doc = editor.getDoc();
+      const selection = editor.getSelectionState();
+      const cursor = editor.getCursor();
+      const wire = editor.getWire();
       const wasOpen = session.open;
       const previousQuery = session.query;
-      let next = parseSession(textarea.value, cursor);
+
+      let next = parseSession(doc, selection);
       if (
         next.open &&
         !wasOpen &&
         isExactHandoffMentionQuery(
           next.query,
+
           options.getItems().map((item) => item.agentId)
         )
       ) {
         next = { ...CLOSED };
       }
+
+      if (
+        next.open !== wasOpen ||
+        next.query !== previousQuery ||
+        (next.queryStart &&
+          session.queryStart &&
+          !docPosEqual(next.queryStart, session.queryStart)) ||
+        (next.queryStart && !session.queryStart) ||
+        (!next.queryStart && session.queryStart)
+      ) {
+        flattenHandoffNoteLog("mention.session", {
+          wire,
+          cursor,
+          wasOpen,
+          previousQuery,
+          next,
+          wireSlice:
+            next.open && next.queryStart
+              ? wire.slice(docPosToWireOffset(doc, next.queryStart), cursor)
+              : undefined,
+        });
+      }
+
       session = next;
+
       if (session.open) {
         if (!wasOpen || session.query !== previousQuery) {
           session = { ...session, highlightIndex: 0 };
         }
+
         syncHighlight(getFilteredItems());
       } else if (wasOpen) {
         options.onHighlight(null);
       }
       notifyOpen();
     },
-    handleKeyDown(textarea: HTMLTextAreaElement, event: KeyboardEvent): boolean {
+
+    handleKeyDown(editor: HandoffNoteEditorHost, event: KeyboardEvent): boolean {
       if (!session.open) {
         return false;
       }
 
       const items = getFilteredItems();
 
-      if (event.key === "ArrowDown") {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (items.length === 0) {
+          closeSession();
+          return false;
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (items.length === 0) {
-          return true;
-        }
         session = {
           ...session,
-          highlightIndex: (session.highlightIndex + 1) % items.length,
-        };
-        syncHighlight(items);
-        return true;
-      }
-
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        if (items.length === 0) {
-          return true;
-        }
-        session = {
-          ...session,
-          highlightIndex: (session.highlightIndex - 1 + items.length) % items.length,
+          highlightIndex:
+            event.key === "ArrowDown"
+              ? (session.highlightIndex + 1) % items.length
+              : (session.highlightIndex - 1 + items.length) % items.length,
         };
         syncHighlight(items);
         return true;
@@ -211,7 +271,7 @@ export function createMentionController(options: MentionControllerOptions) {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        return selectHighlighted(textarea);
+        return selectHighlighted(editor);
       }
 
       if (event.key === "Escape") {
@@ -230,6 +290,14 @@ export function createMentionController(options: MentionControllerOptions) {
       return false;
     },
     closeSession,
+    commitMention(editor: HandoffNoteEditorHost, agentId: string): boolean {
+      if (!session.open) {
+        return false;
+      }
+      insertMention(editor, agentId);
+      return true;
+    },
+
     setHighlightByAgentId(agentId: string) {
       if (!session.open) {
         return;

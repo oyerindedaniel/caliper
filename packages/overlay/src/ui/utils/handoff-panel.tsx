@@ -1,22 +1,9 @@
-import {
-  For,
-  Show,
-  createEffect,
-  createMemo,
-  createSignal,
-  on,
-  onCleanup,
-  type Accessor,
-} from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
   getLiveGeometry,
   getOverlayRoot,
   HANDOFF_PALETTE,
-  parseHandoffNoteSegments,
-  resolveHandoffNoteAtomicEdit,
-  resolveHandoffNoteArrowMove,
-  snapHandoffNoteCursorOutOfMentionInterior,
   resolveHandoffPanelPosition,
   type HandoffRegistry,
   type HandoffUIState,
@@ -25,20 +12,17 @@ import { PREFIX } from "../../css/styles.js";
 import { createCssAnimationPulse } from "../../handoff/create-css-animation-pulse.js";
 import { createHandoffFocusTrap } from "../../handoff/create-handoff-focus-trap.js";
 import { createMentionController } from "../../handoff/create-mention-controller.js";
-import {
-  measureNoteCursor,
-  resolveNoteCursorFromPoint,
-  type NoteCursorRect,
-} from "../../handoff/measure-handoff-note-cursor.js";
+import { flattenHandoffNoteLog } from "../../handoff/handoff-note-debug.js";
+import { type HandoffNoteEditor } from "../../handoff/note-editor/create-handoff-note-editor.js";
+import { HandoffNoteEditor as HandoffNoteEditorView } from "../../handoff/note-editor/handoff-note-editor.jsx";
 import { PresenceHost } from "../../handoff/presence-host.jsx";
-import { HandoffMentionPill } from "./handoff-mention-pill.jsx";
 import { HandoffMentionPopover } from "./handoff-mention-popover.jsx";
 
 const HANDOFF_PANEL_WIDTH = 320;
 const HANDOFF_NOTE_MAX_HEIGHT = 120;
 
-function readHandoffNoteMetrics(textarea: HTMLTextAreaElement) {
-  const style = getComputedStyle(textarea);
+function readHandoffNoteMetrics(root: HTMLElement) {
+  const style = getComputedStyle(root);
   return {
     minHeight: parseFloat(style.minHeight) || 0,
     maxHeight: parseFloat(style.maxHeight) || 0,
@@ -100,19 +84,14 @@ interface HandoffPanelProps {
 export function HandoffPanel(props: HandoffPanelProps) {
   let panelRootRef: HTMLDivElement | undefined;
   let popoverRootRef: HTMLDivElement | undefined;
-  const [textareaEl, setTextareaEl] = createSignal<HTMLTextAreaElement | undefined>();
+  const [editor, setEditor] = createSignal<HandoffNoteEditor | undefined>();
   const [mentionListTick, setMentionListTick] = createSignal(0);
   const [mentionAnchorTick, setMentionAnchorTick] = createSignal(0);
   const [expanded, setExpanded] = createSignal(false);
   const [panelLayoutHeight, setPanelLayoutHeight] = createSignal(0);
   const [mentionOpen, setMentionOpen] = createSignal(false);
   const [noteRevision, setNoteRevision] = createSignal(0);
-  const [caretRect, setCaretRect] = createSignal<NoteCursorRect | null>(null);
-  const [caretVisible, setCaretVisible] = createSignal(false);
-  const [visualScrollTop, setVisualScrollTop] = createSignal(0);
-  let mirrorRef: HTMLDivElement | undefined;
   let lastPanelChrome: PanelChrome | undefined;
-  let lastSelectionStart = 0;
 
   const pendingNote = () => {
     noteRevision();
@@ -191,6 +170,123 @@ export function HandoffPanel(props: HandoffPanelProps) {
 
   onCleanup(() => submitShakePulse.dispose());
 
+  const syncExpanded = (root: HTMLElement) => {
+    const { minHeight } = readHandoffNoteMetrics(root);
+    setExpanded(root.scrollHeight > minHeight + 1);
+  };
+
+  const syncPanelLayoutHeight = () => {
+    const root = editor()?.getRoot();
+    if (!root) {
+      return;
+    }
+    syncExpanded(root);
+    const nextHeight = root.offsetHeight;
+    const heightChanged = nextHeight !== panelLayoutHeight();
+    setPanelLayoutHeight(nextHeight);
+    if (heightChanged && mentionOpen()) {
+      setMentionAnchorTick((tick) => tick + 1);
+    }
+  };
+
+  const handleEditorInput = () => {
+    const currentEditor = editor();
+    if (!currentEditor || currentEditor.isComposing()) {
+      return;
+    }
+    const wire = currentEditor.getWire();
+    props.handoffRegistry.setPendingNote(wire);
+    setNoteRevision((revision) => revision + 1);
+    mentionController.handleInput(currentEditor);
+    if (mentionController.isOpen()) {
+      setMentionListTick((tick) => tick + 1);
+    }
+    syncPanelLayoutHeight();
+  };
+
+  createEffect(
+    on(
+      () => [panelPresent(), editor()] as const,
+      ([present, currentEditor]) => {
+        if (!present || !currentEditor) {
+          return;
+        }
+        const pending = props.handoffRegistry.getPendingNote();
+        if (currentEditor.getWire() !== pending) {
+          currentEditor.setDocFromWire(pending, currentEditor.getCursor());
+        }
+        queueMicrotask(() => {
+          currentEditor.focus();
+          syncPanelLayoutHeight();
+        });
+      }
+    )
+  );
+
+  const colorByAgentId = createMemo(() => {
+    props.handoffState();
+    const map = new Map<string, string>();
+    for (const item of props.handoffRegistry.getItems()) {
+      map.set(
+        item.agentId,
+        HANDOFF_PALETTE[item.colorIndex % HANDOFF_PALETTE.length] ?? HANDOFF_PALETTE[0]!
+      );
+    }
+    return map;
+  });
+
+  createHandoffFocusTrap({
+    enabled: panelPresent,
+    mentionOpen,
+    panelRoot: () => panelRootRef,
+    popoverRoot: () => popoverRootRef,
+    editorRoot: () => editor()?.getRoot(),
+    mentionListKeyboard: {
+      mentionOpen,
+      isSessionOpen: () => mentionController.isOpen(),
+      editorRoot: () => editor()?.getRoot(),
+      popoverRoot: () => popoverRootRef,
+      highlightedAgentId: () => props.handoffState()?.highlightedAgentId ?? null,
+      optionIdPrefix: `${PREFIX}handoff-mention-`,
+      handleKeyDown: (event) => {
+        const currentEditor = editor();
+        return currentEditor ? mentionController.handleKeyDown(currentEditor, event) : false;
+      },
+      onHandled: () => {
+        syncPanelLayoutHeight();
+      },
+    },
+  });
+
+  const activeDescendant = createMemo(() => {
+    if (!mentionOpen()) {
+      return undefined;
+    }
+    const agentId = props.handoffState()?.highlightedAgentId;
+    return agentId ? `${PREFIX}handoff-mention-${agentId}` : undefined;
+  });
+
+  const handleSelectMention = (agentId: string) => {
+    const currentEditor = editor();
+    if (!currentEditor) {
+      return;
+    }
+    const session = mentionController.getSession();
+    flattenHandoffNoteLog("panel.selectMention", {
+      agentId,
+      wire: currentEditor.getWire(),
+      session,
+      cursor: currentEditor.getCursor(),
+    });
+    if (!mentionController.commitMention(currentEditor, agentId)) {
+      return;
+    }
+    props.handoffRegistry.setPendingNote(currentEditor.getWire());
+    setNoteRevision((revision) => revision + 1);
+    currentEditor.focus();
+    syncPanelLayoutHeight();
+  };
+
   const panelChrome = createMemo((): PanelChrome => {
     props.viewport().version;
     if (!panelPresent()) {
@@ -233,12 +329,12 @@ export function HandoffPanel(props: HandoffPanelProps) {
     }
 
     const measured = panelLayoutHeight();
-    const textarea = textareaEl();
+    const editorRoot = editor()?.getRoot();
     const panelHeight =
       measured > 0
         ? measured
-        : textarea
-          ? readHandoffNoteMetrics(textarea).minHeight
+        : editorRoot
+          ? readHandoffNoteMetrics(editorRoot).minHeight
           : HANDOFF_NOTE_MAX_HEIGHT;
 
     const viewport = props.viewport();
@@ -262,333 +358,6 @@ export function HandoffPanel(props: HandoffPanelProps) {
   const panelStyle = createMemo(() => panelChrome().pinStyle);
   const panelSide = createMemo(() => panelChrome().placement.side);
   const panelAlign = createMemo(() => panelChrome().placement.align);
-
-  const syncExpanded = (textarea: HTMLTextAreaElement, contentHeight = textarea.scrollHeight) => {
-    const { minHeight } = readHandoffNoteMetrics(textarea);
-    setExpanded(contentHeight > minHeight + 1);
-  };
-
-  const resizeTextarea = () => {
-    const textarea = textareaEl();
-    if (!textarea) return;
-
-    const { maxHeight } = readHandoffNoteMetrics(textarea);
-    textarea.style.height = "auto";
-    const textareaHeight = textarea.scrollHeight;
-    const mirrorHeight = mirrorRef?.scrollHeight ?? 0;
-    const contentHeight = Math.max(textareaHeight, mirrorHeight);
-    const cap = maxHeight > 0 ? maxHeight : contentHeight;
-    textarea.style.height = `${Math.min(contentHeight, cap)}px`;
-    textarea.style.overflowY = maxHeight > 0 && contentHeight > maxHeight ? "auto" : "hidden";
-    syncExpanded(textarea, contentHeight);
-    const nextHeight = textarea.offsetHeight;
-    const heightChanged = nextHeight !== panelLayoutHeight();
-    setPanelLayoutHeight(nextHeight);
-    syncMirrorScroll();
-    if (heightChanged && mentionOpen()) {
-      setMentionAnchorTick((tick) => tick + 1);
-    }
-  };
-
-  createEffect(
-    on(
-      () => [panelPresent(), textareaEl()] as const,
-      ([present, textarea]) => {
-        if (!present) {
-          setCaretVisible(false);
-          return;
-        }
-
-        if (!textarea) {
-          return;
-        }
-
-        const pending = props.handoffRegistry.getPendingNote();
-        if (textarea.value !== pending) {
-          textarea.value = pending;
-          setNoteRevision((revision) => revision + 1);
-        }
-        resizeTextarea();
-        queueMicrotask(() => {
-          textarea.focus();
-          syncCaret();
-        });
-      }
-    )
-  );
-
-  createEffect(() => {
-    noteSegments();
-    const textarea = textareaEl();
-    if (textarea && document.activeElement === textarea) {
-      syncCaret();
-    }
-  });
-
-  createEffect(() => {
-    if (!panelPresent()) {
-      return;
-    }
-
-    const textarea = textareaEl();
-    if (!textarea) {
-      return;
-    }
-
-    const onSelectionChange = () => syncCaret();
-    document.addEventListener("selectionchange", onSelectionChange);
-    onCleanup(() => document.removeEventListener("selectionchange", onSelectionChange));
-  });
-
-  const noteSegments = createMemo(() => parseHandoffNoteSegments(pendingNote()));
-
-  const colorByAgentId = createMemo(() => {
-    props.handoffState();
-    const map = new Map<string, string>();
-    for (const item of props.handoffRegistry.getItems()) {
-      map.set(
-        item.agentId,
-        HANDOFF_PALETTE[item.colorIndex % HANDOFF_PALETTE.length] ?? HANDOFF_PALETTE[0]!
-      );
-    }
-    return map;
-  });
-
-  const syncMirrorScroll = () => {
-    const mirror = mirrorRef;
-    if (!mirror) {
-      return;
-    }
-    mirror.scrollTop = visualScrollTop();
-  };
-
-  const visualScrollMax = (textarea: HTMLTextAreaElement): number => {
-    const mirrorHeight = mirrorRef?.scrollHeight ?? textarea.scrollHeight;
-    return Math.max(0, mirrorHeight - textarea.clientHeight);
-  };
-
-  const clampVisualScrollTop = (textarea: HTMLTextAreaElement, scrollTop: number): number =>
-    Math.max(0, Math.min(scrollTop, visualScrollMax(textarea)));
-
-  const syncVisualScrollFromTextarea = (textarea: HTMLTextAreaElement) => {
-    const rawMax = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
-    if (rawMax <= 0) {
-      setVisualScrollTop(0);
-      syncMirrorScroll();
-      return;
-    }
-    setVisualScrollTop(
-      clampVisualScrollTop(textarea, (textarea.scrollTop / rawMax) * visualScrollMax(textarea))
-    );
-    syncMirrorScroll();
-  };
-
-  const ensureNoteCursorNotInsideMention = (textarea: HTMLTextAreaElement): boolean => {
-    const cursor = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? cursor;
-    if (cursor !== end) {
-      lastSelectionStart = cursor;
-      return false;
-    }
-    const snapped = snapHandoffNoteCursorOutOfMentionInterior(
-      textarea.value,
-      cursor,
-      lastSelectionStart
-    );
-    if (snapped === cursor) {
-      lastSelectionStart = cursor;
-      return false;
-    }
-    textarea.setSelectionRange(snapped, snapped);
-    lastSelectionStart = snapped;
-    return true;
-  };
-
-  const placeCaretFromPointer = (
-    textarea: HTMLTextAreaElement,
-    clientX: number,
-    clientY: number
-  ) => {
-    const resolved = resolveNoteCursorFromPoint(textarea, clientX, clientY, {
-      note: textarea.value,
-      colorByAgentId: colorByAgentId(),
-      scrollTop: visualScrollTop(),
-    });
-    if (textarea.selectionStart !== resolved.index || textarea.selectionEnd !== resolved.index) {
-      textarea.setSelectionRange(resolved.index, resolved.index);
-    }
-    syncCaret();
-  };
-
-  const syncCaret = () => {
-    const textarea = textareaEl();
-    if (!textarea) {
-      setCaretVisible(false);
-      return;
-    }
-    if (document.activeElement !== textarea) {
-      setCaretVisible(false);
-      return;
-    }
-
-    const selectionStart = textarea.selectionStart ?? 0;
-    const selectionEnd = textarea.selectionEnd ?? selectionStart;
-    let scrollTop = clampVisualScrollTop(textarea, visualScrollTop());
-    let rect = measureNoteCursor(textarea, {
-      note: textarea.value,
-      colorByAgentId: colorByAgentId(),
-      selectionStart,
-      scrollTop,
-      space: "wrap",
-    });
-    if (rect) {
-      const style = getComputedStyle(textarea);
-      const paddingTop = parseFloat(style.paddingTop) || 0;
-      const paddingBottom = parseFloat(style.paddingBottom) || 0;
-      const visibleTop = paddingTop;
-      const visibleBottom = textarea.clientHeight - paddingBottom;
-      const caretBottom = rect.top + rect.height;
-
-      if (rect.top < visibleTop) {
-        scrollTop = clampVisualScrollTop(textarea, scrollTop + rect.top - visibleTop);
-      } else if (caretBottom > visibleBottom) {
-        scrollTop = clampVisualScrollTop(textarea, scrollTop + caretBottom - visibleBottom);
-      }
-
-      if (scrollTop !== visualScrollTop()) {
-        setVisualScrollTop(scrollTop);
-        syncMirrorScroll();
-        rect = measureNoteCursor(textarea, {
-          note: textarea.value,
-          colorByAgentId: colorByAgentId(),
-          selectionStart,
-          scrollTop,
-          space: "wrap",
-        });
-      }
-    }
-    setCaretRect(rect);
-    setCaretVisible(!!rect && selectionStart === selectionEnd);
-    lastSelectionStart = selectionStart;
-  };
-
-  const scheduleCaretSync = () => {
-    queueMicrotask(() => syncCaret());
-  };
-
-  createHandoffFocusTrap({
-    enabled: panelPresent,
-    mentionOpen,
-    panelRoot: () => panelRootRef,
-    popoverRoot: () => popoverRootRef,
-    textarea: textareaEl,
-    mentionListKeyboard: {
-      mentionOpen,
-      isSessionOpen: () => mentionController.isOpen(),
-      textarea: textareaEl,
-      popoverRoot: () => popoverRootRef,
-      highlightedAgentId: () => props.handoffState()?.highlightedAgentId ?? null,
-      optionIdPrefix: `${PREFIX}handoff-mention-`,
-      handleKeyDown: (textarea, event) => mentionController.handleKeyDown(textarea, event),
-      onHandled: () => {
-        resizeTextarea();
-        scheduleCaretSync();
-      },
-    },
-  });
-
-  const handleMentionArrowMove = (textarea: HTMLTextAreaElement, event: KeyboardEvent): boolean => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-      return false;
-    }
-    if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
-      return false;
-    }
-
-    const cursor = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? cursor;
-    if (cursor !== end) {
-      return false;
-    }
-
-    const direction = event.key === "ArrowLeft" ? "left" : "right";
-    const move = resolveHandoffNoteArrowMove(textarea.value, cursor, direction);
-    if (!move.handled) {
-      return false;
-    }
-
-    event.preventDefault();
-    textarea.setSelectionRange(move.cursor, move.cursor);
-    lastSelectionStart = move.cursor;
-    syncCaret();
-    return true;
-  };
-
-  const handleAtomicMentionEdit = (
-    textarea: HTMLTextAreaElement,
-    event: KeyboardEvent
-  ): boolean => {
-    if (event.key !== "Backspace" && event.key !== "Delete") {
-      return false;
-    }
-
-    const cursor = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? cursor;
-    if (cursor !== end) {
-      return false;
-    }
-
-    const edit =
-      event.key === "Backspace"
-        ? resolveHandoffNoteAtomicEdit(textarea.value, cursor, "backspace")
-        : resolveHandoffNoteAtomicEdit(textarea.value, cursor, "delete");
-    if (!edit) {
-      return false;
-    }
-
-    event.preventDefault();
-    textarea.value = edit.note;
-    textarea.setSelectionRange(edit.cursor, edit.cursor);
-    props.handoffRegistry.setPendingNote(edit.note);
-    setNoteRevision((revision) => revision + 1);
-    mentionController.handleInput(textarea);
-    resizeTextarea();
-    syncCaret();
-    return true;
-  };
-
-  const activeDescendant = createMemo(() => {
-    if (!mentionOpen()) {
-      return undefined;
-    }
-    const agentId = props.handoffState()?.highlightedAgentId;
-    return agentId ? `${PREFIX}handoff-mention-${agentId}` : undefined;
-  });
-
-  const handleSelectMention = (agentId: string) => {
-    const textarea = textareaEl();
-    if (!textarea) {
-      return;
-    }
-    const session = mentionController.getSession();
-    if (!session.open) {
-      return;
-    }
-    const cursor = textarea.selectionStart ?? textarea.value.length;
-    const before = textarea.value.slice(0, session.queryStart);
-    const after = textarea.value.slice(cursor);
-    const token = `@${agentId} `;
-    const nextValue = `${before}${token}${after}`;
-    const nextCursor = before.length + token.length;
-    textarea.value = nextValue;
-    textarea.setSelectionRange(nextCursor, nextCursor);
-    props.handoffRegistry.setPendingNote(nextValue);
-    setNoteRevision((revision) => revision + 1);
-    mentionController.closeSession();
-    resizeTextarea();
-    textarea.focus();
-    syncCaret();
-  };
 
   onCleanup(() => {
     mentionController.closeSession();
@@ -614,96 +383,27 @@ export function HandoffPanel(props: HandoffPanelProps) {
           data-expanded={expanded() ? "true" : undefined}
           data-shake={submitShakePulse.value()}
         >
-          <div ref={mirrorRef} class={`${PREFIX}handoff-note-mirror`} aria-hidden="true">
-            <For each={noteSegments()}>
-              {(segment) =>
-                segment.type === "mention" ? (
-                  <HandoffMentionPill
-                    agentId={segment.agentId}
-                    color={colorByAgentId().get(segment.agentId) ?? HANDOFF_PALETTE[0]!}
-                    highlighted={props.handoffState()?.highlightedAgentId === segment.agentId}
-                    onPress={(agentId) => props.handoffRegistry.setHighlightedAgentId(agentId)}
-                  />
-                ) : (
-                  <span>{segment.value}</span>
-                )
-              }
-            </For>
-          </div>
-          <textarea
-            ref={setTextareaEl}
-            class={`${PREFIX}handoff-textarea ${PREFIX}handoff-textarea-overlay`}
-            rows={1}
-            placeholder="Note · @ to tag"
-            aria-controls={mentionOpen() ? `${PREFIX}handoff-mention-list` : undefined}
-            aria-autocomplete="list"
-            aria-activedescendant={activeDescendant()}
-            onInput={(event) => {
-              const textarea = event.currentTarget;
-              ensureNoteCursorNotInsideMention(textarea);
-              props.handoffRegistry.setPendingNote(textarea.value);
+          <HandoffNoteEditorView
+            wire={pendingNote}
+            colorByAgentId={colorByAgentId}
+            highlightedAgentId={() => props.handoffState()?.highlightedAgentId ?? null}
+            onWireChange={(wire) => {
+              props.handoffRegistry.setPendingNote(wire);
               setNoteRevision((revision) => revision + 1);
-              mentionController.handleInput(textarea);
-              if (mentionController.isOpen()) {
-                setMentionListTick((tick) => tick + 1);
-              }
-              resizeTextarea();
-              syncCaret();
+              handleEditorInput();
             }}
-            onScroll={() => {
-              const textarea = textareaEl();
-              if (textarea) {
-                syncVisualScrollFromTextarea(textarea);
-              }
-              syncCaret();
-              if (mentionOpen()) {
-                setMentionAnchorTick((tick) => tick + 1);
+            onResize={syncPanelLayoutHeight}
+            onEditorReady={setEditor}
+            onKeyDown={(event, currentEditor) => {
+              if (mentionController.handleKeyDown(currentEditor, event)) {
+                syncPanelLayoutHeight();
               }
             }}
-            onSelect={(event) => {
-              ensureNoteCursorNotInsideMention(event.currentTarget);
-              syncCaret();
-            }}
-            onMouseDown={(event) => {
-              if (event.button !== 0) {
-                return;
-              }
-              event.preventDefault();
-              const textarea = event.currentTarget;
-              textarea.focus();
-              placeCaretFromPointer(textarea, event.clientX, event.clientY);
-            }}
-            onFocus={(event) => {
-              ensureNoteCursorNotInsideMention(event.currentTarget);
-              syncCaret();
-            }}
-            onBlur={() => setCaretVisible(false)}
-            onKeyDown={(event) => {
-              const textarea = event.currentTarget;
-              if (handleAtomicMentionEdit(textarea, event)) {
-                return;
-              }
-              if (handleMentionArrowMove(textarea, event)) {
-                return;
-              }
-              ensureNoteCursorNotInsideMention(textarea);
-              if (mentionController.handleKeyDown(textarea, event)) {
-                resizeTextarea();
-              }
-              scheduleCaretSync();
-            }}
+            onMentionPress={(agentId) => props.handoffRegistry.setHighlightedAgentId(agentId)}
+            ariaControls={() => (mentionOpen() ? `${PREFIX}handoff-mention-list` : undefined)}
+            ariaActiveDescendant={activeDescendant}
+            placeholder="Note · @ to tag"
           />
-          <Show when={caretVisible() && caretRect()}>
-            <div
-              id={`${PREFIX}handoff-note-caret`}
-              class={`${PREFIX}handoff-note-caret`}
-              style={{
-                top: `${caretRect()!.top}px`,
-                left: `${caretRect()!.left}px`,
-                height: `${caretRect()!.height}px`,
-              }}
-            />
-          </Show>
         </div>
         <HandoffMentionPopover
           ref={popoverRootRef}
@@ -713,8 +413,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
           mentionAnchorTick={mentionAnchorTick}
           highlightedAgentId={() => props.handoffState()?.highlightedAgentId ?? null}
           viewport={props.viewport}
-          textareaRef={textareaEl}
-          colorByAgentId={colorByAgentId}
+          editorHost={() => editor()}
           onHighlight={(agentId) => mentionController.setHighlightByAgentId(agentId)}
           onSelect={handleSelectMention}
         />

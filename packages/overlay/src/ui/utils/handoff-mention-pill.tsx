@@ -1,10 +1,11 @@
-import { formatHandoffAgentIdPill } from "@caliper/core";
+import { formatHandoffAgentIdPill, type HandoffAgentIdPillVariant } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
 
 interface HandoffMentionPillProps {
   agentId: string;
   color: string;
   highlighted?: boolean;
+  variant?: HandoffAgentIdPillVariant;
   onPress?: (agentId: string) => void;
 }
 
@@ -22,7 +23,7 @@ export function HandoffMentionPill(props: HandoffMentionPillProps) {
         props.onPress(props.agentId);
       }}
     >
-      {formatHandoffAgentIdPill(props.agentId)}
+      {formatHandoffAgentIdPill(props.agentId, props.variant ?? "compact")}
     </span>
   );
 }

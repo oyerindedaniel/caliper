@@ -17,7 +17,7 @@ import {
 import { PREFIX } from "../../css/styles.js";
 import type { MentionController } from "../../handoff/create-mention-controller.js";
 import { mergeRefs } from "../../handoff/assign-ref.js";
-import { measureNoteCursor } from "../../handoff/measure-handoff-note-cursor.js";
+import type { HandoffNoteEditorHost } from "../../handoff/note-editor/create-handoff-note-editor.js";
 import { PresenceHost, type PresencePlacementSide } from "../../handoff/presence-host.jsx";
 import { HandoffMentionPill } from "./handoff-mention-pill.jsx";
 
@@ -40,8 +40,7 @@ interface HandoffMentionPopoverProps {
     height: number;
     version: number;
   }>;
-  textareaRef: () => HTMLTextAreaElement | undefined;
-  colorByAgentId: Accessor<Map<string, string>>;
+  editorHost: () => HandoffNoteEditorHost | undefined;
   onHighlight: (agentId: string) => void;
   onSelect: (agentId: string) => void;
 }
@@ -115,8 +114,8 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
       };
     }
 
-    const textarea = props.textareaRef();
-    if (!textarea || activeSession.queryStart < 0) {
+    const editorHost = props.editorHost();
+    if (!editorHost || !activeSession.queryStart) {
       if (lastChrome) {
         return lastChrome;
       }
@@ -126,13 +125,9 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
       };
     }
 
-    const anchor = measureNoteCursor(textarea, {
-      note: textarea.value,
-      colorByAgentId: props.colorByAgentId(),
-      selectionStart: activeSession.queryStart,
-      space: "viewport",
-    });
-    if (!anchor) {
+    const anchorOffset = editorHost.getCursor();
+    const rect = editorHost.getAnchorRectAtOffset(anchorOffset);
+    if (!rect) {
       if (lastChrome) {
         return lastChrome;
       }
@@ -141,6 +136,12 @@ export function HandoffMentionPopover(props: HandoffMentionPopoverProps) {
         side: DEFAULT_POPOVER_SIDE,
       };
     }
+
+    const anchor = {
+      top: rect.top,
+      left: rect.left,
+      height: rect.height,
+    };
 
     const viewport = props.viewport();
     const itemCount = filteredItems().length;

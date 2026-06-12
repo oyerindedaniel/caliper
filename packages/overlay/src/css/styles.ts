@@ -423,23 +423,7 @@ export const OVERLAY_STYLES = `
   border-radius: 6px;
 }
 
-.${CALIPER_PREFIX}handoff-note-mirror {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  padding: var(--caliper-handoff-note-py) 14px;
-  font-family: var(--caliper-font-sans);
-  font-size: var(--caliper-handoff-note-font-size);
-  line-height: var(--caliper-handoff-note-line-height);
-  color: #1a1a1a;
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-  overflow: hidden;
-  scrollbar-gutter: stable;
-  pointer-events: none;
-}
-
-.${CALIPER_PREFIX}handoff-textarea {
+.${CALIPER_PREFIX}handoff-note-editor {
   display: block;
   width: 100%;
   min-height: calc(
@@ -447,7 +431,6 @@ export const OVERLAY_STYLES = `
     var(--caliper-handoff-note-font-size) * var(--caliper-handoff-note-line-height)
   );
   max-height: 120px;
-  resize: none;
   border: none;
   border-radius: inherit;
   padding: var(--caliper-handoff-note-py) 14px;
@@ -457,73 +440,42 @@ export const OVERLAY_STYLES = `
   color: #1a1a1a;
   background: transparent;
   box-sizing: border-box;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
   overflow-y: auto;
   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.16) transparent;
   box-shadow: none;
   outline: none;
+  cursor: text;
 }
 
-.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar {
+.${CALIPER_PREFIX}handoff-note-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #8a8a8a;
+  pointer-events: none;
+}
+
+.${CALIPER_PREFIX}handoff-note-editor::-webkit-scrollbar {
   width: 4px;
 }
 
-.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar-track {
+.${CALIPER_PREFIX}handoff-note-editor::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar-thumb {
+.${CALIPER_PREFIX}handoff-note-editor::-webkit-scrollbar-thumb {
   background-color: rgba(0, 0, 0, 0.14);
   border-radius: 999px;
 }
 
-.${CALIPER_PREFIX}handoff-textarea::-webkit-scrollbar-thumb:hover {
+.${CALIPER_PREFIX}handoff-note-editor::-webkit-scrollbar-thumb:hover {
   background-color: rgba(0, 0, 0, 0.22);
 }
 
-.${CALIPER_PREFIX}handoff-textarea-overlay {
-  position: relative;
-  z-index: 1;
-  color: transparent;
-  caret-color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-
-.${CALIPER_PREFIX}handoff-textarea-overlay::selection {
-  background: color-mix(in srgb, var(--caliper-primary) 28%, transparent);
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-}
-
-.${CALIPER_PREFIX}handoff-textarea-overlay::-moz-selection {
-  background: color-mix(in srgb, var(--caliper-primary) 28%, transparent);
-  color: transparent;
-}
-
-.${CALIPER_PREFIX}handoff-textarea-overlay::placeholder {
-  color: #8a8a8a;
-  -webkit-text-fill-color: #8a8a8a;
-  opacity: 1;
-}
-
-.${CALIPER_PREFIX}handoff-note-caret {
-  position: absolute;
-  width: 1px;
-  background: #1a1a1a;
-  pointer-events: none;
-  z-index: 3;
-  animation: ${CALIPER_PREFIX}handoff-caret-blink 1s step-end infinite;
-}
-
-@keyframes ${CALIPER_PREFIX}handoff-caret-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-.${CALIPER_PREFIX}handoff-textarea:focus,
-.${CALIPER_PREFIX}handoff-textarea:focus-visible {
+.${CALIPER_PREFIX}handoff-note-editor:focus,
+.${CALIPER_PREFIX}handoff-note-editor:focus-visible {
   outline: none;
 }
 
