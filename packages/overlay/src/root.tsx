@@ -31,6 +31,7 @@ import {
   type HandoffRegistry,
   type HandoffUIState,
   resolveElementFromFingerprint,
+  persistHandoff,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
 import { createHandoffKeyboardController } from "./handoff/handoff-keyboard.js";
@@ -544,6 +545,7 @@ export function Root(config: RootConfig) {
         if (e.shiftKey && (handoffRegistry?.getItems().length ?? 0) > 0) {
           handoffRegistry?.resetPendingNote();
           handoffRegistry?.clear();
+          persistHandoff(null);
           return;
         }
 

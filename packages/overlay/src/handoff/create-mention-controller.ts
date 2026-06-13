@@ -4,6 +4,7 @@ import {
   docPosEqual,
   docPosToWireOffset,
   filterHandoffItems,
+  isArrow,
   isExactHandoffMentionQuery,
   resolveActiveHandoffMentionQueryDoc,
   wireOffsetToDocPos,
@@ -250,7 +251,7 @@ export function createMentionController(options: MentionControllerOptions) {
 
       const items = getFilteredItems();
 
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      if (isArrow.ver(event)) {
         if (items.length === 0) {
           closeSession();
           return false;
@@ -259,10 +260,9 @@ export function createMentionController(options: MentionControllerOptions) {
         event.stopImmediatePropagation();
         session = {
           ...session,
-          highlightIndex:
-            event.key === "ArrowDown"
-              ? (session.highlightIndex + 1) % items.length
-              : (session.highlightIndex - 1 + items.length) % items.length,
+          highlightIndex: isArrow.down(event)
+            ? (session.highlightIndex + 1) % items.length
+            : (session.highlightIndex - 1 + items.length) % items.length,
         };
         syncHighlight(items);
         return true;

@@ -1,5 +1,5 @@
 import { type CaliperHandoffState, CaliperHandoffStateSchema } from "@oyerinde/caliper-schema";
-import { HANDOFF_SESSION_KEY } from "@caliper/core";
+import { HANDOFF_SESSION_KEY } from "@/shared/constants/index.js";
 
 export function readPersistedHandoff(): CaliperHandoffState | null {
   if (typeof sessionStorage === "undefined") {

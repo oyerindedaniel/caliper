@@ -6,6 +6,11 @@ import {
   type DeepRequired,
   type CommandsConfig,
 } from "@caliper/core";
+import {
+  HANDOFF_MENTION_ATTR,
+  isHandoffMentionElement,
+  readMentionAgentId,
+} from "./note-editor/handoff-note-dom.js";
 
 export type HandoffKeyboardControllerOptions = {
   registry: HandoffRegistry;
@@ -13,6 +18,41 @@ export type HandoffKeyboardControllerOptions = {
   isMentionOpen: () => boolean;
   onRejectEmptySubmit?: () => void;
 };
+
+function resolveKeyboardTarget(event: KeyboardEvent): HTMLElement | null {
+  const target = event.target;
+  if (target instanceof HTMLElement) {
+    return target;
+  }
+  const active = document.activeElement;
+  return active instanceof HTMLElement ? active : null;
+}
+
+function isHandoffMentionTabStop(target: HTMLElement | null): target is HTMLSpanElement {
+  return !!target && isHandoffMentionElement(target);
+}
+
+function isHandoffNoteSubmitTarget(target: HTMLElement | null): boolean {
+  if (!target) {
+    return false;
+  }
+  if (target.closest(`span[${HANDOFF_MENTION_ATTR}]`)) {
+    return false;
+  }
+  const editableRoot = target.closest('[contenteditable]:not([contenteditable="false"])');
+  return editableRoot instanceof HTMLElement;
+}
+
+function highlightMentionTabStop(
+  registry: HandoffRegistry,
+  target: HTMLSpanElement,
+  event: KeyboardEvent
+): boolean {
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  registry.setHighlightedAgentId(readMentionAgentId(target));
+  return true;
+}
 
 export function createHandoffKeyboardController(options: HandoffKeyboardControllerOptions) {
   const { registry, commands, isMentionOpen, onRejectEmptySubmit } = options;
@@ -22,27 +62,11 @@ export function createHandoffKeyboardController(options: HandoffKeyboardControll
       return false;
     }
 
-    const state = registry.getUIState();
-    const hasItems = (state?.items.length ?? 0) > 0;
-    if (!hasItems && !registry.isInputOpen()) {
+    const target = resolveKeyboardTarget(e);
+    const hasLiveItems = registry.getItems().length > 0;
+    const lastCommitted = registry.getLastCommitted();
+    if (!hasLiveItems && !registry.isInputOpen() && !lastCommitted) {
       return false;
-    }
-
-    const target = e.target as HTMLElement | null;
-
-    if (
-      commands.handoff.restore &&
-      isKeyMatch(commands.handoff.restore, e) &&
-      !registry.isInputOpen()
-    ) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      const snapshot = registry.getUIState();
-      if (snapshot && snapshot.items.length > 0) {
-        registry.restoreFromState(snapshot, resolveElementFromFingerprint);
-        registry.setInputOpen(false);
-      }
-      return true;
     }
 
     if (isKeyMatch(commands.handoff.open, e)) {
@@ -53,17 +77,39 @@ export function createHandoffKeyboardController(options: HandoffKeyboardControll
         return false;
       }
 
-      e.preventDefault();
-      e.stopImmediatePropagation();
+      if (isHandoffMentionTabStop(target)) {
+        return highlightMentionTabStop(registry, target, e);
+      }
 
       if (registry.isInputOpen()) {
+        if (!isHandoffNoteSubmitTarget(target)) {
+          return false;
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
         if (isHandoffPendingNoteEmpty(registry.getPendingNote())) {
           onRejectEmptySubmit?.();
           return true;
         }
         registry.commitSession();
-      } else if (hasItems) {
+        return true;
+      }
+
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      if (hasLiveItems) {
         registry.setInputOpen(true);
+        return true;
+      }
+
+      if (lastCommitted) {
+        registry.rehydrateFromCommitted(lastCommitted.state, lastCommitted.wireNote, {
+          openInput: true,
+          resolve: resolveElementFromFingerprint,
+        });
       }
       return true;
     }

@@ -574,6 +574,11 @@ export const OVERLAY_STYLES = `
     color-mix(in srgb, var(--caliper-handoff-pill-color, var(--caliper-primary)) 35%, transparent);
 }
 
+.${CALIPER_PREFIX}handoff-mention-pill:focus-visible {
+  outline: 1px solid
+    color-mix(in srgb, var(--caliper-handoff-pill-color, var(--caliper-primary)) 55%, transparent);
+}
+
 .${CALIPER_PREFIX}handoff-mention-empty {
   padding: 8px 10px;
   font-size: 12px;

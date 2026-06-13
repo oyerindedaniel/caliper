@@ -26,7 +26,7 @@ describe("HandoffNoteEditor", () => {
       <HandoffNoteEditor
         wire={pendingNote}
         colorByAgentId={() => new Map([[agentId, "#f00"]])}
-        highlightedAgentId={() => null}
+        isMentionPopoverOpen={() => false}
         onWireChange={(nextWire) => {
           setWire(nextWire);
           setNoteRevision((revision) => revision + 1);

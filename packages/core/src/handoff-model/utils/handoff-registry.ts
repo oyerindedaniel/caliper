@@ -7,7 +7,12 @@ import { deduceGeometry } from "@/geometry/utils/scroll-aware.js";
 import type { SelectionMetadata } from "@/measurement-model/utils/selection-system.js";
 import { buildSelectorInfo } from "@/shared/utils/selector.js";
 import { assignColorIndex } from "./handoff-colors.js";
-import { isHandoffPendingNoteEmpty, resolveHandoffNote } from "./handoff-note.js";
+import {
+  handoffResolvedNoteToWire,
+  isHandoffPendingNoteEmpty,
+  resolveHandoffNote,
+} from "./handoff-note.js";
+import { readPersistedHandoff } from "./handoff-session.js";
 import { sanitizeHandoffSelection } from "./sanitize-handoff-selection.js";
 
 type InternalHandoffItem = {
@@ -18,6 +23,11 @@ type InternalHandoffItem = {
   colorIndex: number;
   createdAt: number;
   updatedAt: number;
+};
+
+type LastCommittedHandoff = {
+  state: CaliperHandoffState;
+  wireNote: string;
 };
 
 export type HandoffPresentation = "visible" | "hiding" | "hidden";
@@ -40,6 +50,13 @@ export type HandoffUIState = {
 export type HandoffRegistryListener = (state: HandoffUIState | null) => void;
 export type HandoffCommitListener = (state: CaliperHandoffState) => void;
 
+export type HandoffElementResolver = (fingerprint: CaliperSelectorInput) => Element | null;
+
+export type RehydrateCommittedOptions = {
+  openInput?: boolean;
+  resolve?: HandoffElementResolver;
+};
+
 export interface HandoffRegistry {
   toggle: (element: Element) => boolean;
   remove: (agentId: string) => boolean;
@@ -50,6 +67,12 @@ export interface HandoffRegistry {
   resetPendingNote: () => void;
   setHighlightedAgentId: (agentId: string | null) => void;
   commitSession: () => CaliperHandoffState | null;
+  getLastCommitted: () => LastCommittedHandoff | null;
+  rehydrateFromCommitted: (
+    snapshot: CaliperHandoffState,
+    wireNote: string,
+    options?: RehydrateCommittedOptions
+  ) => number;
   getUIState: () => HandoffUIState | null;
   getItems: () => HandoffRegistryItem[];
   getActiveItem: () => HandoffRegistryItem | null;
@@ -58,7 +81,7 @@ export interface HandoffRegistry {
   getPresentation: () => HandoffPresentation;
   restoreFromState(
     snapshot: CaliperHandoffState | HandoffUIState,
-    resolve?: (fingerprint: CaliperSelectorInput) => Element | null
+    resolve?: HandoffElementResolver
   ): number;
   refreshGeometry: () => void;
   onUpdate: (callback: HandoffRegistryListener) => () => void;
@@ -126,16 +149,42 @@ function handoffUIStateEquals(a: HandoffUIState | null, b: HandoffUIState | null
   return true;
 }
 
-export function createHandoffRegistry(
-  resolveElement?: (fingerprint: CaliperSelectorInput) => Element | null
-): HandoffRegistry {
+function seedLastCommittedFromPersisted(): LastCommittedHandoff | null {
+  const persisted = readPersistedHandoff();
+  if (!persisted || persisted.items.length === 0) {
+    return null;
+  }
+  return {
+    state: persisted,
+    wireNote: handoffResolvedNoteToWire(
+      persisted.note,
+      persisted.items.map((item) => item.agentId)
+    ),
+  };
+}
+
+function resolveActiveItemId(
+  snapshot: CaliperHandoffState | HandoffUIState,
+  restoredItems: Map<string, InternalHandoffItem>
+): string | null {
+  const preferred = "activeItemId" in snapshot ? snapshot.activeItemId : null;
+  if (preferred && restoredItems.has(preferred)) {
+    return preferred;
+  }
+  return [...restoredItems.keys()].pop() ?? null;
+}
+
+export function createHandoffRegistry(resolveElement?: HandoffElementResolver): HandoffRegistry {
   const items = new Map<string, InternalHandoffItem>();
   let activeItemId: string | null = null;
   let highlightedAgentId: string | null = null;
   let highlightShakeTick = 0;
   let inputOpen = false;
   let presentation: HandoffPresentation = "hidden";
+  /** Live editor wire (`@caliper-…` pills) while drafting; cleared on commit. */
   let pendingNote = "";
+  /** Last successful commit: agent `state.note` is resolved; `wireNote` keeps editor wire. */
+  let lastCommitted: LastCommittedHandoff | null = seedLastCommittedFromPersisted();
   let lastNotifiedUIState: HandoffUIState | null = null;
   const listeners = new Set<HandoffRegistryListener>();
   const commitListeners = new Set<HandoffCommitListener>();
@@ -181,8 +230,6 @@ export function createHandoffRegistry(
       item.fingerprint = buildSelectorInfo(item.element, item.metadata);
       touchItem(item);
     }
-    // Intentionally no notifyUI: touchItem bumps updatedAt every scroll frame, which would
-    // re-emit UI state continuously. Overlay re-reads metadata via viewport.version instead.
   }
 
   function showBoxesIfNeeded() {
@@ -190,6 +237,51 @@ export function createHandoffRegistry(
       presentation = "visible";
       refreshGeometry({ evenIfHidden: true });
     }
+  }
+
+  function clearLiveSession() {
+    items.clear();
+    activeItemId = null;
+    highlightedAgentId = null;
+    highlightShakeTick = 0;
+    inputOpen = false;
+    presentation = "hidden";
+    pendingNote = "";
+    notifyUI();
+  }
+
+  function restoreItemsFromSnapshot(
+    snapshot: CaliperHandoffState | HandoffUIState,
+    resolveFn?: HandoffElementResolver
+  ): number {
+    items.clear();
+    let restored = 0;
+
+    for (const wireItem of snapshot.items) {
+      const element = resolveFn?.(wireItem.fingerprint) ?? null;
+      if (!element) {
+        continue;
+      }
+
+      const metadata = metadataFromElement(element);
+      items.set(wireItem.agentId, {
+        agentId: wireItem.agentId,
+        element,
+        metadata,
+        fingerprint: wireItem.fingerprint,
+        colorIndex: wireItem.colorIndex ?? assignColorIndex(restored),
+        createdAt: wireItem.createdAt,
+        updatedAt: wireItem.updatedAt,
+      });
+      restored += 1;
+    }
+
+    activeItemId = resolveActiveItemId(snapshot, items);
+    highlightedAgentId = null;
+    highlightShakeTick = 0;
+    presentation = items.size === 0 ? "hidden" : "visible";
+    refreshGeometry({ evenIfHidden: true });
+    return restored;
   }
 
   return {
@@ -253,14 +345,8 @@ export function createHandoffRegistry(
     },
 
     clear() {
-      items.clear();
-      activeItemId = null;
-      highlightedAgentId = null;
-      highlightShakeTick = 0;
-      inputOpen = false;
-      presentation = "hidden";
-      pendingNote = "";
-      notifyUI();
+      lastCommitted = null;
+      clearLiveSession();
     },
 
     setInputOpen(open) {
@@ -310,14 +396,28 @@ export function createHandoffRegistry(
         note: resolveHandoffNote(pendingNote),
       };
 
+      lastCommitted = {
+        state: committed,
+        wireNote: pendingNote,
+      };
+
       commitListeners.forEach((listener) => listener(committed));
-
-      inputOpen = false;
-      highlightedAgentId = null;
-      presentation = "hidden";
-      notifyUI();
-
+      clearLiveSession();
       return committed;
+    },
+
+    getLastCommitted: () => lastCommitted,
+
+    rehydrateFromCommitted(snapshot, wireNote, options = {}) {
+      const resolveFn = options.resolve ?? resolveElement;
+      const restored = restoreItemsFromSnapshot(snapshot, resolveFn);
+      pendingNote = wireNote;
+      inputOpen = options.openInput === true && restored > 0;
+      if (inputOpen) {
+        presentation = "visible";
+      }
+      notifyUI();
+      return restored;
     },
 
     getUIState: buildUIState,
@@ -334,47 +434,18 @@ export function createHandoffRegistry(
 
     restoreFromState(snapshot, resolve) {
       const resolveFn = resolve ?? resolveElement;
-      items.clear();
-      let restored = 0;
-
-      for (const wireItem of snapshot.items) {
-        const element = resolveFn?.(wireItem.fingerprint) ?? null;
-        if (!element) {
-          continue;
-        }
-
-        const metadata = metadataFromElement(element);
-        items.set(wireItem.agentId, {
-          agentId: wireItem.agentId,
-          element,
-          metadata,
-          fingerprint: wireItem.fingerprint,
-          colorIndex: wireItem.colorIndex ?? assignColorIndex(restored),
-          createdAt: wireItem.createdAt,
-          updatedAt: wireItem.updatedAt,
-        });
-        restored += 1;
-      }
-
-      activeItemId =
-        snapshot.activeItemId && items.has(snapshot.activeItemId)
-          ? snapshot.activeItemId
-          : ([...items.keys()].pop() ?? null);
-      highlightedAgentId = null;
-      highlightShakeTick = 0;
+      const restored = restoreItemsFromSnapshot(snapshot, resolveFn);
       inputOpen = "inputOpen" in snapshot ? snapshot.inputOpen && items.size > 0 : false;
-      presentation =
-        items.size === 0
-          ? "hidden"
-          : "presentation" in snapshot
-            ? snapshot.presentation
-            : "visible";
-      refreshGeometry({ evenIfHidden: true });
+      if ("note" in snapshot && typeof snapshot.note === "string") {
+        pendingNote = handoffResolvedNoteToWire(
+          snapshot.note,
+          snapshot.items.map((item) => item.agentId)
+        );
+      }
       notifyUI();
       return restored;
     },
 
-    /** Updates in-memory geometry only — no notifyUI (see touchItem + handoffUIStateEquals). */
     refreshGeometry() {
       refreshGeometry();
     },

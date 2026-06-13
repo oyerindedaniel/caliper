@@ -1,7 +1,7 @@
 // DO NOT DELETE THIS FILE
 const LOG_PREFIX = "[handoff-note]";
 
-/** Filter console with `ce.` / `caret>>` / `mention.` / `dom.` for pipeline traces. */
+/** Filter console with `ce.` / `caret>>` / `caret>>ver>>` / `mention.` / `dom.` for pipeline traces. */
 export function flattenHandoffNoteLog(
   event: string,
   data: Record<string, unknown> = {},
@@ -17,6 +17,10 @@ export function flattenHandoffNoteLog(
 
 export function logCaretTrace(source: string, data: Record<string, unknown> = {}): void {
   flattenHandoffNoteLog(`caret>>${source}`, data);
+}
+
+export function logVerArrow(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`caret>>ver>>${source}`, data);
 }
 
 export function handoffNoteDomSnapshot(

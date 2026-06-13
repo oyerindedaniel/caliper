@@ -28,6 +28,23 @@ export function resolveHandoffNote(note: string): string {
   return note.replace(HANDOFF_MENTION_PATTERN, "$1");
 }
 
+/** Rebuild editor wire (`@caliper-…` pills) from a resolved commit note + item ids. */
+export function handoffResolvedNoteToWire(note: string, agentIds: readonly string[]): string {
+  if (agentIds.length === 0) {
+    return note;
+  }
+  let wire = note;
+  const unique = [...new Set(agentIds)].sort((left, right) => right.length - left.length);
+  for (const agentId of unique) {
+    if (!agentId) {
+      continue;
+    }
+    const escaped = agentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    wire = wire.replace(new RegExp(escaped, "g"), `@${agentId}`);
+  }
+  return wire;
+}
+
 export function isHandoffPendingNoteEmpty(note: string): boolean {
   return !resolveHandoffNote(note).trim();
 }

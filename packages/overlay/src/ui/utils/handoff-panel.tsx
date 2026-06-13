@@ -199,6 +199,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
     setNoteRevision((revision) => revision + 1);
     mentionController.handleInput(currentEditor);
     if (mentionController.isOpen()) {
+      currentEditor.clearMentionSelection();
       setMentionListTick((tick) => tick + 1);
     }
     syncPanelLayoutHeight();
@@ -386,7 +387,7 @@ export function HandoffPanel(props: HandoffPanelProps) {
           <HandoffNoteEditorView
             wire={pendingNote}
             colorByAgentId={colorByAgentId}
-            highlightedAgentId={() => props.handoffState()?.highlightedAgentId ?? null}
+            isMentionPopoverOpen={() => mentionOpen()}
             onWireChange={(wire) => {
               props.handoffRegistry.setPendingNote(wire);
               setNoteRevision((revision) => revision + 1);

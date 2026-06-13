@@ -19,7 +19,34 @@ import {
   resolveDocPosition,
   spliceDocWireRange,
   wireToDoc,
+  isArrow,
 } from "./handoff-note-doc.js";
+
+describe("isArrow", () => {
+  it("matches any arrow by default", () => {
+    expect(isArrow("ArrowLeft")).toBe(true);
+    expect(isArrow("ArrowDown")).toBe(true);
+    expect(isArrow("Enter")).toBe(false);
+  });
+
+  it("composes horizontal, vertical, and single-axis matchers", () => {
+    expect(isArrow.horc("ArrowLeft")).toBe(true);
+    expect(isArrow.horc("ArrowUp")).toBe(false);
+    expect(isArrow.ver("ArrowDown")).toBe(true);
+    expect(isArrow.ver("ArrowRight")).toBe(false);
+    expect(isArrow.left("ArrowLeft")).toBe(true);
+    expect(isArrow.right("ArrowRight")).toBe(true);
+    expect(isArrow.up("ArrowUp")).toBe(true);
+    expect(isArrow.down("ArrowDown")).toBe(true);
+  });
+
+  it("maps keys to nav directions", () => {
+    expect(isArrow.direction("ArrowLeft")).toBe("left");
+    expect(isArrow.horcDirection("ArrowRight")).toBe("right");
+    expect(isArrow.verDirection("ArrowUp")).toBe("up");
+    expect(isArrow.direction("Tab")).toBeNull();
+  });
+});
 
 describe("wireToDoc / docToWire", () => {
   it("round-trips empty string", () => {
@@ -350,10 +377,10 @@ describe("resolveHandoffNoteArrowMove", () => {
     });
   });
 
-  it("steps through plain text normally", () => {
+  it("steps through plain text with handled true", () => {
     expect(resolveHandoffNoteArrowMove(doc, mentionEnd + 1, "left")).toEqual({
-      cursor: mentionEnd + 1,
-      handled: false,
+      cursor: mentionEnd,
+      handled: true,
     });
   });
 
@@ -380,8 +407,8 @@ describe("resolveHandoffNoteArrowMove", () => {
       handled: true,
     });
     expect(resolveHandoffNoteArrowMove(multilineDoc, mentionStart - 1, "left")).toEqual({
-      cursor: mentionStart - 1,
-      handled: false,
+      cursor: mentionStart - 2,
+      handled: true,
     });
   });
 

@@ -1,4 +1,8 @@
 import { sanitizeMentionPasteWire } from "./handoff-note-paste.js";
+import {
+  resolveHorizontalBleedWireMove,
+  type HandoffNoteVerticalArrowDirection,
+} from "./handoff-note-vertical-nav.js";
 
 export type HandoffNoteTextNode = {
   type: "text";
@@ -103,6 +107,59 @@ export type HandoffNoteEdit = "backspace" | "delete";
 
 export type HandoffNoteArrowDirection = "left" | "right";
 
+export type HandoffNoteNavDirection = HandoffNoteArrowDirection | HandoffNoteVerticalArrowDirection;
+
+const ARROW_KEY_TO_DIRECTION = {
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  ArrowUp: "up",
+  ArrowDown: "down",
+} as const satisfies Record<string, HandoffNoteNavDirection>;
+
+type ArrowKey = keyof typeof ARROW_KEY_TO_DIRECTION;
+
+function arrowKeyOf(source: KeyboardEvent | string): string {
+  return typeof source === "string" ? source : source.key;
+}
+
+function isArrowKey(key: string): key is ArrowKey {
+  return key in ARROW_KEY_TO_DIRECTION;
+}
+
+function matchesArrow(key: string, directions?: readonly HandoffNoteNavDirection[]): boolean {
+  if (!isArrowKey(key)) {
+    return false;
+  }
+  if (!directions || directions.length === 0) {
+    return true;
+  }
+  return directions.includes(ARROW_KEY_TO_DIRECTION[key]);
+}
+
+export const isArrow = Object.assign(
+  (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source)),
+  {
+    horc: (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source), ["left", "right"]),
+    ver: (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source), ["up", "down"]),
+    left: (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source), ["left"]),
+    right: (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source), ["right"]),
+    up: (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source), ["up"]),
+    down: (source: KeyboardEvent | string) => matchesArrow(arrowKeyOf(source), ["down"]),
+    direction(source: KeyboardEvent | string): HandoffNoteNavDirection | null {
+      const key = arrowKeyOf(source);
+      return isArrowKey(key) ? ARROW_KEY_TO_DIRECTION[key] : null;
+    },
+    horcDirection(source: KeyboardEvent | string): HandoffNoteArrowDirection | null {
+      const direction = isArrow.direction(source);
+      return direction === "left" || direction === "right" ? direction : null;
+    },
+    verDirection(source: KeyboardEvent | string): HandoffNoteVerticalArrowDirection | null {
+      const direction = isArrow.direction(source);
+      return direction === "up" || direction === "down" ? direction : null;
+    },
+  }
+);
+
 export type HandoffNoteCursorContext =
   | { kind: "text" }
   | { kind: "mention-boundary"; start: number; end: number; edge: "start" | "end" }
@@ -143,52 +200,11 @@ export function resolveHandoffNoteArrowMove(
   cursor: number,
   direction: HandoffNoteArrowDirection
 ): { cursor: number; handled: boolean } {
-  const wireLength = docLength(doc);
-  const current = describeHandoffNoteCursorContext(doc, cursor);
-
-  if (current.kind === "mention-interior") {
-    return {
-      cursor: direction === "left" ? current.start : current.end,
-      handled: true,
-    };
-  }
-
-  if (current.kind === "mention-boundary") {
-    if (direction === "left" && current.edge === "end") {
-      return { cursor: current.start, handled: true };
-    }
-    if (direction === "right" && current.edge === "start") {
-      return { cursor: current.end, handled: true };
-    }
-    if (direction === "left" && current.edge === "start") {
-      const next = current.start - 1;
-      if (next >= 0) {
-        return { cursor: next, handled: true };
-      }
-    }
-    if (direction === "right" && current.edge === "end") {
-      const next = current.end + 1;
-      if (next <= wireLength) {
-        return { cursor: next, handled: true };
-      }
-    }
-  }
-
-  const delta = direction === "left" ? -1 : 1;
-  const next = cursor + delta;
-  if (next < 0 || next > wireLength) {
+  const bleed = resolveHorizontalBleedWireMove(doc, cursor, direction);
+  if (bleed === null || bleed.offset === cursor) {
     return { cursor, handled: false };
   }
-
-  const nextContext = describeHandoffNoteCursorContext(doc, next);
-  if (nextContext.kind === "mention-interior") {
-    return {
-      cursor: direction === "left" ? nextContext.start : nextContext.end,
-      handled: true,
-    };
-  }
-
-  return { cursor, handled: false };
+  return { cursor: bleed.offset, handled: true };
 }
 
 export function snapHandoffNoteCursorOutOfMentionInterior(

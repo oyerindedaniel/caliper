@@ -1,29 +1,41 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  applyDocInsertText,
+  collapsedSelection,
   docPosToWireOffset,
+  docToWire,
   normalizeDocPos,
-  resolveDocArrowMove,
+  resolveDocHorizontalArrowMove,
   resolveHandoffNoteArrowMove,
   wireOffsetToDocPos,
   wireToDoc,
   type HandoffNoteDoc,
+  type HandoffNoteDocPos,
 } from "@caliper/core";
 import {
+  readDocCursor,
+  readDocSelection,
+  repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
   resolveMeasuredVerticalArrowMove,
 } from "./handoff-note-selection.js";
+import {
+  buildLayoutMapFromSamples,
+  invalidateHandoffNoteLayoutCache,
+} from "./handoff-note-layout-map.js";
 import { renderHandoffNoteDoc } from "./handoff-note-dom.js";
 import {
   getAnchorRectAtWire,
   readDomWireCursor,
   readDomWireSelection,
+  readHandoffNoteLayoutRowIndexForTests,
+  readHandoffNoteLayoutSamplesForTests,
   setSelectionAtWire,
+  stubCaretProbeAtDocPos,
+  stubHandoffNoteAnchorRectAtWire,
+  stubHandoffNoteMentionLayoutCoords,
+  stubTextNodeLineRects,
 } from "./handoff-note-test-helpers.js";
-import {
-  readDocCursor,
-  readDocSelection,
-  repairDocSelectionIfNeeded,
-} from "./handoff-note-selection.js";
 
 const NOTE = "Hi @caliper-abc123 there";
 const MENTION_START = "Hi ".length;
@@ -118,6 +130,22 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(root, doc)).toBe(leftOfMention);
   });
 
+  it("strand-only repair skips authority restore for valid boundary moves", () => {
+    setSelectionAtWire(root, doc, NOTE.length);
+    const authority = NOTE.length;
+    setSelectionAtWire(root, doc, MENTION_START);
+    const strandOnly = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, authority), {
+      mode: "strand-only",
+    });
+    expect(docPosToWireOffset(doc, strandOnly)).toBe(MENTION_START);
+
+    const full = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, authority), {
+      mode: "full",
+    });
+    expect(docPosToWireOffset(doc, full)).toBe(authority);
+    expect(readDomWireCursor(root, doc)).toBe(authority);
+  });
+
   it("sets and reads wire cursor at text and mention boundaries", () => {
     setSelectionAtWire(root, doc, MENTION_START);
     expect(readDomWireCursor(root, doc)).toBe(MENTION_START);
@@ -188,7 +216,11 @@ describe("handoff-note-selection", () => {
     const move = resolveHandoffNoteArrowMove(gluedDoc, 62, "left");
     expect(move).toEqual({ cursor: 45, handled: true });
 
-    const docMove = resolveDocArrowMove(gluedDoc, wireOffsetToDocPos(gluedDoc, 62), "left");
+    const docMove = resolveDocHorizontalArrowMove(
+      gluedDoc,
+      wireOffsetToDocPos(gluedDoc, 62),
+      "left"
+    );
     expect(docPosToWireOffset(gluedDoc, docMove.pos)).toBe(45);
 
     setSelectionAtWire(glued, gluedDoc, move.cursor, move.cursor, {
@@ -267,41 +299,10 @@ describe("handoff-note-selection", () => {
     expect(docPosToWireOffset(doc, live.focus)).toBe(2);
   });
 
-  it("vertical arrow up from a soft-wrapped pill start lands on the previous visual line start", () => {
-    const agentA = "caliper-aaaaaaa";
-    const agentB = "caliper-bbbbbbb";
-    const wire = `dhhdd @${agentA} @${agentB} wjjw @${agentA} `;
-    const line2Mention = wire.indexOf("@", 1);
-    const line3Mention = wire.lastIndexOf("@");
-    const wjjwStart = wire.indexOf("wjjw");
-    const doc = wireToDoc(wire);
-    const measured = [
-      { wire: 0, top: 0, left: 0 },
-      { wire: line2Mention, top: 24, left: 0 },
-      { wire: wjjwStart, top: 24, left: 120 },
-      { wire: line3Mention, top: 48, left: 120 },
-    ];
-
-    const moved = resolveMeasuredVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, line3Mention),
-      "up",
-      measured,
-      48,
-      120,
-      16
-    );
-
-    expect(moved.handled).toBe(true);
-    expect(moved.branch).toBe("dom-lineStart-fromMention");
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(line2Mention);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(wjjwStart);
-  });
-
   it("vertical arrow up lands on the previous line start, not between adjacent mentions", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
-    const wire = `dhhdhd @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
+    const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
     const line2Mention = wire.indexOf("@", wire.indexOf("\n") + 1);
     const line3Mention = wire.lastIndexOf("@");
     const multilineDoc = wireToDoc(wire);
@@ -325,5 +326,509 @@ describe("handoff-note-selection", () => {
     expect(docPosToWireOffset(multilineDoc, moved.pos)).toBe(line2Mention);
     setSelectionAtWire(surface, multilineDoc, docPosToWireOffset(multilineDoc, moved.pos));
     expect(readDomWireCursor(surface, multilineDoc)).toBe(line2Mention);
+  });
+});
+
+function buildMentionTailDoc(
+  agent: string,
+  tail: string
+): { doc: HandoffNoteDoc; focus: HandoffNoteDocPos } {
+  const base = `@${agent} @${agent} @${agent} `;
+  let doc = wireToDoc(base);
+  let focus = wireOffsetToDocPos(doc, docToWire(doc).length);
+  for (const char of tail) {
+    const result = applyDocInsertText(doc, collapsedSelection(focus), char);
+    doc = result.doc;
+    focus = result.selection.focus;
+  }
+  return { doc, focus };
+}
+
+/**
+ * Oracle: three mentions on one wire line at ~310px — two visual rows (soft wrap).
+ * Constants ROW1_TOP / ROW2_TOP are measured Y bands from playground, not contract ordinals.
+ */
+describe("soft-wrap vertical navigation on a single wire line", () => {
+  const AGENT = "caliper-0ik99dso0";
+  const TRIPLE_MENTION_WIRE = `@${AGENT} @${AGENT} @${AGENT} `;
+  const WRAP_ROW2_PILL_START = 38;
+  const WRAP_ROOT_WIDTH = 310;
+  const ROW1_TOP = 92.66667175292969;
+  const ROW2_TOP = 118.86458587646484;
+  const ROW_START_LEFT = 347;
+  const TEXT_LINE_HEIGHT = 17.333328247070312;
+
+  const ORACLE_SAMPLES = [
+    { wire: 0, top: ROW1_TOP, left: ROW_START_LEFT },
+    { wire: 19, top: ROW1_TOP, left: 480 },
+    { wire: 37, top: ROW1_TOP, left: 599.875 },
+    { wire: 38, top: ROW2_TOP, left: ROW_START_LEFT },
+    { wire: 56, top: ROW2_TOP, left: 479.15625 },
+    { wire: 57, top: ROW2_TOP, left: 482.7083435058594 },
+  ] as const;
+
+  function mountWrapEditor(wireOrDoc: string | HandoffNoteDoc = TRIPLE_MENTION_WIRE): {
+    root: HTMLDivElement;
+    doc: HandoffNoteDoc;
+  } {
+    const doc = typeof wireOrDoc === "string" ? wireToDoc(wireOrDoc) : wireOrDoc;
+    const surface = document.createElement("div");
+    surface.style.width = `${WRAP_ROOT_WIDTH}px`;
+    surface.contentEditable = "true";
+    document.body.appendChild(surface);
+    const colorByAgentId = new Map<string, string>();
+    for (const node of doc.nodes) {
+      if (node.type === "mention") {
+        colorByAgentId.set(node.agentId, "#06f");
+      }
+    }
+    renderHandoffNoteDoc(surface, doc, { colorByAgentId });
+    Object.defineProperty(surface, "clientWidth", { configurable: true, value: WRAP_ROOT_WIDTH });
+    const pillCoords = new Map<number, { top: number; left: number }>();
+    let mentionOrdinal = 0;
+    for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+      if (doc.nodes[nodeIndex]?.type !== "mention") {
+        continue;
+      }
+      const onWrappedBand = mentionOrdinal >= 2;
+      pillCoords.set(nodeIndex, {
+        top: onWrappedBand ? ROW2_TOP : ROW1_TOP,
+        left: mentionOrdinal === 0 ? ROW_START_LEFT : mentionOrdinal === 1 ? 480 : ROW_START_LEFT,
+      });
+      mentionOrdinal += 1;
+    }
+    stubHandoffNoteMentionLayoutCoords(surface, pillCoords);
+    return { root: surface, doc };
+  }
+
+  beforeEach(() => {
+    invalidateHandoffNoteLayoutCache();
+  });
+
+  describe("cross visual row", () => {
+    it("preserves goal column on the previous visual row with measured samples", () => {
+      const doc = wireToDoc(TRIPLE_MENTION_WIRE);
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 57),
+        "up",
+        [...ORACLE_SAMPLES],
+        ROW2_TOP,
+        600,
+        TEXT_LINE_HEIGHT
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(37);
+    });
+
+    it("Up from wrapped-band visual row start lands on first visual row start instead of wire bleed", () => {
+      const { root, doc } = mountWrapEditor();
+      setSelectionAtWire(root, doc, WRAP_ROW2_PILL_START);
+
+      const moved = resolveDomVerticalArrowMove(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, WRAP_ROW2_PILL_START),
+        "up"
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(0);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(WRAP_ROW2_PILL_START - 1);
+      root.remove();
+    });
+
+    it("Down from first visual row start enters wrapped-band visual row start", () => {
+      const doc = wireToDoc(TRIPLE_MENTION_WIRE);
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 0),
+        "down",
+        [...ORACLE_SAMPLES],
+        ROW1_TOP,
+        ROW_START_LEFT,
+        TEXT_LINE_HEIGHT
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(WRAP_ROW2_PILL_START);
+    });
+
+    it("Down from mention at visual row start lands on wrapped-band left edge when tail sample shares that band", () => {
+      const doc = wireToDoc(TRIPLE_MENTION_WIRE);
+      const liveLikeSamples = [
+        { wire: 0, top: ROW1_TOP, left: ROW_START_LEFT },
+        { wire: 19, top: ROW1_TOP, left: 480 },
+        { wire: 37, top: ROW2_TOP, left: 600 },
+        { wire: 38, top: ROW2_TOP, left: ROW_START_LEFT },
+        { wire: 56, top: ROW2_TOP, left: 479 },
+        { wire: 57, top: ROW2_TOP, left: 483 },
+      ];
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 0),
+        "down",
+        liveLikeSamples,
+        ROW1_TOP,
+        ROW_START_LEFT,
+        TEXT_LINE_HEIGHT
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(WRAP_ROW2_PILL_START);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(37);
+    });
+
+    it("Up from wrapped-band start at visual row start lands on doc start, not prior-band tail", () => {
+      const agent = "caliper-u40esdyzu";
+      const wire = `header @${agent} tail @${agent} `;
+      const doc = wireToDoc(wire);
+      const wrappedBandStart = wire.indexOf(" tail");
+      const firstBandTail = wire.indexOf(`@${agent}`) + `@${agent}`.length;
+      const samples = [
+        { wire: 0, top: 0, left: 0 },
+        { wire: firstBandTail, top: 0, left: 200 },
+        { wire: wrappedBandStart, top: 24, left: 0 },
+        { wire: wire.length - 1, top: 24, left: 220 },
+      ];
+
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, wrappedBandStart),
+        "up",
+        samples,
+        24,
+        0,
+        16
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(0);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(firstBandTail);
+    });
+  });
+
+  describe("visual boundary bleed", () => {
+    it("Up from first visual row bleeds horizontally instead of blocking", () => {
+      const { root, doc } = mountWrapEditor();
+      setSelectionAtWire(root, doc, 19);
+
+      const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, 19), "up");
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(18);
+      root.remove();
+    });
+
+    it("Down from last visual row bleeds horizontally instead of blocking", () => {
+      const agent = "caliper-k7u1qyjn9";
+      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "dhhdhdhdhd");
+      const tailWire = docPosToWireOffset(doc, tailPos);
+      const midTailWire = tailWire - 2;
+      const { root } = mountWrapEditor(doc);
+      setSelectionAtWire(root, doc, midTailWire);
+
+      const moved = resolveDomVerticalArrowMove(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, midTailWire),
+        "down"
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThan(midTailWire);
+      root.remove();
+    });
+
+    it("bleeds horizontally when layout has only one visual row", () => {
+      const wire = "abcdefgh";
+      const doc = wireToDoc(wire);
+      const surface = document.createElement("div");
+      surface.style.width = "320px";
+      document.body.appendChild(surface);
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 320 });
+      setSelectionAtWire(surface, doc, 4);
+
+      const moved = resolveDomVerticalArrowMove(surface, doc, wireOffsetToDocPos(doc, 4), "down");
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(5);
+      surface.remove();
+    });
+  });
+
+  describe("layout row assignment", () => {
+    it("clusters samples into distinct visual rows when pills sit on different Y bands", () => {
+      const firstBandTop = 141;
+      const wrappedBandTop = 159;
+      const samples = [
+        { wire: 0, top: firstBandTop, left: 347 },
+        { wire: 19, top: firstBandTop, left: 480 },
+        { wire: 37, top: firstBandTop, left: 600 },
+        { wire: 38, top: firstBandTop, left: 347 },
+        { wire: 56, top: wrappedBandTop, left: 479 },
+        { wire: 57, top: wrappedBandTop, left: 483 },
+      ];
+
+      const layout = buildLayoutMapFromSamples(samples, 18);
+
+      expect(layout.visualRowCount).toBe(2);
+      expect(layout.rowIndexForWire(56)).toBe(1);
+      expect(layout.rowIndexForWire(0)).toBe(0);
+    });
+
+    it("assigns wrapped-band mention start to the continuation visual row index", () => {
+      const { root, doc } = mountWrapEditor();
+      setSelectionAtWire(root, doc, WRAP_ROW2_PILL_START);
+
+      expect(readHandoffNoteLayoutRowIndexForTests(root, doc, WRAP_ROW2_PILL_START)).toBe(1);
+      expect(readHandoffNoteLayoutRowIndexForTests(root, doc, 0)).toBe(0);
+      expect(readHandoffNoteLayoutSamplesForTests(root, doc).length).toBeGreaterThan(1);
+      root.remove();
+    });
+
+    it("assigns trailing text after mention to the same visual row as its preceding pill", () => {
+      const agent = "caliper-k7u1qyjn9";
+      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "dhhdhdhdhd");
+      const tailWire = docPosToWireOffset(doc, tailPos);
+      const { root } = mountWrapEditor(doc);
+
+      expect(readHandoffNoteLayoutRowIndexForTests(root, doc, tailWire, tailPos)).toBe(1);
+      root.remove();
+    });
+  });
+
+  describe("visual row start landing", () => {
+    const MID_WRAP_AGENT = "caliper-midwrap01";
+
+    function buildMidTextWrapDoc(agent: string): {
+      doc: HandoffNoteDoc;
+      wire: string;
+      secondMentionStart: number;
+      firstMentionEnd: number;
+      middleTextNodeIndex: number;
+    } {
+      const wire = `lead @${agent} ${"fill ".repeat(6)}tail @${agent} `;
+      const doc = wireToDoc(wire);
+      const firstMentionPos = wireOffsetToDocPos(doc, wire.indexOf("@"));
+      const firstMentionEnd = docPosToWireOffset(doc, {
+        nodeIndex: firstMentionPos.nodeIndex,
+        nodeOffset: 1 + agent.length,
+      });
+      return {
+        doc,
+        wire,
+        secondMentionStart: wire.lastIndexOf("@"),
+        firstMentionEnd,
+        middleTextNodeIndex: firstMentionPos.nodeIndex + 1,
+      };
+    }
+
+    function mountMidTextWrapEditor(agent = MID_WRAP_AGENT): {
+      root: HTMLDivElement;
+      doc: HandoffNoteDoc;
+      secondMentionStart: number;
+      firstMentionEnd: number;
+      middleTextNodeIndex: number;
+    } {
+      const { doc, secondMentionStart, firstMentionEnd, middleTextNodeIndex } =
+        buildMidTextWrapDoc(agent);
+      const surface = document.createElement("div");
+      surface.style.width = `${WRAP_ROOT_WIDTH}px`;
+      surface.contentEditable = "true";
+      document.body.appendChild(surface);
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: WRAP_ROOT_WIDTH });
+      const firstMentionNodeIndex = wireOffsetToDocPos(doc, docToWire(doc).indexOf("@")).nodeIndex;
+      const pillCoords = new Map<number, { top: number; left: number }>();
+      for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+        if (doc.nodes[nodeIndex]?.type !== "mention") {
+          continue;
+        }
+        const onWrappedBand = nodeIndex > firstMentionNodeIndex;
+        pillCoords.set(nodeIndex, {
+          top: onWrappedBand ? ROW2_TOP : ROW1_TOP,
+          left: onWrappedBand ? 480 : ROW_START_LEFT + 48,
+        });
+      }
+      stubHandoffNoteMentionLayoutCoords(surface, pillCoords);
+      stubHandoffNoteAnchorRectAtWire(surface, doc, 0, {
+        top: ROW1_TOP,
+        left: ROW_START_LEFT,
+      });
+      return { root: surface, doc, secondMentionStart, firstMentionEnd, middleTextNodeIndex };
+    }
+
+    it("Down from doc start lands in wrapped middle text at content column via DOM probe, not next mention", () => {
+      const { root, doc, secondMentionStart, firstMentionEnd, middleTextNodeIndex } =
+        mountMidTextWrapEditor();
+      const middleNode = doc.nodes[middleTextNodeIndex];
+      if (middleNode?.type !== "text") {
+        throw new Error("expected middle text node");
+      }
+      const wrapPos: HandoffNoteDocPos = {
+        nodeIndex: middleTextNodeIndex,
+        nodeOffset: Math.ceil(middleNode.text.length / 2),
+      };
+      const restoreProbe = stubCaretProbeAtDocPos(root, doc, ROW_START_LEFT, ROW2_TOP, wrapPos);
+      const restoreRects = stubTextNodeLineRects(root, doc, middleTextNodeIndex, [
+        { top: ROW1_TOP, left: 480, width: 120 },
+        { top: ROW2_TOP, left: ROW_START_LEFT, width: 120 },
+      ]);
+      setSelectionAtWire(root, doc, 0);
+
+      const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, 0), "down");
+
+      restoreProbe();
+      restoreRects();
+      expect(moved.handled).toBe(true);
+      const landed = docPosToWireOffset(doc, moved.pos);
+      expect(landed).toBe(docPosToWireOffset(doc, wrapPos));
+      expect(landed).not.toBe(secondMentionStart);
+      expect(landed).toBeGreaterThan(firstMentionEnd);
+      expect(landed).toBeLessThan(secondMentionStart);
+      expect(doc.nodes[wireOffsetToDocPos(doc, landed).nodeIndex]?.type).toBe("text");
+      root.remove();
+    });
+
+    it("layout map assigns wrapped middle-text line fragment to continuation visual row", () => {
+      const { root, doc, middleTextNodeIndex } = mountMidTextWrapEditor();
+      const middleNode = doc.nodes[middleTextNodeIndex];
+      if (middleNode?.type !== "text") {
+        throw new Error("expected middle text node");
+      }
+      const wrapPos: HandoffNoteDocPos = {
+        nodeIndex: middleTextNodeIndex,
+        nodeOffset: Math.ceil(middleNode.text.length / 2),
+      };
+      const wrapWire = docPosToWireOffset(doc, wrapPos);
+      const restoreRects = stubTextNodeLineRects(root, doc, middleTextNodeIndex, [
+        { top: ROW1_TOP, left: 480, width: 120 },
+        { top: ROW2_TOP, left: ROW_START_LEFT, width: 120 },
+      ]);
+      const restoreProbe = stubCaretProbeAtDocPos(root, doc, ROW_START_LEFT, ROW2_TOP, wrapPos);
+      invalidateHandoffNoteLayoutCache();
+
+      expect(readHandoffNoteLayoutRowIndexForTests(root, doc, wrapWire, wrapPos)).toBe(1);
+
+      restoreProbe();
+      restoreRects();
+      root.remove();
+    });
+
+    it("rejects row-start probe on wrong visual row and lands via target-row column match", () => {
+      const { root, doc, firstMentionEnd, middleTextNodeIndex } = mountMidTextWrapEditor();
+      const restoreRects = stubTextNodeLineRects(root, doc, middleTextNodeIndex, [
+        { top: ROW1_TOP, left: 480, width: 120 },
+        { top: ROW2_TOP, left: ROW_START_LEFT, width: 120 },
+      ]);
+      const restoreProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        ROW_START_LEFT,
+        ROW2_TOP,
+        wireOffsetToDocPos(doc, firstMentionEnd)
+      );
+      setSelectionAtWire(root, doc, 0);
+
+      const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, 0), "down");
+
+      restoreProbe();
+      restoreRects();
+      expect(moved.handled).toBe(true);
+      const landed = docPosToWireOffset(doc, moved.pos);
+      expect(landed).not.toBe(firstMentionEnd);
+      expect(landed).toBeGreaterThan(firstMentionEnd);
+      expect(readHandoffNoteLayoutRowIndexForTests(root, doc, landed)).toBe(1);
+      root.remove();
+    });
+  });
+
+  describe("inline mention on wrapped band", () => {
+    const INLINE_AGENT = "caliper-midwrap01";
+
+    function buildInlineMentionMidWrapDoc(agent: string): {
+      doc: HandoffNoteDoc;
+      inlineMentionNodeIndex: number;
+      afterInlinePos: HandoffNoteDocPos;
+    } {
+      const wire = `lead @${agent} ${"fill ".repeat(6)}x@${agent} tail @${agent} `;
+      const doc = wireToDoc(wire);
+      const inlineAt = wire.indexOf("x@") + 1;
+      const inlineMentionPos = wireOffsetToDocPos(doc, inlineAt);
+      const afterInlinePos: HandoffNoteDocPos = {
+        nodeIndex: inlineMentionPos.nodeIndex,
+        nodeOffset: 1 + agent.length,
+      };
+      return { doc, inlineMentionNodeIndex: inlineMentionPos.nodeIndex, afterInlinePos };
+    }
+
+    function mountInlineMentionMidWrapEditor(): {
+      root: HTMLDivElement;
+      doc: HandoffNoteDoc;
+      afterInlinePos: HandoffNoteDocPos;
+    } {
+      const { doc, inlineMentionNodeIndex, afterInlinePos } =
+        buildInlineMentionMidWrapDoc(INLINE_AGENT);
+      const surface = document.createElement("div");
+      surface.style.width = `${WRAP_ROOT_WIDTH}px`;
+      surface.contentEditable = "true";
+      document.body.appendChild(surface);
+      renderHandoffNoteDoc(surface, doc, {
+        colorByAgentId: new Map([[INLINE_AGENT, "#06f"]]),
+      });
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: WRAP_ROOT_WIDTH });
+      const pillCoords = new Map<number, { top: number; left: number }>();
+      for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+        if (doc.nodes[nodeIndex]?.type !== "mention") {
+          continue;
+        }
+        const onWrappedBand = nodeIndex >= inlineMentionNodeIndex;
+        pillCoords.set(nodeIndex, {
+          top: onWrappedBand ? ROW2_TOP : ROW1_TOP,
+          left: onWrappedBand ? ROW_START_LEFT + 40 : ROW_START_LEFT + 48,
+        });
+      }
+      stubHandoffNoteMentionLayoutCoords(surface, pillCoords);
+      const afterInlineWire = docPosToWireOffset(doc, afterInlinePos);
+      stubHandoffNoteAnchorRectAtWire(surface, doc, afterInlineWire, {
+        top: ROW2_TOP,
+        left: ROW_START_LEFT + 80,
+      });
+      return { root: surface, doc, afterInlinePos };
+    }
+
+    it("Up from text after inline mention on wrapped band crosses to previous visual row", () => {
+      const { root, doc, afterInlinePos } = mountInlineMentionMidWrapEditor();
+      setSelectionAtWire(root, doc, docPosToWireOffset(doc, afterInlinePos));
+
+      const moved = resolveDomVerticalArrowMove(root, doc, afterInlinePos, "up");
+
+      expect(moved.handled).toBe(true);
+      expect(
+        readHandoffNoteLayoutRowIndexForTests(root, doc, docPosToWireOffset(doc, moved.pos))
+      ).toBe(0);
+      root.remove();
+    });
+  });
+
+  describe("unsampled wire navigation", () => {
+    it("Up from trailing text on wrapped band crosses to previous visual row", () => {
+      const agent = "caliper-k7u1qyjn9";
+      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "dhhdhdhdhd");
+      const { root } = mountWrapEditor(doc);
+      setSelectionAtWire(root, doc, docPosToWireOffset(doc, tailPos));
+
+      const moved = resolveDomVerticalArrowMove(root, doc, tailPos, "up");
+
+      expect(moved.handled).toBe(true);
+      expect(
+        readHandoffNoteLayoutRowIndexForTests(root, doc, docPosToWireOffset(doc, moved.pos))
+      ).toBe(0);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(docPosToWireOffset(doc, tailPos));
+      root.remove();
+    });
   });
 });

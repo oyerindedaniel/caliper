@@ -5,6 +5,7 @@ import {
   getElementDirectText,
   resolveElementFromFingerprint,
   waitPostRaf,
+  handoffResolvedNoteToWire,
   type CaliperCoreSystems,
 } from "@caliper/core";
 import {
@@ -280,10 +281,13 @@ export function createIntentHandler(systems: CaliperCoreSystems, stateStore: Cal
             break;
           }
 
-          const restoredCount = handoffRegistry.restoreFromState(
-            snapshot,
-            resolveElementFromFingerprint
+          const wireNote = handoffResolvedNoteToWire(
+            snapshot.note,
+            snapshot.items.map((item) => item.agentId)
           );
+          const restoredCount = handoffRegistry.rehydrateFromCommitted(snapshot, wireNote, {
+            resolve: resolveElementFromFingerprint,
+          });
           const active = handoffRegistry.getActiveItem();
           if (active) {
             selectionSystem.select(active.element);

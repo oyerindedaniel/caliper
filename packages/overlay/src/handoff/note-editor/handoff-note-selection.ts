@@ -1,14 +1,15 @@
 import {
   collapsedSelection,
   describeHandoffNoteCursorContext,
-  docLength,
   docPosEqual,
   docPosToWireOffset,
   docToWire,
-  isInterMentionAtomStart,
   normalizeDocPos,
   normalizeSelection,
   resolveDocVerticalArrowMove,
+  resolveWireLineColumn,
+  resolveVerticalArrowRowStartLanding,
+  resolveVerticalArrowVisualLanding,
   snapVerticalArrowLanding,
   wireOffsetToDocPos,
   type HandoffNoteDoc,
@@ -16,170 +17,24 @@ import {
   type HandoffNoteSelection,
   type HandoffNoteVerticalArrowDirection,
 } from "@caliper/core";
-import { flattenHandoffNoteLog, handoffNoteDomSnapshot } from "../handoff-note-debug.js";
-import { isHandoffMentionElement, mentionWireLength } from "./handoff-note-dom.js";
-
-function isEditorNode(root: HTMLElement, node: Node): boolean {
-  return node === root || root.contains(node);
-}
-
-function isRenderedDocNode(node: HandoffNoteDoc["nodes"][number]): boolean {
-  return node.type !== "text" || Boolean(node.text);
-}
-
-function renderedIndexForDocNode(doc: HandoffNoteDoc, nodeIndex: number): number {
-  let rendered = 0;
-  for (let index = 0; index < doc.nodes.length; index++) {
-    const node = doc.nodes[index]!;
-    if (!isRenderedDocNode(node)) {
-      if (index === nodeIndex) {
-        return rendered;
-      }
-      continue;
-    }
-    if (index === nodeIndex) {
-      return rendered;
-    }
-    rendered++;
-  }
-  return rendered;
-}
-
-function findMentionAncestor(root: HTMLElement, node: Node): HTMLSpanElement | null {
-  let current: Node | null = node;
-  while (current && current !== root) {
-    if (isHandoffMentionElement(current)) {
-      return current;
-    }
-    current = current.parentNode;
-  }
-  return null;
-}
-
-function domPointToDocPos(
-  root: HTMLElement,
-  doc: HandoffNoteDoc,
-  container: Node,
-  offset: number
-): HandoffNoteDocPos {
-  if (!isEditorNode(root, container)) {
-    return { nodeIndex: 0, nodeOffset: 0 };
-  }
-
-  if (container.nodeType === Node.TEXT_NODE) {
-    const mention = findMentionAncestor(root, container);
-    if (mention) {
-      const agentId = mention.getAttribute("data-agent-id") ?? "";
-      const pillText = mention.textContent ?? "";
-      const clamped = Math.max(0, Math.min(offset, pillText.length));
-      const nodeIndex = domNodeToDocIndex(root, doc, mention);
-      if (nodeIndex === null) {
-        return { nodeIndex: 0, nodeOffset: 0 };
-      }
-      const tokenLength = mentionWireLength(agentId);
-      if (clamped <= 0) {
-        return { nodeIndex, nodeOffset: 0 };
-      }
-      if (clamped >= pillText.length) {
-        return { nodeIndex, nodeOffset: tokenLength };
-      }
-      return { nodeIndex, nodeOffset: 1 + clamped };
-    }
-
-    const nodeIndex = domNodeToDocIndex(root, doc, container);
-    if (nodeIndex === null) {
-      return { nodeIndex: 0, nodeOffset: 0 };
-    }
-    const node = doc.nodes[nodeIndex];
-    const maxOffset = node?.type === "text" ? node.text.length : 0;
-    return { nodeIndex, nodeOffset: Math.max(0, Math.min(offset, maxOffset)) };
-  }
-
-  if (container === root) {
-    if (offset >= root.childNodes.length) {
-      return wireOffsetToDocPos(doc, docToWire(doc).length);
-    }
-    const child = root.childNodes[offset];
-    if (!child) {
-      return wireOffsetToDocPos(doc, docToWire(doc).length);
-    }
-    const nodeIndex = domNodeToDocIndex(root, doc, child);
-    if (nodeIndex === null) {
-      return { nodeIndex: 0, nodeOffset: 0 };
-    }
-    const node = doc.nodes[nodeIndex]!;
-    if (node.type === "mention") {
-      return { nodeIndex, nodeOffset: 0 };
-    }
-    return { nodeIndex, nodeOffset: 0 };
-  }
-
-  if (isHandoffMentionElement(container)) {
-    const nodeIndex = domNodeToDocIndex(root, doc, container);
-    if (nodeIndex === null) {
-      return { nodeIndex: 0, nodeOffset: 0 };
-    }
-    const agentId = container.getAttribute("data-agent-id") ?? "";
-    const tokenLength = mentionWireLength(agentId);
-    return { nodeIndex, nodeOffset: offset <= 0 ? 0 : tokenLength };
-  }
-
-  return domPointToDocPos(root, doc, container.parentNode ?? root, 0);
-}
-
-function domNodeToDocIndex(root: HTMLElement, doc: HandoffNoteDoc, target: Node): number | null {
-  let rendered = 0;
-  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    const node = doc.nodes[nodeIndex]!;
-    if (!isRenderedDocNode(node)) {
-      continue;
-    }
-    const domNode = root.childNodes[rendered];
-    if (domNode === target || domNode?.contains(target)) {
-      return nodeIndex;
-    }
-    rendered++;
-  }
-  return null;
-}
-
-function resolveDomPointAtDocPos(
-  root: HTMLElement,
-  doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos
-): { node: Node; offset: number } | null {
-  const normalized = normalizeDocPos(doc, pos);
-  const node = doc.nodes[normalized.nodeIndex];
-  if (!node) {
-    if (root.firstChild?.nodeType === Node.TEXT_NODE) {
-      return { node: root.firstChild, offset: 0 };
-    }
-    return { node: root, offset: 0 };
-  }
-
-  const renderedIndex = renderedIndexForDocNode(doc, normalized.nodeIndex);
-  const domNode = root.childNodes[renderedIndex];
-  if (!domNode) {
-    return { node: root, offset: root.childNodes.length };
-  }
-
-  if (node.type === "text") {
-    return {
-      node: domNode,
-      offset: Math.max(0, Math.min(normalized.nodeOffset, node.text.length)),
-    };
-  }
-
-  const tokenLength = mentionWireLength(node.agentId);
-  if (normalized.nodeOffset <= 0) {
-    return { node: root, offset: renderedIndex };
-  }
-  if (normalized.nodeOffset >= tokenLength) {
-    return { node: root, offset: renderedIndex + 1 };
-  }
-
-  return { node: domNode, offset: 0 };
-}
+import {
+  flattenHandoffNoteLog,
+  handoffNoteDomSnapshot,
+  logVerArrow,
+} from "../handoff-note-debug.js";
+import {
+  domPointToDocPos,
+  getDocAnchorRect,
+  probeDocPosAtVisualColumn,
+  resolveDomPointAtDocPos,
+} from "./handoff-note-dom-points.js";
+import {
+  buildHandoffNoteLayoutMap,
+  buildLayoutMapFromSamples,
+  isAtLayoutRowStart,
+  type HandoffNoteLayoutMap,
+} from "./handoff-note-layout-map.js";
+import { type MeasuredWireOffset } from "./handoff-note-layout-map.js";
 
 function readRawWireFocus(root: HTMLElement, doc: HandoffNoteDoc): number {
   const selection = root.ownerDocument.getSelection();
@@ -240,7 +95,8 @@ export function readDocCursor(root: HTMLElement, doc: HandoffNoteDoc): HandoffNo
 export function repairDocSelectionIfNeeded(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  from?: HandoffNoteDocPos
+  from?: HandoffNoteDocPos,
+  options?: { mode?: "full" | "strand-only" }
 ): HandoffNoteDocPos {
   const live = readDocSelection(root, doc);
   if (!docPosEqualNormalized(doc, live.anchor, live.focus)) {
@@ -271,6 +127,10 @@ export function repairDocSelectionIfNeeded(
     });
     setDocSelection(root, doc, collapsedSelection(restored), { from, source: "repair" });
     return restored;
+  }
+
+  if (options?.mode === "strand-only") {
+    return normalizeDocPos(doc, live.focus, { from });
   }
 
   if (from !== undefined && shouldRestoreAuthorityOverDom(doc, live.focus, from)) {
@@ -351,66 +211,6 @@ export function setDocSelection(
   });
 }
 
-type MeasuredWireOffset = { wire: number; top: number; left: number };
-
-function sampleWireOffsets(doc: HandoffNoteDoc): number[] {
-  const samples = new Set<number>([0, docLength(doc)]);
-  let offset = 0;
-  for (const node of doc.nodes) {
-    samples.add(offset);
-    if (node.type === "text") {
-      offset += node.text.length;
-    } else {
-      offset += 1 + node.agentId.length;
-      samples.add(offset);
-    }
-  }
-  return [...samples].sort((left, right) => left - right);
-}
-
-function clusterMeasuredLines(
-  measured: MeasuredWireOffset[],
-  tolerance: number
-): MeasuredWireOffset[][] {
-  if (measured.length === 0) {
-    return [];
-  }
-  const sorted = [...measured].sort(
-    (left, right) => left.top - right.top || left.left - right.left
-  );
-  const lines: MeasuredWireOffset[][] = [];
-  let current: MeasuredWireOffset[] = [];
-  let currentTop = sorted[0]!.top;
-  for (const sample of sorted) {
-    if (current.length === 0 || Math.abs(sample.top - currentTop) <= tolerance) {
-      current.push(sample);
-      currentTop = current.reduce((sum, entry) => sum + entry.top, 0) / current.length;
-      continue;
-    }
-    lines.push(current);
-    current = [sample];
-    currentTop = sample.top;
-  }
-  if (current.length > 0) {
-    lines.push(current);
-  }
-  return lines;
-}
-
-function findLineIndexForTop(
-  lines: MeasuredWireOffset[][],
-  top: number,
-  tolerance: number
-): number {
-  for (let index = 0; index < lines.length; index++) {
-    const lineTop = lines[index]![0]!.top;
-    if (Math.abs(lineTop - top) <= tolerance) {
-      return index;
-    }
-  }
-  return -1;
-}
-
 function pickClosestOnLine(line: MeasuredWireOffset[], targetLeft: number): MeasuredWireOffset {
   let best = line[0]!;
   for (const sample of line) {
@@ -426,75 +226,189 @@ function isMentionAtomStart(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): boolea
   return node?.type === "mention" && pos.nodeOffset === 0;
 }
 
-function lineStartSample(line: MeasuredWireOffset[]): MeasuredWireOffset {
-  return line.reduce((best, sample) => (sample.wire < best.wire ? sample : best), line[0]!);
-}
+type VisualRowStartContext = {
+  root: HTMLElement;
+  targetRowTop: number;
+  targetLineIndex: number;
+  rowIndexForWire: (wire: number) => number;
+  coordsForWire: (wire: number) => MeasuredWireOffset | null;
+  goalColumnTolerance: number;
+};
 
 function pickVerticalLandingOnLine(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
   targetLine: MeasuredWireOffset[],
-  currentLeft: number
+  goalColumn: number,
+  atRowStart: boolean,
+  rowStart?: VisualRowStartContext
 ): { pos: HandoffNoteDocPos; branch: string } {
   const fromMentionStart = isMentionAtomStart(doc, focus);
-  if (fromMentionStart) {
-    const picked = lineStartSample(targetLine);
+  if (atRowStart && targetLine.length > 0) {
+    if (rowStart) {
+      // Row-start alignment is on the current band's content edge (goalColumn), not the
+      // target band's leftmost layout sample (often a mention boundary on mid-text wrap).
+      const probeColumn = goalColumn;
+      const probed = probeDocPosAtVisualColumn(
+        rowStart.root,
+        doc,
+        rowStart.targetRowTop,
+        probeColumn
+      );
+      if (probed) {
+        const landing = snapVerticalArrowLanding(doc, probed, direction);
+        const resolvedWire = docPosToWireOffset(doc, landing);
+        const probeRowIndex = rowStart.rowIndexForWire(resolvedWire);
+        const probeCoord = rowStart.coordsForWire(resolvedWire);
+        const columnMatches =
+          probeCoord !== null &&
+          Math.abs(probeCoord.left - goalColumn) <= rowStart.goalColumnTolerance;
+        if (probeRowIndex === rowStart.targetLineIndex && columnMatches) {
+          logVerArrow("resolve.rowStartProbe", {
+            direction,
+            fromWire: docPosToWireOffset(doc, focus),
+            goalColumn,
+            probeColumn,
+            rowTop: rowStart.targetRowTop,
+            resolvedWire,
+            probeRowIndex,
+            targetLineIndex: rowStart.targetLineIndex,
+            probeLeft: probeCoord.left,
+            accepted: true,
+            branch: "dom-row-start-probe",
+          });
+          return {
+            pos: normalizeDocPos(doc, landing, { from: focus }),
+            branch: "dom-row-start-probe",
+          };
+        }
+        logVerArrow("resolve.rowStartProbe", {
+          direction,
+          fromWire: docPosToWireOffset(doc, focus),
+          goalColumn,
+          probeColumn,
+          rowTop: rowStart.targetRowTop,
+          resolvedWire,
+          probeRowIndex,
+          targetLineIndex: rowStart.targetLineIndex,
+          probeLeft: probeCoord?.left ?? null,
+          columnMatches,
+          accepted: false,
+          branch: "probe-wrong-row",
+        });
+      } else {
+        logVerArrow("resolve.rowStartProbe", {
+          direction,
+          fromWire: docPosToWireOffset(doc, focus),
+          goalColumn,
+          probeColumn,
+          rowTop: rowStart.targetRowTop,
+          branch: "probe-miss",
+        });
+      }
+    }
+
+    const rowStartLanding = resolveVerticalArrowRowStartLanding(
+      doc,
+      direction,
+      targetLine,
+      goalColumn
+    );
+    if (rowStartLanding) {
+      const pos = normalizeDocPos(doc, wireOffsetToDocPos(doc, rowStartLanding.offset), {
+        from: focus,
+      });
+      logVerArrow("resolve.rowStartProbe", {
+        direction,
+        fromWire: docPosToWireOffset(doc, focus),
+        goalColumn,
+        resolvedWire: docPosToWireOffset(doc, pos),
+        branch: rowStartLanding.branch,
+      });
+      return { pos, branch: rowStartLanding.branch };
+    }
+  }
+
+  const landing = resolveVerticalArrowVisualLanding(doc, direction, targetLine, goalColumn, {
+    fromMentionStart,
+  });
+  if (landing === null) {
+    const picked = pickClosestOnLine(targetLine, goalColumn);
     return {
       pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, picked.wire), { from: focus }),
-      branch: "dom-lineStart-fromMention",
+      branch: "dom-column",
     };
   }
 
-  const picked = pickClosestOnLine(targetLine, currentLeft);
-  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, picked.wire), { from: focus });
-  let branch = "dom-column";
-  if (isInterMentionAtomStart(doc, targetPos)) {
-    const lineStartWire = lineStartSample(targetLine).wire;
-    targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, lineStartWire), { from: focus });
-    branch = "dom-lineStart-interMention";
-  } else {
-    targetPos = snapVerticalArrowLanding(doc, targetPos, direction);
-    if (
-      !docPosEqual(
-        targetPos,
-        normalizeDocPos(doc, wireOffsetToDocPos(doc, picked.wire), { from: focus })
-      )
-    ) {
-      branch = "dom-snapVertical";
+  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, landing.offset), { from: focus });
+  if (!fromMentionStart && landing.branch === "dom-column") {
+    const snapped = snapVerticalArrowLanding(doc, targetPos, direction);
+    if (!docPosEqual(targetPos, snapped)) {
+      targetPos = snapped;
+      return { pos: targetPos, branch: "dom-snapVertical" };
     }
   }
-  return { pos: targetPos, branch };
+  return { pos: targetPos, branch: landing.branch };
 }
 
-export function resolveMeasuredVerticalArrowMove(
+function resolveLayoutVerticalArrowMove(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
-  measured: MeasuredWireOffset[],
-  currentTop: number,
-  currentLeft: number,
-  lineHeight: number
+  layout: HandoffNoteLayoutMap,
+  goalColumn: number,
+  root?: HTMLElement
 ): { pos: HandoffNoteDocPos; handled: boolean; branch?: string } {
-  if (measured.length < 2) {
+  const fromWire = docPosToWireOffset(doc, focus);
+  if (layout.visualRowCount < 2) {
     return { pos: focus, handled: false };
   }
 
-  const tolerance = Math.max(lineHeight, 8) * 0.5;
-  const lines = clusterMeasuredLines(measured, tolerance);
-  const currentLineIndex = findLineIndexForTop(lines, currentTop, tolerance);
+  const currentLineIndex = layout.rowIndexForWire(fromWire);
   const targetLineIndex = direction === "up" ? currentLineIndex - 1 : currentLineIndex + 1;
-  if (currentLineIndex < 0 || targetLineIndex < 0 || targetLineIndex >= lines.length) {
+  if (currentLineIndex < 0 || targetLineIndex < 0 || targetLineIndex >= layout.rows.length) {
+    logVerArrow("resolve.reject", {
+      direction,
+      fromWire,
+      reason: "lineIndexOutOfRange",
+      currentLineIndex,
+      targetLineIndex,
+      visualRowCount: layout.visualRowCount,
+    });
     return { pos: focus, handled: false };
   }
 
-  const targetLine = lines[targetLineIndex]!;
+  const targetRow = layout.rows[targetLineIndex]!;
+  const atRowStart = isAtLayoutRowStart(layout, fromWire, goalColumn);
+  const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+  logVerArrow("resolve.layout", {
+    direction,
+    fromWire,
+    goalColumn,
+    currentLineIndex,
+    targetLineIndex,
+    atRowStart,
+    targetRowWires: targetRow.samples.map((sample) => sample.wire),
+  });
+
   const { pos: targetPos, branch } = pickVerticalLandingOnLine(
     doc,
     focus,
     direction,
-    targetLine,
-    currentLeft
+    targetRow.samples,
+    goalColumn,
+    atRowStart,
+    atRowStart && root
+      ? {
+          root,
+          targetRowTop: targetRow.top,
+          targetLineIndex,
+          rowIndexForWire: layout.rowIndexForWire.bind(layout),
+          coordsForWire: layout.coordsForWire.bind(layout),
+          goalColumnTolerance: edgeTolerance,
+        }
+      : undefined
   );
 
   if (docPosEqual(targetPos, focus)) {
@@ -503,79 +417,103 @@ export function resolveMeasuredVerticalArrowMove(
   return { pos: targetPos, handled: true, branch };
 }
 
+export function resolveMeasuredVerticalArrowMove(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  measured: MeasuredWireOffset[],
+  _currentTop: number,
+  currentLeft: number,
+  lineHeight: number
+): { pos: HandoffNoteDocPos; handled: boolean; branch?: string } {
+  if (measured.length < 2) {
+    return { pos: focus, handled: false };
+  }
+  const layout = buildLayoutMapFromSamples(measured, lineHeight);
+  return resolveLayoutVerticalArrowMove(doc, focus, direction, layout, currentLeft);
+}
+
+function hasAdjacentWireLine(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection
+): boolean {
+  const wire = docToWire(doc);
+  const offset = docPosToWireOffset(doc, focus);
+  const { lineIndex } = resolveWireLineColumn(wire, Math.min(offset, Math.max(0, wire.length)));
+  const lineCount = wire.includes("\n") ? wire.split("\n").length : 1;
+  const targetLineIndex = direction === "up" ? lineIndex - 1 : lineIndex + 1;
+  return targetLineIndex >= 0 && targetLineIndex < lineCount;
+}
+
 export function resolveDomVerticalArrowMove(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection
 ): { pos: HandoffNoteDocPos; handled: boolean } {
-  const wireMove = resolveDocVerticalArrowMove(doc, focus, direction);
-  if (wireMove.handled) {
-    return wireMove;
-  }
+  const fromWire = docPosToWireOffset(doc, focus);
+  logVerArrow("resolve.entry", {
+    direction,
+    fromWire,
+    hasNewline: docToWire(doc).includes("\n"),
+    adjacentWireLine: hasAdjacentWireLine(doc, focus, direction),
+  });
 
-  const currentRect = getDocAnchorRect(root, doc, focus);
-  if (!currentRect) {
-    return { pos: focus, handled: false };
-  }
-
-  const measured: MeasuredWireOffset[] = [];
-  for (const wire of sampleWireOffsets(doc)) {
-    const rect = getDocAnchorRect(root, doc, wireOffsetToDocPos(doc, wire));
-    if (!rect) {
-      continue;
+  if (hasAdjacentWireLine(doc, focus, direction)) {
+    const wireMove = resolveDocVerticalArrowMove(doc, focus, direction);
+    if (wireMove.handled) {
+      logVerArrow("resolve.wireAdjacent", {
+        direction,
+        fromWire,
+        toWire: docPosToWireOffset(doc, wireMove.pos),
+      });
+      return wireMove;
     }
-    measured.push({ wire, top: rect.top, left: rect.left });
   }
-  const lineHeight = Math.max(currentRect.height, 8);
-  const measuredMove = resolveMeasuredVerticalArrowMove(
+
+  const layout = buildHandoffNoteLayoutMap(root, doc, focus);
+  const focusCoord = layout.coordsForWire(fromWire);
+  const anchorRect = getDocAnchorRect(root, doc, focus);
+  const goalColumn = focusCoord?.left ?? anchorRect?.left ?? 0;
+  const layoutMove = resolveLayoutVerticalArrowMove(
     doc,
     focus,
     direction,
-    measured,
-    currentRect.top,
-    currentRect.left,
-    lineHeight
+    layout,
+    goalColumn,
+    root
   );
-  if (measuredMove.branch) {
-    flattenHandoffNoteLog("caret>>verticalArrow", {
+  if (layoutMove.handled) {
+    logVerArrow("resolve.land", {
       direction,
-      branch: measuredMove.branch,
-      fromWire: docPosToWireOffset(doc, focus),
-      toWire: docPosToWireOffset(doc, measuredMove.pos),
-      handled: measuredMove.handled,
+      fromWire,
+      toWire: docPosToWireOffset(doc, layoutMove.pos),
+      branch: layoutMove.branch ?? null,
     });
-  }
-  return { pos: measuredMove.pos, handled: measuredMove.handled };
-}
-
-export function getDocAnchorRect(
-  root: HTMLElement,
-  doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos
-): DOMRect | null {
-  const point = resolveDomPointAtDocPos(root, doc, pos);
-  if (!point) {
-    return null;
+    return { pos: layoutMove.pos, handled: true };
   }
 
-  const range = root.ownerDocument.createRange();
-  range.setStart(point.node, point.offset);
-  range.collapse(true);
+  const currentLineIndex = layout.rowIndexForWire(fromWire);
+  const atVisualTop = direction === "up" && currentLineIndex === 0;
+  const atVisualBottom =
+    direction === "down" && currentLineIndex >= 0 && currentLineIndex === layout.visualRowCount - 1;
 
-  if (typeof range.getClientRects === "function") {
-    const rects = range.getClientRects();
-    if (rects.length > 0) {
-      return rects[0] ?? null;
-    }
+  if (layout.visualRowCount >= 2 && !atVisualTop && !atVisualBottom && currentLineIndex >= 0) {
+    logVerArrow("resolve.blockedMidWrap", {
+      direction,
+      fromWire,
+      visualRowCount: layout.visualRowCount,
+    });
+    return { pos: focus, handled: false };
   }
 
-  if (typeof range.getBoundingClientRect === "function") {
-    const rect = range.getBoundingClientRect();
-    if (rect.width > 0 || rect.height > 0) {
-      return rect;
-    }
-  }
-
-  return root.getBoundingClientRect();
+  const fallback = resolveDocVerticalArrowMove(doc, focus, direction);
+  logVerArrow("resolve.fallbackWire", {
+    direction,
+    fromWire,
+    toWire: docPosToWireOffset(doc, fallback.pos),
+    handled: fallback.handled,
+  });
+  return fallback;
 }

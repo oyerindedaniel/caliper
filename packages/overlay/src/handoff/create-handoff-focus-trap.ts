@@ -1,4 +1,6 @@
 import { createEffect, type Accessor } from "solid-js";
+import { isArrow } from "@caliper/core";
+import { getHandoffNoteEditorTabStops } from "./note-editor/handoff-note-dom.js";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea, input, select, [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
@@ -30,7 +32,7 @@ function getTrapFocusables(
   }
 
   if (editorRoot) {
-    return [editorRoot];
+    return getHandoffNoteEditorTabStops(editorRoot);
   }
 
   if (panelRoot) {
@@ -41,6 +43,27 @@ function getTrapFocusables(
   }
 
   return [];
+}
+
+function resolveTrapFocusIndex(focusables: HTMLElement[], active: HTMLElement | null): number {
+  if (!active) {
+    return -1;
+  }
+  const direct = focusables.indexOf(active);
+  if (direct >= 0) {
+    return direct;
+  }
+  return focusables.findIndex((element) => element === active || element.contains(active));
+}
+
+function wrapTrapFocusIndex(index: number, focusableCount: number, shiftKey: boolean): number {
+  if (shiftKey) {
+    return index <= 0 ? focusableCount - 1 : index - 1;
+  }
+  if (index < 0 || index >= focusableCount - 1) {
+    return 0;
+  }
+  return index + 1;
 }
 
 function containsFocusableScope(scope: HTMLElement[], target: Node | null): boolean {
@@ -117,22 +140,11 @@ export function wireHandoffFocusTrap(options: HandoffFocusTrapOptions): () => vo
       return;
     }
 
-    const first = focusables[0]!;
-    const last = focusables[focusables.length - 1]!;
-    const active = document.activeElement as HTMLElement | null;
+    const index = resolveTrapFocusIndex(focusables, document.activeElement as HTMLElement | null);
+    const nextIndex = wrapTrapFocusIndex(index, focusables.length, event.shiftKey);
 
-    if (event.shiftKey) {
-      if (!active || active === first || !focusables.includes(active)) {
-        event.preventDefault();
-        last.focus();
-      }
-      return;
-    }
-
-    if (!active || active === last || !focusables.includes(active)) {
-      event.preventDefault();
-      first.focus();
-    }
+    event.preventDefault();
+    focusables[nextIndex]!.focus();
   };
 
   const handleFocusIn = (event: FocusEvent) => {
@@ -200,7 +212,7 @@ export function wireHandoffMentionListKeyboard(
 
     options.onHandled();
 
-    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+    if (isArrow.ver(event)) {
       focusHighlightedOption();
       return;
     }
@@ -218,26 +230,28 @@ export function wireHandoffMentionListKeyboard(
 }
 
 export function createHandoffFocusTrap(options: HandoffFocusTrapOptions): void {
+  // Wire Tab/focusin trap once while the panel is present. mentionOpen is read at
+  // event time inside wireHandoffFocusTrap — do not re-wire on mention toggle
+  // (that stacked duplicate window listeners when the effect re-ran).
   createEffect(() => {
     if (!options.enabled()) {
       return;
     }
+    return wireHandoffFocusTrap(options);
+  });
 
-    options.mentionOpen();
-
-    const cleanups: (() => void)[] = [wireHandoffFocusTrap(options)];
-
-    const mentionKeyboard = options.mentionListKeyboard;
-    if (options.mentionOpen() && mentionKeyboard) {
-      cleanups.push(wireHandoffMentionListKeyboard(mentionKeyboard));
-    } else {
-      queueMicrotask(() => options.editorRoot()?.focus());
+  createEffect(() => {
+    if (!options.enabled()) {
+      return;
     }
-
-    return () => {
-      for (const cleanup of cleanups) {
-        cleanup();
-      }
-    };
+    if (!options.mentionOpen()) {
+      queueMicrotask(() => options.editorRoot()?.focus());
+      return;
+    }
+    const mentionKeyboard = options.mentionListKeyboard;
+    if (!mentionKeyboard) {
+      return;
+    }
+    return wireHandoffMentionListKeyboard(mentionKeyboard);
   });
 }

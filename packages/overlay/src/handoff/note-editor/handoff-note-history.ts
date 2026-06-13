@@ -13,6 +13,10 @@ export type HandoffNoteHistorySnapshot = {
   selection: HandoffNoteSelection;
 };
 
+type HandoffNoteUndoEntry = HandoffNoteHistorySnapshot & {
+  recordedAt: number;
+};
+
 const DEFAULT_MAX_DEPTH = 100;
 const TYPING_COALESCE_MS = 400;
 
@@ -32,7 +36,7 @@ function snapshotsEqual(a: HandoffNoteHistorySnapshot, b: HandoffNoteHistorySnap
  */
 export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
   const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
-  let undoStack: Array<HandoffNoteHistorySnapshot & { recordedAt: number }> = [];
+  let undoStack: HandoffNoteUndoEntry[] = [];
   let redoStack: HandoffNoteHistorySnapshot[] = [];
   let composing = false;
   let restoring = false;
@@ -52,7 +56,7 @@ export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
   const canRedo = () => redoStack.length > 0;
 
   const shouldCoalesceTyping = (
-    previous: HandoffNoteHistorySnapshot & { recordedAt: number },
+    previous: HandoffNoteUndoEntry,
     next: HandoffNoteHistorySnapshot
   ): boolean => {
     const elapsed = Date.now() - previous.recordedAt;
@@ -98,9 +102,7 @@ export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
     redoStack = [];
   };
 
-  const stripRecordedAt = (
-    snapshot: HandoffNoteHistorySnapshot & { recordedAt?: number }
-  ): HandoffNoteHistorySnapshot => ({
+  const stripRecordedAt = (snapshot: HandoffNoteHistorySnapshot): HandoffNoteHistorySnapshot => ({
     doc: cloneDoc(snapshot.doc),
     selection: cloneSelection(snapshot.selection),
   });

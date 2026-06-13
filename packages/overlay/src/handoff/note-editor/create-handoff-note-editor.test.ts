@@ -1,10 +1,12 @@
 import { wireOffsetToDocPos } from "@caliper/core";
 import { describe, expect, it, beforeEach } from "vitest";
 import { createHandoffNoteEditor } from "./create-handoff-note-editor.js";
+import { readMentionNodeIndex } from "./handoff-note-dom.js";
 import {
   dispatchSelectionChange,
   selectionAtWire,
   setSelectionAtWire,
+  strandSelectionInMentionPill,
 } from "./handoff-note-test-helpers.js";
 
 function mountEditorHost() {
@@ -53,6 +55,46 @@ describe("createHandoffNoteEditor", () => {
     const event = new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true });
     expect(host.editor.handleKeyDown(event)).toBe(true);
     expect(host.editor.getCursor()).toBe(mentionEnd);
+
+    const left = new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true });
+    expect(host.editor.handleKeyDown(left)).toBe(true);
+    expect(host.editor.getCursor()).toBe(mentionStart);
+  });
+
+  it("steps plain text left and right without delegating to the browser", () => {
+    host.editor.setDocFromWire("abcdef", 3);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(4);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(3);
+  });
+
+  it("boundary bleed: first-line Up steps left; last-line Down steps right", () => {
+    const wire = "abcdef\nghij";
+    host.editor.setDocFromWire(wire, 4);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(3);
+
+    const lastInterior = wire.length - 1;
+    host.editor.setDocFromWire(wire, lastInterior);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(wire.length);
   });
 
   it("does not re-import wire when parent echoes the same doc and selection", () => {
@@ -142,7 +184,7 @@ describe("createHandoffNoteEditor", () => {
   it("arrow up moves from a later line pill start to the previous line pill start", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
-    const wire = `dhhdhd @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
+    const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
     const line3Mention = wire.lastIndexOf("@");
     const line2Mention = wire.indexOf("@", wire.indexOf("\n") + 1);
 
@@ -172,9 +214,8 @@ describe("createHandoffNoteEditor", () => {
   });
 
   it("arrow up steps through shift-enter blank lines before reaching text above", () => {
-    const wire = "dggdg\n\n\n tail";
-    const firstBlankLine = "dggdg\n".length;
-    const lineEndAboveBlanks = "dggdg".length;
+    const wire = "header\n\n\n tail";
+    const firstBlankLine = "header\n".length;
     host.editor.setDocFromWire(wire, firstBlankLine, { resetHistory: true });
 
     expect(
@@ -182,17 +223,17 @@ describe("createHandoffNoteEditor", () => {
         new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true })
       )
     ).toBe(true);
-    expect(host.editor.getCursor()).toBe(lineEndAboveBlanks);
-    expect(host.editor.getCursor()).not.toBe(0);
+    expect(host.editor.getCursor()).toBe(0);
+    expect(host.editor.getCursor()).not.toBe("header".length);
   });
 
-  it("arrow down from a pill row line start enters the row instead of jumping to blanks below", () => {
+  it("arrow down from a pill row line start enters the blank below instead of stepping along the row", () => {
     const agent = "caliper-jli3vwpry";
-    const wire = `dhhd @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nddnnd`;
+    const wire = `brief @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nfollowup`;
     const pillRowSuffix = `@${agent} @${agent} `;
     const pillRowStart = wire.indexOf(pillRowSuffix);
+    const secondPillOnRow = pillRowStart + `@${agent} `.length;
     const firstBlankBelowPillRow = wire.indexOf(pillRowSuffix) + pillRowSuffix.length + 1;
-    const firstMentionEnd = pillRowStart + `@${agent}`.length;
 
     host.editor.setDocFromWire(wire, pillRowStart, { resetHistory: true });
     expect(
@@ -200,16 +241,40 @@ describe("createHandoffNoteEditor", () => {
         new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })
       )
     ).toBe(true);
-    expect(host.editor.getCursor()).toBe(firstMentionEnd);
-    expect(host.editor.getCursor()).not.toBe(firstBlankBelowPillRow);
+    expect(host.editor.getCursor()).toBe(firstBlankBelowPillRow);
+    expect(host.editor.getCursor()).not.toBe(secondPillOnRow);
   });
 
-  it("arrow up from a newline ending a pill row steps back instead of jumping to a distant blank", () => {
+  it("arrow up from a later pill on the same row crosses to the line above", () => {
+    const agent = "caliper-ho14ofyh6";
+    const wire = `handoff notes @${agent} @${agent} review phase\n\n\n\n\n\n@${agent} context extra @${agent} `;
+    const firstPillOnRow = wire.lastIndexOf(`\n@${agent} `) + 1;
+    const secondPillOnRow = wire.lastIndexOf(` @${agent} `) + 1;
+    const blankAboveRow = firstPillOnRow - 1;
+
+    host.editor.setDocFromWire(wire, secondPillOnRow, { resetHistory: true });
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(blankAboveRow);
+    expect(host.editor.getCursor()).not.toBe(firstPillOnRow);
+  });
+
+  it("arrow up from the newline ending a pill row crosses to the line above", () => {
     const agent = "caliper-jli3vwpry";
-    const wire = `dhhd @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nddnnd`;
+    const wire = `brief @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nfollowup`;
     const pillRowSuffix = `@${agent} @${agent} `;
     const pillRowEndingNewline = wire.indexOf(pillRowSuffix) + pillRowSuffix.length;
-    const distantBlankBlock = wire.indexOf("\n\n\n\n\n") + 4;
+    const lineStarts = [0];
+    for (let index = 0; index < wire.length; index++) {
+      if (wire[index] === "\n") {
+        lineStarts.push(index + 1);
+      }
+    }
+    const pillRowLineIndex = lineStarts.findIndex((start) => start === wire.indexOf(pillRowSuffix));
+    const emptyLineAbovePillRow = lineStarts[pillRowLineIndex - 1]!;
 
     host.editor.setDocFromWire(wire, pillRowEndingNewline, { resetHistory: true });
     expect(
@@ -217,23 +282,26 @@ describe("createHandoffNoteEditor", () => {
         new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true })
       )
     ).toBe(true);
-    expect(host.editor.getCursor()).toBe(pillRowEndingNewline - 1);
-    expect(host.editor.getCursor()).not.toBe(distantBlankBlock);
+    expect(host.editor.getCursor()).toBe(emptyLineAbovePillRow);
+    expect(host.editor.getCursor()).not.toBe(pillRowEndingNewline - 1);
   });
 
-  it("arrow down moves from a line pill start to the next line pill start", () => {
+  it("arrow down from a line pill start skips same-line mentions and lands on the next line", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
-    const wire = `dhhdhd @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
+    const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
     const line2Mention = wire.indexOf("@", wire.indexOf("\n") + 1);
+    const line2SecondMention = wire.indexOf(`@${agentB}`);
     const line3Mention = wire.lastIndexOf("@");
 
     host.editor.setDocFromWire(wire, line2Mention, { resetHistory: true });
-    const handled = host.editor.handleKeyDown(
-      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })
-    );
-    expect(handled).toBe(true);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
     expect(host.editor.getCursor()).toBe(line3Mention);
+    expect(host.editor.getCursor()).not.toBe(line2SecondMention);
   });
 
   it("forward delete in an inter-mention gap changes wire via keydown", () => {
@@ -272,6 +340,28 @@ describe("createHandoffNoteEditor", () => {
     expect(host.editor.getWire()).toBe(wire);
   });
 
+  it("compositionEnd reconciles browser DOM into wire shape and preserves caret", () => {
+    host.editor.setDocFromWire("hel", 3, { resetHistory: true });
+    host.editor.handleCompositionStart();
+
+    const textNode = host.root.firstChild as Text;
+    textNode.textContent = "hello\nworld";
+    const selection = host.root.ownerDocument.getSelection()!;
+    const range = host.root.ownerDocument.createRange();
+    range.setStart(textNode, "hello\nworld".length);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    host.changes.length = 0;
+    host.editor.handleCompositionEnd();
+
+    expect(host.editor.isComposing()).toBe(false);
+    expect(host.editor.getWire()).toBe("hello\nworld");
+    expect(host.editor.getCursor()).toBe("hello\nworld".length);
+    expect(host.changes).toEqual(["hello\nworld"]);
+  });
+
   it("does not emit wire when presentation is refreshed only", () => {
     host.editor.setDocFromWire("@caliper-abc123", 0);
     host.changes.length = 0;
@@ -292,7 +382,6 @@ describe("createHandoffNoteEditor", () => {
     document.body.appendChild(root);
     const editor = createHandoffNoteEditor({
       getColorByAgentId: () => new Map(),
-      getHighlightedAgentId: () => "caliper-highlight",
       onWireChange: () => {
         innerEditor.refreshPresentation();
       },
@@ -554,16 +643,8 @@ describe("createHandoffNoteEditor", () => {
     ).toBe(true);
     expect(host.editor.getCursor()).toBe(mentionStart - 1);
 
-    const pill = host.root.querySelector("span[data-handoff-mention]")!;
-    const pillText = pill.firstChild as Text;
-    const selection = host.root.ownerDocument.getSelection()!;
-    const range = host.root.ownerDocument.createRange();
-    range.setStart(pillText, 3);
-    range.collapse(true);
-    selection.removeAllRanges();
-    selection.addRange(range);
-
-    host.editor.handleInput();
+    strandSelectionInMentionPill(host.root);
+    dispatchSelectionChange(host.root);
     expect(host.editor.getCursor()).toBe(mentionStart - 1);
 
     const prefixEnd = "hhshhs ".length - 1;
@@ -571,5 +652,186 @@ describe("createHandoffNoteEditor", () => {
     host.editor.insertDocText("x");
     expect(host.editor.getWire()).toBe(`hhshhsx \n\n\n\n\n@${agentId} `);
     expect(host.editor.getCursor()).toBe(prefixEnd + 1);
+  });
+
+  it("selectionchange repairs pill-stranded caret without input and preserves edit authority", () => {
+    const agentId = "caliper-abc123";
+    const wire = `ab @${agentId} cd`;
+    const mentionStart = "ab ".length;
+    host.editor.setDocFromWire(wire, mentionStart);
+
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(mentionStart - 1);
+
+    strandSelectionInMentionPill(host.root);
+    dispatchSelectionChange(host.root);
+    expect(host.editor.getCursor()).toBe(mentionStart - 1);
+
+    host.editor.handleBeforeInput(
+      new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: "x",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    expect(host.editor.getWire()).toBe(`abx @${agentId} cd`);
+    expect(host.editor.getCursor()).toBe(mentionStart);
+  });
+
+  it("handleInput does not reconcile selection after handled beforeInput", () => {
+    host.editor.setDocFromWire("hello", 5);
+    host.editor.handleBeforeInput(
+      new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: "!",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    const cursorAfterEdit = host.editor.getCursor();
+    expect(cursorAfterEdit).toBe(6);
+
+    host.editor.handleInput();
+    expect(host.editor.getCursor()).toBe(cursorAfterEdit);
+    expect(host.editor.getWire()).toBe("hello!");
+  });
+
+  it("ignores selectionchange when selection is outside the editor root", () => {
+    host.editor.setDocFromWire("Hi @caliper-abc123 there", "Hi @caliper-abc123 there".length);
+    const cursorBefore = host.editor.getCursor();
+
+    const outside = document.createElement("div");
+    const outsideText = document.createTextNode("outside");
+    outside.appendChild(outsideText);
+    document.body.appendChild(outside);
+    const selection = document.getSelection()!;
+    const range = document.createRange();
+    range.setStart(outsideText, 3);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    dispatchSelectionChange(host.root);
+    expect(host.editor.getCursor()).toBe(cursorBefore);
+
+    outside.remove();
+  });
+
+  it("does not reconcile selectionchange while composing", () => {
+    const agentId = "caliper-abc123";
+    const wire = `ab @${agentId}`;
+    const mentionStart = "ab ".length;
+    host.editor.setDocFromWire(wire, mentionStart);
+    host.editor.handleKeyDown(
+      new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })
+    );
+
+    host.editor.handleCompositionStart();
+    strandSelectionInMentionPill(host.root);
+    dispatchSelectionChange(host.root);
+    expect(host.editor.getCursor()).toBe(mentionStart - 1);
+
+    host.editor.handleCompositionEnd();
+  });
+
+  it("reconciles non-collapsed DOM ranges via selectionchange", () => {
+    host.editor.setDocFromWire("hello world", "hello world".length);
+    const end = "hello world".length;
+    setSelectionAtWire(host.root, host.editor.getDoc(), 0, end);
+    dispatchSelectionChange(host.root);
+
+    expect(host.editor.getSelectionWire()).toBe("hello world");
+    expect(host.editor.getCursor()).toBe(end);
+  });
+
+  it("selectionchange follows intentional caret moves to mention boundaries", () => {
+    const agentId = "caliper-abc123";
+    const wire = `ab @${agentId} cd`;
+    const mentionStart = "ab ".length;
+    host.editor.setDocFromWire(wire, wire.length);
+
+    setSelectionAtWire(host.root, host.editor.getDoc(), mentionStart);
+    dispatchSelectionChange(host.root);
+    expect(host.editor.getCursor()).toBe(mentionStart);
+  });
+
+  it("restores regressed DOM authority on edit ingress via beforeInput sync", () => {
+    const agentId = "caliper-abc123";
+    const wire = `ab @${agentId} cd`;
+    host.editor.setDocFromWire(wire, wire.length);
+    const authority = host.editor.getCursor();
+
+    setSelectionAtWire(host.root, host.editor.getDoc(), "ab ".length);
+    host.editor.handleBeforeInput(
+      new InputEvent("beforeinput", {
+        inputType: "insertText",
+        data: "x",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+    expect(host.editor.getWire()).toBe(`ab @${agentId} cdx`);
+    expect(host.editor.getCursor()).toBe(authority + 1);
+  });
+
+  it("selectMentionNode highlights only the clicked pill instance", () => {
+    const agent = "caliper-abc123";
+    const wire = `@${agent} text @${agent} `;
+    host.editor.setDocFromWire(wire, 0, { resetHistory: true });
+    const pills = [...host.root.querySelectorAll<HTMLSpanElement>("span[data-handoff-mention]")];
+    const secondIndex = readMentionNodeIndex(pills[1]!);
+    host.editor.selectMentionNode(secondIndex!);
+    expect(pills[0]!.className).not.toContain("handoff-mention-pill-highlighted");
+    expect(pills[1]!.className).toContain("handoff-mention-pill-highlighted");
+  });
+
+  it("arrow from selected mention exits vertically to row start and horizontally to pill end", () => {
+    const agent = "caliper-abc123";
+    const wire = `notes here\n@${agent} tail`;
+    host.editor.setDocFromWire(wire, 0, { resetHistory: true });
+    const mentionNode = host.editor.getDoc().nodes.findIndex((node) => node.type === "mention");
+    const rowStart = wire.indexOf("\n") + 1;
+    const pillEnd = wire.indexOf("@") + `@${agent}`.length;
+
+    host.editor.selectMentionNode(mentionNode);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(rowStart);
+
+    host.editor.selectMentionNode(mentionNode);
+    expect(
+      host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true })
+      )
+    ).toBe(true);
+    expect(host.editor.getCursor()).toBe(pillEnd);
+  });
+
+  it("skips pill arrow exit while the mention popover is open", () => {
+    const agent = "caliper-abc123";
+    const popoverEditor = createHandoffNoteEditor({
+      getColorByAgentId: () => new Map([[agent, "#f00"]]),
+      isMentionPopoverOpen: () => true,
+      onWireChange: () => {},
+    });
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    popoverEditor.setRoot(root);
+    popoverEditor.setDocFromWire(`@${agent} tail`, 0, { resetHistory: true });
+    popoverEditor.selectMentionNode(0);
+    expect(
+      popoverEditor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true })
+      )
+    ).toBe(false);
+    expect(popoverEditor.getSelectedMentionNodeIndex()).toBe(0);
   });
 });

@@ -1,12 +1,16 @@
 import { createEffect, onCleanup, onMount, type Accessor } from "solid-js";
 import { PREFIX } from "../../css/styles.js";
-import { isHandoffMentionElement, readMentionAgentId } from "./handoff-note-dom.js";
+import {
+  isHandoffMentionElement,
+  readMentionAgentId,
+  readMentionNodeIndex,
+} from "./handoff-note-dom.js";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
 
 export type HandoffNoteEditorProps = {
   wire: Accessor<string>;
   colorByAgentId: Accessor<Map<string, string>>;
-  highlightedAgentId?: Accessor<string | null>;
+  isMentionPopoverOpen?: Accessor<boolean>;
   onWireChange: (wire: string) => void;
   onResize?: () => void;
   onEditorReady?: (editor: HandoffNoteEditor) => void;
@@ -22,7 +26,7 @@ export function HandoffNoteEditor(props: HandoffNoteEditorProps) {
   let suppressWireSync = false;
   const editor = createHandoffNoteEditor({
     getColorByAgentId: () => props.colorByAgentId(),
-    getHighlightedAgentId: () => props.highlightedAgentId?.() ?? null,
+    isMentionPopoverOpen: () => props.isMentionPopoverOpen?.() ?? false,
     onWireChange: (wire) => {
       suppressWireSync = true;
       props.onWireChange(wire);
@@ -55,7 +59,6 @@ export function HandoffNoteEditor(props: HandoffNoteEditorProps) {
   });
 
   createEffect(() => {
-    props.highlightedAgentId?.();
     props.colorByAgentId();
     editor.refreshPresentation();
   });
@@ -89,11 +92,33 @@ export function HandoffNoteEditor(props: HandoffNoteEditorProps) {
       onCompositionEnd={() => editor.handleCompositionEnd()}
       onMouseDown={(event) => {
         const target = event.target;
-        if (!(target instanceof HTMLElement) || !isHandoffMentionElement(target)) {
+        if (target instanceof HTMLElement && isHandoffMentionElement(target)) {
+          event.preventDefault();
+          const nodeIndex = readMentionNodeIndex(target);
+          if (nodeIndex !== null) {
+            editor.selectMentionNode(nodeIndex);
+          }
+          props.onMentionPress?.(readMentionAgentId(target));
           return;
         }
-        event.preventDefault();
-        props.onMentionPress?.(readMentionAgentId(target));
+        editor.clearMentionSelection();
+      }}
+      onFocusIn={(event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+        if (isHandoffMentionElement(target)) {
+          const nodeIndex = readMentionNodeIndex(target);
+          if (nodeIndex !== null) {
+            editor.selectMentionNode(nodeIndex);
+          }
+          props.onMentionPress?.(readMentionAgentId(target));
+          return;
+        }
+        if (target === rootRef) {
+          editor.clearMentionSelection();
+        }
       }}
       onCopy={(event) => {
         const wire = editor.getSelectionWire();

@@ -1,14 +1,18 @@
 import {
-  docLength,
   docToWire,
-  describeHandoffNoteCursorContext,
   offsetAtDocPosition,
   resolveDocPosition,
   type HandoffNoteArrowDirection,
   type HandoffNoteDoc,
-  type HandoffNoteEdit,
   type HandoffNoteNode,
 } from "./handoff-note-doc.js";
+import {
+  resolveHorizontalBleedWireMove,
+  resolveVerticalArrowWireMove,
+  resolveWireLineColumn,
+  type HandoffNoteVerticalArrowDirection,
+  type VerticalNavLineSpan,
+} from "./handoff-note-vertical-nav.js";
 
 export type HandoffNoteDocPos = {
   nodeIndex: number;
@@ -179,68 +183,23 @@ export function docSelectionToWireRange(
   return { start: Math.min(start, end), end: Math.max(start, end) };
 }
 
-export function resolveDocArrowMove(
+export function resolveDocHorizontalArrowMove(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
   direction: HandoffNoteArrowDirection
 ): { pos: HandoffNoteDocPos; handled: boolean } {
   const wire = docPosToWireOffset(doc, pos);
-  const context = describeHandoffNoteCursorContext(doc, wire);
-
-  if (context.kind === "mention-interior") {
-    const nextWire = direction === "left" ? context.start : context.end;
-    return {
-      pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, nextWire)),
-      handled: true,
-    };
-  }
-
-  if (context.kind === "mention-boundary") {
-    if (direction === "left" && context.edge === "end") {
-      return {
-        pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, context.start)),
-        handled: true,
-      };
-    }
-    if (direction === "right" && context.edge === "start") {
-      return {
-        pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, context.end)),
-        handled: true,
-      };
-    }
-    if (direction === "left" && context.edge === "start" && context.start > 0) {
-      return {
-        pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, context.start - 1)),
-        handled: true,
-      };
-    }
-    if (direction === "right" && context.edge === "end" && context.end < docLength(doc)) {
-      return {
-        pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, context.end + 1)),
-        handled: true,
-      };
-    }
-  }
-
-  const delta = direction === "left" ? -1 : 1;
-  const nextWire = wire + delta;
-  if (nextWire < 0 || nextWire > docLength(doc)) {
+  const bleed = resolveHorizontalBleedWireMove(doc, wire, direction);
+  if (bleed === null || bleed.offset === wire) {
     return { pos, handled: false };
   }
 
-  const nextContext = describeHandoffNoteCursorContext(doc, nextWire);
-  if (nextContext.kind === "mention-interior") {
-    const snapped = direction === "left" ? nextContext.start : nextContext.end;
-    return {
-      pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, snapped)),
-      handled: true,
-    };
+  const targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, bleed.offset), { from: pos });
+  if (docPosEqual(targetPos, pos)) {
+    return { pos, handled: false };
   }
-
-  return { pos, handled: false };
+  return { pos: targetPos, handled: true };
 }
-
-export type HandoffNoteVerticalArrowDirection = "up" | "down";
 
 function wireLineStarts(wire: string): number[] {
   const starts = [0];
@@ -254,33 +213,6 @@ function wireLineStarts(wire: string): number[] {
 
 function wireLineEnd(lineStarts: number[], lineIndex: number, wireLength: number): number {
   return lineIndex + 1 < lineStarts.length ? lineStarts[lineIndex + 1]! - 1 : wireLength;
-}
-
-function isEmptyWireLine(wire: string, lineStart: number, lineEnd: number): boolean {
-  for (let index = lineStart; index <= lineEnd; index++) {
-    const char = wire[index];
-    if (char !== undefined && char !== "\n") {
-      return false;
-    }
-  }
-  return true;
-}
-
-function resolveWireLineColumn(
-  wire: string,
-  offset: number
-): { lineIndex: number; column: number; lineStart: number } {
-  const clamped = Math.max(0, Math.min(offset, wire.length));
-  const lineStarts = wireLineStarts(wire);
-  for (let lineIndex = lineStarts.length - 1; lineIndex >= 0; lineIndex--) {
-    const lineStart = lineStarts[lineIndex]!;
-    const lineContentEnd =
-      lineIndex + 1 < lineStarts.length ? lineStarts[lineIndex + 1]! - 1 : wire.length;
-    if (clamped >= lineStart && clamped <= lineContentEnd) {
-      return { lineIndex, column: clamped - lineStart, lineStart };
-    }
-  }
-  return { lineIndex: 0, column: clamped, lineStart: 0 };
 }
 
 export function isInterMentionAtomStart(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): boolean {
@@ -315,59 +247,30 @@ export function resolveDocVerticalArrowMove(
   direction: HandoffNoteVerticalArrowDirection
 ): { pos: HandoffNoteDocPos; handled: boolean } {
   const wire = docToWire(doc);
-  if (!wire.includes("\n")) {
-    return { pos, handled: false };
-  }
-
   const offset = docPosToWireOffset(doc, pos);
-  const { lineIndex, column } = resolveWireLineColumn(wire, offset);
-  const lineStarts = wireLineStarts(wire);
+  const { lineIndex, column, lineStart, lineEnd } = resolveWireLineColumn(
+    wire,
+    Math.min(offset, Math.max(0, wire.length))
+  );
+  const lineStarts = wire.includes("\n") ? wireLineStarts(wire) : [0];
   const targetLineIndex = direction === "up" ? lineIndex - 1 : lineIndex + 1;
-  if (targetLineIndex < 0 || targetLineIndex >= lineStarts.length) {
+
+  const current: VerticalNavLineSpan = { start: lineStart, end: lineEnd };
+  const target: VerticalNavLineSpan | null =
+    targetLineIndex >= 0 && targetLineIndex < lineStarts.length
+      ? {
+          start: lineStarts[targetLineIndex]!,
+          end: wireLineEnd(lineStarts, targetLineIndex, wire.length),
+        }
+      : null;
+
+  const move = resolveVerticalArrowWireMove(doc, offset, direction, column, current, target);
+  if (move === null) {
     return { pos, handled: false };
   }
 
-  const currentLineStart = lineStarts[lineIndex]!;
-  const currentLineEnd = wireLineEnd(lineStarts, lineIndex, wire.length);
-  const targetLineStart = lineStarts[targetLineIndex]!;
-  const targetLineEnd = wireLineEnd(lineStarts, targetLineIndex, wire.length);
-  let targetOffset: number;
-  if (direction === "up" && isEmptyWireLine(wire, currentLineStart, currentLineEnd)) {
-    targetOffset = currentLineStart - 1;
-  } else if (
-    direction === "up" &&
-    offset === currentLineEnd &&
-    !isEmptyWireLine(wire, currentLineStart, currentLineEnd)
-  ) {
-    targetOffset = offset - 1;
-  } else if (direction === "down" && isEmptyWireLine(wire, targetLineStart, targetLineEnd)) {
-    if (
-      !isEmptyWireLine(wire, currentLineStart, currentLineEnd) &&
-      offset > currentLineStart &&
-      offset < currentLineEnd
-    ) {
-      targetOffset = offset + 1;
-    } else if (
-      offset === currentLineStart &&
-      !isEmptyWireLine(wire, currentLineStart, currentLineEnd) &&
-      describeHandoffNoteCursorContext(doc, offset).kind === "mention-boundary"
-    ) {
-      targetOffset = offset + 1;
-    } else {
-      targetOffset = targetLineStart;
-    }
-  } else {
-    const targetColumn = Math.min(column, targetLineEnd - targetLineStart);
-    targetOffset = targetLineStart + targetColumn;
-  }
-
-  const context = describeHandoffNoteCursorContext(doc, targetOffset);
-  if (context.kind === "mention-interior") {
-    targetOffset = direction === "up" ? context.start : context.end;
-  }
-
-  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, targetOffset), { from: pos });
-  targetPos = snapVerticalArrowLanding(doc, targetPos, direction, targetLineStart);
+  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, move.offset), { from: pos });
+  targetPos = snapVerticalArrowLanding(doc, targetPos, direction, target?.start);
 
   if (docPosEqual(targetPos, pos)) {
     return { pos, handled: false };

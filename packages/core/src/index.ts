@@ -64,7 +64,9 @@ export {
   type HandoffCommitListener,
   type HandoffUIState,
   type HandoffPresentation,
+  type HandoffElementResolver,
 } from "./handoff-model/utils/handoff-registry.js";
+export { readPersistedHandoff, persistHandoff } from "./handoff-model/utils/handoff-session.js";
 export {
   resolveHandoffNote,
   isHandoffPendingNoteEmpty,
@@ -73,6 +75,7 @@ export {
   type ActiveHandoffDocMentionQuery,
   handoffItemLabel,
   filterHandoffItems,
+  handoffResolvedNoteToWire,
   formatHandoffAgentIdPill,
   type HandoffAgentIdPillVariant,
 } from "./handoff-model/utils/handoff-note.js";
@@ -101,6 +104,8 @@ export {
   resolveHandoffWireCursor,
   type HandoffNoteEdit,
   type HandoffNoteArrowDirection,
+  type HandoffNoteNavDirection,
+  isArrow,
   type HandoffNoteCursorContext,
   type HandoffNoteDoc,
   type HandoffNoteNode,
@@ -121,7 +126,7 @@ export {
   normalizeDocPos,
   normalizeSelection,
   renderedChildCount,
-  resolveDocArrowMove,
+  resolveDocHorizontalArrowMove,
   resolveDocVerticalArrowMove,
   isInterMentionAtomStart,
   snapVerticalArrowLanding,
@@ -132,8 +137,17 @@ export {
   type DocPosBias,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
-  type HandoffNoteVerticalArrowDirection,
 } from "./handoff-model/note-doc/handoff-note-doc-pos.js";
+export {
+  resolveVerticalArrowWireMove,
+  resolveVerticalArrowCrossLineMove,
+  resolveVerticalArrowRowStartLanding,
+  resolveVerticalArrowVisualLanding,
+  resolveWireLineColumn,
+  type HandoffNoteVerticalArrowDirection,
+  type VerticalNavLineSpan,
+  type VerticalNavWireMove,
+} from "./handoff-model/note-doc/handoff-note-vertical-nav.js";
 export {
   applyDocDelete,
   applyDocInsertText,

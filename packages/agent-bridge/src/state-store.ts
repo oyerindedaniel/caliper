@@ -1,7 +1,6 @@
 import type { CaliperAgentState } from "@oyerinde/caliper-schema";
-import type { HandoffRegistry } from "@caliper/core";
+import { persistHandoff, readPersistedHandoff, type HandoffRegistry } from "@caliper/core";
 import { getContextMetrics } from "./utils.js";
-import { persistHandoff, readPersistedHandoff } from "./handoff-session.js";
 
 const AGENT_LOCK_EVENT = "caliper:agent-lock-change";
 
