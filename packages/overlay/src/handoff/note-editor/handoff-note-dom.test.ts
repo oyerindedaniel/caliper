@@ -59,25 +59,25 @@ describe("handoff-note-dom", () => {
   });
 
   it("parses text after a mention without absorbing it into the agent id", () => {
-    const agentId = "caliper-zn4u0ymbt";
+    const agentId = "caliper-aaaaaaa";
     renderHandoffNoteDoc(
       root,
       {
         nodes: [
-          { type: "text", text: "dhhd " },
+          { type: "text", text: "pre1 " },
           { type: "mention", agentId },
-          { type: "text", text: "dhhdh @ " },
+          { type: "text", text: "pre2 @ " },
         ],
       },
       { colorByAgentId: new Map([[agentId, "#f00"]]) }
     );
 
-    expect(parseHandoffNoteDom(root)).toBe(`dhhd @${agentId}dhhdh @ `);
+    expect(parseHandoffNoteDom(root)).toBe(`pre1 @${agentId}pre2 @ `);
     expect(parseHandoffNoteDomToDoc(root)).toEqual({
       nodes: [
-        { type: "text", text: "dhhd " },
+        { type: "text", text: "pre1 " },
         { type: "mention", agentId },
-        { type: "text", text: "dhhdh @ " },
+        { type: "text", text: "pre2 @ " },
       ],
     });
   });

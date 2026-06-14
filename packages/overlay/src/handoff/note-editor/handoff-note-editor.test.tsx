@@ -12,8 +12,8 @@ describe("HandoffNoteEditor", () => {
   });
 
   it("keeps caret after shift-enter beside a mention when parent re-renders on wire change", () => {
-    const agentId = "caliper-dccgrev90";
-    const [wire, setWire] = createSignal(`dhdhdh @${agentId}`);
+    const agentId = "caliper-aaaaaaa";
+    const [wire, setWire] = createSignal(`header @${agentId}`);
     const [noteRevision, setNoteRevision] = createSignal(0);
     let editor: HandoffNoteEditorApi | undefined;
 
@@ -40,7 +40,7 @@ describe("HandoffNoteEditor", () => {
       />
     ));
 
-    editor!.setDocFromWire(`dhdhdh @${agentId}`, 7);
+    editor!.setDocFromWire(`header @${agentId}`, 7);
     setSelectionAtWire(editor!.getRoot()!, editor!.getDoc(), 7, 7);
     expect(editor!.getCursor()).toBe(7);
 
@@ -52,11 +52,11 @@ describe("HandoffNoteEditor", () => {
       });
 
     editor!.handleBeforeInput(lineBreak());
-    expect(editor!.getWire()).toBe(`dhdhdh \n@${agentId}`);
+    expect(editor!.getWire()).toBe(`header \n@${agentId}`);
     expect(editor!.getCursor()).toBe(6);
 
     editor!.handleBeforeInput(lineBreak());
-    expect(editor!.getWire()).toBe(`dhdhdh \n\n@${agentId}`);
+    expect(editor!.getWire()).toBe(`header \n\n@${agentId}`);
     expect(editor!.getCursor()).toBe(9);
   });
 

@@ -11,9 +11,11 @@ Collapsed caret only. Doc/wire line = segment between `\n` characters (not visua
 - **Empty line:** land at the same column on that line (column `0` → line start).
 - **Up from blank at column 0:** land at **column 0** of the line above, not that line’s end.
 - **Down from content:** enter the first line below (including empty lines); do not jump to a later mention on the current line.
+- **Embedded blanks in text nodes:** `\n` runs stored inside one text node (before or after mentions on the row) are stepped one `\n` at a time on Up/Down; Left from a multi-blank **pill row** skips to content; shift-enter inserts into the suffix without jumping the caret onto the mention. Cross-line landing redirects when column match would enter the wrong blank band (inter-mention gap, first blank below a pill row).
 - **Boundary bleed (Clash-style):** when there is no line above/below, vertical key **falls through to horizontal** on the current line — not a no-op.
   - **First line + Up** → same as **Left** (one horizontal step back).
   - **Last line + Down** → same as **Right** (one horizontal step forward).
+  - **Multiline `\n` docs:** bleed only on the first/last **wire line** and only when soft-wrap layout does not still owe a vertical move (exhausted layout row → block, not bleed).
 - **Mid-document:** Up/Down never substitute horizontal motion; only at vertical extremes.
 - **Editor resolution order:** (1) wire cross-line when an adjacent `\n` line exists; (2) DOM visual row when layout has another row above/below; (3) boundary bleed only at true visual top/bottom. Wire bleed must not short-circuit DOM on single-line soft wrap.
 

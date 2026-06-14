@@ -173,7 +173,7 @@ describe("handoff-note-selection", () => {
   });
 
   it("measures anchor rect without moving the caret", () => {
-    const wire = "dhhdd @";
+    const wire = "query @";
     const { root: mentionRoot, doc: mentionDoc } = mountEditor(wire);
     setSelectionAtWire(mentionRoot, mentionDoc, wire.length, wire.length);
     expect(readDomWireCursor(mentionRoot, mentionDoc)).toBe(wire.length);
@@ -326,6 +326,162 @@ describe("handoff-note-selection", () => {
     expect(docPosToWireOffset(multilineDoc, moved.pos)).toBe(line2Mention);
     setSelectionAtWire(surface, multilineDoc, docPosToWireOffset(multilineDoc, moved.pos));
     expect(readDomWireCursor(surface, multilineDoc)).toBe(line2Mention);
+  });
+
+  describe("wire newline with soft-wrap vertical navigation", () => {
+    const AGENT_A = "caliper-linea01";
+    const AGENT_B = "caliper-lineb02";
+    const WRAP_ROOT_WIDTH = 310;
+    const ROW1_TOP = 141;
+    const ROW2_TOP = 177;
+    const ROW_START_LEFT = 347;
+
+    function buildMultilineWrapWire(): string {
+      return `@${AGENT_A} header\n\n@${AGENT_A} fill@${AGENT_B} tail `;
+    }
+
+    function mountMultilineWrapEditor(): {
+      root: HTMLDivElement;
+      doc: HandoffNoteDoc;
+      wire: string;
+    } {
+      const wire = buildMultilineWrapWire();
+      const doc = wireToDoc(wire);
+      const surface = document.createElement("div");
+      surface.style.width = `${WRAP_ROOT_WIDTH}px`;
+      surface.contentEditable = "true";
+      document.body.appendChild(surface);
+      renderHandoffNoteDoc(surface, doc, {
+        colorByAgentId: new Map([
+          [AGENT_A, "#06f"],
+          [AGENT_B, "#f06"],
+        ]),
+      });
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: WRAP_ROOT_WIDTH });
+      const pillCoords = new Map<number, { top: number; left: number }>();
+      let mentionOrdinal = 0;
+      for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+        if (doc.nodes[nodeIndex]?.type !== "mention") {
+          continue;
+        }
+        pillCoords.set(nodeIndex, {
+          top: mentionOrdinal === 0 ? ROW1_TOP : ROW2_TOP,
+          left: ROW_START_LEFT + 40 * mentionOrdinal,
+        });
+        mentionOrdinal += 1;
+      }
+      stubHandoffNoteMentionLayoutCoords(surface, pillCoords);
+      invalidateHandoffNoteLayoutCache();
+      return { root: surface, doc, wire };
+    }
+
+    beforeEach(() => {
+      invalidateHandoffNoteLayoutCache();
+    });
+
+    it("Down from blank wire line crosses to the next wire line start", () => {
+      const { root, doc, wire } = mountMultilineWrapEditor();
+      const blankLineStart = wire.indexOf("\n") + 1;
+      const nextLineStart = blankLineStart + 1;
+      setSelectionAtWire(root, doc, blankLineStart);
+
+      const moved = resolveDomVerticalArrowMove(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, blankLineStart),
+        "down"
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(nextLineStart);
+      root.remove();
+    });
+
+    it("Down from last wire line start blocks instead of boundary-bleeding across the line", () => {
+      const { root, doc, wire } = mountMultilineWrapEditor();
+      const lastLineStart = wire.lastIndexOf("\n") + 1;
+      setSelectionAtWire(root, doc, lastLineStart);
+
+      const moved = resolveDomVerticalArrowMove(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, lastLineStart),
+        "down"
+      );
+
+      expect(moved.handled).toBe(false);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(lastLineStart);
+      root.remove();
+    });
+
+    it("down from trailing mention-line text enters the first embedded blank below", () => {
+      const agentA = "caliper-aaaaaaa";
+      const agentB = "caliper-bbbbbbb";
+      const wire = `header\n\nrow @${agentA}  @${agentB} tail\n\n\n@${agentA} `;
+      const doc = wireToDoc(wire);
+      const tailMarker = ` @${agentB} tail`;
+      const tailContentWire = wire.indexOf(tailMarker) + tailMarker.length - 1;
+      const blankRun: number[] = [];
+      for (let index = tailContentWire + 1; index < wire.length && wire[index] === "\n"; index++) {
+        blankRun.push(index);
+      }
+      const surface = document.createElement("div");
+      surface.style.width = `${WRAP_ROOT_WIDTH}px`;
+      document.body.appendChild(surface);
+      renderHandoffNoteDoc(surface, doc, {
+        colorByAgentId: new Map([
+          [agentA, "#06f"],
+          [agentB, "#f06"],
+        ]),
+      });
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: WRAP_ROOT_WIDTH });
+      setSelectionAtWire(surface, doc, tailContentWire);
+
+      const moved = resolveDomVerticalArrowMove(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, tailContentWire),
+        "down"
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(blankRun[0]!);
+      surface.remove();
+    });
+
+    it("up from first embedded blank below trailing mention-line text lands on content", () => {
+      const agentA = "caliper-aaaaaaa";
+      const agentB = "caliper-bbbbbbb";
+      const wire = `header\n\nrow @${agentA}  @${agentB} tail\n\n\n@${agentA} `;
+      const doc = wireToDoc(wire);
+      const tailMarker = ` @${agentB} tail`;
+      const tailContentWire = wire.indexOf(tailMarker) + tailMarker.length - 1;
+      const firstBlank = tailContentWire + 1;
+      expect(wire[firstBlank]).toBe("\n");
+      const surface = document.createElement("div");
+      surface.style.width = `${WRAP_ROOT_WIDTH}px`;
+      document.body.appendChild(surface);
+      renderHandoffNoteDoc(surface, doc, {
+        colorByAgentId: new Map([
+          [agentA, "#06f"],
+          [agentB, "#f06"],
+        ]),
+      });
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: WRAP_ROOT_WIDTH });
+      setSelectionAtWire(surface, doc, firstBlank);
+
+      const moved = resolveDomVerticalArrowMove(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, firstBlank),
+        "up"
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(tailContentWire);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
+      surface.remove();
+    });
   });
 });
 
@@ -522,8 +678,8 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
 
     it("Down from last visual row bleeds horizontally instead of blocking", () => {
-      const agent = "caliper-k7u1qyjn9";
-      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "dhhdhdhdhd");
+      const agent = "caliper-aaaaaaa";
+      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "tailcontent");
       const tailWire = docPosToWireOffset(doc, tailPos);
       const midTailWire = tailWire - 2;
       const { root } = mountWrapEditor(doc);
@@ -590,8 +746,8 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
 
     it("assigns trailing text after mention to the same visual row as its preceding pill", () => {
-      const agent = "caliper-k7u1qyjn9";
-      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "dhhdhdhdhd");
+      const agent = "caliper-aaaaaaa";
+      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "tailcontent");
       const tailWire = docPosToWireOffset(doc, tailPos);
       const { root } = mountWrapEditor(doc);
 
@@ -816,8 +972,8 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
 
   describe("unsampled wire navigation", () => {
     it("Up from trailing text on wrapped band crosses to previous visual row", () => {
-      const agent = "caliper-k7u1qyjn9";
-      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "dhhdhdhdhd");
+      const agent = "caliper-aaaaaaa";
+      const { doc, focus: tailPos } = buildMentionTailDoc(agent, "tailcontent");
       const { root } = mountWrapEditor(doc);
       setSelectionAtWire(root, doc, docPosToWireOffset(doc, tailPos));
 

@@ -139,12 +139,15 @@ export {
   type HandoffNoteSelection,
 } from "./handoff-model/note-doc/handoff-note-doc-pos.js";
 export {
+  resolveWireLineColumn,
+  type HandoffNoteVerticalArrowDirection,
+  type WireLineColumn,
+} from "./handoff-model/note-doc/handoff-note-wire-lines.js";
+export {
   resolveVerticalArrowWireMove,
   resolveVerticalArrowCrossLineMove,
   resolveVerticalArrowRowStartLanding,
   resolveVerticalArrowVisualLanding,
-  resolveWireLineColumn,
-  type HandoffNoteVerticalArrowDirection,
   type VerticalNavLineSpan,
   type VerticalNavWireMove,
 } from "./handoff-model/note-doc/handoff-note-vertical-nav.js";

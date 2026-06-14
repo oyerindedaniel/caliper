@@ -182,21 +182,21 @@ describe("spliceDocWireRange", () => {
 });
 
 describe("ambiguous flat wire vs structural doc", () => {
-  const agentId = "caliper-zn4u0ymbt";
+  const agentId = "caliper-aaaaaaa";
   const structuralDoc: HandoffNoteDoc = {
     nodes: [
-      { type: "text", text: "dhhd " },
+      { type: "text", text: "pre1 " },
       { type: "mention", agentId },
-      { type: "text", text: "dhhdh @ " },
+      { type: "text", text: "pre2 @ " },
     ],
   };
 
   it("wireToDoc mis-parses text glued after a mention on the flat wire", () => {
     const wire = docToWire(structuralDoc);
-    expect(wire).toBe(`dhhd @${agentId}dhhdh @ `);
+    expect(wire).toBe(`pre1 @${agentId}pre2 @ `);
     expect(wireToDoc(wire).nodes).toEqual([
-      { type: "text", text: "dhhd " },
-      { type: "mention", agentId: `${agentId}dhhdh` },
+      { type: "text", text: "pre1 " },
+      { type: "mention", agentId: `${agentId}pre2` },
       { type: "text", text: " @ " },
     ]);
   });
@@ -206,13 +206,13 @@ describe("ambiguous flat wire vs structural doc", () => {
     const atOffset = wire.indexOf("@", wire.indexOf(agentId) + agentId.length);
     const next = insertMentionAt(structuralDoc, agentId, atOffset, atOffset + 1);
     expect(next.nodes).toEqual([
-      { type: "text", text: "dhhd " },
+      { type: "text", text: "pre1 " },
       { type: "mention", agentId },
-      { type: "text", text: "dhhdh " },
+      { type: "text", text: "pre2 " },
       { type: "mention", agentId },
       { type: "text", text: " " },
     ]);
-    expect(docToWire(next)).toBe(`dhhd @${agentId}dhhdh @${agentId} `);
+    expect(docToWire(next)).toBe(`pre1 @${agentId}pre2 @${agentId} `);
   });
 });
 

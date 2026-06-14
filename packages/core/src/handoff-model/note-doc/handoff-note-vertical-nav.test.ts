@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { wireToDoc } from "./handoff-note-doc.js";
+import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 import {
   resolveHorizontalBleedWireMove,
   resolveVerticalArrowCrossLineMove,
   resolveVerticalArrowRowStartLanding,
   resolveVerticalArrowVisualLanding,
   resolveVerticalArrowWireMove,
-  resolveWireLineColumn,
 } from "./handoff-note-vertical-nav.js";
 
 describe("resolveHorizontalBleedWireMove", () => {

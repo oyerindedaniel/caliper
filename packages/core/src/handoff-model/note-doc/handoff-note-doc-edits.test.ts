@@ -37,30 +37,30 @@ describe("applyDocInsertText", () => {
 
   it("inserts a spaced @ after a committed mention end", () => {
     const agentId = "caliper-abc123";
-    const wire = `dhhd @${agentId} `;
+    const wire = `pre1 @${agentId} `;
     const doc = wireToDoc(wire);
-    const focus = wireOffsetToDocPos(doc, `dhhd @${agentId}`.length);
+    const focus = wireOffsetToDocPos(doc, `pre1 @${agentId}`.length);
     const result = applyDocInsertText(doc, collapsedSelection(focus), "@");
-    expect(docToWire(result.doc)).toBe(`dhhd @${agentId} @ `);
+    expect(docToWire(result.doc)).toBe(`pre1 @${agentId} @ `);
   });
 
   it("inserts at mention start without entering the pill", () => {
-    const agentId = "caliper-rrrhd9muz";
-    const wire = `DHD \n\n\n\n@${agentId} `;
+    const agentId = "caliper-aaaaaaa";
+    const wire = `HEAD \n\n\n\n@${agentId} `;
     const doc = wireToDoc(wire);
     const mentionStart = wire.indexOf("@");
     const mentionNodeIndex = doc.nodes.findIndex((node) => node.type === "mention");
     const focus = wireOffsetToDocPos(doc, mentionStart);
     const result = applyDocInsertText(doc, collapsedSelection(focus), "D");
-    expect(docToWire(result.doc)).toBe(`DHD \n\n\n\nD@${agentId} `);
+    expect(docToWire(result.doc)).toBe(`HEAD \n\n\n\nD@${agentId} `);
     expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
     expect(result.selection.focus.nodeIndex).toBe(mentionNodeIndex - 1);
     expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(mentionStart + 1);
   });
 
   it("appends in the pre-mention text node when the caret is on the mention atom", () => {
-    const agentId = "caliper-q91s2jvy5";
-    const wire = `djdjd @${agentId} `;
+    const agentId = "caliper-aaaaaaa";
+    const wire = `prefix @${agentId} `;
     const doc = wireToDoc(wire);
     const mentionNodeIndex = doc.nodes.findIndex((node) => node.type === "mention");
     const result = applyDocInsertText(
@@ -68,7 +68,7 @@ describe("applyDocInsertText", () => {
       collapsedSelection({ nodeIndex: mentionNodeIndex, nodeOffset: 0 }),
       "y"
     );
-    expect(docToWire(result.doc)).toBe(`djdjd y@${agentId} `);
+    expect(docToWire(result.doc)).toBe(`prefix y@${agentId} `);
     expect(result.selection.focus.nodeIndex).toBe(mentionNodeIndex - 1);
     expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
   });
@@ -76,7 +76,7 @@ describe("applyDocInsertText", () => {
   it("keeps consecutive insertions in the pre-mention text node from a mention atom", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
-    const wire = `djdjd @${agentA} @${agentB} `;
+    const wire = `prefix @${agentA} @${agentB} `;
     const doc = wireToDoc(wire);
     const mentionNodeIndex = doc.nodes.reduce(
       (last, node, nodeIndex) => (node.type === "mention" ? nodeIndex : last),
@@ -89,7 +89,7 @@ describe("applyDocInsertText", () => {
     state = applyDocInsertText(state.doc, state.selection, "y");
     state = applyDocInsertText(state.doc, state.selection, "y");
 
-    expect(docToWire(state.doc)).toBe(`djdjd @${agentA} yyy@${agentB} `);
+    expect(docToWire(state.doc)).toBe(`prefix @${agentA} yyy@${agentB} `);
     expect(state.selection.focus.nodeIndex).toBe(textIdx);
     expect(state.doc.nodes[state.selection.focus.nodeIndex]?.type).toBe("text");
   });
@@ -199,8 +199,8 @@ describe("applyDocLineBreak", () => {
   });
 
   it("keeps caret on the content line when breaking from the mention atom", () => {
-    const agent = "caliper-qa9roq9pp";
-    const wire = `djdjdj @${agent} `;
+    const agent = "caliper-aaaaaaa";
+    const wire = `prefixx @${agent} `;
     const doc = wireToDoc(wire);
     const onMention = {
       nodeIndex: doc.nodes.findIndex((node) => node.type === "mention"),
@@ -210,14 +210,14 @@ describe("applyDocLineBreak", () => {
 
     const result = applyDocLineBreak(doc, collapsedSelection(onMention));
 
-    expect(docToWire(result.doc)).toBe(`djdjdj \n@${agent} `);
+    expect(docToWire(result.doc)).toBe(`prefixx \n@${agent} `);
     expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
     expect(docPosToWireOffset(result.doc, result.selection.focus)).toBeLessThan(mentionStartWire);
   });
 
   it("keeps caret on the content line when breaking from a later mention atom", () => {
-    const agent = "caliper-qa9roq9pp";
-    const wire = `dhhd @${agent} dhhd @${agent} `;
+    const agent = "caliper-aaaaaaa";
+    const wire = `pre1 @${agent} pre2 @${agent} `;
     const doc = wireToDoc(wire);
     let mentionCount = 0;
     let onMention = { nodeIndex: 0, nodeOffset: 0 };
@@ -234,7 +234,7 @@ describe("applyDocLineBreak", () => {
 
     const result = applyDocLineBreak(doc, collapsedSelection(onMention));
 
-    expect(docToWire(result.doc)).toBe(`dhhd @${agent} dhhd \n@${agent} `);
+    expect(docToWire(result.doc)).toBe(`pre1 @${agent} pre2 \n@${agent} `);
     expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
     expect(docPosToWireOffset(result.doc, result.selection.focus)).toBeLessThan(mentionStartWire);
   });
@@ -256,8 +256,8 @@ describe("applyDocLineBreak", () => {
   });
 
   it("consecutive breaks from a mention atom add blank lines before the pill", () => {
-    const agent = "caliper-qa9roq9pp";
-    const wire = `djdjdj @${agent} `;
+    const agent = "caliper-aaaaaaa";
+    const wire = `prefixx @${agent} `;
     const doc = wireToDoc(wire);
     const first = applyDocLineBreak(
       doc,
@@ -265,7 +265,7 @@ describe("applyDocLineBreak", () => {
     );
     const second = applyDocLineBreak(first.doc, first.selection);
 
-    expect(docToWire(second.doc)).toBe(`djdjdj \n\n@${agent} `);
+    expect(docToWire(second.doc)).toBe(`prefixx \n\n@${agent} `);
     const textNode = second.doc.nodes[second.selection.focus.nodeIndex];
     expect(textNode?.type).toBe("text");
     if (textNode?.type === "text") {
@@ -274,14 +274,14 @@ describe("applyDocLineBreak", () => {
   });
 
   it("never leaves caret at the pre-break mention wire when breaking from a mention atom", () => {
-    const agent = "caliper-qa9roq9pp";
+    const agent = "caliper-aaaaaaa";
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const wires = [
-      `djdjd @${agent} `,
-      `djdjd @${agent} @${agent} `,
+      `prefix @${agent} `,
+      `prefix @${agent} @${agent} `,
       `ab @${agentA} @${agentB} tail`,
-      `dhhd @${agent} dhhd @${agent} `,
+      `pre1 @${agent} pre2 @${agent} `,
     ];
 
     for (const wire of wires) {
@@ -296,14 +296,57 @@ describe("applyDocLineBreak", () => {
   });
 
   it("consecutive breaks from a later pill with a whitespace gap", () => {
-    const agent = "caliper-qa9roq9pp";
-    const wire = `djdjd @${agent} @${agent} `;
+    const agent = "caliper-aaaaaaa";
+    const wire = `prefix @${agent} @${agent} `;
     const doc = wireToDoc(wire);
     const onMention = wireOffsetToDocPos(doc, wire.lastIndexOf("@"));
     const first = applyDocLineBreak(doc, collapsedSelection(onMention));
     const second = applyDocLineBreak(first.doc, first.selection);
 
-    expect(docToWire(second.doc)).toBe(`djdjd @${agent} \n\n@${agent} `);
+    expect(docToWire(second.doc)).toBe(`prefix @${agent} \n\n@${agent} `);
+  });
+
+  it("first break after trailing mention-line text keeps caret on the content line", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const wire = `row @${agentA}  @${agentB} tail`;
+    const doc = wireToDoc(wire);
+    const caretBefore = wire.length;
+    const result = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, caretBefore)));
+    expect(docToWire(result.doc)).toBe(`${wire}\n`);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(caretBefore);
+  });
+
+  it("second break after trailing mention-line text advances onto the blank below", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const wire = `row @${agentA}  @${agentB} tail`;
+    const doc = wireToDoc(wire);
+    const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, wire.length)));
+    const second = applyDocLineBreak(first.doc, first.selection);
+    expect(docToWire(second.doc)).toBe(`${wire}\n\n`);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(wire.length + 2);
+  });
+
+  it("first mention-boundary break on prefix row keeps caret on content line", () => {
+    const agentA = "caliper-aaaaaaa";
+    const header = "header ";
+    const doc = wireToDoc(`${header}@${agentA} `);
+    const mentionStart = wireOffsetToDocPos(doc, header.length);
+    const first = applyDocLineBreak(doc, collapsedSelection(mentionStart));
+    expect(docToWire(first.doc)).toBe(`${header}\n@${agentA} `);
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(header.length - 1);
+  });
+
+  it("second break on prefix row advances caret onto the blank run before mention", () => {
+    const agentA = "caliper-aaaaaaa";
+    const header = "header ";
+    const doc = wireToDoc(`${header}@${agentA} `);
+    const mentionStart = wireOffsetToDocPos(doc, header.length);
+    const first = applyDocLineBreak(doc, collapsedSelection(mentionStart));
+    const second = applyDocLineBreak(first.doc, first.selection);
+    expect(docToWire(second.doc)).toBe(`${header}\n\n@${agentA} `);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(`${header}\n\n`.length);
   });
 });
 
@@ -532,26 +575,26 @@ describe("applyDocDelete", () => {
 
 describe("insertMentionAtSelection", () => {
   it("commits an active @ query token", () => {
-    const doc = wireToDoc("dhhdd @");
+    const doc = wireToDoc("query @");
     const start = wireOffsetToDocPos(doc, 6);
     const end = wireOffsetToDocPos(doc, 7);
-    const result = insertMentionAtSelection(doc, "caliper-qbd2kuqrg", start, end);
-    expect(docToWire(result.doc)).toBe("dhhdd @caliper-qbd2kuqrg ");
+    const result = insertMentionAtSelection(doc, "caliper-aaaaaaa", start, end);
+    expect(docToWire(result.doc)).toBe("query @caliper-aaaaaaa ");
   });
 });
 
 describe("resolveActiveHandoffMentionQueryDoc", () => {
   it("opens an empty query when the caret is on @", () => {
-    const doc = wireToDoc("HDHD @");
+    const doc = wireToDoc("query @");
     const focus = wireOffsetToDocPos(doc, docToWire(doc).length);
     expect(resolveActiveHandoffMentionQueryDoc(doc, collapsedSelection(focus))).toEqual({
-      queryStart: wireOffsetToDocPos(doc, 5),
+      queryStart: wireOffsetToDocPos(doc, 6),
       query: "",
     });
   });
 
   it("does not reopen when typing after a committed mention", () => {
-    const wire = "HDHD @caliper-abc123D ";
+    const wire = "note @caliper-abc123D ";
     const doc = wireToDoc(wire);
     const focus = wireOffsetToDocPos(doc, wire.length - 1);
     expect(resolveActiveHandoffMentionQueryDoc(doc, collapsedSelection(focus))).toBeNull();
@@ -567,13 +610,13 @@ describe("resolveActiveHandoffMentionQueryDoc", () => {
   });
 
   it("closes the query on a blank line immediately after @", () => {
-    const doc = wireToDoc("dhd @\n");
+    const doc = wireToDoc("query @\n");
     const focus = wireOffsetToDocPos(doc, docToWire(doc).length);
     expect(resolveActiveHandoffMentionQueryDoc(doc, collapsedSelection(focus))).toBeNull();
   });
 
   it("does not treat committed mentions as multiline queries", () => {
-    const wire = "dhd @caliper-abc123 \n";
+    const wire = "query @caliper-abc123 \n";
     const doc = wireToDoc(wire);
     const focus = wireOffsetToDocPos(doc, wire.length);
     expect(resolveActiveHandoffMentionQueryDoc(doc, collapsedSelection(focus))).toBeNull();
@@ -582,7 +625,7 @@ describe("resolveActiveHandoffMentionQueryDoc", () => {
 
 describe("mention query insert folds blank continuation lines onto @", () => {
   function replayShiftEnterPartialBackspace() {
-    let doc = wireToDoc("dhd @");
+    let doc = wireToDoc("note @");
     let focus = wireOffsetToDocPos(doc, docToWire(doc).length);
     let state = applyDocLineBreak(doc, collapsedSelection(focus));
     for (let i = 0; i < 3; i++) {
@@ -598,34 +641,34 @@ describe("mention query insert folds blank continuation lines onto @", () => {
 
   it("keeps session closed until filter typing resumes", () => {
     const state = replayShiftEnterPartialBackspace();
-    expect(docToWire(state.doc)).toBe("dhd @\n");
+    expect(docToWire(state.doc)).toBe("note @\n");
     expect(resolveActiveHandoffMentionQueryDoc(state.doc, state.selection)).toBeNull();
   });
 
   it("folds filter chars onto the @ line and reopens the query", () => {
     let state = replayShiftEnterPartialBackspace();
     state = applyDocInsertText(state.doc, state.selection, "d");
-    expect(docToWire(state.doc)).toBe("dhd @d");
+    expect(docToWire(state.doc)).toBe("note @d");
     expect(resolveActiveHandoffMentionQueryDoc(state.doc, state.selection)?.query).toBe("d");
 
     state = applyDocInsertText(state.doc, state.selection, "h");
-    expect(docToWire(state.doc)).toBe("dhd @dh");
+    expect(docToWire(state.doc)).toBe("note @dh");
     expect(resolveActiveHandoffMentionQueryDoc(state.doc, state.selection)?.query).toBe("dh");
   });
 
   it("folds the first filter char without requiring partial backspace", () => {
-    let doc = wireToDoc("dhd @");
+    let doc = wireToDoc("note @");
     let state = applyDocLineBreak(
       doc,
       collapsedSelection(wireOffsetToDocPos(doc, docToWire(doc).length))
     );
     state = applyDocInsertText(state.doc, state.selection, "d");
-    expect(docToWire(state.doc)).toBe("dhd @d");
+    expect(docToWire(state.doc)).toBe("note @d");
     expect(resolveActiveHandoffMentionQueryDoc(state.doc, state.selection)?.query).toBe("d");
   });
 
   it("folds onto an existing query on a repeat multiline cycle", () => {
-    let doc = wireToDoc("dhd @");
+    let doc = wireToDoc("note @");
     let focus = wireOffsetToDocPos(doc, docToWire(doc).length);
     let state = applyDocLineBreak(doc, collapsedSelection(focus));
     for (let i = 0; i < 3; i++) {
@@ -635,7 +678,7 @@ describe("mention query insert folds blank continuation lines onto @", () => {
       state = applyDocDelete(state.doc, state.selection, "backspace")!;
     }
     state = applyDocInsertText(state.doc, state.selection, "f");
-    expect(docToWire(state.doc)).toBe("dhd @f");
+    expect(docToWire(state.doc)).toBe("note @f");
 
     state = applyDocLineBreak(state.doc, state.selection);
     for (let i = 0; i < 2; i++) {
@@ -644,10 +687,10 @@ describe("mention query insert folds blank continuation lines onto @", () => {
     for (let i = 0; i < 2; i++) {
       state = applyDocDelete(state.doc, state.selection, "backspace")!;
     }
-    expect(docToWire(state.doc)).toBe("dhd @f\n");
+    expect(docToWire(state.doc)).toBe("note @f\n");
 
     state = applyDocInsertText(state.doc, state.selection, "e");
-    expect(docToWire(state.doc)).toBe("dhd @fe");
+    expect(docToWire(state.doc)).toBe("note @fe");
     expect(resolveActiveHandoffMentionQueryDoc(state.doc, state.selection)?.query).toBe("fe");
   });
 });

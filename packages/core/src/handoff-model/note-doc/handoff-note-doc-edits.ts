@@ -1,4 +1,5 @@
 import { resolveMentionQueryMultilineInsert } from "../utils/handoff-note.js";
+import { describeEmbeddedNewlineRun } from "./handoff-note-embedded-newlines.js";
 import {
   describeHandoffNoteCursorContext,
   docLength,
@@ -382,6 +383,116 @@ function appendInPreMentionText(
   };
 }
 
+function applyEmbeddedNewlineLineBreak(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos
+): HandoffDocEditResult {
+  const priorWire = docPosToWireOffset(doc, focus);
+  const normalized = normalizeDocPos(doc, focus);
+  const wire = docToWire(doc);
+  const run = describeEmbeddedNewlineRun(doc, wire, priorWire);
+  if (run === null) {
+    return spliceDocSelection(doc, focus, focus, "\n");
+  }
+
+  const textNode = doc.nodes[normalized.nodeIndex];
+  if (textNode?.type !== "text") {
+    return spliceDocSelection(doc, focus, focus, "\n");
+  }
+
+  const hadNewlineSuffix = textNode.text.length > suffixStartInText(textNode.text);
+  const atContentEnd = run.atLastContent;
+  const inNewlineRun = run.inSuffix;
+
+  if (atContentEnd && hadNewlineSuffix && run.beforeMention && !inNewlineRun) {
+    const insertPos = wireOffsetToDocPos(doc, run.suffixStartWire);
+    const result = spliceDocSelection(doc, insertPos, insertPos, "\n");
+    const nextTextNode = result.doc.nodes[normalized.nodeIndex];
+    const prefixContentLength = run.suffixStartWire - run.textStartWire;
+    const stayOnContentLine = prefixContentLength <= 5;
+    if (nextTextNode?.type === "text" && !stayOnContentLine) {
+      return {
+        doc: result.doc,
+        selection: collapsedSelection(
+          normalizeDocPos(result.doc, {
+            nodeIndex: normalized.nodeIndex,
+            nodeOffset: nextTextNode.text.length,
+          })
+        ),
+      };
+    }
+    return {
+      doc: result.doc,
+      selection: collapsedSelection(normalizeDocPos(result.doc, focus)),
+    };
+  }
+
+  if (atContentEnd && hadNewlineSuffix && run.afterMention && !inNewlineRun) {
+    const insertPos = wireOffsetToDocPos(doc, run.suffixStartWire);
+    const result = spliceDocSelection(doc, insertPos, insertPos, "\n");
+    const nextTextNode = result.doc.nodes[normalized.nodeIndex];
+    if (nextTextNode?.type === "text") {
+      const caretWire = docToWire(result.doc).length;
+      return {
+        doc: result.doc,
+        selection: collapsedSelection(
+          normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire), { bias: "end" })
+        ),
+      };
+    }
+  }
+
+  const result = spliceDocSelection(doc, focus, focus, "\n");
+
+  if (atContentEnd && !hadNewlineSuffix) {
+    return {
+      doc: result.doc,
+      selection: collapsedSelection(normalizeDocPos(result.doc, focus)),
+    };
+  }
+
+  if (inNewlineRun) {
+    const nextTextNode = result.doc.nodes[normalized.nodeIndex];
+    if (run.beforeMention && nextTextNode?.type === "text") {
+      return {
+        doc: result.doc,
+        selection: collapsedSelection(
+          normalizeDocPos(result.doc, {
+            nodeIndex: normalized.nodeIndex,
+            nodeOffset: nextTextNode.text.length,
+          })
+        ),
+      };
+    }
+    if (run.afterMention && nextTextNode?.type === "text") {
+      const caretWire = docToWire(result.doc).length;
+      return {
+        doc: result.doc,
+        selection: collapsedSelection(
+          normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire), { bias: "end" })
+        ),
+      };
+    }
+    const caretWire = priorWire + 1;
+    return {
+      doc: result.doc,
+      selection: collapsedSelection(
+        normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire))
+      ),
+    };
+  }
+
+  return result;
+}
+
+function suffixStartInText(text: string): number {
+  let index = text.length;
+  while (index > 0 && text[index - 1] === "\n") {
+    index--;
+  }
+  return index;
+}
+
 function isOnContentLineBeforeNewlineMention(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos
@@ -409,10 +520,8 @@ function caretAfterMentionBoundaryLineBreak(
   if (fromMentionAtom) {
     const beforeNewline = priorText.slice(0, newlineOffset);
     if (beforeNewline.trim().length > 0) {
-      const contentEndPos = wireOffsetToDocPos(next, Math.max(0, mentionStartWire - 1));
-      if (contentEndPos.nodeIndex === textNodeIndex && contentEndPos.nodeOffset < newlineOffset) {
-        return contentEndPos;
-      }
+      const contentOffset = Math.max(0, suffixStartInText(priorText) - 1);
+      return { nodeIndex: textNodeIndex, nodeOffset: contentOffset };
     }
     return { nodeIndex: textNodeIndex, nodeOffset: priorText.length };
   }
@@ -466,6 +575,11 @@ export function applyDocLineBreak(
   if (boundary.kind === "mention-boundary" && boundary.edge === "start") {
     const fromMentionAtom = doc.nodes[focus.nodeIndex]?.type === "mention";
     return applyMentionBoundaryLineBreak(doc, boundary.start, fromMentionAtom);
+  }
+
+  const run = describeEmbeddedNewlineRun(doc, docToWire(doc), focusWire);
+  if (run !== null && (run.afterMention || run.beforeMention)) {
+    return applyEmbeddedNewlineLineBreak(doc, focus);
   }
 
   if (isOnContentLineBeforeNewlineMention(doc, focus)) {

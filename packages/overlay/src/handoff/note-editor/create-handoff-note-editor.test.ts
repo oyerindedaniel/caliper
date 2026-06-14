@@ -137,15 +137,15 @@ describe("createHandoffNoteEditor", () => {
   });
 
   it("inserts a second mention after text following a committed tag", () => {
-    const agentId = "caliper-zn4u0ymbt";
+    const agentId = "caliper-aaaaaaa";
     const nextDoc = {
       nodes: [
-        { type: "text" as const, text: "dhhd " },
+        { type: "text" as const, text: "pre1 " },
         { type: "mention" as const, agentId },
-        { type: "text" as const, text: "dhhdh @ " },
+        { type: "text" as const, text: "pre2 @ " },
       ],
     };
-    host.editor.applyDoc(nextDoc, selectionAtWire(nextDoc, `dhhd @${agentId}dhhdh @ `.length));
+    host.editor.applyDoc(nextDoc, selectionAtWire(nextDoc, `pre1 @${agentId}pre2 @ `.length));
 
     const liveDoc = host.editor.getDoc();
     const atOffset = host.editor.getWire().lastIndexOf("@");
@@ -156,28 +156,28 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(host.editor.getDoc().nodes).toEqual([
-      { type: "text", text: "dhhd " },
+      { type: "text", text: "pre1 " },
       { type: "mention", agentId },
-      { type: "text", text: "dhhdh " },
+      { type: "text", text: "pre2 " },
       { type: "mention", agentId },
       { type: "text", text: " " },
     ]);
-    expect(host.editor.getWire()).toBe(`dhhd @${agentId}dhhdh @${agentId} `);
+    expect(host.editor.getWire()).toBe(`pre1 @${agentId}pre2 @${agentId} `);
   });
 
   it("inserts a mention atom when the caret is on @", () => {
-    const prefix = "dhhdd @";
+    const prefix = "query @";
     host.editor.setDocFromWire(prefix, prefix.length - 1, { resetHistory: true });
     expect(host.editor.getCursor()).toBe(prefix.length - 1);
 
     const doc = host.editor.getDoc();
     host.editor.insertMentionAtomAt(
-      "caliper-qbd2kuqrg",
+      "caliper-aaaaaaa",
       wireOffsetToDocPos(doc, 6),
       wireOffsetToDocPos(doc, 7)
     );
 
-    expect(host.editor.getWire()).toBe("dhhdd @caliper-qbd2kuqrg ");
+    expect(host.editor.getWire()).toBe("query @caliper-aaaaaaa ");
     expect(host.editor.getWire()).not.toMatch(/@\s+@/);
   });
 
@@ -370,7 +370,7 @@ describe("createHandoffNoteEditor", () => {
   });
 
   it("refreshPresentation preserves live caret", () => {
-    const wire = "DHDHD @";
+    const wire = "prefix @";
     host.editor.setDocFromWire(wire, wire.length);
     host.editor.refreshPresentation();
     expect(host.editor.getCursor()).toBe(wire.length);
@@ -388,7 +388,7 @@ describe("createHandoffNoteEditor", () => {
     });
     innerEditor = editor;
     editor.setRoot(root);
-    editor.setDocFromWire("DHDHD ", 6, { resetHistory: true });
+    editor.setDocFromWire("label ", 6, { resetHistory: true });
 
     editor.handleBeforeInput(
       new InputEvent("beforeinput", {
@@ -399,7 +399,7 @@ describe("createHandoffNoteEditor", () => {
       })
     );
 
-    expect(editor.getWire()).toBe("DHDHD @");
+    expect(editor.getWire()).toBe("label @");
     expect(editor.getCursor()).toBe(7);
   });
 
@@ -423,8 +423,8 @@ describe("createHandoffNoteEditor", () => {
   });
 
   it("inserts text at mention start via doc model when the browser would enter the pill", () => {
-    const agentId = "caliper-rrrhd9muz";
-    const multilineWire = `DHD \n\n\n\n@${agentId} `;
+    const agentId = "caliper-aaaaaaa";
+    const multilineWire = `HEAD \n\n\n\n@${agentId} `;
     const mentionStart = multilineWire.indexOf("@");
 
     host.editor.setDocFromWire(multilineWire, mentionStart);
@@ -439,7 +439,7 @@ describe("createHandoffNoteEditor", () => {
       })
     );
 
-    expect(host.editor.getWire()).toBe(`DHD \n\n\n\nD@${agentId} `);
+    expect(host.editor.getWire()).toBe(`HEAD \n\n\n\nD@${agentId} `);
     expect(host.editor.getCursor()).toBe(mentionStart + 1);
 
     host.editor.handleBeforeInput(
@@ -459,7 +459,7 @@ describe("createHandoffNoteEditor", () => {
       })
     );
 
-    expect(host.editor.getWire()).toBe(`DHD \n\n\n\nDyy@${agentId} `);
+    expect(host.editor.getWire()).toBe(`HEAD \n\n\n\nDyy@${agentId} `);
     expect(host.editor.getCursor()).toBe(mentionStart + 3);
   });
 
@@ -525,6 +525,39 @@ describe("createHandoffNoteEditor", () => {
     );
     expect(host.editor.getCursor()).not.toBe(mentionStart);
     expect(host.editor.getCursor()).toBeGreaterThan(mentionStart);
+  });
+
+  it("first line break after trailing mention-line text keeps caret on the content line", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const prefix = `row @${agentA}  @${agentB} `;
+    const wire = `${prefix}tail`;
+    const docShape = {
+      nodes: [
+        { type: "text" as const, text: "row " },
+        { type: "mention" as const, agentId: agentA },
+        { type: "text" as const, text: "  " },
+        { type: "mention" as const, agentId: agentB },
+        { type: "text" as const, text: " tail" },
+      ],
+    };
+
+    host.editor.applyDoc(docShape, selectionAtWire(docShape, wire.length));
+
+    const lineBreak = () =>
+      new InputEvent("beforeinput", {
+        inputType: "insertLineBreak",
+        bubbles: true,
+        cancelable: true,
+      });
+
+    host.editor.handleBeforeInput(lineBreak());
+    expect(host.editor.getWire()).toBe(`${wire}\n`);
+    expect(host.editor.getCursor()).toBe(wire.length);
+
+    host.editor.handleBeforeInput(lineBreak());
+    expect(host.editor.getWire()).toBe(`${wire}\n\n`);
+    expect(host.editor.getCursor()).toBe(wire.length + 2);
   });
 
   it("appends text in the text node after line breaks before a later mention", () => {

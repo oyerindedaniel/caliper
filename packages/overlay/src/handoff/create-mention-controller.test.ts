@@ -21,9 +21,17 @@ const REGISTRY_ITEM = {
   fingerprint: { selector: "caliper-abc123", tag: "button", timestamp: 0, text: "Submit" },
 } as unknown as HandoffRegistryItem;
 
+function embeddedBlankMentionQueryFixture() {
+  const agentId = "caliper-aaaaaaa";
+  const wire = `head \n\n\n\nbodyxx\n\n\n@@${agentId} `;
+  const doc = wireToDoc(wire);
+  const queryWire = wire.indexOf("@@");
+  return { wire, doc, agentId, queryWire };
+}
+
 describe("resolveActiveMentionReplaceEnd", () => {
   it("consumes @ when the caret sits on the trigger", () => {
-    const wire = "dhhdd @";
+    const wire = "query @";
     const doc = wireToDoc(wire);
     const queryStart = wireOffsetToDocPos(doc, 6);
     const session = { open: true, queryStart, query: "" };
@@ -33,7 +41,7 @@ describe("resolveActiveMentionReplaceEnd", () => {
   });
 
   it("consumes @query when the caret is after the filter", () => {
-    const wire = "dhhdd @ab";
+    const wire = "query @ab";
     const doc = wireToDoc(wire);
     const queryStart = wireOffsetToDocPos(doc, 6);
     const session = { open: true, queryStart, query: "ab" };
@@ -43,7 +51,7 @@ describe("resolveActiveMentionReplaceEnd", () => {
   });
 
   it("extends through the query when the caret lagged behind anchor measurement", () => {
-    const wire = "dhhdd @ab";
+    const wire = "query @ab";
     const doc = wireToDoc(wire);
     const queryStart = wireOffsetToDocPos(doc, 6);
     const session = { open: true, queryStart, query: "ab" };
@@ -52,15 +60,14 @@ describe("resolveActiveMentionReplaceEnd", () => {
   });
 
   it("does not extend through a committed mention when selection jumped past the query", () => {
-    const wire = "dhd \n\n\n\ndhdhhd\n\n\n@@caliper-ys3hznkdj ";
-    const doc = wireToDoc(wire);
-    const queryStart = wireOffsetToDocPos(doc, 17);
+    const { wire, doc, queryWire } = embeddedBlankMentionQueryFixture();
+    const queryStart = wireOffsetToDocPos(doc, queryWire);
     const session = { open: true, queryStart, query: "" };
     const staleFocus = wireOffsetToDocPos(doc, wire.length - 1);
     expect(docPosToWireOffset(doc, resolveActiveMentionReplaceEnd(session, doc, staleFocus))).toBe(
-      18
+      queryWire + 1
     );
-    expect(wire.slice(17, 18)).toBe("@");
+    expect(wire.slice(queryWire, queryWire + 1)).toBe("@");
   });
 
   it("returns focus when the session is closed", () => {
@@ -89,8 +96,7 @@ describe("createMentionController mention session", () => {
 
   it("commits only the active @query when the live caret jumped on popover pick", () => {
     let inserted: { agentId: string; start: number; end: number } | undefined;
-    const wire = "dhd \n\n\n\ndhdhhd\n\n\n@@caliper-ys3hznkdj ";
-    const doc = wireToDoc(wire);
+    const { wire, doc, queryWire } = embeddedBlankMentionQueryFixture();
     const selection = wireOffsetToCollapsedSelection(doc, wire.length - 1);
     const editor: HandoffNoteEditorHost = {
       getWire: () => wire,
@@ -114,15 +120,15 @@ describe("createMentionController mention session", () => {
       onHighlight: () => {},
     });
 
-    controller.handleInput(mockEditor(wire, 18));
+    controller.handleInput(mockEditor(wire, queryWire + 1));
     expect(controller.isOpen()).toBe(true);
 
     controller.commitMention(editor, REGISTRY_ITEM.agentId);
 
     expect(inserted).toEqual({
       agentId: REGISTRY_ITEM.agentId,
-      start: 17,
-      end: 18,
+      start: queryWire,
+      end: queryWire + 1,
     });
   });
 
@@ -133,7 +139,7 @@ describe("createMentionController mention session", () => {
       onHighlight: () => {},
     });
 
-    const wire = "HDHD @caliper-abc123D ";
+    const wire = "note @caliper-abc123D ";
     controller.handleInput(mockEditor(wire, wire.length - 1));
 
     expect(controller.isOpen()).toBe(false);
@@ -146,7 +152,7 @@ describe("createMentionController mention session", () => {
       onHighlight: () => {},
     });
 
-    const doc = wireToDoc("dhd @");
+    const doc = wireToDoc("query @");
     const selection = wireOffsetToCollapsedSelection(doc, docToWire(doc).length);
     controller.handleInput({
       getWire: () => docToWire(doc),
@@ -180,7 +186,7 @@ describe("createMentionController mention session", () => {
       onHighlight: () => {},
     });
 
-    let doc = wireToDoc("dhd @");
+    let doc = wireToDoc("note @");
     let selection = wireOffsetToCollapsedSelection(doc, docToWire(doc).length);
     let state = applyDocLineBreak(doc, selection);
     for (let i = 0; i < 3; i++) {
@@ -223,7 +229,7 @@ describe("createMentionController mention session", () => {
       onHighlight: () => {},
     });
 
-    let doc = wireToDoc("dhd @f\n");
+    let doc = wireToDoc("query @f\n");
     const selection = wireOffsetToCollapsedSelection(doc, docToWire(doc).length);
     expect(controller.isOpen()).toBe(false);
 

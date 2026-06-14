@@ -14,7 +14,7 @@ import {
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
-import { resolveWireLineColumn } from "./handoff-note-vertical-nav.js";
+import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 
 describe("HandoffNoteDocPos", () => {
   it("round-trips wire offsets at text, mention boundaries, and doc end", () => {
@@ -147,6 +147,17 @@ describe("resolveDocVerticalArrowMove", () => {
 
   function line2MentionStart(wire: string) {
     return wire.indexOf("@", wire.indexOf("\n") + 1);
+  }
+
+  function trailingMentionTailFixture() {
+    const wire = `header\n\nrow @${agentA}  @${agentB} tail\n\n\n@${agentA} `;
+    const tailMarker = ` @${agentB} tail`;
+    const tailContentWire = wire.indexOf(tailMarker) + tailMarker.length - 1;
+    const blankRun: number[] = [];
+    for (let index = tailContentWire + 1; index < wire.length && wire[index] === "\n"; index++) {
+      blankRun.push(index);
+    }
+    return { wire, doc: wireToDoc(wire), tailContentWire, blankRun };
   }
 
   it("control: arrow up on plain multiline text preserves column", () => {
@@ -505,4 +516,129 @@ describe("resolveDocVerticalArrowMove", () => {
     const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 2), "down");
     expect(docPosToWireOffset(doc, moved.pos)).toBe(3);
   });
+
+  it("down from trailing mention-line text enters the first embedded blank below", () => {
+    const { doc, tailContentWire, blankRun } = trailingMentionTailFixture();
+    expect(blankRun.length).toBeGreaterThanOrEqual(2);
+
+    const moved = resolveDocVerticalArrowMove(
+      doc,
+      wireOffsetToDocPos(doc, tailContentWire),
+      "down"
+    );
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(blankRun[0]!);
+    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(blankRun[blankRun.length - 1]!);
+  });
+
+  it("up from the first embedded blank below trailing mention-line text lands on content", () => {
+    const { doc, tailContentWire, blankRun } = trailingMentionTailFixture();
+
+    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, blankRun[0]!), "up");
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(tailContentWire);
+    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
+  });
+
+  it("up from a later embedded blank steps through the newline run instead of jumping to doc start", () => {
+    const { doc, blankRun } = trailingMentionTailFixture();
+    expect(blankRun.length).toBeGreaterThanOrEqual(2);
+
+    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, blankRun[1]!), "up");
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(blankRun[0]!);
+    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
+  });
+
+  it("down from content above embedded prefix enters the first blank below", () => {
+    const { doc, header } = embeddedPrefixPillRowFixture(agentA);
+    const contentLineEnd = header.length - 1;
+
+    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, contentLineEnd), "down");
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(contentLineEnd + 1);
+  });
+
+  it("up from middle embedded prefix blank steps to the previous blank", () => {
+    const { wire, doc, header } = embeddedPrefixPillRowFixture(agentA);
+    const middleBlank = `${header}\n\n`.length - 1;
+
+    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, middleBlank), "up");
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(`${header}\n`.length - 1);
+    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
+  });
+
+  it("up from inter-mention space on embedded prefix pill row stays on the row", () => {
+    const { wire, doc } = embeddedPrefixPillRowFixture(agentA);
+    const interMentionSpace = wire.lastIndexOf("@") - 1;
+    const firstMentionEnd = wire.indexOf("@") + `@${agentA}`.length - 1;
+
+    const moved = resolveDocVerticalArrowMove(
+      doc,
+      wireOffsetToDocPos(doc, interMentionSpace),
+      "up"
+    );
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstMentionEnd);
+  });
+
+  it("up from first mention on embedded prefix pill row lands on content line", () => {
+    const { doc, header } = embeddedPrefixPillRowFixture(agentA);
+    const firstMentionStart = docToWire(doc).indexOf("@");
+    const contentLineEnd = header.length - 1;
+
+    const moved = resolveDocVerticalArrowMove(
+      doc,
+      wireOffsetToDocPos(doc, firstMentionStart),
+      "up"
+    );
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(contentLineEnd);
+  });
 });
+
+describe("resolveDocHorizontalArrowMove embedded prefix pill rows", () => {
+  it("left from second mention start lands on inter-mention space first", () => {
+    const { wire, doc } = embeddedPrefixPillRowFixture();
+    const secondMentionStart = wire.lastIndexOf("@");
+    const interMentionSpace = secondMentionStart - 1;
+
+    const moved = resolveDocHorizontalArrowMove(
+      doc,
+      wireOffsetToDocPos(doc, secondMentionStart),
+      "left"
+    );
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(interMentionSpace);
+  });
+
+  it("left from first mention on embedded prefix pill row skips to content line", () => {
+    const { wire, doc, header } = embeddedPrefixPillRowFixture();
+    const firstMentionStart = wire.indexOf("@");
+    const contentLineEnd = header.length - 1;
+
+    const moved = resolveDocHorizontalArrowMove(
+      doc,
+      wireOffsetToDocPos(doc, firstMentionStart),
+      "left"
+    );
+
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(contentLineEnd);
+  });
+});
+
+function embeddedPrefixPillRowFixture(agentA = "caliper-aaaaaaa") {
+  const header = "header ";
+  const wire = `${header}\n\n\n@${agentA} @${agentA} `;
+  return { wire, doc: wireToDoc(wire), header };
+}

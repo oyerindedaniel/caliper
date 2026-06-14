@@ -4,7 +4,10 @@ import {
   docToWire,
   type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
-export type HandoffNoteVerticalArrowDirection = "up" | "down";
+import { resolveEmbeddedNewlineHorizontalStep } from "./handoff-note-embedded-newlines.js";
+import { type HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
+
+export type { HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
 
 export type VerticalNavLineSpan = {
   start: number;
@@ -57,6 +60,12 @@ export function resolveHorizontalBleedWireMove(
   direction: "left" | "right"
 ): VerticalNavWireMove | null {
   const wire = docToWire(doc);
+
+  const embeddedHorizontal = resolveEmbeddedNewlineHorizontalStep(doc, wire, offset, direction);
+  if (embeddedHorizontal !== null) {
+    return embeddedHorizontal;
+  }
+
   const context = describeHandoffNoteCursorContext(doc, offset);
 
   if (context.kind === "mention-interior") {
@@ -221,26 +230,4 @@ export function resolveVerticalArrowVisualLanding(
   const landing = snapMentionInterior(doc, best.wire, direction);
   const branch = landing === best.wire ? "dom-column" : "dom-mentionInterior";
   return { offset: landing, branch };
-}
-
-export function resolveWireLineColumn(
-  wire: string,
-  offset: number
-): { lineIndex: number; column: number; lineStart: number; lineEnd: number } {
-  const clamped = Math.max(0, Math.min(offset, wire.length));
-  const lineStarts = [0];
-  for (let index = 0; index < wire.length; index++) {
-    if (wire[index] === "\n") {
-      lineStarts.push(index + 1);
-    }
-  }
-  for (let lineIndex = lineStarts.length - 1; lineIndex >= 0; lineIndex--) {
-    const lineStart = lineStarts[lineIndex]!;
-    const lineEnd =
-      lineIndex + 1 < lineStarts.length ? lineStarts[lineIndex + 1]! - 1 : wire.length;
-    if (clamped >= lineStart && clamped <= lineEnd) {
-      return { lineIndex, column: clamped - lineStart, lineStart, lineEnd };
-    }
-  }
-  return { lineIndex: 0, column: clamped, lineStart: 0, lineEnd: wire.length };
 }

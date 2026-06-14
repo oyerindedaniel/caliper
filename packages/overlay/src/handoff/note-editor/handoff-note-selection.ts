@@ -446,6 +446,67 @@ function hasAdjacentWireLine(
   return targetLineIndex >= 0 && targetLineIndex < lineCount;
 }
 
+function wireLineIndexForFocus(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): number {
+  const wire = docToWire(doc);
+  const offset = docPosToWireOffset(doc, focus);
+  return resolveWireLineColumn(wire, Math.min(offset, Math.max(0, wire.length))).lineIndex;
+}
+
+function wireLineCount(doc: HandoffNoteDoc): number {
+  const wire = docToWire(doc);
+  return wire.includes("\n") ? wire.split("\n").length : 1;
+}
+
+function layoutVerticalMoveRejected(
+  layout: HandoffNoteLayoutMap,
+  fromWire: number,
+  direction: HandoffNoteVerticalArrowDirection
+): boolean {
+  if (layout.visualRowCount < 2) {
+    return false;
+  }
+  const currentLineIndex = layout.rowIndexForWire(fromWire);
+  const targetLineIndex = direction === "up" ? currentLineIndex - 1 : currentLineIndex + 1;
+  return currentLineIndex >= 0 && (targetLineIndex < 0 || targetLineIndex >= layout.visualRowCount);
+}
+
+/** Clash-style bleed gate: multiline `\n` docs must not bleed when layout still owes a vertical move. */
+function shouldApplyVerticalBoundaryBleed(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  layout: HandoffNoteLayoutMap,
+  fromWire: number
+): boolean {
+  const wire = docToWire(doc);
+  const hasNewline = wire.includes("\n");
+  const lineIndex = wireLineIndexForFocus(doc, focus);
+  const onFirstWireLine = lineIndex === 0;
+  const onLastWireLine = lineIndex === wireLineCount(doc) - 1;
+  const layoutRejected = layoutVerticalMoveRejected(layout, fromWire, direction);
+
+  if (hasNewline) {
+    if (direction === "up" && !onFirstWireLine) {
+      return false;
+    }
+    if (direction === "down" && !onLastWireLine) {
+      return false;
+    }
+    if (layoutRejected) {
+      return false;
+    }
+  }
+
+  const currentLineIndex = layout.rowIndexForWire(fromWire);
+  if (layout.visualRowCount < 2) {
+    return true;
+  }
+  if (direction === "up") {
+    return currentLineIndex === 0;
+  }
+  return currentLineIndex >= 0 && currentLineIndex === layout.visualRowCount - 1;
+}
+
 export function resolveDomVerticalArrowMove(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -495,15 +556,26 @@ export function resolveDomVerticalArrowMove(
   }
 
   const currentLineIndex = layout.rowIndexForWire(fromWire);
-  const atVisualTop = direction === "up" && currentLineIndex === 0;
-  const atVisualBottom =
-    direction === "down" && currentLineIndex >= 0 && currentLineIndex === layout.visualRowCount - 1;
+  const layoutRejected = layoutVerticalMoveRejected(layout, fromWire, direction);
+  const bleedAllowed = shouldApplyVerticalBoundaryBleed(doc, focus, direction, layout, fromWire);
+  logVerArrow("resolve.bleedGate", {
+    direction,
+    fromWire,
+    hasNewline: docToWire(doc).includes("\n"),
+    wireLineIndex: wireLineIndexForFocus(doc, focus),
+    wireLineCount: wireLineCount(doc),
+    currentLineIndex,
+    visualRowCount: layout.visualRowCount,
+    layoutRejected,
+    bleedAllowed,
+  });
 
-  if (layout.visualRowCount >= 2 && !atVisualTop && !atVisualBottom && currentLineIndex >= 0) {
+  if (layout.visualRowCount >= 2 && currentLineIndex >= 0 && !bleedAllowed) {
     logVerArrow("resolve.blockedMidWrap", {
       direction,
       fromWire,
       visualRowCount: layout.visualRowCount,
+      branch: layoutRejected ? "layout-exhausted-multiline" : "mid-wrap-no-bleed",
     });
     return { pos: focus, handled: false };
   }
