@@ -6,6 +6,7 @@ import {
   collapsedSelection,
   describeHandoffNoteCursorContext,
   docEndPos,
+  docPosEqual,
   docPosToWireOffset,
   docSelectionToWire,
   docToWire,
@@ -36,7 +37,11 @@ import {
   isUndoKeyboardEvent,
   type HandoffNoteHistorySnapshot,
 } from "./handoff-note-history.js";
-import { flattenHandoffNoteLog, logCaretTrace } from "../handoff-note-debug.js";
+import {
+  flattenHandoffNoteLog,
+  handoffNoteLayoutProbe,
+  logCaretTrace,
+} from "../handoff-note-debug.js";
 import {
   readDocSelection,
   repairDocSelectionIfNeeded,
@@ -112,6 +117,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
   let lastEmittedWire = "";
   let lastRenderOutcome: RenderOutcome = { domReplaced: true, docChanged: true };
   let selectedMentionNodeIndex: number | null = null;
+  let verticalGoalColumn: number | null = null;
   const history = createHandoffNoteHistory();
 
   const presentationOptions = () => ({
@@ -223,14 +229,38 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
 
     const live = readDocSelection(root, doc);
     const liveWire = docPosToWireOffset(doc, live.focus);
-    if (liveWire < requestedWire) {
+    if (liveWire !== requestedWire) {
       logCaretTrace(`writeSelection>>keepAuthority>>${source}`, {
+        branch: liveWire < requestedWire ? "liveBehindRequested" : "liveAheadOfRequested",
         requested: selection.focus,
         requestedWire,
         live: live.focus,
         liveWire,
       });
       return;
+    }
+    if (
+      liveWire === requestedWire &&
+      !docPosEqual(selection.focus, live.focus) &&
+      doc.nodes[selection.focus.nodeIndex]?.type === "text" &&
+      doc.nodes[live.focus.nodeIndex]?.type === "mention"
+    ) {
+      logCaretTrace(`writeSelection>>keepAuthority>>${source}`, {
+        branch: "textOverMentionSameWire",
+        requested: selection.focus,
+        live: live.focus,
+        wire: requestedWire,
+      });
+      return;
+    }
+    if (!docPosEqual(selection.focus, live.focus)) {
+      logCaretTrace(`writeSelection>>acceptDom>>${source}`, {
+        branch: "livePosMismatch",
+        requested: selection.focus,
+        requestedWire,
+        live: live.focus,
+        liveWire,
+      });
     }
     selection = normalizeSelection(doc, live, { from: priorFocus });
   };
@@ -280,6 +310,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     record = true
   ) => {
     selectedMentionNodeIndex = null;
+    verticalGoalColumn = null;
     const prevDoc = doc;
     const normalized = normalizeHandoffNoteDoc(nextDoc);
     const resolvedSelection = normalizeSelection(normalized, nextSelection, {
@@ -295,7 +326,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     resize();
   };
 
-  const mutateSelection = (focus: HandoffNoteDocPos, source: string) => {
+  const mutateSelection = (focus: HandoffNoteDocPos, source: string, key?: string) => {
     selectedMentionNodeIndex = null;
     const nextSelection = collapsedSelection(focus);
     if (!root) {
@@ -305,6 +336,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     writeSelection(nextSelection, source);
     refreshMentionPresentation();
     flattenHandoffNoteLog(`caret>>${source}`, {
+      ...(key ? { key } : {}),
       selectionIn: selection,
       selectionOut: readDocSelection(root, doc),
     });
@@ -603,6 +635,10 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
               : "plain",
         });
         mutate(result.doc, result.selection, "beforeInput.insertLineBreak", true);
+        flattenHandoffNoteLog(
+          "ce.layoutProbe",
+          handoffNoteLayoutProbe(root, docToWire(result.doc))
+        );
       }
     },
 
@@ -669,12 +705,13 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         if (direction === null) {
           return false;
         }
+        verticalGoalColumn = null;
         const move = resolveDocHorizontalArrowMove(doc, active.focus, direction);
         if (!move.handled) {
           return false;
         }
         event.preventDefault();
-        mutateSelection(move.pos, "arrowKey");
+        mutateSelection(move.pos, "arrowKey", event.key);
         return true;
       }
 
@@ -689,12 +726,17 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         if (direction === null) {
           return false;
         }
-        const move = resolveDomVerticalArrowMove(root, doc, active.focus, direction);
+        const move = resolveDomVerticalArrowMove(root, doc, active.focus, direction, {
+          stickyGoalColumn: verticalGoalColumn,
+        });
         if (!move.handled) {
           return false;
         }
+        if (move.goalColumn !== undefined) {
+          verticalGoalColumn = move.goalColumn;
+        }
         event.preventDefault();
-        mutateSelection(move.pos, "arrowKey");
+        mutateSelection(move.pos, "arrowKey", event.key);
         return true;
       }
 

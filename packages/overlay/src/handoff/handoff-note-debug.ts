@@ -40,11 +40,43 @@ export function handoffNoteDomSnapshot(
         label: node.textContent ?? "",
       };
     }
+    if (node instanceof HTMLBRElement && node.hasAttribute("data-handoff-wire-break")) {
+      return { kind: "wireBreak" };
+    }
+    if (node instanceof HTMLBRElement && node.hasAttribute("data-handoff-line-pad")) {
+      return { kind: "linePad" };
+    }
     if (node instanceof HTMLElement) {
       return { kind: "element", tag: node.tagName, text: node.textContent ?? "" };
     }
     return { kind: "node", type: node.nodeType };
   });
+}
+
+export function handoffNoteLayoutProbe(
+  root: HTMLElement | undefined,
+  wireAfter: string
+): Record<string, unknown> {
+  if (!root) {
+    return { domSnapshot: [], wireAfter, scrollHeight: 0, nativeCaretRect: null };
+  }
+  const selection = root.ownerDocument.getSelection();
+  let nativeCaretRect: Record<string, number> | null = null;
+  if (selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0);
+    if (typeof range.getBoundingClientRect === "function") {
+      const rect = range.getBoundingClientRect();
+      if (rect.width > 0 || rect.height > 0) {
+        nativeCaretRect = { top: rect.top, left: rect.left, height: rect.height };
+      }
+    }
+  }
+  return {
+    domSnapshot: handoffNoteDomSnapshot(root),
+    wireAfter,
+    scrollHeight: root.scrollHeight,
+    nativeCaretRect,
+  };
 }
 
 export function handoffNoteSelectionSnapshot(

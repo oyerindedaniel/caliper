@@ -31,6 +31,7 @@ import {
 import {
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
+  resolveWireAtColumnOnVisualRow,
   isAtLayoutRowStart,
   type HandoffNoteLayoutMap,
 } from "./handoff-note-layout-map.js";
@@ -330,26 +331,30 @@ function pickVerticalLandingOnLine(
     }
   }
 
-  const landing = resolveVerticalArrowVisualLanding(doc, direction, targetLine, goalColumn, {
-    fromMentionStart,
-  });
-  if (landing === null) {
-    const picked = pickClosestOnLine(targetLine, goalColumn);
-    return {
-      pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, picked.wire), { from: focus }),
-      branch: "dom-column",
-    };
+  if (fromMentionStart && (direction === "up" || atRowStart)) {
+    const landing = resolveVerticalArrowVisualLanding(doc, direction, targetLine, goalColumn, {
+      fromMentionStart,
+    });
+    if (landing === null) {
+      const picked = pickClosestOnLine(targetLine, goalColumn);
+      return {
+        pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, picked.wire), { from: focus }),
+        branch: "dom-column",
+      };
+    }
+    const targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, landing.offset), {
+      from: focus,
+    });
+    return { pos: targetPos, branch: landing.branch };
   }
 
-  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, landing.offset), { from: focus });
-  if (!fromMentionStart && landing.branch === "dom-column") {
-    const snapped = snapVerticalArrowLanding(doc, targetPos, direction);
-    if (!docPosEqual(targetPos, snapped)) {
-      targetPos = snapped;
-      return { pos: targetPos, branch: "dom-snapVertical" };
-    }
+  const bracketWire = resolveWireAtColumnOnVisualRow(targetLine, goalColumn);
+  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, bracketWire), { from: focus });
+  const snapped = snapVerticalArrowLanding(doc, targetPos, direction);
+  if (!docPosEqual(targetPos, snapped)) {
+    return { pos: snapped, branch: "dom-column-bracket-snap" };
   }
-  return { pos: targetPos, branch: landing.branch };
+  return { pos: targetPos, branch: "dom-column-bracket" };
 }
 
 function resolveLayoutVerticalArrowMove(
@@ -429,7 +434,7 @@ export function resolveMeasuredVerticalArrowMove(
   if (measured.length < 2) {
     return { pos: focus, handled: false };
   }
-  const layout = buildLayoutMapFromSamples(measured, lineHeight);
+  const layout = buildLayoutMapFromSamples(measured, lineHeight, doc);
   return resolveLayoutVerticalArrowMove(doc, focus, direction, layout, currentLeft);
 }
 
@@ -492,9 +497,6 @@ function shouldApplyVerticalBoundaryBleed(
     if (direction === "down" && !onLastWireLine) {
       return false;
     }
-    if (layoutRejected) {
-      return false;
-    }
   }
 
   const currentLineIndex = layout.rowIndexForWire(fromWire);
@@ -511,8 +513,9 @@ export function resolveDomVerticalArrowMove(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
-  direction: HandoffNoteVerticalArrowDirection
-): { pos: HandoffNoteDocPos; handled: boolean } {
+  direction: HandoffNoteVerticalArrowDirection,
+  options?: { stickyGoalColumn?: number | null }
+): { pos: HandoffNoteDocPos; handled: boolean; goalColumn?: number } {
   const fromWire = docPosToWireOffset(doc, focus);
   logVerArrow("resolve.entry", {
     direction,
@@ -536,7 +539,8 @@ export function resolveDomVerticalArrowMove(
   const layout = buildHandoffNoteLayoutMap(root, doc, focus);
   const focusCoord = layout.coordsForWire(fromWire);
   const anchorRect = getDocAnchorRect(root, doc, focus);
-  const goalColumn = focusCoord?.left ?? anchorRect?.left ?? 0;
+  const measuredGoal = focusCoord?.left ?? anchorRect?.left ?? 0;
+  const goalColumn = options?.stickyGoalColumn ?? measuredGoal;
   const layoutMove = resolveLayoutVerticalArrowMove(
     doc,
     focus,
@@ -551,8 +555,9 @@ export function resolveDomVerticalArrowMove(
       fromWire,
       toWire: docPosToWireOffset(doc, layoutMove.pos),
       branch: layoutMove.branch ?? null,
+      goalColumn,
     });
-    return { pos: layoutMove.pos, handled: true };
+    return { pos: layoutMove.pos, handled: true, goalColumn };
   }
 
   const currentLineIndex = layout.rowIndexForWire(fromWire);
@@ -570,11 +575,12 @@ export function resolveDomVerticalArrowMove(
     bleedAllowed,
   });
 
-  if (layout.visualRowCount >= 2 && currentLineIndex >= 0 && !bleedAllowed) {
+  if (layout.visualRowCount >= 2 && !bleedAllowed) {
     logVerArrow("resolve.blockedMidWrap", {
       direction,
       fromWire,
       visualRowCount: layout.visualRowCount,
+      currentLineIndex,
       branch: layoutRejected ? "layout-exhausted-multiline" : "mid-wrap-no-bleed",
     });
     return { pos: focus, handled: false };

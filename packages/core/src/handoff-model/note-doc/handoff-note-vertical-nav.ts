@@ -4,7 +4,6 @@ import {
   docToWire,
   type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
-import { resolveEmbeddedNewlineHorizontalStep } from "./handoff-note-embedded-newlines.js";
 import { type HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
 
 export type { HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
@@ -60,12 +59,6 @@ export function resolveHorizontalBleedWireMove(
   direction: "left" | "right"
 ): VerticalNavWireMove | null {
   const wire = docToWire(doc);
-
-  const embeddedHorizontal = resolveEmbeddedNewlineHorizontalStep(doc, wire, offset, direction);
-  if (embeddedHorizontal !== null) {
-    return embeddedHorizontal;
-  }
-
   const context = describeHandoffNoteCursorContext(doc, offset);
 
   if (context.kind === "mention-interior") {

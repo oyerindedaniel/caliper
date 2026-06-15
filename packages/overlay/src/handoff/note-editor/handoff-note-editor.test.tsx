@@ -53,7 +53,7 @@ describe("HandoffNoteEditor", () => {
 
     editor!.handleBeforeInput(lineBreak());
     expect(editor!.getWire()).toBe(`header \n@${agentId}`);
-    expect(editor!.getCursor()).toBe(6);
+    expect(editor!.getCursor()).toBe(8);
 
     editor!.handleBeforeInput(lineBreak());
     expect(editor!.getWire()).toBe(`header \n\n@${agentId}`);

@@ -7,12 +7,6 @@ import {
   type HandoffNoteNode,
 } from "./handoff-note-doc.js";
 import {
-  redirectEmbeddedNewlineVerticalLanding,
-  resolveAfterPillRowBlankUpStep,
-  resolveEmbeddedNewlineUpFromMentionStart,
-  resolveEmbeddedNewlineVerticalStep,
-} from "./handoff-note-embedded-newlines.js";
-import {
   resolveHorizontalBleedWireMove,
   resolveVerticalArrowWireMove,
   type HandoffNoteVerticalArrowDirection,
@@ -264,39 +258,6 @@ export function resolveDocVerticalArrowMove(
   const lineStarts = wire.includes("\n") ? wireLineStarts(wire) : [0];
   const targetLineIndex = direction === "up" ? lineIndex - 1 : lineIndex + 1;
 
-  const trailingStep = resolveEmbeddedNewlineVerticalStep(doc, wire, offset, direction);
-  if (trailingStep !== null) {
-    let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, trailingStep.offset), {
-      from: pos,
-    });
-    targetPos = snapVerticalArrowLanding(doc, targetPos, direction);
-    if (!docPosEqual(targetPos, pos)) {
-      return { pos: targetPos, handled: true };
-    }
-  }
-
-  if (direction === "up") {
-    const afterPillRowStep = resolveAfterPillRowBlankUpStep(doc, wire, offset);
-    if (afterPillRowStep !== null) {
-      const targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, afterPillRowStep.offset), {
-        from: pos,
-      });
-      if (!docPosEqual(targetPos, pos)) {
-        return { pos: targetPos, handled: true };
-      }
-    }
-
-    const mentionStartStep = resolveEmbeddedNewlineUpFromMentionStart(doc, wire, offset);
-    if (mentionStartStep !== null) {
-      const targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, mentionStartStep.offset), {
-        from: pos,
-      });
-      if (!docPosEqual(targetPos, pos)) {
-        return { pos: targetPos, handled: true };
-      }
-    }
-  }
-
   const current: VerticalNavLineSpan = { start: lineStart, end: lineEnd };
   const target: VerticalNavLineSpan | null =
     targetLineIndex >= 0 && targetLineIndex < lineStarts.length
@@ -311,15 +272,7 @@ export function resolveDocVerticalArrowMove(
     return { pos, handled: false };
   }
 
-  const landingOffset = redirectEmbeddedNewlineVerticalLanding(
-    doc,
-    wire,
-    offset,
-    move.offset,
-    direction
-  );
-
-  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, landingOffset), { from: pos });
+  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, move.offset), { from: pos });
   targetPos = snapVerticalArrowLanding(doc, targetPos, direction, target?.start);
 
   if (docPosEqual(targetPos, pos)) {

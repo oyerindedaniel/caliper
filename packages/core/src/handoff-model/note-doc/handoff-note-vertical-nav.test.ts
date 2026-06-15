@@ -23,6 +23,23 @@ describe("resolveHorizontalBleedWireMove", () => {
       branch: "boundary-bleed-right",
     });
   });
+
+  it("steps over a pill atomically from its start", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `row @${agent} tail`;
+    const doc = wireToDoc(wire);
+    const mentionStart = wire.indexOf("@");
+    const mentionEnd = mentionStart + `@${agent}`.length;
+
+    expect(resolveHorizontalBleedWireMove(doc, mentionEnd, "left")).toEqual({
+      offset: mentionStart,
+      branch: "boundary-bleed-left",
+    });
+    expect(resolveHorizontalBleedWireMove(doc, mentionStart, "right")).toEqual({
+      offset: mentionEnd,
+      branch: "boundary-bleed-right",
+    });
+  });
 });
 
 describe("resolveVerticalArrowCrossLineMove", () => {
@@ -92,6 +109,70 @@ describe("resolveVerticalArrowCrossLineMove", () => {
     );
     expect(up).toEqual({ offset: 0, branch: "empty-line-up" });
   });
+
+  it("down from blank at column 0 lands at column 0 of the line below", () => {
+    const wire = "header\n\n\n tail";
+    const doc = wireToDoc(wire);
+    const firstBlankLine = "header\n".length;
+    const secondBlankLine = "header\n\n".length;
+    const current = resolveWireLineColumn(wire, firstBlankLine);
+    const target = resolveWireLineColumn(wire, secondBlankLine);
+
+    const down = resolveVerticalArrowCrossLineMove(
+      doc,
+      wire,
+      firstBlankLine,
+      "down",
+      0,
+      { start: current.lineStart, end: current.lineEnd },
+      { start: target.lineStart, end: target.lineEnd }
+    );
+    expect(down).toEqual({ offset: secondBlankLine, branch: "empty-target-column" });
+  });
+
+  it("preserves column and clamps when target line is shorter", () => {
+    const wire = "abcdef\nghi";
+    const doc = wireToDoc(wire);
+    const from = wire.indexOf("ef");
+    const current = resolveWireLineColumn(wire, from);
+    const target = resolveWireLineColumn(wire, wire.indexOf("hi"));
+
+    const down = resolveVerticalArrowCrossLineMove(
+      doc,
+      wire,
+      from,
+      "down",
+      current.column,
+      { start: current.lineStart, end: current.lineEnd },
+      { start: target.lineStart, end: target.lineEnd }
+    );
+    expect(down?.offset).toBe(wire.length);
+    expect(down?.branch).toBe("cross-line-column");
+  });
+
+  it("preserves column from inter-pill gap to plain row below", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const row1 = `row @${agentA} mid @${agentB} end`;
+    const gapMid = row1.indexOf(" mid ") + 3;
+    const column = resolveWireLineColumn(row1, gapMid).column;
+    const wire = `${row1}\n${" ".repeat(column)}mark`;
+    const doc = wireToDoc(wire);
+    const current = resolveWireLineColumn(wire, gapMid);
+    const target = resolveWireLineColumn(wire, row1.length + 1 + column);
+
+    const down = resolveVerticalArrowCrossLineMove(
+      doc,
+      wire,
+      gapMid,
+      "down",
+      column,
+      { start: current.lineStart, end: current.lineEnd },
+      { start: target.lineStart, end: target.lineEnd }
+    );
+    expect(down?.offset).toBe(row1.length + 1 + column);
+    expect(down?.branch).toBe("cross-line-column");
+  });
 });
 
 describe("resolveVerticalArrowRowStartLanding", () => {
@@ -155,6 +236,50 @@ describe("resolveVerticalArrowVisualLanding", () => {
 });
 
 describe("resolveVerticalArrowWireMove", () => {
+  it("session repro: up chain from tail blank band never lands on prefix mention", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const wire = `row @${agentA} mid @${agentB} \n\ntail @${agentA} `;
+    const doc = wireToDoc(wire);
+    const prefixMentionAt = wire.indexOf("@");
+    const blankLineStart = wire.indexOf("\n\n") + 1;
+    const lowerMentionEnd = wire.length - 1;
+
+    const firstUp = resolveVerticalArrowWireMove(
+      doc,
+      lowerMentionEnd,
+      "up",
+      resolveWireLineColumn(wire, lowerMentionEnd).column,
+      {
+        start: resolveWireLineColumn(wire, lowerMentionEnd).lineStart,
+        end: resolveWireLineColumn(wire, lowerMentionEnd).lineEnd,
+      },
+      {
+        start: resolveWireLineColumn(wire, blankLineStart).lineStart,
+        end: resolveWireLineColumn(wire, blankLineStart).lineEnd,
+      }
+    );
+    expect(firstUp?.offset).toBe(blankLineStart);
+    expect(firstUp?.offset).not.toBe(prefixMentionAt);
+
+    const secondUp = resolveVerticalArrowWireMove(
+      doc,
+      firstUp!.offset,
+      "up",
+      0,
+      {
+        start: resolveWireLineColumn(wire, firstUp!.offset).lineStart,
+        end: resolveWireLineColumn(wire, firstUp!.offset).lineEnd,
+      },
+      {
+        start: resolveWireLineColumn(wire, 0).lineStart,
+        end: resolveWireLineColumn(wire, 0).lineEnd,
+      }
+    );
+    expect(secondUp?.offset).toBe(0);
+    expect(secondUp?.offset).not.toBe(prefixMentionAt);
+  });
+
   it("crosses wire lines instead of stepping along the same row", () => {
     const agent = "caliper-ho14ofyh6";
     const wire = `prefix @${agent} mid @${agent} tail\n\n\n`;

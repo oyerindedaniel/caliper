@@ -1,9 +1,12 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { normalizeHandoffNoteDoc, wireToDoc } from "@caliper/core";
 import {
+  HANDOFF_LINE_PAD_ATTR,
+  HANDOFF_WIRE_BREAK_ATTR,
   parseHandoffNoteDom,
   parseHandoffNoteDomToDoc,
   renderHandoffNoteDoc,
+  renderedDomChildCount,
   tryPatchDocDom,
   isHandoffMentionElement,
   sameRenderedDocStructure,
@@ -126,8 +129,8 @@ describe("handoff-note-dom", () => {
         "--caliper-handoff-pill-color"
       )
     ).toBe("#f00");
-    expect(root.childNodes.length).toBe(3);
     const normalizedDoc = wireToDoc(parseHandoffNoteDom(root));
+    expect(root.childNodes.length).toBe(renderedDomChildCount(normalizedDoc));
     setSelectionAtWire(root, normalizedDoc, 12, 12, { source: "reconcile" });
     expect(readDomWireCursor(root, normalizedDoc)).toBe(12);
   });
@@ -327,5 +330,36 @@ describe("handoff-note-dom", () => {
     expect(root.childNodes).toHaveLength(1);
     expect(root.firstChild).not.toBe(plainTextNode);
     expect(parseHandoffNoteDom(root)).toBe("hello");
+  });
+
+  describe("wire newline line box", () => {
+    it("EOF wire newline renders wire-break plus layout-only line-pad", () => {
+      const wire = "header \n";
+      renderHandoffNoteDoc(root, wireToDoc(wire), { colorByAgentId: new Map() });
+      expect(parseHandoffNoteDom(root)).toBe(wire);
+      expect(root.querySelector(`br[${HANDOFF_WIRE_BREAK_ATTR}]`)).not.toBeNull();
+      expect(root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)).not.toBeNull();
+    });
+
+    it("mid-doc newline does not add line-pad before following text", () => {
+      const wire = "header\ntail";
+      renderHandoffNoteDoc(root, wireToDoc(wire), { colorByAgentId: new Map() });
+      expect(parseHandoffNoteDom(root)).toBe(wire);
+      expect(root.querySelectorAll(`br[${HANDOFF_WIRE_BREAK_ATTR}]`).length).toBe(1);
+      expect(root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)).toBeNull();
+    });
+
+    it("caret after EOF newline lands before line-pad", () => {
+      const wire = "header \n";
+      const doc = wireToDoc(wire);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      setSelectionAtWire(root, doc, wire.length);
+      expect(root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)).not.toBeNull();
+      const selection = root.ownerDocument.getSelection()!;
+      const range = selection.getRangeAt(0);
+      expect(range.startContainer).toBe(root);
+      expect(range.startOffset).toBe(root.childNodes.length - 1);
+      expect(readDomWireCursor(root, doc)).toBe(wire.length);
+    });
   });
 });

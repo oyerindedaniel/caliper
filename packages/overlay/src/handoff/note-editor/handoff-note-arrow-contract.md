@@ -2,30 +2,42 @@
 
 Collapsed caret only. Doc/wire line = segment between `\n` characters (not visual wrap).
 
+## Shift+Enter (soft line break)
+
+Editor-owned (`beforeInput` → `applyDocLineBreak`); browser default is prevented.
+
+Follows the **default soft line-break contract** used by typical text fields and chat editors (Slack, Discord, Notion, etc.):
+
+- Insert `\n` at the caret (or before an atomic `@` pill when the caret is on the pill start).
+- **Caret lands on the new blank at or after the break** — on the inserted line, ready to type.
+- **Caret never regresses** to an earlier wire offset on the same break (no backward jump to the previous visual row’s content end).
+- Consecutive Shift+Enter presses advance monotonically through blank lines (no freeze).
+- **Wire newline line box:** wire `\n` renders as `<br data-handoff-wire-break>`; when the document ends with `\n`, an extra `<br data-handoff-line-pad>` (layout-only, not wire) creates a paintable blank line and caret target after the first break.
+
+Mention-boundary breaks (caret on pill start) use the same caret rule: newline before the pill, caret on that new blank — same as whitespace-only inter-pill gaps.
+
 ## Up / Down — vertical only
 
-- Move one **wire line** up or down; never step along the same line.
-- Preserve **absolute column** on the target row; clamp to row end if shorter.
-- **Visual line start:** when caret X aligns with the left edge of the current visual row, land on the **target visual row start** — DOM probe at that column when the editor root is available, accepting the hit only when the resolved wire is on the target visual row **and** its measured X aligns with the goal column; otherwise closest sample X on the target row. Mid-text soft wrap needs the probe because boundary samples omit the content column; multi-line text nodes can yield probe hits on the wrong band or column.
+- Move one **wire line** up or down when an adjacent wire line exists; never step along the same line.
+- **Row start (column 0):** Up/Down lands on **column 0** of the adjacent wire line above or below. Empty lines use the same rule — not the previous line’s end.
+- **Any other column:** preserve **absolute column** on the target wire line; **clamp to target row end** if that line is shorter.
+- **Visual line start:** when caret X aligns with the left edge of the current visual row, land on the **target visual row start** — DOM probe at that column when the editor root is available, accepting the hit only when the resolved wire is on the target visual row **and** its measured X aligns with the goal column; otherwise closest sample X on the target row. **Mention start row landing** (target-row min-wire) applies on Up and when Down aligns with visual row start; mid-column Down from mention start uses row bracketing instead. **Vertical goal column** sticks across consecutive Up/Down until a horizontal arrow or doc mutation. Mid-text soft wrap needs the probe because boundary samples omit the content column; multi-line text nodes can yield probe hits on the wrong band or column.
 - **Mention atomicity:** never land inside a pill. Project column first; if inside a pill → **Down:** pill end; **Up:** pill start. If past the pill → tail at that column. No scan for mid-line `@` on wire rows.
-- **Empty line:** land at the same column on that line (column `0` → line start).
-- **Up from blank at column 0:** land at **column 0** of the line above, not that line’s end.
 - **Down from content:** enter the first line below (including empty lines); do not jump to a later mention on the current line.
-- **Embedded blanks in text nodes:** `\n` runs stored inside one text node (before or after mentions on the row) are stepped one `\n` at a time on Up/Down; Left from a multi-blank **pill row** skips to content; shift-enter inserts into the suffix without jumping the caret onto the mention. Cross-line landing redirects when column match would enter the wrong blank band (inter-mention gap, first blank below a pill row).
-- **Boundary bleed (Clash-style):** when there is no line above/below, vertical key **falls through to horizontal** on the current line — not a no-op.
+- **Boundary bleed (Clash-style):** when there is no line above/below (and, in the overlay, no visual row remains), vertical key **falls through to horizontal** on the current line — not a no-op.
   - **First line + Up** → same as **Left** (one horizontal step back).
   - **Last line + Down** → same as **Right** (one horizontal step forward).
-  - **Multiline `\n` docs:** bleed only on the first/last **wire line** and only when soft-wrap layout does not still owe a vertical move (exhausted layout row → block, not bleed).
+  - **Multiline `\n` docs:** bleed only on the first/last **wire line** and only when soft-wrap layout does not still owe a vertical move. If layout is exhausted at the true visual top/bottom, bleed still applies.
 - **Mid-document:** Up/Down never substitute horizontal motion; only at vertical extremes.
 - **Editor resolution order:** (1) wire cross-line when an adjacent `\n` line exists; (2) DOM visual row when layout has another row above/below; (3) boundary bleed only at true visual top/bottom. Wire bleed must not short-circuit DOM on single-line soft wrap.
+- **Unsampled wire offsets:** sparse layout samples bracket each wire offset to a visual row (interpolate Y between bracketing samples, or measure text-node coords when the editor root is available). Column match on a target visual row interpolates X between bracketing samples on that row so interior prefix/suffix positions are preserved on Up/Down. **Mention-adjacent rows:** mention end and the text node immediately after it share one visual band top before row clustering so they cannot land on different visual rows. **Row clustering:** visual row centers merge pill midYs with measured sample tops so soft-wrapped continuation text on the same wire line still yields distinct visual rows when measured Y diverges from pill bands. Mid-wrap vertical moves use that row/column assignment; horizontal bleed must not substitute when another visual row exists.
 
 ## Left / Right — horizontal only
 
-- Move one logical step along the wire (same primitive as vertical boundary bleed).
-- **Core-owned:** editor applies all handled horizontal moves; plain text and mentions use `resolveHorizontalBleedWireMove`.
-- **Atomic mentions:** jump over mention tokens; interior snaps to nearest boundary.
+- Move one logical step along the wire on the **current line** (same primitive as vertical boundary bleed).
+- **Pill atomic:** step over a pill as one token; never land inside pill interior text.
 - **Adjacent mentions on one line:** step mention-to-mention here, not with Up/Down (except boundary bleed above).
-- **At doc start + Left** or **doc end + Right:** no-op when unhandled.
+- **At doc start + Left** or **doc end + Right:** no-op when unhandled (stay at start/end).
 
 ## Shared
 

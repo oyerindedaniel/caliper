@@ -1,6 +1,5 @@
 import {
   docLength,
-  docPosToRenderedChildIndex,
   docPosToWireOffset,
   docToWire,
   wireOffsetToDocPos,
@@ -9,7 +8,11 @@ import {
 } from "@caliper/core";
 import { logVerArrow } from "../handoff-note-debug.js";
 import { isHandoffMentionElement } from "./handoff-note-dom.js";
-import { enrichMeasuredTextLineSamples, getDocAnchorRect } from "./handoff-note-dom-points.js";
+import {
+  docPosToRenderedDomChildIndex,
+  enrichMeasuredTextLineSamples,
+  getDocAnchorRect,
+} from "./handoff-note-dom-points.js";
 
 export type MeasuredWireOffset = { wire: number; top: number; left: number };
 
@@ -94,7 +97,7 @@ function mentionPillElement(
   doc: HandoffNoteDoc,
   nodeIndex: number
 ): HTMLSpanElement | null {
-  const renderedIndex = docPosToRenderedChildIndex(doc, nodeIndex);
+  const renderedIndex = docPosToRenderedDomChildIndex(doc, nodeIndex);
   const child = root.childNodes[renderedIndex];
   if (!child || !isHandoffMentionElement(child)) {
     return null;
@@ -210,6 +213,14 @@ function collectMentionMidYs(root: HTMLElement, doc: HandoffNoteDoc): number[] {
   return tops;
 }
 
+/** Pill midYs alone miss soft-wrapped continuation rows; merge measured tops before clustering. */
+function resolveVisualRowSeedTops(pillMidYs: number[], measured: MeasuredWireOffset[]): number[] {
+  const measuredTops = measured.map((sample) => sample.top);
+  const tolerance = rowClusterTolerance(pillMidYs, measuredTops);
+  const seeds = pillMidYs.length > 0 ? [...pillMidYs, ...measuredTops] : measuredTops;
+  return clusterTopCenters(seeds, tolerance);
+}
+
 function alignTextBeforeMentionRows(doc: HandoffNoteDoc, measured: MeasuredWireOffset[]): void {
   for (const sample of measured) {
     const pos = wireOffsetToDocPos(doc, sample.wire);
@@ -261,6 +272,145 @@ function pinMentionSampleRows(
   }
 }
 
+function resolveRowIndexFromBracketingSamples(
+  wire: number,
+  measured: MeasuredWireOffset[],
+  rowCenters: number[]
+): number {
+  if (measured.length === 0 || rowCenters.length === 0) {
+    return -1;
+  }
+
+  const sorted = [...measured].sort((left, right) => left.wire - right.wire);
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+
+  if (wire <= first.wire) {
+    return nearestRowCenterIndex(first.top, rowCenters);
+  }
+  if (wire >= last.wire) {
+    return nearestRowCenterIndex(last.top, rowCenters);
+  }
+
+  let prev = first;
+  let next = last;
+  for (let index = 0; index < sorted.length - 1; index++) {
+    const left = sorted[index]!;
+    const right = sorted[index + 1]!;
+    if (left.wire <= wire && wire <= right.wire) {
+      prev = left;
+      next = right;
+      break;
+    }
+  }
+
+  if (prev.wire === next.wire || prev.top === next.top) {
+    return nearestRowCenterIndex(prev.top, rowCenters);
+  }
+
+  const ratio = (wire - prev.wire) / (next.wire - prev.wire);
+  const top = prev.top + ratio * (next.top - prev.top);
+  return nearestRowCenterIndex(top, rowCenters);
+}
+
+function resolveCoordFromBracketingSamples(
+  wire: number,
+  measured: MeasuredWireOffset[]
+): MeasuredWireOffset | null {
+  if (measured.length === 0) {
+    return null;
+  }
+
+  const direct = measured.find((sample) => sample.wire === wire);
+  if (direct) {
+    return direct;
+  }
+
+  const sorted = [...measured].sort((left, right) => left.wire - right.wire);
+  const first = sorted[0]!;
+  const last = sorted[sorted.length - 1]!;
+
+  if (wire <= first.wire) {
+    return first;
+  }
+  if (wire >= last.wire) {
+    return last;
+  }
+
+  let prev = first;
+  let next = last;
+  for (let index = 0; index < sorted.length - 1; index++) {
+    const left = sorted[index]!;
+    const right = sorted[index + 1]!;
+    if (left.wire <= wire && wire <= right.wire) {
+      prev = left;
+      next = right;
+      break;
+    }
+  }
+
+  if (prev.wire === next.wire) {
+    return prev;
+  }
+
+  const ratio = (wire - prev.wire) / (next.wire - prev.wire);
+  return {
+    wire,
+    top: prev.top + ratio * (next.top - prev.top),
+    left: prev.left + ratio * (next.left - prev.left),
+  };
+}
+
+/** Column match on a visual row when layout samples omit interior wire offsets. */
+export function resolveWireAtColumnOnVisualRow(
+  rowSamples: MeasuredWireOffset[],
+  goalColumn: number
+): number {
+  if (rowSamples.length === 0) {
+    return 0;
+  }
+  if (rowSamples.length === 1) {
+    return rowSamples[0]!.wire;
+  }
+
+  const sorted = [...rowSamples].sort((left, right) => left.wire - right.wire);
+  let bestWire = sorted[0]!.wire;
+  let bestDistance = Math.abs(sorted[0]!.left - goalColumn);
+
+  for (const sample of sorted) {
+    const distance = Math.abs(sample.left - goalColumn);
+    if (distance < bestDistance) {
+      bestWire = sample.wire;
+      bestDistance = distance;
+    }
+  }
+
+  for (let index = 0; index < sorted.length - 1; index++) {
+    const left = sorted[index]!;
+    const right = sorted[index + 1]!;
+    if (left.left === right.left) {
+      continue;
+    }
+    const minColumn = Math.min(left.left, right.left);
+    const maxColumn = Math.max(left.left, right.left);
+    if (goalColumn < minColumn || goalColumn > maxColumn) {
+      continue;
+    }
+    const ratio = (goalColumn - left.left) / (right.left - left.left);
+    const wire = Math.round(left.wire + ratio * (right.wire - left.wire));
+    const clamped = Math.max(left.wire, Math.min(right.wire, wire));
+    const interpolatedLeft =
+      left.left + ((clamped - left.wire) / (right.wire - left.wire)) * (right.left - left.left);
+    const distance = Math.abs(interpolatedLeft - goalColumn);
+    if (distance < bestDistance) {
+      bestWire = clamped;
+      bestDistance = distance;
+    }
+  }
+
+  return bestWire;
+}
+
 function resolveRowIndexForDocWire(
   doc: HandoffNoteDoc,
   root: HTMLElement,
@@ -276,18 +426,16 @@ function resolveRowIndexForDocWire(
   const pos = wireOffsetToDocPos(doc, wire);
   const node = doc.nodes[pos.nodeIndex];
   if (node?.type === "text") {
-    const prev = doc.nodes[pos.nodeIndex - 1];
-    if (prev?.type === "mention") {
-      const pill = mentionPillElement(root, doc, pos.nodeIndex - 1);
-      const midY = pill ? pillMidY(pill) : null;
-      if (midY !== null && rowCenters.length > 0) {
-        return nearestRowCenterIndex(midY, rowCenters);
-      }
-      const prevStart = docPosToWireOffset(doc, { nodeIndex: pos.nodeIndex - 1, nodeOffset: 0 });
-      const prevRow = rowByWire.get(prevStart);
-      if (prevRow !== undefined) {
-        return prevRow;
-      }
+    const coord = measureWireCoord(root, doc, wire);
+    if (coord !== null && rowCenters.length > 0) {
+      const rowIndex = nearestRowCenterIndex(coord.top, rowCenters);
+      logVerArrow("resolve.rowAssign", {
+        wire,
+        branch: "text-measure-coord",
+        top: coord.top,
+        rowIndex,
+      });
+      return rowIndex;
     }
     return -1;
   }
@@ -308,6 +456,41 @@ function resolveRowIndexForDocWire(
     nodeOffset: 1 + node.agentId.length,
   });
   return rowByWire.get(startWire) ?? rowByWire.get(endWire) ?? -1;
+}
+
+/** Mention end and the text node immediately after it share one visual band top. */
+function alignMentionAdjacentMeasuredRows(
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[]
+): void {
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex];
+    if (node?.type !== "mention") {
+      continue;
+    }
+    const postMentionStartWire = docPosToWireOffset(doc, {
+      nodeIndex: nodeIndex + 1,
+      nodeOffset: 0,
+    });
+    const mentionEndWire = postMentionStartWire - 1;
+    const endSample = measured.find((sample) => sample.wire === mentionEndWire);
+    const postSample = measured.find((sample) => sample.wire === postMentionStartWire);
+    if (!endSample && !postSample) {
+      continue;
+    }
+    const bandTop = Math.max(endSample?.top ?? -Infinity, postSample?.top ?? -Infinity);
+    if (endSample) {
+      endSample.top = bandTop;
+    }
+    if (postSample) {
+      postSample.top = bandTop;
+    }
+    logVerArrow("layout.mentionAdjacentAlign", {
+      mentionEndWire,
+      postMentionStartWire,
+      bandTop,
+    });
+  }
 }
 
 /** Text after a mention on the same pill row inherits that pill's midY. */
@@ -393,19 +576,27 @@ function buildMapFromMeasured(
     lineHeight: resolvedLineHeight,
     visualRowCount: rows.length,
     rowIndexForWire(wireOffset: number) {
-      return rowByWire.get(wireOffset) ?? -1;
+      const direct = rowByWire.get(wireOffset);
+      if (direct !== undefined) {
+        return direct;
+      }
+      return resolveRowIndexFromBracketingSamples(wireOffset, measured, centers);
     },
     coordsForWire(wireOffset: number) {
-      return measured.find((sample) => sample.wire === wireOffset) ?? null;
+      return resolveCoordFromBracketingSamples(wireOffset, measured);
     },
   };
 }
 
 export function buildLayoutMapFromSamples(
   input: MeasuredWireOffset[],
-  lineHeight: number
+  lineHeight: number,
+  doc?: HandoffNoteDoc
 ): HandoffNoteLayoutMap {
   const measured = [...input];
+  if (doc) {
+    alignMentionAdjacentMeasuredRows(doc, measured);
+  }
   const rowCenters = clusterTopCenters(
     measured.map((sample) => sample.top),
     rowClusterTolerance(
@@ -439,8 +630,10 @@ export function buildHandoffNoteLayoutMap(
     setMeasuredSamplesCache(wire, rootWidth, measured);
   }
 
+  alignMentionAdjacentMeasuredRows(doc, measured);
+
   const pillMidYs = collectMentionMidYs(root, doc);
-  const rowSeedTops = pillMidYs.length > 0 ? pillMidYs : measured.map((sample) => sample.top);
+  const rowSeedTops = resolveVisualRowSeedTops(pillMidYs, measured);
   const lineHeight =
     minimumDistinctTopGap(rowSeedTops) ?? (parseFloat(getComputedStyle(root).lineHeight) || 16);
 

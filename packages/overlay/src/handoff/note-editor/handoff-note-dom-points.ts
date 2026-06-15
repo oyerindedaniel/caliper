@@ -1,5 +1,4 @@
 import {
-  docPosToRenderedChildIndex,
   docPosToWireOffset,
   docToWire,
   normalizeDocPos,
@@ -9,7 +8,11 @@ import {
 } from "@caliper/core";
 import {
   buildRenderedNodeIndexMap,
+  countWireTextDomChildren,
+  docWireEndsWithNewline,
+  isHandoffLinePadElement,
   isHandoffMentionElement,
+  isHandoffWireBreakElement,
   mentionWireLength,
 } from "./handoff-note-dom.js";
 
@@ -26,6 +29,185 @@ function findMentionAncestor(root: HTMLElement, node: Node): HTMLSpanElement | n
     current = current.parentNode;
   }
   return null;
+}
+
+function isLastRenderedDocNode(doc: HandoffNoteDoc, nodeIndex: number): boolean {
+  for (let index = doc.nodes.length - 1; index >= 0; index--) {
+    const node = doc.nodes[index]!;
+    if (node.type !== "text" || node.text) {
+      return index === nodeIndex;
+    }
+  }
+  return false;
+}
+
+/** Map doc node index to first rendered DOM child index (wire-split text expands). */
+export function docPosToRenderedDomChildIndex(doc: HandoffNoteDoc, nodeIndex: number): number {
+  let rendered = 0;
+  for (let index = 0; index < doc.nodes.length; index++) {
+    const node = doc.nodes[index]!;
+    if (node.type === "text" && !node.text) {
+      if (index === nodeIndex) {
+        return rendered;
+      }
+      continue;
+    }
+    if (index === nodeIndex) {
+      return rendered;
+    }
+    if (node.type === "text") {
+      rendered += countWireTextDomChildren(node.text);
+    } else {
+      rendered++;
+    }
+  }
+  return rendered;
+}
+
+function resolveTextDomPointAtOffset(
+  root: HTMLElement,
+  text: string,
+  nodeOffset: number,
+  domStartChildIndex: number,
+  options: { docEndsWithNewline: boolean; isLastRenderedNode: boolean }
+): { node: Node; offset: number } {
+  const clamped = Math.max(0, Math.min(nodeOffset, text.length));
+
+  if (!text.includes("\n")) {
+    const domNode = root.childNodes[domStartChildIndex];
+    if (domNode?.nodeType === Node.TEXT_NODE) {
+      return { node: domNode, offset: clamped };
+    }
+    return { node: root, offset: domStartChildIndex };
+  }
+
+  let childIdx = domStartChildIndex;
+  let remaining = clamped;
+  const parts = text.split("\n");
+
+  for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+    const part = parts[partIndex]!;
+
+    if (remaining <= part.length) {
+      if (remaining < part.length && part) {
+        const domNode = root.childNodes[childIdx];
+        if (domNode?.nodeType === Node.TEXT_NODE) {
+          return { node: domNode, offset: remaining };
+        }
+      }
+      if (remaining === part.length && partIndex < parts.length - 1) {
+        if (part) {
+          childIdx++;
+        }
+        return { node: root, offset: childIdx };
+      }
+      if (part === "" && remaining === 0) {
+        return { node: root, offset: childIdx };
+      }
+      if (part && remaining === part.length) {
+        const domNode = root.childNodes[childIdx];
+        if (domNode?.nodeType === Node.TEXT_NODE) {
+          return { node: domNode, offset: remaining };
+        }
+      }
+      break;
+    }
+
+    remaining -= part.length;
+    if (part) {
+      childIdx++;
+    }
+
+    if (partIndex < parts.length - 1) {
+      if (remaining === 0) {
+        return { node: root, offset: childIdx };
+      }
+      remaining -= 1;
+      childIdx++;
+    }
+  }
+
+  if (options.docEndsWithNewline && options.isLastRenderedNode && text.endsWith("\n")) {
+    return { node: root, offset: root.childNodes.length - 1 };
+  }
+
+  const domNode = root.childNodes[childIdx - 1] ?? root.childNodes[domStartChildIndex];
+  if (domNode?.nodeType === Node.TEXT_NODE) {
+    return { node: domNode, offset: domNode.textContent?.length ?? 0 };
+  }
+  return { node: root, offset: childIdx };
+}
+
+function docPosFromRootDomChildIndex(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  targetChildIndex: number
+): HandoffNoteDocPos {
+  const wire = docToWire(doc);
+  const docEndsWithNewline = wire.endsWith("\n");
+  let domIdx = 0;
+  let wireOffset = 0;
+
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    if (node.type === "text" && !node.text) {
+      continue;
+    }
+
+    if (node.type === "mention") {
+      if (domIdx === targetChildIndex) {
+        const prevDom = root.childNodes[targetChildIndex - 1];
+        if (prevDom && isHandoffWireBreakElement(prevDom) && nodeIndex > 0) {
+          const prevNode = doc.nodes[nodeIndex - 1];
+          if (prevNode?.type === "text") {
+            return { nodeIndex: nodeIndex - 1, nodeOffset: prevNode.text.length };
+          }
+        }
+        return { nodeIndex, nodeOffset: 0 };
+      }
+      domIdx++;
+      wireOffset += mentionWireLength(node.agentId);
+      continue;
+    }
+
+    const text = node.text;
+    if (!text.includes("\n")) {
+      if (domIdx === targetChildIndex) {
+        return { nodeIndex, nodeOffset: 0 };
+      }
+      domIdx++;
+      wireOffset += text.length;
+      continue;
+    }
+
+    const parts = text.split("\n");
+    let nodeOffset = 0;
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const part = parts[partIndex]!;
+      if (part) {
+        if (domIdx === targetChildIndex) {
+          return { nodeIndex, nodeOffset };
+        }
+        domIdx++;
+        nodeOffset += part.length;
+        wireOffset += part.length;
+      }
+      if (partIndex < parts.length - 1) {
+        if (domIdx === targetChildIndex) {
+          return { nodeIndex, nodeOffset };
+        }
+        domIdx++;
+        nodeOffset += 1;
+        wireOffset += 1;
+      }
+    }
+  }
+
+  if (docEndsWithNewline && domIdx === targetChildIndex) {
+    return wireOffsetToDocPos(doc, wire.length);
+  }
+
+  return wireOffsetToDocPos(doc, wire.length);
 }
 
 function domNodeToDocIndex(root: HTMLElement, doc: HandoffNoteDoc, target: Node): number | null {
@@ -74,8 +256,37 @@ export function domPointToDocPos(
       return { nodeIndex: 0, nodeOffset: 0 };
     }
     const node = doc.nodes[nodeIndex];
-    const maxOffset = node?.type === "text" ? node.text.length : 0;
-    return { nodeIndex, nodeOffset: Math.max(0, Math.min(offset, maxOffset)) };
+    if (node?.type !== "text") {
+      return { nodeIndex, nodeOffset: 0 };
+    }
+
+    if (!node.text.includes("\n")) {
+      return {
+        nodeIndex,
+        nodeOffset: Math.max(0, Math.min(offset, node.text.length)),
+      };
+    }
+
+    const domStart = docPosToRenderedDomChildIndex(doc, nodeIndex);
+    let childIdx = domStart;
+    let nodeOffset = 0;
+    const parts = node.text.split("\n");
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const part = parts[partIndex]!;
+      const textChild = root.childNodes[childIdx];
+      if (textChild === container) {
+        return { nodeIndex, nodeOffset: nodeOffset + offset };
+      }
+      if (part) {
+        nodeOffset += part.length;
+        childIdx++;
+      }
+      if (partIndex < parts.length - 1) {
+        childIdx++;
+        nodeOffset += 1;
+      }
+    }
+    return { nodeIndex, nodeOffset: node.text.length };
   }
 
   if (container === root) {
@@ -86,15 +297,10 @@ export function domPointToDocPos(
     if (!child) {
       return wireOffsetToDocPos(doc, docToWire(doc).length);
     }
-    const nodeIndex = domNodeToDocIndex(root, doc, child);
-    if (nodeIndex === null) {
-      return { nodeIndex: 0, nodeOffset: 0 };
+    if (isHandoffLinePadElement(child)) {
+      return wireOffsetToDocPos(doc, docToWire(doc).length);
     }
-    const node = doc.nodes[nodeIndex]!;
-    if (node.type === "mention") {
-      return { nodeIndex, nodeOffset: 0 };
-    }
-    return { nodeIndex, nodeOffset: 0 };
+    return docPosFromRootDomChildIndex(root, doc, offset);
   }
 
   if (isHandoffMentionElement(container)) {
@@ -105,6 +311,14 @@ export function domPointToDocPos(
     const agentId = container.getAttribute("data-agent-id") ?? "";
     const tokenLength = mentionWireLength(agentId);
     return { nodeIndex, nodeOffset: offset <= 0 ? 0 : tokenLength };
+  }
+
+  if (isHandoffWireBreakElement(container) || isHandoffLinePadElement(container)) {
+    for (let childIdx = 0; childIdx < root.childNodes.length; childIdx++) {
+      if (root.childNodes[childIdx] === container) {
+        return docPosFromRootDomChildIndex(root, doc, childIdx);
+      }
+    }
   }
 
   return domPointToDocPos(root, doc, container.parentNode ?? root, 0);
@@ -124,17 +338,20 @@ export function resolveDomPointAtDocPos(
     return { node: root, offset: 0 };
   }
 
-  const renderedIndex = docPosToRenderedChildIndex(doc, normalized.nodeIndex);
+  const renderedIndex = docPosToRenderedDomChildIndex(doc, normalized.nodeIndex);
   const domNode = root.childNodes[renderedIndex];
   if (!domNode) {
+    if (docWireEndsWithNewline(doc) && isLastRenderedDocNode(doc, normalized.nodeIndex)) {
+      return { node: root, offset: root.childNodes.length - 1 };
+    }
     return { node: root, offset: root.childNodes.length };
   }
 
   if (node.type === "text") {
-    return {
-      node: domNode,
-      offset: Math.max(0, Math.min(normalized.nodeOffset, node.text.length)),
-    };
+    return resolveTextDomPointAtOffset(root, node.text, normalized.nodeOffset, renderedIndex, {
+      docEndsWithNewline: docWireEndsWithNewline(doc),
+      isLastRenderedNode: isLastRenderedDocNode(doc, normalized.nodeIndex),
+    });
   }
 
   const tokenLength = mentionWireLength(node.agentId);

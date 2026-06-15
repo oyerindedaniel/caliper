@@ -1,7 +1,6 @@
 import {
   docToWire,
   formatHandoffAgentIdPill,
-  renderedChildCount,
   type HandoffNoteDoc,
   type HandoffNoteNode,
 } from "@caliper/core";
@@ -11,6 +10,8 @@ import { flattenHandoffNoteLog, handoffNoteDomSnapshot } from "../handoff-note-d
 export const HANDOFF_MENTION_ATTR = "data-handoff-mention";
 export const HANDOFF_AGENT_ID_ATTR = "data-agent-id";
 export const HANDOFF_MENTION_NODE_INDEX_ATTR = "data-handoff-mention-node-index";
+export const HANDOFF_WIRE_BREAK_ATTR = "data-handoff-wire-break";
+export const HANDOFF_LINE_PAD_ATTR = "data-handoff-line-pad";
 
 export type HandoffNotePresentationOptions = {
   colorByAgentId: Map<string, string>;
@@ -35,6 +36,14 @@ export function isHandoffMentionElement(node: Node): node is HTMLSpanElement {
   );
 }
 
+export function isHandoffWireBreakElement(node: Node): node is HTMLBRElement {
+  return node instanceof HTMLBRElement && node.hasAttribute(HANDOFF_WIRE_BREAK_ATTR);
+}
+
+export function isHandoffLinePadElement(node: Node): node is HTMLBRElement {
+  return node instanceof HTMLBRElement && node.hasAttribute(HANDOFF_LINE_PAD_ATTR);
+}
+
 export function readMentionAgentId(element: HTMLSpanElement): string {
   return element.getAttribute(HANDOFF_AGENT_ID_ATTR) ?? "";
 }
@@ -57,6 +66,96 @@ function isRenderedDocNode(node: HandoffNoteNode): boolean {
   return node.type !== "text" || Boolean(node.text);
 }
 
+/** DOM children produced by splitting wire newlines inside one text node. */
+export function countWireTextDomChildren(text: string): number {
+  if (!text.includes("\n")) {
+    return text ? 1 : 0;
+  }
+  let count = 0;
+  const parts = text.split("\n");
+  for (let index = 0; index < parts.length; index++) {
+    if (parts[index]) {
+      count++;
+    }
+    if (index < parts.length - 1) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/** Rendered DOM child count including wire breaks and optional EOF line-pad. */
+export function renderedDomChildCount(doc: HandoffNoteDoc): number {
+  let count = 0;
+  for (const node of doc.nodes) {
+    if (node.type === "text") {
+      if (!node.text) {
+        continue;
+      }
+      count += countWireTextDomChildren(node.text);
+      continue;
+    }
+    count++;
+  }
+  if (docToWire(doc).endsWith("\n")) {
+    count++;
+  }
+  return count;
+}
+
+export function docWireEndsWithNewline(doc: HandoffNoteDoc): boolean {
+  return docToWire(doc).endsWith("\n");
+}
+
+export function docGainedWireNewline(
+  prev: HandoffNoteDoc | undefined,
+  next: HandoffNoteDoc
+): boolean {
+  if (!prev) {
+    return false;
+  }
+  const count = (wire: string) => (wire.match(/\n/g) ?? []).length;
+  return count(docToWire(next)) > count(docToWire(prev));
+}
+
+function createWireBreakElement(): HTMLBRElement {
+  const br = document.createElement("br");
+  br.setAttribute(HANDOFF_WIRE_BREAK_ATTR, "true");
+  return br;
+}
+
+function createLinePadElement(): HTMLBRElement {
+  const br = document.createElement("br");
+  br.setAttribute(HANDOFF_LINE_PAD_ATTR, "true");
+  return br;
+}
+
+/** Map wire `\n` inside a text node to `<br data-handoff-wire-break>` siblings. */
+export function appendWireTextToDom(parent: HTMLElement, text: string): void {
+  if (!text.includes("\n")) {
+    if (text) {
+      parent.appendChild(document.createTextNode(text));
+    }
+    return;
+  }
+  const parts = text.split("\n");
+  for (let index = 0; index < parts.length; index++) {
+    const part = parts[index]!;
+    if (part) {
+      parent.appendChild(document.createTextNode(part));
+    }
+    if (index < parts.length - 1) {
+      parent.appendChild(createWireBreakElement());
+    }
+  }
+}
+
+function appendDocLinePadIfNeeded(root: HTMLElement, doc: HandoffNoteDoc): void {
+  if (docWireEndsWithNewline(doc)) {
+    root.appendChild(createLinePadElement());
+  }
+}
+
 /** childIndex → doc.nodes index (skips empty text nodes, matching render). */
 export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
   const map: number[] = [];
@@ -65,7 +164,21 @@ export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
     if (!isRenderedDocNode(node)) {
       continue;
     }
+    if (node.type === "text") {
+      const domCount = countWireTextDomChildren(node.text);
+      for (let index = 0; index < domCount; index++) {
+        map.push(nodeIndex);
+      }
+      continue;
+    }
     map.push(nodeIndex);
+  }
+  if (docWireEndsWithNewline(doc)) {
+    const lastTextIndex = [...doc.nodes]
+      .map((node, index) => ({ node, index }))
+      .reverse()
+      .find(({ node }) => node.type === "text" && node.text)?.index;
+    map.push(lastTextIndex ?? doc.nodes.length - 1);
   }
   return map;
 }
@@ -144,7 +257,7 @@ function fullRebuildDocDom(
     const node = doc.nodes[nodeIndex]!;
     if (node.type === "text") {
       if (node.text) {
-        root.appendChild(document.createTextNode(node.text));
+        appendWireTextToDom(root, node.text);
       }
       continue;
     }
@@ -152,6 +265,8 @@ function fullRebuildDocDom(
     const highlighted = options.selectedMentionNodeIndex === nodeIndex;
     root.appendChild(createMentionElement(node.agentId, color, highlighted, nodeIndex));
   }
+
+  appendDocLinePadIfNeeded(root, doc);
 }
 
 /** In-place text patch when rendered structure is unchanged. Returns false on any mismatch. */
@@ -163,6 +278,16 @@ export function tryPatchDocDom(
 ): boolean {
   if (!sameRenderedDocStructure(prevDoc, nextDoc)) {
     return false;
+  }
+
+  if (docGainedWireNewline(prevDoc, nextDoc)) {
+    return false;
+  }
+
+  for (const node of nextDoc.nodes) {
+    if (node.type === "text" && node.text.includes("\n")) {
+      return false;
+    }
   }
 
   const indexMap = buildRenderedNodeIndexMap(nextDoc);
@@ -207,13 +332,18 @@ export function renderHandoffNoteDoc(
   const previousDoc = renderOptions?.previousDoc;
 
   if (trustDoc) {
-    const expectedCount = renderedChildCount(doc);
+    const expectedCount = renderedDomChildCount(doc);
     const domReady =
       root.childNodes.length === expectedCount &&
       !hasStrayDomElements(root) &&
       (expectedCount > 0 || root.childNodes.length === 0);
 
-    if (domReady && previousDoc && tryPatchDocDom(root, previousDoc, doc, options)) {
+    if (
+      domReady &&
+      previousDoc &&
+      !docGainedWireNewline(previousDoc, doc) &&
+      tryPatchDocDom(root, previousDoc, doc, options)
+    ) {
       return { domReplaced: false, docChanged: true };
     }
 
@@ -225,7 +355,7 @@ export function renderHandoffNoteDoc(
   const wireBefore = parseHandoffNoteDom(root);
   const wireAfter = docToWire(doc);
   const domNodeCount = handoffNoteDomSnapshot(root).length;
-  const structureMismatch = domNodeCount !== renderedChildCount(doc);
+  const structureMismatch = domNodeCount !== renderedDomChildCount(doc);
   const hasStrayElements = hasStrayDomElements(root);
   if (
     wireBefore === wireAfter &&
@@ -237,7 +367,11 @@ export function renderHandoffNoteDoc(
     return { domReplaced: false, docChanged: false };
   }
 
-  if (previousDoc && tryPatchDocDom(root, previousDoc, doc, options)) {
+  if (
+    previousDoc &&
+    !docGainedWireNewline(previousDoc, doc) &&
+    tryPatchDocDom(root, previousDoc, doc, options)
+  ) {
     return { domReplaced: false, docChanged: true };
   }
 
@@ -277,6 +411,14 @@ export function parseHandoffNoteDom(root: HTMLElement): string {
       prevWasMention = false;
       continue;
     }
+    if (isHandoffWireBreakElement(child)) {
+      wire += "\n";
+      prevWasMention = false;
+      continue;
+    }
+    if (isHandoffLinePadElement(child)) {
+      continue;
+    }
     if (isHandoffMentionElement(child)) {
       const agentId = readMentionAgentId(child);
       if (agentId) {
@@ -299,15 +441,29 @@ export function parseHandoffNoteDom(root: HTMLElement): string {
 /** Build the doc model from CE DOM — never round-trip through flat wire (that loses mention boundaries). */
 export function parseHandoffNoteDomToDoc(root: HTMLElement): HandoffNoteDoc {
   const nodes: HandoffNoteNode[] = [];
+  let pendingText = "";
+
+  const flushText = () => {
+    if (pendingText) {
+      nodes.push({ type: "text", text: pendingText });
+      pendingText = "";
+    }
+  };
+
   for (const child of root.childNodes) {
     if (child.nodeType === Node.TEXT_NODE) {
-      const text = child.textContent ?? "";
-      if (text) {
-        nodes.push({ type: "text", text });
-      }
+      pendingText += child.textContent ?? "";
+      continue;
+    }
+    if (isHandoffWireBreakElement(child)) {
+      pendingText += "\n";
+      continue;
+    }
+    if (isHandoffLinePadElement(child)) {
       continue;
     }
     if (isHandoffMentionElement(child)) {
+      flushText();
       const agentId = readMentionAgentId(child);
       if (agentId) {
         nodes.push({ type: "mention", agentId });
@@ -315,11 +471,9 @@ export function parseHandoffNoteDomToDoc(root: HTMLElement): HandoffNoteDoc {
       continue;
     }
     if (child instanceof HTMLElement) {
-      const text = child.textContent ?? "";
-      if (text) {
-        nodes.push({ type: "text", text });
-      }
+      pendingText += child.textContent ?? "";
     }
   }
+  flushText();
   return { nodes };
 }

@@ -1,7 +1,8 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { docToWire, wireOffsetToDocPos, wireToDoc } from "@caliper/core";
+import { docPosToWireOffset, docToWire, wireOffsetToDocPos, wireToDoc } from "@caliper/core";
 import { renderHandoffNoteDoc } from "./handoff-note-dom.js";
 import {
+  buildHandoffNoteLayoutMap,
   getCachedMeasuredSamples,
   invalidateHandoffNoteLayoutCache,
   readHandoffNoteLayoutCacheKey,
@@ -70,5 +71,40 @@ describe("handoff-note-layout-cache", () => {
 
     resolveDomVerticalArrowMove(surface, doc, focus, "up");
     expect(readHandoffNoteLayoutCacheKey()).toEqual(cached);
+  });
+
+  it("measured continuation tops seed a second visual row when pills share one band", () => {
+    const agent = "caliper-aaaaaaaaaaa";
+    const wire = `header @${agent} @${agent} ${"tail ".repeat(24)}`;
+    const doc = wireToDoc(wire);
+    const tailWire = wire.length - 1;
+    const prefixStart = docPosToWireOffset(doc, { nodeIndex: 0, nodeOffset: 0 });
+    const firstMentionEnd = docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: agent.length });
+    const postMentionStart = firstMentionEnd + 1;
+    const secondMentionEnd = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: agent.length });
+    const secondPostStart = secondMentionEnd + 1;
+    const surface = document.createElement("div");
+    surface.style.width = "480px";
+    document.body.appendChild(surface);
+    Object.defineProperty(surface, "clientWidth", { configurable: true, value: 480 });
+    renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+
+    const row1Top = 141.09897422790527;
+    const row2Top = 159.29689598083496;
+    setMeasuredSamplesCache(wire, surface.clientWidth, [
+      { wire: prefixStart, top: row1Top, left: 0 },
+      { wire: postMentionStart, top: row1Top, left: 200 },
+      { wire: firstMentionEnd, top: row1Top, left: 220 },
+      { wire: secondPostStart, top: row1Top, left: 400 },
+      { wire: secondMentionEnd, top: row1Top, left: 420 },
+      { wire: tailWire, top: row2Top, left: 520 },
+    ]);
+
+    const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailWire));
+
+    expect(layout.visualRowCount).toBeGreaterThanOrEqual(2);
+    expect(layout.rowIndexForWire(tailWire)).toBeGreaterThan(0);
+    expect(layout.rowIndexForWire(prefixStart)).toBe(0);
+    surface.remove();
   });
 });

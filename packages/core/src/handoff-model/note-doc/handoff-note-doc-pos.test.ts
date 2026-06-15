@@ -1,3 +1,10 @@
+/**
+ * Generic doc position + wire-line vertical/horizontal arrow behavior.
+ * Contract: handoff-note-arrow-contract.md (vertical/horizontal axis, boundary bleed).
+ *
+ * Wire-line blank runs and column-0 vertical: handoff-note-doc-pos.test.ts, handoff-note-vertical-nav.test.ts.
+ * Wire-line fixtures here use `\n` as line breaks between nodes (e.g. `header\\n\\n\\n tail`).
+ */
 import { describe, expect, it } from "vitest";
 import {
   collapsedSelection,
@@ -13,7 +20,7 @@ import {
   wireOffsetToCollapsedSelection,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
-import { docToWire, wireToDoc } from "./handoff-note-doc.js";
+import { docToWire, describeHandoffNoteCursorContext, wireToDoc } from "./handoff-note-doc.js";
 import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 
 describe("HandoffNoteDocPos", () => {
@@ -62,23 +69,17 @@ describe("HandoffNoteDocPos", () => {
     expect(docPosToWireOffset(doc, left.pos)).toBe(3);
   });
 
-  it("first-line Up bleed and Left resolve to the same wire offset", () => {
-    const doc = wireToDoc("abcdef\nghij");
-    const from = 4;
-    const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
-    const left = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "left");
-    expect(up.handled).toBe(true);
-    expect(left.handled).toBe(true);
-    expect(docPosToWireOffset(doc, up.pos)).toBe(from - 1);
-    expect(docPosToWireOffset(doc, left.pos)).toBe(from - 1);
-  });
-
-  it("resolveDocHorizontalArrowMove jumps over a mention from its start", () => {
+  it("resolveDocHorizontalArrowMove jumps over a mention from its start and returns", () => {
     const doc = wireToDoc("Hi @caliper-abc123 there");
     const start = wireOffsetToDocPos(doc, "Hi ".length);
+    const endWire = "Hi @caliper-abc123".length;
     const moved = resolveDocHorizontalArrowMove(doc, start, "right");
     expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe("Hi @caliper-abc123".length);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(endWire);
+
+    const back = resolveDocHorizontalArrowMove(doc, moved.pos, "left");
+    expect(back.handled).toBe(true);
+    expect(docPosToWireOffset(doc, back.pos)).toBe("Hi ".length);
   });
 
   it("resolveDocHorizontalArrowMove steps through adjacent mentions separated by canonical space", () => {
@@ -140,7 +141,6 @@ describe("HandoffNoteDocPos", () => {
     expect(docToWire(doc)).toBe("@caliper-a @caliper-b");
   });
 });
-
 describe("resolveDocVerticalArrowMove", () => {
   const agentA = "caliper-aaaaaaa";
   const agentB = "caliper-bbbbbbb";
@@ -149,496 +149,671 @@ describe("resolveDocVerticalArrowMove", () => {
     return wire.indexOf("@", wire.indexOf("\n") + 1);
   }
 
-  function trailingMentionTailFixture() {
-    const wire = `header\n\nrow @${agentA}  @${agentB} tail\n\n\n@${agentA} `;
-    const tailMarker = ` @${agentB} tail`;
-    const tailContentWire = wire.indexOf(tailMarker) + tailMarker.length - 1;
-    const blankRun: number[] = [];
-    for (let index = tailContentWire + 1; index < wire.length && wire[index] === "\n"; index++) {
-      blankRun.push(index);
-    }
-    return { wire, doc: wireToDoc(wire), tailContentWire, blankRun };
-  }
-
-  it("control: arrow up on plain multiline text preserves column", () => {
-    const doc = wireToDoc("abcdef\nghij");
-    const focus = wireOffsetToDocPos(doc, "abcdef\ngh".length);
-    const moved = resolveDocVerticalArrowMove(doc, focus, "up");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe("ab".length);
-  });
-
-  it("arrow up from a later line pill start lands on the previous line pill start", () => {
-    const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
-    const doc = wireToDoc(wire);
-    const line3Mention = wire.lastIndexOf("@");
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, line3Mention), "up");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(line2MentionStart(wire));
-  });
-
-  it("arrow down from a line pill start lands on the next line pill start", () => {
-    const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
-    const doc = wireToDoc(wire);
-    const line2Mention = line2MentionStart(wire);
-    const line2SecondMention = wire.indexOf(`@${agentB}`);
-    const line3Mention = wire.lastIndexOf("@");
-
-    const fromFirstOnLine2 = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, line2Mention),
-      "down"
-    );
-    expect(fromFirstOnLine2.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromFirstOnLine2.pos)).toBe(line3Mention);
-    expect(docPosToWireOffset(doc, fromFirstOnLine2.pos)).not.toBe(line2SecondMention);
-
-    const fromSecondOnLine2 = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, line2SecondMention),
-      "down"
-    );
-    expect(fromSecondOnLine2.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromSecondOnLine2.pos)).toBeGreaterThan(line3Mention);
-  });
-
-  it("arrow up steps through consecutive empty lines without skipping to line start", () => {
-    const wire = "header\n\n\n tail";
-    const doc = wireToDoc(wire);
-    const firstBlankLine = "header\n".length;
-    const secondBlankLine = "header\n\n".length;
-    const thirdBlankLine = "header\n\n\n".length;
-    const lineEndAboveBlanks = "header".length;
-
-    const fromThirdBlank = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, thirdBlankLine),
-      "up"
-    );
-    expect(fromThirdBlank.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromThirdBlank.pos)).toBe(secondBlankLine);
-
-    const fromSecondBlank = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, secondBlankLine),
-      "up"
-    );
-    expect(fromSecondBlank.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromSecondBlank.pos)).toBe(firstBlankLine);
-
-    const fromFirstBlank = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, firstBlankLine),
-      "up"
-    );
-    expect(fromFirstBlank.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromFirstBlank.pos)).toBe(0);
-    expect(docPosToWireOffset(doc, fromFirstBlank.pos)).not.toBe(lineEndAboveBlanks);
-  });
-
-  it("arrow down from text enters the first empty line below", () => {
-    const wire = "header\n\n\n tail";
-    const doc = wireToDoc(wire);
-    const firstBlankLine = "header\n".length;
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 0), "down");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstBlankLine);
-  });
-
-  it("down preserves column on mid-line text; does not snap forward to @", () => {
-    const wire = `top\npad @${agentA} tail\nbottom`;
-    const doc = wireToDoc(wire);
-    const from = 2;
-    const targetLineStart = wire.indexOf("\n") + 1;
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(targetLineStart + 2);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(wire.indexOf("@"));
-  });
-
-  it("up preserves column on mid-line text; does not snap backward to @", () => {
-    const wire = `top\npad @${agentA} tail\nbottom`;
-    const doc = wireToDoc(wire);
-    const from = wire.indexOf("bottom");
-    const targetLineStart = wire.indexOf("\n") + 1;
-    const column = from - (wire.lastIndexOf("\n") + 1);
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(targetLineStart + column);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(wire.indexOf("@"));
-  });
-
-  it("arrow up avoids parking between adjacent mentions on the target line", () => {
-    const wire = `line1\n@${agentA} @${agentB} tail\n@${agentA} `;
-    const doc = wireToDoc(wire);
-    const line3Mention = wire.lastIndexOf("@");
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, line3Mention), "up");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(line2MentionStart(wire));
-    const focusNode = doc.nodes[moved.pos.nodeIndex];
-    expect(focusNode?.type).toBe("mention");
-    if (focusNode?.type === "mention") {
-      expect(focusNode.agentId).toBe(agentA);
-      expect(moved.pos.nodeOffset).toBe(0);
-    }
-  });
-
-  it("arrow up from a blank below a pill row does not skip to a distant blank block", () => {
-    const agent = "caliper-jli3vwpry";
-    const wire = `brief @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nfollowup`;
-    const doc = wireToDoc(wire);
-    const pillRowSuffix = `@${agent} @${agent} `;
-    const pillRowStart = wire.indexOf(pillRowSuffix);
-    const pillRowEndingNewline = wire.indexOf(pillRowSuffix) + pillRowSuffix.length;
-    const firstBlankBelowPillRow = pillRowEndingNewline + 1;
-    const secondBlankBelowPillRow = pillRowEndingNewline + 2;
-
-    const fromSecondBlank = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, secondBlankBelowPillRow),
-      "up"
-    );
-    expect(fromSecondBlank.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromSecondBlank.pos)).toBe(firstBlankBelowPillRow);
-
-    const fromFirstBlank = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, firstBlankBelowPillRow),
-      "up"
-    );
-    expect(fromFirstBlank.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromFirstBlank.pos)).toBe(pillRowStart);
-    expect(docPosToWireOffset(doc, fromFirstBlank.pos)).not.toBe(wire.indexOf("\n\n\n\n\n") + 4);
-  });
-
-  it("control: arrow down from plain text line start enters the blank below", () => {
-    const wire = "header\n\n\n tail";
-    const doc = wireToDoc(wire);
-    const firstBlankLine = "header\n".length;
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 0), "down");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstBlankLine);
-  });
-
-  it("arrow down from a pill row line start enters the blank below instead of stepping along the row", () => {
-    const agent = "caliper-jli3vwpry";
-    const wire = `brief @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nfollowup`;
-    const doc = wireToDoc(wire);
-    const pillRowSuffix = `@${agent} @${agent} `;
-    const pillRowStart = wire.indexOf(pillRowSuffix);
-    const secondPillOnRow = pillRowStart + `@${agent} `.length;
-    const firstBlankBelowPillRow = wire.indexOf(pillRowSuffix) + pillRowSuffix.length + 1;
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, pillRowStart), "down");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstBlankBelowPillRow);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondPillOnRow);
-  });
-
-  it("arrow down from interior near a pill row end crosses to the blank below", () => {
-    const agent = "caliper-jli3vwpry";
-    const wire = `brief @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nfollowup`;
-    const doc = wireToDoc(wire);
-    const pillRowSuffix = `@${agent} @${agent} `;
-    const pillRowEndingNewline = wire.indexOf(pillRowSuffix) + pillRowSuffix.length;
-    const firstBlankBelowPillRow = pillRowEndingNewline + 1;
-
+  function assertVertical(
+    doc: ReturnType<typeof wireToDoc>,
+    from: number,
+    sign: -1 | 1,
+    expectWire: number,
+    notExpectWire?: number
+  ) {
     const moved = resolveDocVerticalArrowMove(
       doc,
-      wireOffsetToDocPos(doc, pillRowEndingNewline - 1),
-      "down"
+      wireOffsetToDocPos(doc, from),
+      sign === -1 ? "up" : "down"
     );
     expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstBlankBelowPillRow);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(pillRowEndingNewline);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(expectWire);
+    if (notExpectWire !== undefined) {
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(notExpectWire);
+    }
+  }
+
+  function assertHorizontal(
+    doc: ReturnType<typeof wireToDoc>,
+    wire: string,
+    from: number,
+    direction: "left" | "right",
+    expectWire: number
+  ) {
+    const moved = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), direction);
+    expect(moved.handled).toBe(true);
+    expect(docPosToWireOffset(doc, moved.pos)).toBe(expectWire);
+    expect(describeHandoffNoteCursorContext(doc, expectWire).kind).not.toBe("mention-interior");
+  }
+
+  function pillRowLine(agent: string, pillCount: number, tail = " end"): string {
+    let row = "row";
+    for (let index = 0; index < pillCount; index++) {
+      row += ` @${agent}`;
+    }
+    return `${row}${tail}`;
+  }
+
+  function blankBandWire(newlineCount: number): {
+    wire: string;
+    blanks: number[];
+    tailStart: number;
+  } {
+    const header = "header";
+    const wire = `${header}${"\n".repeat(newlineCount)} tail`;
+    const blanks: number[] = [];
+    for (let index = 1; index <= newlineCount; index++) {
+      blanks.push(header.length + index);
+    }
+    return { wire, blanks, tailStart: wire.indexOf("tail") };
+  }
+
+  describe("vertical — plain multiline column preserve", () => {
+    it("preserves column on mid-line text without snapping to mention", () => {
+      const wire = `top\npad @${agentA} tail\nbottom`;
+      const doc = wireToDoc(wire);
+      const targetLineStart = wire.indexOf("\n") + 1;
+      assertVertical(doc, 2, 1, targetLineStart + 2, wire.indexOf("@"));
+      assertVertical(
+        doc,
+        wire.indexOf("bottom"),
+        -1,
+        targetLineStart + (wire.indexOf("bottom") - (wire.lastIndexOf("\n") + 1)),
+        wire.indexOf("@")
+      );
+    });
+
+    it("preserves column crossing to line above on plain multiline text", () => {
+      const wire = "abcdef\nghij";
+      const doc = wireToDoc(wire);
+      const fromLower = "abcdef\ngh".length;
+      assertVertical(doc, fromLower, -1, "ab".length);
+      assertVertical(doc, "ab".length, 1, fromLower);
+    });
+
+    it("round-trips column on equal-width lines", () => {
+      const wire = "abcdef\nghijkl";
+      const doc = wireToDoc(wire);
+      const from = wire.indexOf("cd");
+      const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
+      const downOffset = docPosToWireOffset(doc, down.pos);
+      expect(resolveWireLineColumn(wire, downOffset).column).toBe(
+        resolveWireLineColumn(wire, from).column
+      );
+      assertVertical(doc, downOffset, -1, from);
+    });
+
+    it("clamps column when the target line is shorter", () => {
+      const wire = "abcdef\nghi";
+      const doc = wireToDoc(wire);
+      const from = wire.indexOf("ef");
+      const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
+      const downOffset = docPosToWireOffset(doc, down.pos);
+      expect(resolveWireLineColumn(wire, downOffset).column).toBe(3);
+      expect(downOffset).toBe(wire.length);
+    });
   });
 
-  it("arrow up from the newline ending a pill row crosses to the line above", () => {
-    const agent = "caliper-jli3vwpry";
-    const wire = `brief @${agent} \n\n\n\n\n@${agent} @${agent} \n\n\nfollowup`;
-    const doc = wireToDoc(wire);
-    const pillRowSuffix = `@${agent} @${agent} `;
-    const pillRowEndingNewline = wire.indexOf(pillRowSuffix) + pillRowSuffix.length;
-    const { lineIndex } = resolveWireLineColumn(wire, pillRowEndingNewline);
+  describe("vertical — pill row line crossing", () => {
+    const threeLineWire = `handoff notes @${agentA} \n@${agentA} @${agentB} \n@${agentA} `;
+    const line2Mention = line2MentionStart(threeLineWire);
+    const line2SecondMention = threeLineWire.indexOf(`@${agentB}`);
+    const line3Mention = threeLineWire.lastIndexOf("@");
+
+    it("later line pill start crosses to previous line pill start", () => {
+      assertVertical(wireToDoc(threeLineWire), line3Mention, -1, line2Mention);
+    });
+
+    it("line pill start crosses to next line without same-row step", () => {
+      assertVertical(wireToDoc(threeLineWire), line2Mention, 1, line3Mention, line2SecondMention);
+    });
+
+    it("second pill on line crosses below next line start", () => {
+      const doc = wireToDoc(threeLineWire);
+      const moved = resolveDocVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, line2SecondMention),
+        "down"
+      );
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThan(line3Mention);
+    });
+
+    it("avoids parking between adjacent mentions on target line", () => {
+      const wire = `line1\n@${agentA} @${agentB} tail\n@${agentA} `;
+      const doc = wireToDoc(wire);
+      const moved = resolveDocVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, wire.lastIndexOf("@")),
+        "up"
+      );
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(line2MentionStart(wire));
+      const focusNode = doc.nodes[moved.pos.nodeIndex];
+      expect(focusNode?.type).toBe("mention");
+      if (focusNode?.type === "mention") {
+        expect(focusNode.agentId).toBe(agentA);
+        expect(moved.pos.nodeOffset).toBe(0);
+      }
+    });
+
+    const pillRowAgent = "caliper-jli3vwpry";
+    const pillRowWire = `brief @${pillRowAgent} \n\n\n\n\n@${pillRowAgent} @${pillRowAgent} \n\n\nfollowup`;
+    const pillRowSuffix = `@${pillRowAgent} @${pillRowAgent} `;
+    const pillRowStart = pillRowWire.indexOf(pillRowSuffix);
+    const pillRowSecondPill = pillRowStart + `@${pillRowAgent} `.length;
+    const pillRowEndingNewline = pillRowWire.indexOf(pillRowSuffix) + pillRowSuffix.length;
+    const firstBlankBelowPillRow = pillRowEndingNewline + 1;
+    const secondBlankBelowPillRow = pillRowEndingNewline + 2;
     const lineStarts = [0];
-    for (let index = 0; index < wire.length; index++) {
-      if (wire[index] === "\n") {
+    for (let index = 0; index < pillRowWire.length; index++) {
+      if (pillRowWire[index] === "\n") {
         lineStarts.push(index + 1);
       }
     }
-    const emptyLineAbovePillRow = lineStarts[lineIndex - 1]!;
-
-    const moved = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, pillRowEndingNewline),
-      "up"
+    const pillRowLineIndex = lineStarts.findIndex(
+      (start) => start === pillRowWire.indexOf(pillRowSuffix)
     );
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(emptyLineAbovePillRow);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(pillRowEndingNewline - 1);
-  });
+    const emptyLineAbovePillRow = lineStarts[pillRowLineIndex - 1]!;
 
-  it("arrow up from a later pill on the same row crosses to the line above", () => {
-    const agent = "caliper-ho14ofyh6";
-    const wire = `handoff notes @${agent} @${agent} review phase\n\n\n\n\n\n@${agent} context extra @${agent} `;
-    const doc = wireToDoc(wire);
-    const firstPillOnRow = wire.lastIndexOf(`\n@${agent} `) + 1;
-    const secondPillOnRow = wire.lastIndexOf(` @${agent} `) + 1;
+    it("pill row line start enters blank below not same-row pill", () => {
+      assertVertical(
+        wireToDoc(pillRowWire),
+        pillRowStart,
+        1,
+        firstBlankBelowPillRow,
+        pillRowSecondPill
+      );
+    });
+
+    it("pill row line start and first blank below round-trip", () => {
+      const doc = wireToDoc(pillRowWire);
+      assertVertical(doc, pillRowStart, 1, firstBlankBelowPillRow, pillRowSecondPill);
+      assertVertical(doc, firstBlankBelowPillRow, -1, pillRowStart);
+    });
+
+    it("interior near pill row end crosses to blank below", () => {
+      assertVertical(
+        wireToDoc(pillRowWire),
+        pillRowEndingNewline - 1,
+        1,
+        firstBlankBelowPillRow,
+        pillRowEndingNewline
+      );
+    });
+
+    it("newline ending pill row crosses to empty line above", () => {
+      assertVertical(
+        wireToDoc(pillRowWire),
+        pillRowEndingNewline,
+        -1,
+        emptyLineAbovePillRow,
+        pillRowEndingNewline - 1
+      );
+    });
+
+    it("blank below pill row steps monotonically without skipping distant block", () => {
+      const doc = wireToDoc(pillRowWire);
+      assertVertical(doc, secondBlankBelowPillRow, -1, firstBlankBelowPillRow);
+      assertVertical(
+        doc,
+        firstBlankBelowPillRow,
+        -1,
+        pillRowStart,
+        pillRowWire.indexOf("\n\n\n\n\n") + 4
+      );
+    });
+
+    const multiPillAgent = "caliper-ho14ofyh6";
+    const multiPillWire = `handoff notes @${multiPillAgent} @${multiPillAgent} review phase\n\n\n\n\n\n@${multiPillAgent} context extra @${multiPillAgent} `;
+    const firstPillOnRow = multiPillWire.lastIndexOf(`\n@${multiPillAgent} `) + 1;
+    const secondPillOnRow = multiPillWire.lastIndexOf(` @${multiPillAgent} `) + 1;
     const blankAboveRow = firstPillOnRow - 1;
 
-    const fromSecondPill = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, secondPillOnRow),
-      "up"
-    );
-    expect(fromSecondPill.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromSecondPill.pos)).toBe(blankAboveRow);
-    expect(docPosToWireOffset(doc, fromSecondPill.pos)).not.toBe(firstPillOnRow);
+    it("later pill on same row crosses to blank above row", () => {
+      assertVertical(wireToDoc(multiPillWire), secondPillOnRow, -1, blankAboveRow, firstPillOnRow);
+    });
 
-    const fromFirstPill = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, firstPillOnRow),
-      "up"
-    );
-    expect(fromFirstPill.handled).toBe(true);
-    expect(docPosToWireOffset(doc, fromFirstPill.pos)).toBe(blankAboveRow);
+    it("first pill on same row crosses to blank above row", () => {
+      assertVertical(wireToDoc(multiPillWire), firstPillOnRow, -1, blankAboveRow);
+    });
+
+    it("earlier pill on same row crosses to blank below not next pill", () => {
+      const agent = multiPillAgent;
+      const wire = `prefix @${agent} mid @${agent} tail\n\n\n`;
+      const doc = wireToDoc(wire);
+      const secondPill = wire.indexOf(`@${agent}`, wire.indexOf(`@${agent}`) + 1);
+      assertVertical(doc, wire.indexOf(`@${agent}`), 1, wire.indexOf("\n") + 1, secondPill);
+    });
   });
 
-  it("arrow down from an earlier pill on the same row crosses to the line below", () => {
-    const agent = "caliper-ho14ofyh6";
-    const wire = `prefix @${agent} mid @${agent} tail\n\n\n`;
-    const doc = wireToDoc(wire);
-    const firstPill = wire.indexOf(`@${agent}`);
-    const secondPill = wire.indexOf(`@${agent}`, firstPill + 1);
-    const firstBlankBelow = wire.indexOf("\n") + 1;
+  describe("vertical — column preserve across two-pill rows", () => {
+    function canonicalDoc(input: string) {
+      const doc = wireToDoc(input);
+      return { doc, wire: docToWire(doc) };
+    }
 
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, firstPill), "down");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstBlankBelow);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondPill);
+    function buildPlainRowBelow(row1: string, column: number, marker = "mark"): string {
+      return `${row1}\n${" ".repeat(column)}${marker}`;
+    }
+
+    function interPillGapMid(wire: string, gapText = " mid "): number {
+      const gapStart = wire.indexOf(gapText);
+      expect(gapStart).toBeGreaterThanOrEqual(0);
+      return gapStart + Math.floor(gapText.length / 2);
+    }
+
+    function gapBetweenCanonicalPills(wire: string, agentId: string): number {
+      const firstPill = wire.indexOf(`@${agentId}`);
+      expect(firstPill).toBeGreaterThanOrEqual(0);
+      return firstPill + 1 + agentId.length;
+    }
+
+    function lineStart(wire: string, lineIndex: number): number {
+      const starts = [0];
+      for (let index = 0; index < wire.length; index++) {
+        if (wire[index] === "\n") {
+          starts.push(index + 1);
+        }
+      }
+      return starts[lineIndex]!;
+    }
+
+    function assertColumnPreserve(
+      doc: ReturnType<typeof wireToDoc>,
+      wire: string,
+      fromWire: number,
+      direction: "up" | "down",
+      expectWire: number,
+      options?: { notWires?: number[]; preserveColumn?: boolean }
+    ) {
+      const sourceColumn = resolveWireLineColumn(wire, fromWire).column;
+      const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), direction);
+      expect(moved.handled).toBe(true);
+      const landed = docPosToWireOffset(doc, moved.pos);
+      expect(landed).toBe(expectWire);
+      if (options?.preserveColumn !== false) {
+        expect(resolveWireLineColumn(wire, landed).column).toBe(sourceColumn);
+      }
+      for (const bad of options?.notWires ?? []) {
+        expect(landed).not.toBe(bad);
+      }
+    }
+
+    function assertNotMentionInterior(doc: ReturnType<typeof wireToDoc>, wireOffset: number) {
+      const context = describeHandoffNoteCursorContext(doc, wireOffset);
+      expect(context.kind).not.toBe("mention-interior");
+    }
+
+    it("down from inter-pill gap preserves column on plain row below", () => {
+      const row1 = `row @${agentA} mid @${agentB} end`;
+      const gapMidOnRow1 = interPillGapMid(row1);
+      const column = resolveWireLineColumn(row1, gapMidOnRow1).column;
+      const { doc, wire } = canonicalDoc(buildPlainRowBelow(row1, column));
+      const gapMid = interPillGapMid(wire);
+      const line2Start = lineStart(wire, 1);
+
+      assertColumnPreserve(doc, wire, gapMid, "down", line2Start + column, {
+        notWires: [wire.indexOf("@"), line2Start],
+      });
+    });
+
+    it("up from plain row below inter-pill gap round-trips column", () => {
+      const row1 = `row @${agentA} mid @${agentB} end`;
+      const gapMidOnRow1 = interPillGapMid(row1);
+      const column = resolveWireLineColumn(row1, gapMidOnRow1).column;
+      const { doc, wire } = canonicalDoc(buildPlainRowBelow(row1, column));
+      const gapMid = interPillGapMid(wire);
+      const belowGap = lineStart(wire, 1) + column;
+
+      assertColumnPreserve(doc, wire, belowGap, "up", gapMid, {
+        notWires: [wire.indexOf("@"), lineStart(wire, 1)],
+      });
+    });
+
+    it("down from inter-pill gap clamps when target row is shorter", () => {
+      const row1 = `lead @${agentA} mid @${agentB} tail`;
+      const gapMidOnRow1 = interPillGapMid(row1);
+      const { doc, wire } = canonicalDoc(`${row1}\nhi`);
+      const gapMid = interPillGapMid(wire);
+      const line2Start = lineStart(wire, 1);
+      const row2 = "hi";
+
+      assertColumnPreserve(doc, wire, gapMid, "down", line2Start + row2.length, {
+        preserveColumn: false,
+      });
+      expect(resolveWireLineColumn(wire, line2Start + row2.length).column).toBe(row2.length);
+    });
+
+    it("down from canonical gap between tight-ingressed pills preserves column on row below", () => {
+      const row1Input = `@${agentA}@${agentB} row1end`;
+      const gapOnInput = gapBetweenCanonicalPills(row1Input, agentA);
+      const { doc, wire } = canonicalDoc(buildPlainRowBelow(row1Input, gapOnInput, "below"));
+      const gapMid = gapBetweenCanonicalPills(wire, agentA);
+      const column = resolveWireLineColumn(wire, gapMid).column;
+      const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, gapMid), "down");
+      expect(moved.handled).toBe(true);
+      const landed = docPosToWireOffset(doc, moved.pos);
+      expect(resolveWireLineColumn(wire, landed).column).toBe(column);
+      assertNotMentionInterior(doc, landed);
+    });
+
+    it("up from row below canonical pill gap preserves column on row above", () => {
+      const row1Input = `@${agentA}@${agentB} row1end`;
+      const gapOnInput = gapBetweenCanonicalPills(row1Input, agentA);
+      const column = resolveWireLineColumn(row1Input, gapOnInput).column;
+      const { doc, wire } = canonicalDoc(buildPlainRowBelow(row1Input, column, "below"));
+      const gapMid = gapBetweenCanonicalPills(wire, agentA);
+      const belowGap = lineStart(wire, 1) + column;
+      const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, belowGap), "up");
+      expect(moved.handled).toBe(true);
+      const landed = docPosToWireOffset(doc, moved.pos);
+      expect(resolveWireLineColumn(wire, landed).column).toBe(column);
+      expect(landed).toBe(gapMid);
+      assertNotMentionInterior(doc, landed);
+    });
+
+    it("down from inter-pill gap snaps to pill boundary when row below column hits tight pills", () => {
+      const row1 = `lead @${agentA} mid @${agentB} tail`;
+      const gapMidOnRow1 = interPillGapMid(row1);
+      const column = resolveWireLineColumn(row1, gapMidOnRow1).column;
+      const { doc, wire } = canonicalDoc(
+        `${row1}\n${" ".repeat(column)}@${agentA}@${agentB} lower`
+      );
+      const gapMid = interPillGapMid(wire);
+      const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, gapMid), "down");
+      expect(moved.handled).toBe(true);
+      const landed = docPosToWireOffset(doc, moved.pos);
+      const context = describeHandoffNoteCursorContext(doc, landed);
+      expect(context.kind).toBe("mention-boundary");
+      assertNotMentionInterior(doc, landed);
+    });
+
+    it("up from aligned plain row below spaced pills returns to inter-pill gap at same column", () => {
+      const row1 = `lead @${agentA} mid @${agentB} tail`;
+      const gapMidOnRow1 = interPillGapMid(row1);
+      const column = resolveWireLineColumn(row1, gapMidOnRow1).column;
+      const { doc, wire } = canonicalDoc(`${row1}\n${" ".repeat(column)}notes mark`);
+      const gapMid = interPillGapMid(wire);
+      const belowGap = lineStart(wire, 1) + column;
+
+      assertColumnPreserve(doc, wire, belowGap, "up", gapMid, {
+        notWires: [wire.indexOf(`@${agentA}`), lineStart(wire, 1)],
+      });
+      assertNotMentionInterior(doc, gapMid);
+    });
+
+    it("up from padded row below preserves column into row above tail text", () => {
+      const row1 = `lead @${agentA} mid @${agentB} tail`;
+      const tailMidOnRow1 = row1.indexOf("tail") + 2;
+      const column = resolveWireLineColumn(row1, tailMidOnRow1).column;
+      const { doc, wire } = canonicalDoc(`${row1}\n${" ".repeat(column)}mark`);
+      const tailMid = wire.indexOf("tail") + 2;
+      const belowTail = lineStart(wire, 1) + column;
+
+      assertColumnPreserve(doc, wire, belowTail, "up", tailMid);
+      assertNotMentionInterior(doc, tailMid);
+    });
+
+    it("down from row above tail and up round-trip at same column", () => {
+      const row1 = `lead @${agentA} mid @${agentB} tail`;
+      const tailMidOnRow1 = row1.indexOf("tail") + 2;
+      const column = resolveWireLineColumn(row1, tailMidOnRow1).column;
+      const { doc, wire } = canonicalDoc(`${row1}\n${" ".repeat(column)}mark`);
+      const tailMid = wire.indexOf("tail") + 2;
+      const belowTail = lineStart(wire, 1) + column;
+
+      assertColumnPreserve(doc, wire, tailMid, "down", belowTail);
+      assertColumnPreserve(doc, wire, belowTail, "up", tailMid);
+    });
   });
 
-  it("first line up bleeds left when no line above", () => {
-    const wire = "abcdef\nghij";
-    const doc = wireToDoc(wire);
-    const fromWire = 4;
+  describe("vertical — wire-line blank run stepping", () => {
+    const gapWire = "header\n\n\n tail";
+    const firstBlankLine = "header\n".length;
+    const secondBlankLine = "header\n\n".length;
+    const thirdBlankLine = "header\n\n\n".length;
 
-    const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "up");
-    expect(up.handled).toBe(true);
-    expect(docPosToWireOffset(doc, up.pos)).toBe(fromWire - 1);
+    it("line start and first blank round-trip on header/tail gap", () => {
+      const doc = wireToDoc(gapWire);
+      assertVertical(doc, 0, 1, firstBlankLine);
+      assertVertical(doc, firstBlankLine, -1, 0, "header".length);
+    });
+
+    it("steps through consecutive empty lines without skipping to line start", () => {
+      const doc = wireToDoc(gapWire);
+      assertVertical(doc, thirdBlankLine, -1, secondBlankLine);
+      assertVertical(doc, secondBlankLine, -1, firstBlankLine);
+      assertVertical(doc, firstBlankLine, -1, 0, "header".length);
+    });
+
+    it("content mid-column enters blank at line start", () => {
+      const wire = "header\n\ntail";
+      const blankLine = wire.indexOf("\n") + 1;
+      const doc = wireToDoc(wire);
+      assertVertical(doc, 4, 1, blankLine);
+      assertVertical(doc, blankLine, -1, 0, "header".length);
+    });
   });
 
-  it("last line down bleeds right when no line below", () => {
+  describe("vertical — wire-line column 0 after pill suffix", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
-    const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} `;
-    const doc = wireToDoc(wire);
-    const fromWire = wire.lastIndexOf(`@${agentB}`);
-    const right = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "right");
-    const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "down");
+    const wire = `row @${agentA} mid @${agentB} \n\ntail @${agentA} `;
+    const blankLineStart = wire.indexOf("\n\n") + 1;
+    const prefixMentionAt = wire.indexOf("@");
+    const lowerMentionEnd = wire.length - 1;
 
-    expect(right.handled).toBe(true);
-    expect(down.handled).toBe(true);
-    expect(docPosToWireOffset(doc, down.pos)).toBe(docPosToWireOffset(doc, right.pos));
+    it("up from blank wire line at column 0 lands on line start above", () => {
+      const doc = wireToDoc(wire);
+      assertVertical(doc, blankLineStart, -1, 0, prefixMentionAt);
+    });
+
+    it("up chain from lower mention end never lands on prefix mention", () => {
+      const doc = wireToDoc(wire);
+      const firstUp = resolveDocVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, lowerMentionEnd),
+        "up"
+      );
+      expect(firstUp.handled).toBe(true);
+      expect(docPosToWireOffset(doc, firstUp.pos)).toBe(blankLineStart);
+      expect(docPosToWireOffset(doc, firstUp.pos)).not.toBe(prefixMentionAt);
+
+      const secondUp = resolveDocVerticalArrowMove(doc, firstUp.pos, "up");
+      expect(secondUp.handled).toBe(true);
+      expect(docPosToWireOffset(doc, secondUp.pos)).toBe(0);
+      expect(docPosToWireOffset(doc, secondUp.pos)).not.toBe(prefixMentionAt);
+    });
+
+    it("down from line start and up round-trip through blank wire line", () => {
+      const doc = wireToDoc(wire);
+      assertVertical(doc, 0, 1, blankLineStart);
+      assertVertical(doc, blankLineStart, -1, 0, prefixMentionAt);
+    });
   });
 
-  it("down onto mention-first row lands in tail when column is past the pill", () => {
-    const wire = `notes here keeping it\n@${agentA} tail text`;
-    const doc = wireToDoc(wire);
-    const from = wire.indexOf("keeping") + "keeping".length;
-    const pillEnd = wire.indexOf("@") + `@${agentA}`.length;
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
-    expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThanOrEqual(pillEnd);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(wire.indexOf("@"));
+  describe("vertical — boundary bleed at doc extremes", () => {
+    const plainTwoLine = "abcdef\nghij";
+
+    it("first line: up and left resolve to the same wire offset", () => {
+      const doc = wireToDoc(plainTwoLine);
+      const from = 4;
+      const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
+      const left = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "left");
+      expect(up.handled).toBe(true);
+      expect(left.handled).toBe(true);
+      expect(docPosToWireOffset(doc, up.pos)).toBe(from - 1);
+      expect(docPosToWireOffset(doc, left.pos)).toBe(from - 1);
+    });
+
+    it("first line on mention row: up and left resolve to the same wire offset", () => {
+      const wire = `handoff notes @${agentA} `;
+      const doc = wireToDoc(wire);
+      const from = wire.indexOf("@") + `@${agentA}`.length;
+      const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
+      const left = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "left");
+      expect(up.handled).toBe(true);
+      expect(left.handled).toBe(true);
+      expect(docPosToWireOffset(doc, up.pos)).toBe(docPosToWireOffset(doc, left.pos));
+    });
+
+    it("last line: down and right resolve to the same wire offset", () => {
+      const doc = wireToDoc(plainTwoLine);
+      const from = plainTwoLine.length - 1;
+      const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
+      const right = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "right");
+      expect(down.handled).toBe(true);
+      expect(right.handled).toBe(true);
+      expect(docPosToWireOffset(doc, down.pos)).toBe(plainTwoLine.length);
+      expect(docPosToWireOffset(doc, right.pos)).toBe(plainTwoLine.length);
+    });
+
+    it("last line on mention row: down and right resolve to the same wire offset", () => {
+      const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} `;
+      const doc = wireToDoc(wire);
+      const fromWire = wire.lastIndexOf(`@${agentB}`);
+      const right = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "right");
+      const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "down");
+      expect(right.handled).toBe(true);
+      expect(down.handled).toBe(true);
+      expect(docPosToWireOffset(doc, down.pos)).toBe(docPosToWireOffset(doc, right.pos));
+    });
+
+    it("doc start and doc end vertical extremes are no-ops", () => {
+      const doc = wireToDoc("ab");
+      expect(resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 0), "up").handled).toBe(
+        false
+      );
+      expect(resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 2), "down").handled).toBe(
+        false
+      );
+    });
+
+    it("single-line vertical extreme bleeds right at core layer", () => {
+      assertVertical(wireToDoc("abcdefgh"), 2, 1, 3);
+    });
   });
 
-  it("down onto mention-first row snaps to pill end when column falls inside the pill", () => {
-    const wire = `notes here\n@${agentA} tail text`;
-    const doc = wireToDoc(wire);
-    const from = 5;
-    const pillEnd = wire.indexOf("@") + `@${agentA}`.length;
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(pillEnd);
+  describe("vertical — mention landing snap", () => {
+    it("onto mention-first row lands in tail when column past pill", () => {
+      const wire = `notes here keeping it\n@${agentA} tail text`;
+      const doc = wireToDoc(wire);
+      const from = wire.indexOf("keeping") + "keeping".length;
+      const pillEnd = wire.indexOf("@") + `@${agentA}`.length;
+      const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
+      expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThanOrEqual(pillEnd);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(wire.indexOf("@"));
+    });
+
+    it("onto mention-first row snaps to pill end when column inside pill", () => {
+      const wire = `notes here\n@${agentA} tail text`;
+      assertVertical(wireToDoc(wire), 5, 1, wire.indexOf("@") + `@${agentA}`.length);
+    });
+
+    it("onto mention-first row snaps to pill start when column inside pill", () => {
+      const wire = `@${agentA} tail text\nnotes here`;
+      assertVertical(wireToDoc(wire), wire.indexOf("notes") + 3, -1, 0);
+    });
   });
 
-  it("up onto mention-first row snaps to pill start when column falls inside the pill", () => {
-    const agent = "caliper-aaaaaaa";
-    const wire = `@${agent} tail text\nnotes here`;
-    const doc = wireToDoc(wire);
-    const from = wire.indexOf("notes") + 3;
-    const pillStart = 0;
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(pillStart);
+  describe("vertical — matrix blank run length", () => {
+    it("column-0 descent and ascent through two blank wire lines", () => {
+      const { wire, blanks } = blankBandWire(2);
+      const doc = wireToDoc(wire);
+      assertVertical(doc, 0, 1, blanks[0]!);
+      assertVertical(doc, blanks[1]!, -1, blanks[0]!);
+      assertVertical(doc, blanks[0]!, -1, 0);
+    });
+
+    it("column-0 monotonic ascent through three blank wire lines", () => {
+      const { wire, blanks } = blankBandWire(3);
+      const doc = wireToDoc(wire);
+      assertVertical(doc, blanks[2]!, -1, blanks[1]!);
+      assertVertical(doc, blanks[1]!, -1, blanks[0]!);
+      assertVertical(doc, blanks[0]!, -1, 0);
+    });
+
+    it("column-0 monotonic descent through five blank wire lines", () => {
+      const { wire, blanks } = blankBandWire(5);
+      const doc = wireToDoc(wire);
+      assertVertical(doc, 0, 1, blanks[0]!);
+      assertVertical(doc, blanks[0]!, 1, blanks[1]!);
+      assertVertical(doc, blanks[3]!, 1, blanks[4]!);
+    });
+
+    it("column-0 monotonic round-trip through seven blank wire lines", () => {
+      const { wire, blanks, tailStart } = blankBandWire(7);
+      const doc = wireToDoc(wire);
+      assertVertical(doc, 0, 1, blanks[0]!);
+      assertVertical(doc, blanks[5]!, 1, blanks[6]!);
+      assertVertical(doc, tailStart, -1, blanks[5]!);
+      assertVertical(doc, blanks[0]!, -1, 0);
+    });
   });
 
-  it("round-trips column on equal-width lines", () => {
-    const wire = "abcdef\nghijkl";
-    const doc = wireToDoc(wire);
-    const from = wire.indexOf("cd");
-    const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
-    const downOffset = docPosToWireOffset(doc, down.pos);
-    expect(resolveWireLineColumn(wire, downOffset).column).toBe(
-      resolveWireLineColumn(wire, from).column
-    );
-    const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, downOffset), "up");
-    expect(docPosToWireOffset(doc, up.pos)).toBe(from);
+  describe("vertical — matrix pill count on row", () => {
+    it("one-pill row line start and first blank below round-trip", () => {
+      const row = pillRowLine(agentA, 1);
+      const wire = `${row}\n\n\nfollow`;
+      const doc = wireToDoc(wire);
+      const pillRowStart = 0;
+      const firstBlank = row.length + 1;
+      assertVertical(doc, pillRowStart, 1, firstBlank);
+      assertVertical(doc, firstBlank, -1, pillRowStart);
+    });
+
+    it("three-pill row tail enters blank below not same-row pill", () => {
+      const row = pillRowLine(agentA, 3);
+      const wire = `${row}\n\n\nfollow`;
+      const doc = wireToDoc(wire);
+      const rowTail = row.length - 1;
+      const firstBlank = row.length + 1;
+      const secondPill = wire.indexOf(`@${agentA}`, wire.indexOf(`@${agentA}`) + 1);
+      assertVertical(doc, rowTail, 1, firstBlank, secondPill);
+    });
+
+    it("four-pill row line start and first blank below round-trip", () => {
+      const row = pillRowLine(agentA, 4);
+      const wire = `${row}\n\n\nfollow`;
+      const doc = wireToDoc(wire);
+      const pillRowStart = 0;
+      const firstBlank = row.length + 1;
+      const secondPill = wire.indexOf(`@${agentA}`, wire.indexOf(`@${agentA}`) + 1);
+      assertVertical(doc, pillRowStart, 1, firstBlank, secondPill);
+      assertVertical(doc, firstBlank, -1, pillRowStart);
+    });
+
+    it("five-pill row first pill down enters blank below not next pill", () => {
+      const row = pillRowLine(agentA, 5);
+      const wire = `${row}\n\n\nfollow`;
+      const doc = wireToDoc(wire);
+      const firstPill = wire.indexOf(`@${agentA}`);
+      const secondPill = wire.indexOf(`@${agentA}`, firstPill + 1);
+      const firstBlank = row.length + 1;
+      assertVertical(doc, firstPill, 1, firstBlank, secondPill);
+    });
   });
 
-  it("clamps column when the target line is shorter", () => {
-    const wire = "abcdef\nghi";
-    const doc = wireToDoc(wire);
-    const from = wire.indexOf("ef");
-    const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
-    const downOffset = docPosToWireOffset(doc, down.pos);
-    expect(resolveWireLineColumn(wire, downOffset).column).toBe(3);
-    expect(downOffset).toBe(wire.length);
-  });
+  describe("horizontal — matrix multiline suffix doc", () => {
+    const suffixWire = `row @${agentA} mid @${agentB} tail\n\n\nlower @${agentA} `;
+    const rowTail = suffixWire.indexOf("tail") + 2;
+    const suffixBlank = suffixWire.indexOf("\n\n") + 1;
+    const lowerMention = suffixWire.lastIndexOf("@");
 
-  it("down from content mid-column enters blank at line start", () => {
-    const wire = "header\n\ntail";
-    const doc = wireToDoc(wire);
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 4), "down");
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(wire.indexOf("\n") + 1);
-  });
+    it("row tail steps right and left along substantive text", () => {
+      const doc = wireToDoc(suffixWire);
+      assertHorizontal(doc, suffixWire, rowTail, "right", rowTail + 1);
+      assertHorizontal(doc, suffixWire, rowTail + 1, "left", rowTail);
+    });
 
-  it("doc start Up and doc end Down are no-ops", () => {
-    const doc = wireToDoc("ab");
-    expect(resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 0), "up").handled).toBe(false);
-    expect(resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 2), "down").handled).toBe(
-      false
-    );
-  });
+    it("suffix blank interior steps horizontally along the blank wire line", () => {
+      const doc = wireToDoc(suffixWire);
+      const secondBlank = suffixBlank + 1;
+      assertHorizontal(doc, suffixWire, suffixBlank, "right", secondBlank);
+      assertHorizontal(doc, suffixWire, secondBlank, "left", suffixBlank);
+    });
 
-  it("single-line Down bleeds right at core layer", () => {
-    const doc = wireToDoc("abcdefgh");
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, 2), "down");
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(3);
-  });
-
-  it("down from trailing mention-line text enters the first embedded blank below", () => {
-    const { doc, tailContentWire, blankRun } = trailingMentionTailFixture();
-    expect(blankRun.length).toBeGreaterThanOrEqual(2);
-
-    const moved = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, tailContentWire),
-      "down"
-    );
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(blankRun[0]!);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(blankRun[blankRun.length - 1]!);
-  });
-
-  it("up from the first embedded blank below trailing mention-line text lands on content", () => {
-    const { doc, tailContentWire, blankRun } = trailingMentionTailFixture();
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, blankRun[0]!), "up");
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(tailContentWire);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
-  });
-
-  it("up from a later embedded blank steps through the newline run instead of jumping to doc start", () => {
-    const { doc, blankRun } = trailingMentionTailFixture();
-    expect(blankRun.length).toBeGreaterThanOrEqual(2);
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, blankRun[1]!), "up");
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(blankRun[0]!);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
-  });
-
-  it("down from content above embedded prefix enters the first blank below", () => {
-    const { doc, header } = embeddedPrefixPillRowFixture(agentA);
-    const contentLineEnd = header.length - 1;
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, contentLineEnd), "down");
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(contentLineEnd + 1);
-  });
-
-  it("up from middle embedded prefix blank steps to the previous blank", () => {
-    const { wire, doc, header } = embeddedPrefixPillRowFixture(agentA);
-    const middleBlank = `${header}\n\n`.length - 1;
-
-    const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, middleBlank), "up");
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(`${header}\n`.length - 1);
-    expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
-  });
-
-  it("up from inter-mention space on embedded prefix pill row stays on the row", () => {
-    const { wire, doc } = embeddedPrefixPillRowFixture(agentA);
-    const interMentionSpace = wire.lastIndexOf("@") - 1;
-    const firstMentionEnd = wire.indexOf("@") + `@${agentA}`.length - 1;
-
-    const moved = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, interMentionSpace),
-      "up"
-    );
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(firstMentionEnd);
-  });
-
-  it("up from first mention on embedded prefix pill row lands on content line", () => {
-    const { doc, header } = embeddedPrefixPillRowFixture(agentA);
-    const firstMentionStart = docToWire(doc).indexOf("@");
-    const contentLineEnd = header.length - 1;
-
-    const moved = resolveDocVerticalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, firstMentionStart),
-      "up"
-    );
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(contentLineEnd);
+    it("lower mention steps right to end and left to pill start", () => {
+      const doc = wireToDoc(suffixWire);
+      const mentionEnd = lowerMention + `@${agentA}`.length;
+      assertHorizontal(doc, suffixWire, lowerMention, "right", mentionEnd);
+      assertHorizontal(doc, suffixWire, mentionEnd, "left", lowerMention);
+    });
   });
 });
-
-describe("resolveDocHorizontalArrowMove embedded prefix pill rows", () => {
-  it("left from second mention start lands on inter-mention space first", () => {
-    const { wire, doc } = embeddedPrefixPillRowFixture();
-    const secondMentionStart = wire.lastIndexOf("@");
-    const interMentionSpace = secondMentionStart - 1;
-
-    const moved = resolveDocHorizontalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, secondMentionStart),
-      "left"
-    );
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(interMentionSpace);
-  });
-
-  it("left from first mention on embedded prefix pill row skips to content line", () => {
-    const { wire, doc, header } = embeddedPrefixPillRowFixture();
-    const firstMentionStart = wire.indexOf("@");
-    const contentLineEnd = header.length - 1;
-
-    const moved = resolveDocHorizontalArrowMove(
-      doc,
-      wireOffsetToDocPos(doc, firstMentionStart),
-      "left"
-    );
-
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(contentLineEnd);
-  });
-});
-
-function embeddedPrefixPillRowFixture(agentA = "caliper-aaaaaaa") {
-  const header = "header ";
-  const wire = `${header}\n\n\n@${agentA} @${agentA} `;
-  return { wire, doc: wireToDoc(wire), header };
-}

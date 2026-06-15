@@ -198,7 +198,7 @@ describe("applyDocLineBreak", () => {
     );
   });
 
-  it("keeps caret on the content line when breaking from the mention atom", () => {
+  it("lands caret on new blank when breaking from the mention atom", () => {
     const agent = "caliper-aaaaaaa";
     const wire = `prefixx @${agent} `;
     const doc = wireToDoc(wire);
@@ -212,47 +212,25 @@ describe("applyDocLineBreak", () => {
 
     expect(docToWire(result.doc)).toBe(`prefixx \n@${agent} `);
     expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
-    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBeLessThan(mentionStartWire);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBeGreaterThan(
+      mentionStartWire
+    );
   });
 
-  it("keeps caret on the content line when breaking from a later mention atom", () => {
-    const agent = "caliper-aaaaaaa";
-    const wire = `pre1 @${agent} pre2 @${agent} `;
-    const doc = wireToDoc(wire);
-    let mentionCount = 0;
-    let onMention = { nodeIndex: 0, nodeOffset: 0 };
-    for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-      if (doc.nodes[nodeIndex]?.type === "mention") {
-        mentionCount++;
-        if (mentionCount === 2) {
-          onMention = { nodeIndex, nodeOffset: 0 };
-          break;
-        }
-      }
-    }
-    const mentionStartWire = docPosToWireOffset(doc, onMention);
-
-    const result = applyDocLineBreak(doc, collapsedSelection(onMention));
-
-    expect(docToWire(result.doc)).toBe(`pre1 @${agent} pre2 \n@${agent} `);
-    expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
-    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBeLessThan(mentionStartWire);
-  });
-
-  it("advances caret past the pre-break mention wire when the gap is whitespace only", () => {
+  it("lands caret on new blank when breaking from a later mention atom", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
-    const wire = `ab @${agentA} @${agentB} tail`;
-    const doc = wireToDoc(wire);
-    const onMention = wireOffsetToDocPos(doc, wire.lastIndexOf("@"));
-    const mentionStartWire = docPosToWireOffset(doc, onMention);
-
-    const result = applyDocLineBreak(doc, collapsedSelection(onMention));
-
-    expect(docToWire(result.doc)).toBe(`ab @${agentA} \n@${agentB} tail`);
-    const caretWire = docPosToWireOffset(result.doc, result.selection.focus);
-    expect(caretWire).not.toBe(mentionStartWire);
-    expect(caretWire).toBeGreaterThan(mentionStartWire);
+    const wires = [`ab @${agentA} @${agentB} tail`, `header @${agentA} tail @${agentB} suffix`];
+    for (const wire of wires) {
+      const doc = wireToDoc(wire);
+      const onMention = wireOffsetToDocPos(doc, wire.lastIndexOf("@"));
+      const mentionStartWire = docPosToWireOffset(doc, onMention);
+      const result = applyDocLineBreak(doc, collapsedSelection(onMention));
+      expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBeGreaterThan(
+        mentionStartWire
+      );
+    }
   });
 
   it("consecutive breaks from a mention atom add blank lines before the pill", () => {
@@ -325,17 +303,18 @@ describe("applyDocLineBreak", () => {
     const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, wire.length)));
     const second = applyDocLineBreak(first.doc, first.selection);
     expect(docToWire(second.doc)).toBe(`${wire}\n\n`);
-    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(wire.length + 2);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(wire.length + 1);
   });
 
-  it("first mention-boundary break on prefix row keeps caret on content line", () => {
+  it("first mention-boundary break on prefix row lands caret on new blank", () => {
     const agentA = "caliper-aaaaaaa";
     const header = "header ";
     const doc = wireToDoc(`${header}@${agentA} `);
     const mentionStart = wireOffsetToDocPos(doc, header.length);
+    const mentionStartWire = docPosToWireOffset(doc, mentionStart);
     const first = applyDocLineBreak(doc, collapsedSelection(mentionStart));
     expect(docToWire(first.doc)).toBe(`${header}\n@${agentA} `);
-    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(header.length - 1);
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBeGreaterThan(mentionStartWire);
   });
 
   it("second break on prefix row advances caret onto the blank run before mention", () => {
@@ -347,6 +326,116 @@ describe("applyDocLineBreak", () => {
     const second = applyDocLineBreak(first.doc, first.selection);
     expect(docToWire(second.doc)).toBe(`${header}\n\n@${agentA} `);
     expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(`${header}\n\n`.length);
+  });
+
+  it("first break after multi-pill row end advances caret into newline run on one press", () => {
+    const agentA = "caliper-aaaaaaa";
+    const pillRowWire = `@${agentA} tail @${agentA} @${agentA} `;
+    const doc = wireToDoc(pillRowWire);
+    const rowTailWire = pillRowWire.length - 1;
+    const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, rowTailWire)));
+    expect(docToWire(first.doc)).toContain("\n");
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(rowTailWire + 1);
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).not.toBe(rowTailWire);
+  });
+
+  it("second break after multi-pill row end advances caret off the first-break wire", () => {
+    const agentA = "caliper-aaaaaaa";
+    const pillRowWire = `@${agentA} tail @${agentA} @${agentA} `;
+    const doc = wireToDoc(pillRowWire);
+    const rowTailWire = pillRowWire.length - 1;
+    const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, rowTailWire)));
+    const second = applyDocLineBreak(first.doc, first.selection);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBeGreaterThan(
+      docPosToWireOffset(first.doc, first.selection.focus)
+    );
+  });
+
+  it("second break on substantive tail advances caret one step into newline run below", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const wire = `row @${agentA}  @${agentB} tail`;
+    const doc = wireToDoc(wire);
+    const tailEnd = wire.length;
+    const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, tailEnd)));
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(tailEnd);
+    const second = applyDocLineBreak(first.doc, first.selection);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(tailEnd + 1);
+    expect(docToWire(second.doc).slice(tailEnd, tailEnd + 2)).toMatch(/^\n/);
+  });
+
+  it("consecutive breaks at later mention with substantive inter-pill gap advance monotonically", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const wire = `header @${agentA} tail @${agentB} suffix`;
+    const doc = wireToDoc(wire);
+    const mentionStart = wire.lastIndexOf("@");
+    const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, mentionStart)));
+    const caretAfterFirst = docPosToWireOffset(first.doc, first.selection.focus);
+    expect(caretAfterFirst).toBeGreaterThan(mentionStart);
+    const second = applyDocLineBreak(first.doc, first.selection);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBeGreaterThan(caretAfterFirst);
+  });
+});
+
+describe("Shift+Enter — suffix band consecutive breaks", () => {
+  const agentA = "caliper-aaaaaaa";
+  const agentB = "caliper-bbbbbbb";
+  const suffixRow = `row @${agentA} mid @${agentB} tail`;
+
+  function breakChainFromRowTail(breakCount: number): number[] {
+    const doc = wireToDoc(suffixRow);
+    const rowTail = suffixRow.length - 1;
+    let state = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, rowTail)));
+    const wires = [docPosToWireOffset(state.doc, state.selection.focus)];
+    for (let index = 1; index < breakCount; index++) {
+      state = applyDocLineBreak(state.doc, state.selection);
+      wires.push(docPosToWireOffset(state.doc, state.selection.focus));
+    }
+    return wires;
+  }
+
+  it("third consecutive break advances caret monotonically on suffix row", () => {
+    const wires = breakChainFromRowTail(3);
+    expect(wires[1]).toBeGreaterThan(wires[0]!);
+    expect(wires[2]).toBeGreaterThan(wires[1]!);
+  });
+
+  it("fourth consecutive break advances caret monotonically on suffix row", () => {
+    const wires = breakChainFromRowTail(4);
+    for (let index = 1; index < wires.length; index++) {
+      expect(wires[index]).toBeGreaterThan(wires[index - 1]!);
+    }
+  });
+
+  it("fifth consecutive break advances caret monotonically on suffix row", () => {
+    const wires = breakChainFromRowTail(5);
+    for (let index = 1; index < wires.length; index++) {
+      expect(wires[index]).toBeGreaterThan(wires[index - 1]!);
+    }
+  });
+
+  it("seventh consecutive break advances caret monotonically on suffix row", () => {
+    const wires = breakChainFromRowTail(7);
+    for (let index = 1; index < wires.length; index++) {
+      expect(wires[index]).toBeGreaterThan(wires[index - 1]!);
+    }
+  });
+
+  it("prefix band break before mention advances through blank run monotonically", () => {
+    const header = "header ";
+    const doc = wireToDoc(`${header}@${agentA} `);
+    const mentionStart = wireOffsetToDocPos(doc, header.length);
+    let state = applyDocLineBreak(doc, collapsedSelection(mentionStart));
+    const first = docPosToWireOffset(state.doc, state.selection.focus);
+    for (let index = 0; index < 6; index++) {
+      state = applyDocLineBreak(state.doc, state.selection);
+    }
+    const seventh = docPosToWireOffset(state.doc, state.selection.focus);
+    expect(seventh).toBeGreaterThan(first);
+    expect(docToWire(state.doc)).toMatch(
+      new RegExp(`^${header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\n{7}@${agentA} `)
+    );
   });
 });
 
@@ -473,7 +562,7 @@ describe("applyDocDelete", () => {
       return { nodeIndex: idx, nodeOffset: 0 };
     }
 
-    it("control: backspace at mention end deletes the whole mention", () => {
+    it("backspace at mention end deletes the whole mention", () => {
       const wire = `Hi @${agentA} there`;
       const doc = wireToDoc(wire);
       const mentionEnd = wireOffsetToDocPos(doc, `Hi @${agentA}`.length);
