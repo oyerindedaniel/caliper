@@ -163,7 +163,6 @@ export {
 export {
   docTextNodeHasEmbeddedNewline,
   isEmbeddedBlankBandProbeWire,
-  isEmbeddedNewlineProbeWire,
   isInlineSuffixBlankProbeWire,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,

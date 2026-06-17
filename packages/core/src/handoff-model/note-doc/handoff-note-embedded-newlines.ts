@@ -46,15 +46,6 @@ export function listVisualRowAnchorWires(doc: HandoffNoteDoc): number[] {
   return anchors.sort((left, right) => left - right);
 }
 
-function isSubstantiveWireLineSegmentAt(wire: string, lineStart: number): boolean {
-  if (lineStart >= wire.length) {
-    return false;
-  }
-  const lineEnd = wire.indexOf("\n", lineStart);
-  const segment = wire.slice(lineStart, lineEnd === -1 ? wire.length : lineEnd);
-  return segment.length > 0 && /\S/.test(segment);
-}
-
 /** Blank probe on the same paint band as content above — storage `\n` before the next substantive row. */
 export function isInlineSuffixBlankProbeWire(doc: HandoffNoteDoc, probeWire: number): boolean {
   const wire = docToWire(doc);
@@ -90,11 +81,6 @@ export function listEmbeddedBlankBandProbeWires(doc: HandoffNoteDoc): number[] {
 export function docTextNodeHasEmbeddedNewline(doc: HandoffNoteDoc, nodeIndex: number): boolean {
   const node = doc.nodes[nodeIndex];
   return node?.type === "text" && node.text.includes("\n");
-}
-
-export function isEmbeddedNewlineProbeWire(doc: HandoffNoteDoc, wire: number): boolean {
-  const docWire = docToWire(doc);
-  return wire >= 0 && wire < docWire.length && docWire[wire] === "\n";
 }
 
 export function isEmbeddedBlankBandProbeWire(doc: HandoffNoteDoc, wire: number): boolean {

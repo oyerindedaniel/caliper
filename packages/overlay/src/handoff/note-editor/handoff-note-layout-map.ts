@@ -757,10 +757,6 @@ function buildDocOrderedLayoutMap(
   };
 }
 
-export function isBlankLayoutRow(row: HandoffNoteLayoutRow): boolean {
-  return row.kind === "blank";
-}
-
 function minimumDistinctTopGap(tops: number[]): number | null {
   const distinct = [...new Set(tops)].sort((left, right) => left - right);
   if (distinct.length < 2) {

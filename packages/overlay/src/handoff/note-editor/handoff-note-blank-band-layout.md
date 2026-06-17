@@ -109,7 +109,7 @@ Scans every `\n` in the wire string. Each offset is kept only if `isEmbeddedBlan
 }
 ```
 
-**Distinct helper:** `isEmbeddedNewlineProbeWire` = any `\n` char. Used elsewhere; blank navigation uses **blank band** list only.
+**Distinct check:** substantive wire-line `\n` (e.g. `line1\nline2`) is excluded by `listEmbeddedBlankBandProbeWires`; blank navigation uses that list only.
 
 ---
 

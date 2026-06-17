@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   docTextNodeHasEmbeddedNewline,
   isEmbeddedBlankBandProbeWire,
-  isEmbeddedNewlineProbeWire,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
 } from "./handoff-note-embedded-newlines.js";
@@ -41,12 +40,6 @@ describe("embedded blank band probes", () => {
     const doc = wireToDoc(`row @caliper-aaaaaaa \n\n tail`);
     expect(docTextNodeHasEmbeddedNewline(doc, 0)).toBe(false);
     expect(docTextNodeHasEmbeddedNewline(doc, 2)).toBe(true);
-  });
-
-  it("identifies any newline wire offset separately from blank band probes", () => {
-    const doc = wireToDoc("a\nb");
-    expect(isEmbeddedNewlineProbeWire(doc, 1)).toBe(true);
-    expect(isEmbeddedBlankBandProbeWire(doc, 1)).toBe(false);
   });
 
   it("lists visual row anchors for header blank tail storage", () => {
