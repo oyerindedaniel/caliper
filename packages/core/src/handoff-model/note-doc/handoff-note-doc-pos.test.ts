@@ -21,6 +21,7 @@ import {
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import { docToWire, describeHandoffNoteCursorContext, wireToDoc } from "./handoff-note-doc.js";
+import { listEmbeddedBlankBandProbeWires } from "./handoff-note-embedded-newlines.js";
 import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 
 describe("HandoffNoteDocPos", () => {
@@ -189,17 +190,15 @@ describe("resolveDocVerticalArrowMove", () => {
     return `${row}${tail}`;
   }
 
-  function blankBandWire(newlineCount: number): {
+  function blankBandWire(emptyVisualRows: number): {
     wire: string;
     blanks: number[];
     tailStart: number;
   } {
     const header = "header";
-    const wire = `${header}${"\n".repeat(newlineCount)} tail`;
-    const blanks: number[] = [];
-    for (let index = 1; index <= newlineCount; index++) {
-      blanks.push(header.length + index);
-    }
+    const wire = `${header}${"\n".repeat(emptyVisualRows + 1)} tail`;
+    const doc = wireToDoc(wire);
+    const blanks = listEmbeddedBlankBandProbeWires(doc);
     return { wire, blanks, tailStart: wire.indexOf("tail") };
   }
 
@@ -298,49 +297,37 @@ describe("resolveDocVerticalArrowMove", () => {
     const pillRowStart = pillRowWire.indexOf(pillRowSuffix);
     const pillRowSecondPill = pillRowStart + `@${pillRowAgent} `.length;
     const pillRowEndingNewline = pillRowWire.indexOf(pillRowSuffix) + pillRowSuffix.length;
-    const firstBlankBelowPillRow = pillRowEndingNewline + 1;
-    const secondBlankBelowPillRow = pillRowEndingNewline + 2;
-    const lineStarts = [0];
-    for (let index = 0; index < pillRowWire.length; index++) {
-      if (pillRowWire[index] === "\n") {
-        lineStarts.push(index + 1);
-      }
-    }
-    const pillRowLineIndex = lineStarts.findIndex(
-      (start) => start === pillRowWire.indexOf(pillRowSuffix)
-    );
-    const emptyLineAbovePillRow = lineStarts[pillRowLineIndex - 1]!;
+    const pillRowDoc = wireToDoc(pillRowWire);
+    const pillRowProbes = listEmbeddedBlankBandProbeWires(pillRowDoc);
+    const blanksBelowPillRow = pillRowProbes.filter((wire) => wire >= pillRowEndingNewline);
+    const firstBlankBelowPillRow = blanksBelowPillRow[0]!;
+    const secondBlankBelowPillRow = blanksBelowPillRow[1]!;
+    const blanksAbovePillRow = pillRowProbes.filter((wire) => wire < pillRowStart);
+    const emptyLineAbovePillRow = blanksAbovePillRow[blanksAbovePillRow.length - 1]!;
 
     it("pill row line start enters blank below not same-row pill", () => {
-      assertVertical(
-        wireToDoc(pillRowWire),
-        pillRowStart,
-        1,
-        firstBlankBelowPillRow,
-        pillRowSecondPill
-      );
+      assertVertical(pillRowDoc, pillRowStart, 1, firstBlankBelowPillRow, pillRowSecondPill);
     });
 
     it("pill row line start and first blank below round-trip", () => {
-      const doc = wireToDoc(pillRowWire);
-      assertVertical(doc, pillRowStart, 1, firstBlankBelowPillRow, pillRowSecondPill);
-      assertVertical(doc, firstBlankBelowPillRow, -1, pillRowStart);
+      assertVertical(pillRowDoc, pillRowStart, 1, firstBlankBelowPillRow, pillRowSecondPill);
+      assertVertical(pillRowDoc, firstBlankBelowPillRow, -1, pillRowStart);
     });
 
     it("interior near pill row end crosses to blank below", () => {
       assertVertical(
-        wireToDoc(pillRowWire),
+        pillRowDoc,
         pillRowEndingNewline - 1,
         1,
         firstBlankBelowPillRow,
-        pillRowEndingNewline
+        pillRowEndingNewline - 1
       );
     });
 
-    it("newline ending pill row crosses to empty line above", () => {
+    it("newline immediately above pill row crosses to prior blank probe", () => {
       assertVertical(
-        wireToDoc(pillRowWire),
-        pillRowEndingNewline,
+        pillRowDoc,
+        pillRowStart - 1,
         -1,
         emptyLineAbovePillRow,
         pillRowEndingNewline - 1
@@ -348,29 +335,24 @@ describe("resolveDocVerticalArrowMove", () => {
     });
 
     it("blank below pill row steps monotonically without skipping distant block", () => {
-      const doc = wireToDoc(pillRowWire);
-      assertVertical(doc, secondBlankBelowPillRow, -1, firstBlankBelowPillRow);
-      assertVertical(
-        doc,
-        firstBlankBelowPillRow,
-        -1,
-        pillRowStart,
-        pillRowWire.indexOf("\n\n\n\n\n") + 4
-      );
+      assertVertical(pillRowDoc, secondBlankBelowPillRow, -1, firstBlankBelowPillRow);
+      assertVertical(pillRowDoc, firstBlankBelowPillRow, -1, pillRowStart, blanksAbovePillRow[0]!);
     });
 
     const multiPillAgent = "caliper-ho14ofyh6";
     const multiPillWire = `handoff notes @${multiPillAgent} @${multiPillAgent} review phase\n\n\n\n\n\n@${multiPillAgent} context extra @${multiPillAgent} `;
     const firstPillOnRow = multiPillWire.lastIndexOf(`\n@${multiPillAgent} `) + 1;
     const secondPillOnRow = multiPillWire.lastIndexOf(` @${multiPillAgent} `) + 1;
-    const blankAboveRow = firstPillOnRow - 1;
+    const multiPillDoc = wireToDoc(multiPillWire);
+    const multiPillProbes = listEmbeddedBlankBandProbeWires(multiPillDoc);
+    const blankAboveRow = multiPillProbes.filter((wire) => wire < firstPillOnRow).at(-1)!;
 
     it("later pill on same row crosses to blank above row", () => {
-      assertVertical(wireToDoc(multiPillWire), secondPillOnRow, -1, blankAboveRow, firstPillOnRow);
+      assertVertical(multiPillDoc, secondPillOnRow, -1, blankAboveRow, firstPillOnRow);
     });
 
     it("first pill on same row crosses to blank above row", () => {
-      assertVertical(wireToDoc(multiPillWire), firstPillOnRow, -1, blankAboveRow);
+      assertVertical(multiPillDoc, firstPillOnRow, -1, blankAboveRow);
     });
 
     it("earlier pill on same row crosses to blank below not next pill", () => {
@@ -378,7 +360,8 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `prefix @${agent} mid @${agent} tail\n\n\n`;
       const doc = wireToDoc(wire);
       const secondPill = wire.indexOf(`@${agent}`, wire.indexOf(`@${agent}`) + 1);
-      assertVertical(doc, wire.indexOf(`@${agent}`), 1, wire.indexOf("\n") + 1, secondPill);
+      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      assertVertical(doc, wire.indexOf(`@${agent}`), 1, firstBlank, secondPill);
     });
   });
 
@@ -565,27 +548,25 @@ describe("resolveDocVerticalArrowMove", () => {
 
   describe("vertical — wire-line blank run stepping", () => {
     const gapWire = "header\n\n\n tail";
-    const firstBlankLine = "header\n".length;
-    const secondBlankLine = "header\n\n".length;
-    const thirdBlankLine = "header\n\n\n".length;
+    const gapDoc = wireToDoc(gapWire);
+    const gapBlanks = listEmbeddedBlankBandProbeWires(gapDoc);
 
     it("line start and first blank round-trip on header/tail gap", () => {
       const doc = wireToDoc(gapWire);
-      assertVertical(doc, 0, 1, firstBlankLine);
-      assertVertical(doc, firstBlankLine, -1, 0, "header".length);
+      assertVertical(doc, 0, 1, gapBlanks[0]!);
+      assertVertical(doc, gapBlanks[0]!, -1, 0, "header".length);
     });
 
-    it("steps through consecutive empty lines without skipping to line start", () => {
+    it("steps through consecutive empty visual rows without skipping to line start", () => {
       const doc = wireToDoc(gapWire);
-      assertVertical(doc, thirdBlankLine, -1, secondBlankLine);
-      assertVertical(doc, secondBlankLine, -1, firstBlankLine);
-      assertVertical(doc, firstBlankLine, -1, 0, "header".length);
+      assertVertical(doc, gapBlanks[1]!, -1, gapBlanks[0]!);
+      assertVertical(doc, gapBlanks[0]!, -1, 0, "header".length);
     });
 
     it("content mid-column enters blank at line start", () => {
       const wire = "header\n\ntail";
-      const blankLine = wire.indexOf("\n") + 1;
       const doc = wireToDoc(wire);
+      const blankLine = listEmbeddedBlankBandProbeWires(doc)[0]!;
       assertVertical(doc, 4, 1, blankLine);
       assertVertical(doc, blankLine, -1, 0, "header".length);
     });
@@ -595,7 +576,8 @@ describe("resolveDocVerticalArrowMove", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const wire = `row @${agentA} mid @${agentB} \n\ntail @${agentA} `;
-    const blankLineStart = wire.indexOf("\n\n") + 1;
+    const suffixDoc = wireToDoc(wire);
+    const blankLineStart = listEmbeddedBlankBandProbeWires(suffixDoc)[0]!;
     const prefixMentionAt = wire.indexOf("@");
     const lowerMentionEnd = wire.length - 1;
 
@@ -742,7 +724,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const doc = wireToDoc(wire);
       assertVertical(doc, 0, 1, blanks[0]!);
       assertVertical(doc, blanks[5]!, 1, blanks[6]!);
-      assertVertical(doc, tailStart, -1, blanks[5]!);
+      assertVertical(doc, tailStart, -1, blanks[6]!);
       assertVertical(doc, blanks[0]!, -1, 0);
     });
   });
@@ -753,7 +735,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `${row}\n\n\nfollow`;
       const doc = wireToDoc(wire);
       const pillRowStart = 0;
-      const firstBlank = row.length + 1;
+      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
       assertVertical(doc, pillRowStart, 1, firstBlank);
       assertVertical(doc, firstBlank, -1, pillRowStart);
     });
@@ -763,7 +745,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `${row}\n\n\nfollow`;
       const doc = wireToDoc(wire);
       const rowTail = row.length - 1;
-      const firstBlank = row.length + 1;
+      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
       const secondPill = wire.indexOf(`@${agentA}`, wire.indexOf(`@${agentA}`) + 1);
       assertVertical(doc, rowTail, 1, firstBlank, secondPill);
     });
@@ -773,7 +755,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `${row}\n\n\nfollow`;
       const doc = wireToDoc(wire);
       const pillRowStart = 0;
-      const firstBlank = row.length + 1;
+      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
       const secondPill = wire.indexOf(`@${agentA}`, wire.indexOf(`@${agentA}`) + 1);
       assertVertical(doc, pillRowStart, 1, firstBlank, secondPill);
       assertVertical(doc, firstBlank, -1, pillRowStart);
@@ -785,7 +767,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const doc = wireToDoc(wire);
       const firstPill = wire.indexOf(`@${agentA}`);
       const secondPill = wire.indexOf(`@${agentA}`, firstPill + 1);
-      const firstBlank = row.length + 1;
+      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
       assertVertical(doc, firstPill, 1, firstBlank, secondPill);
     });
   });

@@ -4,6 +4,10 @@ import {
   docToWire,
   type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
+import {
+  listEmbeddedBlankBandProbeWires,
+  listVisualRowAnchorWires,
+} from "./handoff-note-embedded-newlines.js";
 import { type HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
 
 export type { HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
@@ -100,6 +104,97 @@ export function resolveHorizontalBleedWireMove(
   return { offset: next, branch: `boundary-bleed-${direction}` };
 }
 
+function visualRowIndexForOffset(doc: HandoffNoteDoc, offset: number): number {
+  const wire = docToWire(doc);
+  const anchors = listVisualRowAnchorWires(doc);
+  const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
+
+  for (let index = anchors.length - 1; index >= 0; index--) {
+    const anchor = anchors[index]!;
+    if (offset < anchor) {
+      continue;
+    }
+    const nextAnchor = anchors[index + 1];
+    if (nextAnchor === undefined) {
+      return index;
+    }
+    if (
+      probes.has(anchor) &&
+      offset > anchor &&
+      offset < nextAnchor &&
+      wire[offset] === "\n" &&
+      nextAnchor === offset + 1 &&
+      !probes.has(nextAnchor)
+    ) {
+      return index + 1;
+    }
+    if (offset >= anchor && offset < nextAnchor) {
+      return index;
+    }
+  }
+  return 0;
+}
+
+function visualRowSpanEnd(wire: string, anchor: number, nextAnchor: number | undefined): number {
+  if (nextAnchor === undefined) {
+    return wire.length;
+  }
+  return Math.max(anchor, nextAnchor - 1);
+}
+
+/** Visual-row Up/Down when embedded blank-band probes exist (contract blank-band section). */
+export function resolveEmbeddedBlankBandVerticalMove(
+  doc: HandoffNoteDoc,
+  offset: number,
+  direction: HandoffNoteVerticalArrowDirection,
+  column: number
+): VerticalNavWireMove | null {
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  if (probes.length === 0) {
+    return null;
+  }
+
+  const wire = docToWire(doc);
+  const anchors = listVisualRowAnchorWires(doc);
+  if (anchors.length < 2) {
+    return null;
+  }
+
+  const probeSet = new Set(probes);
+  const rowIndex = visualRowIndexForOffset(doc, offset);
+  const targetRowIndex = direction === "up" ? rowIndex - 1 : rowIndex + 1;
+  const goalColumn = probeSet.has(offset) ? 0 : column;
+
+  if (targetRowIndex < 0 || targetRowIndex >= anchors.length) {
+    const bleedDirection = direction === "up" ? "left" : "right";
+    return resolveHorizontalBleedWireMove(doc, offset, bleedDirection);
+  }
+
+  const targetAnchor = anchors[targetRowIndex]!;
+  const nextAnchor = anchors[targetRowIndex + 1];
+  const targetLineEnd = visualRowSpanEnd(wire, targetAnchor, nextAnchor);
+
+  if (probeSet.has(targetAnchor)) {
+    const snapped = snapMentionInterior(doc, targetAnchor, direction);
+    if (snapped === offset) {
+      return null;
+    }
+    return { offset: snapped, branch: "blank-band-probe-row" };
+  }
+
+  const targetOffset = preserveColumnOnTargetLine(
+    doc,
+    direction,
+    goalColumn,
+    targetAnchor,
+    targetLineEnd
+  );
+  if (targetOffset === offset) {
+    return null;
+  }
+  return { offset: targetOffset, branch: "visual-row-column" };
+}
+
 /** Cross-span move between adjacent wire or visual lines. */
 export function resolveVerticalArrowCrossLineMove(
   doc: HandoffNoteDoc,
@@ -191,6 +286,31 @@ export function resolveVerticalArrowRowStartLanding(
   const landing = snapMentionInterior(doc, best.wire, direction);
   const branch =
     landing === best.wire ? "visual-row-start-column" : "visual-row-start-mentionInterior";
+  return { offset: landing, branch };
+}
+
+/** Leftmost wire on a visual band — blank-band exit to content row visual line start. */
+export function resolveVerticalArrowMinWireLineStart(
+  doc: HandoffNoteDoc,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetSamples: { wire: number; left: number }[]
+): VerticalNavWireMove | null {
+  if (targetSamples.length === 0) {
+    return null;
+  }
+
+  let minWireSample = targetSamples[0]!;
+  for (const sample of targetSamples) {
+    if (sample.wire < minWireSample.wire) {
+      minWireSample = sample;
+    }
+  }
+
+  const landing = snapMentionInterior(doc, minWireSample.wire, direction);
+  const branch =
+    landing === minWireSample.wire
+      ? "visual-line-start-minWire"
+      : "visual-line-start-mentionInterior";
   return { offset: landing, branch };
 }
 

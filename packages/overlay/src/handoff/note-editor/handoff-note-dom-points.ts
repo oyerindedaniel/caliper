@@ -431,8 +431,8 @@ export function probeDocPosAtVisualColumn(
   return null;
 }
 
-/** Add layout samples at each rendered text line (soft-wrap fragments). */
-export function enrichMeasuredTextLineSamples(
+/** Append layout samples at each rendered text line (soft-wrap fragments). */
+export function appendSoftWrapLineSamples(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   measured: { wire: number; top: number; left: number }[]

@@ -284,7 +284,7 @@ describe("applyDocLineBreak", () => {
     expect(docToWire(second.doc)).toBe(`prefix @${agent} \n\n@${agent} `);
   });
 
-  it("first break after trailing mention-line text keeps caret on the content line", () => {
+  it("first break after trailing mention-line text lands caret on the new blank", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const wire = `row @${agentA}  @${agentB} tail`;
@@ -292,18 +292,19 @@ describe("applyDocLineBreak", () => {
     const caretBefore = wire.length;
     const result = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, caretBefore)));
     expect(docToWire(result.doc)).toBe(`${wire}\n`);
-    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(caretBefore);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(caretBefore + 1);
   });
 
-  it("second break after trailing mention-line text advances onto the blank below", () => {
+  it("second break after trailing mention-line text advances monotonically through blanks", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const wire = `row @${agentA}  @${agentB} tail`;
     const doc = wireToDoc(wire);
     const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, wire.length)));
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(wire.length + 1);
     const second = applyDocLineBreak(first.doc, first.selection);
     expect(docToWire(second.doc)).toBe(`${wire}\n\n`);
-    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(wire.length + 1);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(wire.length + 2);
   });
 
   it("first mention-boundary break on prefix row lands caret on new blank", () => {
@@ -351,17 +352,17 @@ describe("applyDocLineBreak", () => {
     );
   });
 
-  it("second break on substantive tail advances caret one step into newline run below", () => {
+  it("first break on substantive tail lands caret on the new blank", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const wire = `row @${agentA}  @${agentB} tail`;
     const doc = wireToDoc(wire);
     const tailEnd = wire.length;
     const first = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, tailEnd)));
-    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(tailEnd);
+    expect(docPosToWireOffset(first.doc, first.selection.focus)).toBe(tailEnd + 1);
     const second = applyDocLineBreak(first.doc, first.selection);
-    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(tailEnd + 1);
-    expect(docToWire(second.doc).slice(tailEnd, tailEnd + 2)).toMatch(/^\n/);
+    expect(docPosToWireOffset(second.doc, second.selection.focus)).toBe(tailEnd + 2);
+    expect(docToWire(second.doc).slice(tailEnd, tailEnd + 2)).toBe("\n\n");
   });
 
   it("consecutive breaks at later mention with substantive inter-pill gap advance monotonically", () => {
@@ -378,6 +379,53 @@ describe("applyDocLineBreak", () => {
   });
 });
 
+describe("Shift+Enter — caret lands on new blank at content end", () => {
+  const agent = "caliper-aaaaaaa";
+
+  function caretAfterBreak(wire: string): number {
+    const doc = wireToDoc(wire);
+    const result = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, wire.length)));
+    return docPosToWireOffset(result.doc, result.selection.focus);
+  }
+
+  it("single mention with whitespace-only post-pill tail", () => {
+    const wire = `header @${agent} `;
+    expect(caretAfterBreak(wire)).toBe(wire.length + 1);
+  });
+
+  it("single mention with substantive post-pill tail", () => {
+    const wire = `hd @${agent} tail`;
+    expect(caretAfterBreak(wire)).toBe(wire.length + 1);
+  });
+
+  it("two mentions with substantive row tail", () => {
+    const agentB = "caliper-bbbbbbb";
+    const wire = `row @${agent}  @${agentB} tail`;
+    expect(caretAfterBreak(wire)).toBe(wire.length + 1);
+  });
+
+  it("multi-pill row with substantive tail", () => {
+    const wire = `@${agent} tail @${agent} @${agent} tail`;
+    expect(caretAfterBreak(wire)).toBe(wire.length + 1);
+  });
+
+  it("first through fifth break advance monotonically at substantive suffix tail", () => {
+    const agentB = "caliper-bbbbbbb";
+    const wire = `row @${agent} mid @${agentB} tail`;
+    const doc = wireToDoc(wire);
+    let state = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, wire.length)));
+    const wires = [docPosToWireOffset(state.doc, state.selection.focus)];
+    for (let index = 1; index < 5; index++) {
+      state = applyDocLineBreak(state.doc, state.selection);
+      wires.push(docPosToWireOffset(state.doc, state.selection.focus));
+    }
+    for (let index = 1; index < wires.length; index++) {
+      expect(wires[index]).toBeGreaterThan(wires[index - 1]!);
+    }
+    expect(wires[0]).toBe(wire.length + 1);
+  });
+});
+
 describe("Shift+Enter — suffix band consecutive breaks", () => {
   const agentA = "caliper-aaaaaaa";
   const agentB = "caliper-bbbbbbb";
@@ -385,7 +433,7 @@ describe("Shift+Enter — suffix band consecutive breaks", () => {
 
   function breakChainFromRowTail(breakCount: number): number[] {
     const doc = wireToDoc(suffixRow);
-    const rowTail = suffixRow.length - 1;
+    const rowTail = suffixRow.length;
     let state = applyDocLineBreak(doc, collapsedSelection(wireOffsetToDocPos(doc, rowTail)));
     const wires = [docPosToWireOffset(state.doc, state.selection.focus)];
     for (let index = 1; index < breakCount; index++) {

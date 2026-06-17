@@ -5,6 +5,7 @@ import {
   resolveHorizontalBleedWireMove,
   resolveVerticalArrowCrossLineMove,
   resolveVerticalArrowRowStartLanding,
+  resolveVerticalArrowMinWireLineStart,
   resolveVerticalArrowVisualLanding,
   resolveVerticalArrowWireMove,
 } from "./handoff-note-vertical-nav.js";
@@ -191,6 +192,26 @@ describe("resolveVerticalArrowRowStartLanding", () => {
     expect(landing?.offset).toBe(wrappedBandPillStart);
     expect(landing?.offset).not.toBe(37);
     expect(landing?.branch).toBe("visual-row-start-column");
+  });
+});
+
+describe("resolveVerticalArrowMinWireLineStart", () => {
+  const agent = "caliper-aaaaaaa";
+
+  it("lands on leftmost wire when exiting blank band to content row", () => {
+    const wire = `header\n\nrow @${agent} tail\n\n\n@${agent} `;
+    const doc = wireToDoc(wire);
+    const rowStart = wire.indexOf("row");
+    const mentionStart = wire.indexOf("@");
+    const samples = [
+      { wire: mentionStart, left: 0 },
+      { wire: rowStart + 4, left: 80 },
+      { wire: rowStart, left: 120 },
+    ];
+
+    const landing = resolveVerticalArrowMinWireLineStart(doc, "up", samples);
+    expect(landing?.offset).toBe(rowStart);
+    expect(landing?.branch).toBe("visual-line-start-minWire");
   });
 });
 

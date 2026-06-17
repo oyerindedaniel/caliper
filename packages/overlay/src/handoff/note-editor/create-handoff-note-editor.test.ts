@@ -371,7 +371,7 @@ describe("createHandoffNoteEditor", () => {
     expect(host.editor.getCursor()).toBeGreaterThan(mentionStart);
   });
 
-  it("first line break after trailing mention-line text keeps caret on the content line", () => {
+  it("first line break after trailing mention-line text lands caret on the new blank", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const prefix = `row @${agentA}  @${agentB} `;
@@ -397,10 +397,44 @@ describe("createHandoffNoteEditor", () => {
 
     host.editor.handleBeforeInput(lineBreak());
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    expect(host.editor.getCursor()).toBe(wire.length);
+    expect(host.editor.getCursor()).toBe(wire.length + 1);
 
     host.editor.handleBeforeInput(lineBreak());
     expect(host.editor.getWire()).toBe(`${wire}\n\n`);
+    expect(host.editor.getCursor()).toBe(wire.length + 2);
+  });
+
+  it("first line break after single mention with substantive post-pill text lands on blank", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `hd @${agent} tail`;
+    host.editor.setDocFromWire(wire, wire.length);
+
+    host.editor.handleBeforeInput(
+      new InputEvent("beforeinput", {
+        inputType: "insertLineBreak",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+
+    expect(host.editor.getWire()).toBe(`${wire}\n`);
+    expect(host.editor.getCursor()).toBe(wire.length + 1);
+  });
+
+  it("first line break after mention with whitespace-only post-pill tail lands on blank", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} `;
+    host.editor.setDocFromWire(wire, wire.length);
+
+    host.editor.handleBeforeInput(
+      new InputEvent("beforeinput", {
+        inputType: "insertLineBreak",
+        bubbles: true,
+        cancelable: true,
+      })
+    );
+
+    expect(host.editor.getWire()).toBe(`${wire}\n`);
     expect(host.editor.getCursor()).toBe(wire.length + 1);
   });
 

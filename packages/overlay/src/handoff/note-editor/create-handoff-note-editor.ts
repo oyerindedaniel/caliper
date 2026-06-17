@@ -223,10 +223,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       suppressDomSelectionSync = false;
     }
 
-    if (!afterRender.domReplaced) {
-      return;
-    }
-
     const live = readDocSelection(root, doc);
     const liveWire = docPosToWireOffset(doc, live.focus);
     if (liveWire !== requestedWire) {
@@ -242,6 +238,20 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     if (
       liveWire === requestedWire &&
       !docPosEqual(selection.focus, live.focus) &&
+      doc.nodes[selection.focus.nodeIndex]?.type === "mention" &&
+      doc.nodes[live.focus.nodeIndex]?.type === "text"
+    ) {
+      logCaretTrace(`writeSelection>>keepAuthority>>${source}`, {
+        branch: "mentionOverTextSameWire",
+        requested: selection.focus,
+        live: live.focus,
+        wire: requestedWire,
+      });
+      return;
+    }
+    if (
+      liveWire === requestedWire &&
+      !docPosEqual(selection.focus, live.focus) &&
       doc.nodes[selection.focus.nodeIndex]?.type === "text" &&
       doc.nodes[live.focus.nodeIndex]?.type === "mention"
     ) {
@@ -251,6 +261,9 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         live: live.focus,
         wire: requestedWire,
       });
+      return;
+    }
+    if (!afterRender.domReplaced) {
       return;
     }
     if (!docPosEqual(selection.focus, live.focus)) {

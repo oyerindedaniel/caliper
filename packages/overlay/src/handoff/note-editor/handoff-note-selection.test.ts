@@ -558,6 +558,32 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(readHandoffNoteLayoutRowIndexForTests(root, doc, tailWire, tailPos)).toBe(1);
       root.remove();
     });
+
+    it("assigns suffix blank band below two-pill row to its own visual row", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `row @${agent} @${agent} \n\n@${agent} `;
+      const doc = wireToDoc(wire);
+      const firstSuffixBlankWire = wire.indexOf("\n") + 1;
+      const lowerPillStartWire = docPosToWireOffset(doc, { nodeIndex: 5, nodeOffset: 0 });
+      const postSecondPillWire =
+        docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: agent.length }) + 1;
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: 100, left: 0 },
+          { wire: postSecondPillWire, top: 100, left: 400 },
+          { wire: firstSuffixBlankWire, top: 136, left: 0 },
+          { wire: lowerPillStartWire, top: 172, left: 0 },
+        ],
+        36,
+        doc
+      );
+
+      expect(layout.visualRowCount).toBeGreaterThanOrEqual(3);
+      expect(layout.rowIndexForWire(lowerPillStartWire)).toBeGreaterThan(
+        layout.rowIndexForWire(firstSuffixBlankWire)
+      );
+      expect(layout.rowIndexForWire(firstSuffixBlankWire)).toBeGreaterThan(0);
+    });
   });
 
   describe("visual row start landing", () => {

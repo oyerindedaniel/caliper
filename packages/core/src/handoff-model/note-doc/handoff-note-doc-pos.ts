@@ -7,6 +7,7 @@ import {
   type HandoffNoteNode,
 } from "./handoff-note-doc.js";
 import {
+  resolveEmbeddedBlankBandVerticalMove,
   resolveHorizontalBleedWireMove,
   resolveVerticalArrowWireMove,
   type HandoffNoteVerticalArrowDirection,
@@ -251,7 +252,20 @@ export function resolveDocVerticalArrowMove(
 ): { pos: HandoffNoteDocPos; handled: boolean } {
   const wire = docToWire(doc);
   const offset = docPosToWireOffset(doc, pos);
-  const { lineIndex, column, lineStart, lineEnd } = resolveWireLineColumn(
+  const { column } = resolveWireLineColumn(wire, Math.min(offset, Math.max(0, wire.length)));
+
+  const embeddedMove = resolveEmbeddedBlankBandVerticalMove(doc, offset, direction, column);
+  if (embeddedMove !== null) {
+    let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, embeddedMove.offset), {
+      from: pos,
+    });
+    targetPos = snapVerticalArrowLanding(doc, targetPos, direction);
+    if (!docPosEqual(targetPos, pos)) {
+      return { pos: targetPos, handled: true };
+    }
+  }
+
+  const { lineIndex, lineStart, lineEnd } = resolveWireLineColumn(
     wire,
     Math.min(offset, Math.max(0, wire.length))
   );

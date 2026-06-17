@@ -8,7 +8,13 @@
  * Unit coverage: core doc-pos, doc-edits (Shift+Enter caret), overlay selection/DOM.
  * Contract: handoff-note-arrow-contract.md
  */
-import { docPosToWireOffset, wireToDoc } from "@caliper/core";
+import {
+  docPosToWireOffset,
+  listEmbeddedBlankBandProbeWires,
+  resolveDocVerticalArrowMove,
+  wireOffsetToDocPos,
+  wireToDoc,
+} from "@caliper/core";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
 import {
@@ -53,36 +59,128 @@ function expectCaretParity(
   expect(liveDom, label ? `${label} live DOM` : "live DOM").toBe(wire);
 }
 
+function setDocWithLayout(
+  editor: HandoffNoteEditor,
+  root: HTMLElement,
+  wire: string,
+  cursor: number,
+  samples: { wire: number; top: number; left: number }[]
+): void {
+  editor.setDocFromWire(wire, cursor, { resetHistory: true });
+  setMeasuredSamplesCache(wire, root.clientWidth, samples);
+}
+
+const VISUAL_ROW_TOP = { r1: 100, r2: 136, r3: 172, r4: 208 } as const;
+
+function longTail(repeat = 20): string {
+  return `${"tail ".repeat(repeat)}`;
+}
+
+function wrappedFirstLineWire(nextLine = "row3"): string {
+  return `header @${AGENT_A} ${longTail()}\n${nextLine}`;
+}
+
+function landmarksForWrappedFirstLine(wire: string) {
+  const line1Start = wire.indexOf("\n") + 1;
+  const line0End = line1Start - 1;
+  return {
+    line1Start,
+    line0End,
+    wrapRow1Wire: 0,
+    wrapRow2InteriorWire: 30,
+    wrapRow2TailWire: line0End,
+  };
+}
+
+function samplesForWrappedFirstLine(wire: string, line1Top = VISUAL_ROW_TOP.r3) {
+  const L = landmarksForWrappedFirstLine(wire);
+  return [
+    { wire: L.wrapRow1Wire, top: VISUAL_ROW_TOP.r1, left: 0 },
+    { wire: 10, top: VISUAL_ROW_TOP.r1, left: 200 },
+    { wire: L.wrapRow2InteriorWire, top: VISUAL_ROW_TOP.r2, left: 0 },
+    { wire: L.wrapRow2TailWire, top: VISUAL_ROW_TOP.r2, left: 400 },
+    { wire: L.line1Start, top: line1Top, left: 0 },
+    { wire: wire.length - 1, top: line1Top, left: 40 },
+  ];
+}
+
+function sandwichWire(): string {
+  return `top\nheader @${AGENT_A} ${longTail()}\nbottom`;
+}
+
+function landmarksForSandwich(wire: string) {
+  const topEnd = wire.indexOf("\n");
+  const middleStart = topEnd + 1;
+  const middleEnd = wire.lastIndexOf("\n") - 1;
+  const bottomStart = wire.lastIndexOf("\n") + 1;
+  return {
+    topEnd,
+    middleStart,
+    middleEnd,
+    bottomStart,
+    middleWrapRow1: middleStart,
+    middleWrapRow2Interior: middleStart + 26,
+    middleWrapRow2Tail: middleEnd,
+  };
+}
+
+function samplesForSandwich(wire: string) {
+  const L = landmarksForSandwich(wire);
+  return [
+    { wire: 0, top: VISUAL_ROW_TOP.r1, left: 0 },
+    { wire: L.topEnd, top: VISUAL_ROW_TOP.r1, left: 40 },
+    { wire: L.middleWrapRow1, top: VISUAL_ROW_TOP.r2, left: 0 },
+    { wire: L.middleWrapRow1 + 10, top: VISUAL_ROW_TOP.r2, left: 200 },
+    { wire: L.middleWrapRow2Interior, top: VISUAL_ROW_TOP.r3, left: 0 },
+    { wire: L.middleWrapRow2Tail, top: VISUAL_ROW_TOP.r3, left: 400 },
+    { wire: L.bottomStart, top: VISUAL_ROW_TOP.r4, left: 0 },
+    { wire: wire.length - 1, top: VISUAL_ROW_TOP.r4, left: 60 },
+  ];
+}
+
 function buildCompositeBlankBandWire(): string {
-  return `prefix @${AGENT_COMPOSITE} \n\n@${AGENT_COMPOSITE} tail\n\n\nbottom @${AGENT_COMPOSITE}\n`;
+  return `prefix @${AGENT_COMPOSITE} \n\n@${AGENT_COMPOSITE} tail\n\n\n\nbottom @${AGENT_COMPOSITE}\n`;
 }
 
 function compositeWireLandmarks(wire: string) {
+  const doc = wireToDoc(wire);
   const middleRowLineStart = wire.indexOf(`@${AGENT_COMPOSITE} tail`);
   const middleRowTailEnd = middleRowLineStart + `@${AGENT_COMPOSITE} tail`.length;
-  const blankRun: number[] = [];
-  for (let index = middleRowTailEnd; index < wire.length && wire[index] === "\n"; index++) {
-    blankRun.push(index);
-  }
   const bottomLine = `bottom @${AGENT_COMPOSITE}`;
   const bottomLineStart = wire.indexOf(bottomLine);
-  const endOfLastMention = bottomLineStart + bottomLine.length;
+  const blankRun = listEmbeddedBlankBandProbeWires(doc).filter(
+    (probe) => probe >= middleRowTailEnd && probe < bottomLineStart
+  );
+  const endOfLastMention = bottomLineStart + bottomLine.length - 1;
   return { middleRowLineStart, blankRun, endOfLastMention };
 }
 
 function compositeLayoutSamples(wire: string) {
   const landmarks = compositeWireLandmarks(wire);
-  return [
+  const middleTop = 177;
+  const samples: { wire: number; top: number; left: number }[] = [
     { wire: 0, top: 141, left: 0 },
     { wire: 5, top: 141, left: 40 },
     { wire: landmarks.middleRowLineStart - 1, top: 141, left: 200 },
-    { wire: landmarks.middleRowLineStart, top: 177, left: 0 },
-    { wire: landmarks.middleRowLineStart + 10, top: 177, left: 100 },
-    { wire: landmarks.blankRun[0] ?? 0, top: 214, left: 0 },
-    { wire: landmarks.blankRun.at(-1) ?? 0, top: 214, left: 120 },
-    { wire: landmarks.endOfLastMention - 1, top: 214, left: 160 },
-    { wire: landmarks.endOfLastMention, top: 214, left: 200 },
+    { wire: landmarks.middleRowLineStart, top: middleTop, left: 0 },
+    { wire: landmarks.middleRowLineStart + 10, top: middleTop, left: 100 },
+    { wire: landmarks.middleRowLineStart + 16, top: middleTop, left: 200 },
   ];
+  let blankTop = 214;
+  for (let index = 0; index < landmarks.blankRun.length; index++) {
+    const blankWire = landmarks.blankRun[index]!;
+    if (index === 0) {
+      samples.push({ wire: blankWire, top: middleTop, left: 120 });
+    } else {
+      samples.push({ wire: blankWire, top: blankTop, left: 0 });
+      blankTop += 37;
+    }
+  }
+  samples.push(
+    { wire: landmarks.endOfLastMention - 1, top: blankTop, left: 160 },
+    { wire: landmarks.endOfLastMention, top: blankTop, left: 200 }
+  );
+  return samples;
 }
 
 function mountEditorHost(
@@ -183,7 +281,10 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const layoutSamples = [
       { wire: 0, top: 100, left: 0 },
       { wire: firstLineExtreme, top: 100, left: 80 },
+      { wire: 7, top: 112, left: 0 },
+      { wire: 8, top: 124, left: 0 },
       { wire: 26, top: 100, left: 250 },
+      { wire: 31, top: 130, left: 0 },
       { wire: lastMentionAt, top: 136, left: 0 },
       { wire: lastLineExtremeEnd, top: 136, left: 120 },
       { wire: bleedWire.length, top: 136, left: 160 },
@@ -250,7 +351,10 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const multiPillWire = `handoff notes @${multiPillAgent} @${multiPillAgent} review phase\n\n\n\n\n\n@${multiPillAgent} context extra @${multiPillAgent} `;
     const firstPillOnRow = multiPillWire.lastIndexOf(`\n@${multiPillAgent} `) + 1;
     const secondPillOnRow = multiPillWire.lastIndexOf(` @${multiPillAgent} `) + 1;
-    const blankAboveRow = firstPillOnRow - 1;
+    const multiPillDoc = wireToDoc(multiPillWire);
+    const blankAboveRow = listEmbeddedBlankBandProbeWires(multiPillDoc)
+      .filter((wire) => wire < firstPillOnRow)
+      .at(-1)!;
 
     it("later pill on same row crosses to blank line above", () => {
       host.editor.setDocFromWire(multiPillWire, secondPillOnRow, { resetHistory: true });
@@ -273,17 +377,11 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const pillRowStart = pillRowWire.indexOf(pillRowSuffix);
     const pillRowEndingNewline = pillRowWire.indexOf(pillRowSuffix) + pillRowSuffix.length;
     const pillRowSecondPill = pillRowStart + `@${pillRowAgent} `.length;
-    const firstBlankBelowPillRow = pillRowWire.indexOf(pillRowSuffix) + pillRowSuffix.length + 1;
-    const lineStarts = [0];
-    for (let index = 0; index < pillRowWire.length; index++) {
-      if (pillRowWire[index] === "\n") {
-        lineStarts.push(index + 1);
-      }
-    }
-    const pillRowLineIndex = lineStarts.findIndex(
-      (start) => start === pillRowWire.indexOf(pillRowSuffix)
-    );
-    const emptyLineAbovePillRow = lineStarts[pillRowLineIndex - 1]!;
+    const pillRowDoc = wireToDoc(pillRowWire);
+    const pillRowProbes = listEmbeddedBlankBandProbeWires(pillRowDoc);
+    const firstBlankBelowPillRow = pillRowProbes.filter((wire) => wire >= pillRowEndingNewline)[0]!;
+    const blanksAbovePillRow = pillRowProbes.filter((wire) => wire < pillRowStart);
+    const emptyLineAbovePillRow = blanksAbovePillRow[blanksAbovePillRow.length - 2]!;
 
     it.each([
       {
@@ -295,9 +393,9 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         notExpectWire: pillRowSecondPill,
       },
       {
-        note: "newline ending pill row crosses to empty line above",
+        note: "newline immediately above pill row crosses to prior blank probe",
         wire: pillRowWire,
-        from: pillRowEndingNewline,
+        from: pillRowStart - 1,
         sign: -1 as const,
         expectWire: emptyLineAbovePillRow,
         notExpectWire: pillRowEndingNewline - 1,
@@ -313,14 +411,14 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
   describe("vertical — wire-line blank runs", () => {
     const gapWire = "header\n\n\n tail";
-    const firstBlankLine = "header\n".length;
+    const gapBlanks = listEmbeddedBlankBandProbeWires(wireToDoc(gapWire));
 
     it("header/tail gap: line start and first blank round-trip", () => {
       host.editor.setDocFromWire(gapWire, 0, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstBlankLine);
+      expectCaretParity(host.editor, host.root, gapBlanks[0]!);
 
-      host.editor.setDocFromWire(gapWire, firstBlankLine, { resetHistory: true });
+      host.editor.setDocFromWire(gapWire, gapBlanks[0]!, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(0);
       expect(host.editor.getCursor()).not.toBe("header".length);
@@ -330,15 +428,18 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     it("monotonic through EOF-only blank band reaches content line start", () => {
       const content = "header ";
       const wire = `${content}\n\n\n`;
-      const firstBlank = content.length + 1;
+      const blanks = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
       const lastBlank = wire.length;
       host.editor.setDocFromWire(wire, lastBlank, { resetHistory: true });
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstBlank + 1);
+      expectCaretParity(host.editor, host.root, blanks[2]!);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstBlank);
+      expectCaretParity(host.editor, host.root, blanks[1]!);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, blanks[0]!);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, 0);
@@ -347,16 +448,18 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     it("monotonic ascent from doc start through EOF-only blank band", () => {
       const content = "header ";
       const wire = `${content}\n\n\n`;
-      const firstBlank = content.length + 1;
-      const secondBlank = firstBlank + 1;
+      const blanks = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
       const lastBlank = wire.length;
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstBlank);
+      expectCaretParity(host.editor, host.root, blanks[0]!);
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, secondBlank);
+      expectCaretParity(host.editor, host.root, blanks[1]!);
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, blanks[2]!);
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expectCaretParity(host.editor, host.root, lastBlank);
@@ -365,7 +468,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
   describe("vertical — wire-line column 0 after pill suffix", () => {
     const shiftEnterPairWire = `row @${AGENT_A} mid @${AGENT_B} \n\ntail @${AGENT_A} `;
-    const blankLineStart = shiftEnterPairWire.indexOf("\n\n") + 1;
+    const blankLineStart = listEmbeddedBlankBandProbeWires(wireToDoc(shiftEnterPairWire))[0]!;
     const prefixMentionAt = shiftEnterPairWire.indexOf("@");
     const lowerMentionEnd = shiftEnterPairWire.length - 1;
 
@@ -391,11 +494,18 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const longBeforeMentionWire = `header\n\nrow @${AGENT_A}  @${AGENT_B} tail\n\n\n@${AGENT_A} `;
     const tailMarker = ` @${AGENT_B} tail`;
     const tailContent = longBeforeMentionWire.indexOf(tailMarker) + tailMarker.length - 1;
-    const blankLineBelowTail = tailContent + 2;
+    const tailRowEnd = longBeforeMentionWire.indexOf(tailMarker) + tailMarker.length;
+    const blanksBelowTail = listEmbeddedBlankBandProbeWires(
+      wireToDoc(longBeforeMentionWire)
+    ).filter((wire) => wire >= tailRowEnd);
+    const blankAboveContentRow = blanksBelowTail[0]!;
+    const bottomBlankBelowTail = blanksBelowTail.at(-1)!;
     const rowLineStart = longBeforeMentionWire.indexOf("row");
 
     it("long tail line: blank below tail and up round-trip with editor parity", () => {
-      host.editor.setDocFromWire(longBeforeMentionWire, blankLineBelowTail, { resetHistory: true });
+      host.editor.setDocFromWire(longBeforeMentionWire, blankAboveContentRow, {
+        resetHistory: true,
+      });
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(rowLineStart);
       expect(host.editor.getCursor()).not.toBe(0);
@@ -403,7 +513,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       host.editor.setDocFromWire(longBeforeMentionWire, tailContent, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, blankLineBelowTail, "down to blank below tail");
+      expectCaretParity(host.editor, host.root, bottomBlankBelowTail, "down to blank below tail");
     });
   });
 
@@ -432,15 +542,18 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const wrapAgentA = "caliper-linea01";
     const wrapAgentB = "caliper-lineb02";
     const wrapWire = `@${wrapAgentA} header\n\n@${wrapAgentA} fill@${wrapAgentB} tail `;
+    const wrapBlankProbe = listEmbeddedBlankBandProbeWires(wireToDoc(wrapWire))[0]!;
+    const wrapNextLineStart = wrapWire.indexOf("@", wrapWire.indexOf("\n"));
     const wrapRow1Top = 141;
+    const wrapRowBlankTop = 159;
     const wrapRow2Top = 177;
     const wrapStartLeft = 347;
 
     function mountWrapLayoutSamples(fromWire: number, expectWire: number) {
       return [
         { wire: 0, top: wrapRow1Top, left: wrapStartLeft },
-        { wire: wrapWire.indexOf("\n") + 1, top: wrapRow1Top, left: wrapStartLeft + 40 },
-        { wire: wrapWire.indexOf("\n") + 2, top: wrapRow2Top, left: wrapStartLeft },
+        { wire: wrapBlankProbe, top: wrapRowBlankTop, left: wrapStartLeft },
+        { wire: wrapNextLineStart, top: wrapRow2Top, left: wrapStartLeft },
         { wire: fromWire, top: wrapRow2Top, left: wrapStartLeft },
         { wire: expectWire, top: wrapRow2Top, left: wrapStartLeft + 80 },
         { wire: wrapWire.length, top: wrapRow2Top, left: wrapStartLeft + 120 },
@@ -448,25 +561,23 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     }
 
     it("empty wire line and next line start round-trip", () => {
-      const blankLineStart = wrapWire.indexOf("\n") + 1;
-      const nextLineStart = blankLineStart + 1;
-      host.editor.setDocFromWire(wrapWire, blankLineStart, { resetHistory: true });
+      host.editor.setDocFromWire(wrapWire, wrapBlankProbe, { resetHistory: true });
       setMeasuredSamplesCache(
         wrapWire,
         host.root.clientWidth,
-        mountWrapLayoutSamples(blankLineStart, nextLineStart)
+        mountWrapLayoutSamples(wrapBlankProbe, wrapNextLineStart)
       );
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, nextLineStart);
+      expectCaretParity(host.editor, host.root, wrapNextLineStart);
 
-      host.editor.setDocFromWire(wrapWire, nextLineStart, { resetHistory: true });
+      host.editor.setDocFromWire(wrapWire, wrapNextLineStart, { resetHistory: true });
       setMeasuredSamplesCache(
         wrapWire,
         host.root.clientWidth,
-        mountWrapLayoutSamples(nextLineStart, blankLineStart)
+        mountWrapLayoutSamples(wrapNextLineStart, wrapBlankProbe)
       );
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expectCaretParity(host.editor, host.root, blankLineStart);
+      expectCaretParity(host.editor, host.root, wrapBlankProbe);
     });
 
     it("last wire line start boundary-bleeds to mention end", () => {
@@ -483,6 +594,164 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
   });
 
+  describe("vertical — suffix blank band above lower row", () => {
+    const wire = `header @${AGENT_A} \n\n@${AGENT_A} `;
+    const suffixDoc = wireToDoc(wire);
+    const emptyRowWire = listEmbeddedBlankBandProbeWires(suffixDoc)[0]!;
+    const lowerPillStartWire = wire.indexOf("@", emptyRowWire + 1);
+    const postMentionSpaceWire = lowerPillStartWire + `@${AGENT_A}`.length;
+
+    function suffixBlankAbovePillLayoutSamples() {
+      const row0Top = 100;
+      const row1Top = 136;
+      const row2Top = 172;
+      return [
+        { wire: 0, top: row0Top, left: 0 },
+        { wire: 4, top: row0Top, left: 40 },
+        { wire: emptyRowWire - 1, top: row0Top, left: 200 },
+        { wire: emptyRowWire, top: row1Top, left: 0 },
+        { wire: lowerPillStartWire, top: row2Top, left: 0 },
+        { wire: postMentionSpaceWire, top: row2Top, left: 200 },
+        { wire: wire.length - 1, top: row2Top, left: 220 },
+      ];
+    }
+
+    it("core wire-cross down from empty suffix row lands lower pill start", () => {
+      const doc = wireToDoc(wire);
+      const moved = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, emptyRowWire), "down");
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerPillStartWire);
+    });
+
+    it("down from empty suffix row lands lower pill start with editor/DOM parity", () => {
+      host.editor.setDocFromWire(wire, emptyRowWire, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        lowerPillStartWire,
+        "empty suffix row to lower pill line start"
+      );
+    });
+
+    it("down from empty suffix row lands on mention atom start not trailing text node", () => {
+      host.editor.setDocFromWire(wire, emptyRowWire, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(lowerPillStartWire);
+      const focus = host.editor.getSelectionState().focus;
+      expect(host.editor.getDoc().nodes[focus.nodeIndex]?.type).toBe("mention");
+      expect(focus.nodeOffset).toBe(0);
+    });
+
+    it("down from lower pill line start boundary-bleeds to post-mention space", () => {
+      host.editor.setDocFromWire(wire, lowerPillStartWire, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      const focus = host.editor.getSelectionState().focus;
+      expect(host.editor.getDoc().nodes[focus.nodeIndex]?.type).toBe("mention");
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        postMentionSpaceWire,
+        "last wire line start bleeds right to post-mention space"
+      );
+    });
+
+    it("empty suffix row then lower pill start bleeds on second down", () => {
+      host.editor.setDocFromWire(wire, emptyRowWire, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      const focus = host.editor.getSelectionState().focus;
+      expect(host.editor.getDoc().nodes[focus.nodeIndex]?.type).toBe("mention");
+      expect(host.editor.getCursor()).toBe(lowerPillStartWire);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, postMentionSpaceWire, "second down bleeds right");
+    });
+
+    it("round-trip — up from post-mention then down chain restores lower pill start", () => {
+      host.editor.setDocFromWire(wire, postMentionSpaceWire - 1, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, emptyRowWire, "up to empty suffix row");
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, 0, "up to row 1 start");
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, emptyRowWire, "down to empty suffix row");
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        lowerPillStartWire,
+        "down to lower pill start after round-trip"
+      );
+    });
+
+    describe("two pills on upper row", () => {
+      const twoPillWire = `row @${AGENT_A} @${AGENT_A} \n\n@${AGENT_A} `;
+      const twoPillDoc = wireToDoc(twoPillWire);
+      const postFirstPillWire =
+        docPosToWireOffset(twoPillDoc, { nodeIndex: 1, nodeOffset: AGENT_A.length }) + 1;
+      const firstSuffixBlankWire = listEmbeddedBlankBandProbeWires(twoPillDoc)[0]!;
+      const lowerPillStartWire = docPosToWireOffset(twoPillDoc, { nodeIndex: 5, nodeOffset: 0 });
+
+      function twoPillSuffixBlankLayoutSamples() {
+        const postSecondPillWire =
+          docPosToWireOffset(twoPillDoc, { nodeIndex: 3, nodeOffset: AGENT_A.length }) + 1;
+        return [
+          { wire: 0, top: VISUAL_ROW_TOP.r1, left: 0 },
+          { wire: postFirstPillWire, top: VISUAL_ROW_TOP.r1, left: 200 },
+          { wire: postSecondPillWire, top: VISUAL_ROW_TOP.r1, left: 400 },
+          { wire: firstSuffixBlankWire, top: VISUAL_ROW_TOP.r2, left: 0 },
+          { wire: lowerPillStartWire, top: VISUAL_ROW_TOP.r3, left: 0 },
+          { wire: twoPillWire.length - 1, top: VISUAL_ROW_TOP.r3, left: 200 },
+        ];
+      }
+
+      it("up from lower pill lands suffix blank not upper row post-pill", () => {
+        setDocWithLayout(
+          host.editor,
+          host.root,
+          twoPillWire,
+          lowerPillStartWire,
+          twoPillSuffixBlankLayoutSamples()
+        );
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expectCaretParity(host.editor, host.root, firstSuffixBlankWire, "up to suffix blank");
+        expect(host.editor.getCursor()).not.toBe(postFirstPillWire);
+      });
+
+      it("round-trip — lower pill and suffix blank with measured layout", () => {
+        setDocWithLayout(
+          host.editor,
+          host.root,
+          twoPillWire,
+          lowerPillStartWire,
+          twoPillSuffixBlankLayoutSamples()
+        );
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expectCaretParity(host.editor, host.root, firstSuffixBlankWire);
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expectCaretParity(host.editor, host.root, lowerPillStartWire);
+      });
+
+      it("up from lower pill reaches suffix blank with editor/DOM parity", () => {
+        host.editor.setDocFromWire(twoPillWire, lowerPillStartWire, { resetHistory: true });
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(firstSuffixBlankWire);
+        expect(host.editor.getCursor()).not.toBe(postFirstPillWire);
+        expectCaretParity(host.editor, host.root, firstSuffixBlankWire);
+      });
+
+      it("down from suffix blank returns to lower pill with editor/DOM parity", () => {
+        host.editor.setDocFromWire(twoPillWire, firstSuffixBlankWire, { resetHistory: true });
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expectCaretParity(host.editor, host.root, lowerPillStartWire);
+      });
+    });
+  });
+
   describe("vertical — composite layout with authority/DOM parity", () => {
     let wire: string;
     let endOfLastMention: number;
@@ -490,13 +759,16 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     let secondBlankAboveBottom: number;
     let middleRowLineStart: number;
 
+    let firstBlankAboveBottom: number;
+
     beforeEach(() => {
       wire = buildCompositeBlankBandWire();
       const landmarks = compositeWireLandmarks(wire);
       middleRowLineStart = landmarks.middleRowLineStart;
       endOfLastMention = landmarks.endOfLastMention;
-      thirdBlankAboveBottom = landmarks.blankRun.at(-1)!;
-      secondBlankAboveBottom = landmarks.blankRun.at(-2)!;
+      thirdBlankAboveBottom = landmarks.blankRun.at(-2)!;
+      secondBlankAboveBottom = landmarks.blankRun.at(-3)!;
+      firstBlankAboveBottom = landmarks.blankRun[0]!;
       expect(landmarks.blankRun.length).toBeGreaterThanOrEqual(3);
 
       host.editor.setDocFromWire(wire, endOfLastMention, { resetHistory: true });
@@ -525,14 +797,14 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         host.editor,
         host.root,
         middleRowLineStart,
-        "column-0 blank lands on line above start"
+        "third step exits blank band to middle row visual start"
       );
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expectCaretParity(
         host.editor,
         host.root,
-        secondBlankAboveBottom,
+        firstBlankAboveBottom,
         "round-trip into blank band"
       );
     });
@@ -563,7 +835,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(
         host.editor,
         host.root,
-        secondBlankAboveBottom,
+        firstBlankAboveBottom,
         "middle row into blank band"
       );
     });
@@ -603,7 +875,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
   describe("horizontal — matrix suffix doc positions", () => {
     const suffixWire = `row @${AGENT_A} mid @${AGENT_B} tail\n\n\nlower @${AGENT_A} `;
     const rowTail = suffixWire.indexOf("tail") + 2;
-    const suffixBlank = suffixWire.indexOf("\n\n") + 1;
+    const suffixBlank = listEmbeddedBlankBandProbeWires(wireToDoc(suffixWire))[0]!;
     const lowerMention = suffixWire.lastIndexOf("@");
 
     it("row tail and suffix blank round-trip horizontally with editor parity", () => {
@@ -635,20 +907,25 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const row = `row @${AGENT_A} @${AGENT_A} @${AGENT_A} end`;
       const wire = `${row}\n\n\nfollow`;
       const rowTail = row.length - 1;
-      const firstBlank = row.length + 1;
+      const blanksBelowRow = listEmbeddedBlankBandProbeWires(wireToDoc(wire)).filter(
+        (probe) => probe > rowTail
+      );
+      const firstBlankBelowRow = blanksBelowRow.at(-1)!;
       host.editor.setDocFromWire(wire, rowTail, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(firstBlank);
-      expectCaretParity(host.editor, host.root, firstBlank);
+      expect(host.editor.getCursor()).toBe(firstBlankBelowRow);
+      expectCaretParity(host.editor, host.root, firstBlankBelowRow);
     });
 
     it("five-blank wire band column-0 round-trip with editor parity", () => {
-      const wire = `header\n\n\n\n\n\ntail`;
-      const firstBlank = "header\n".length;
+      const header = "header";
+      const wire = `${header}${"\n".repeat(6)}tail`;
+      const blanks = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
+      expect(blanks).toHaveLength(5);
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstBlank);
-      host.editor.setDocFromWire(wire, firstBlank, { resetHistory: true });
+      expectCaretParity(host.editor, host.root, blanks[0]!);
+      host.editor.setDocFromWire(wire, blanks[0]!, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, 0);
     });
@@ -657,7 +934,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const row = `row @${AGENT_A} @${AGENT_A} @${AGENT_A} @${AGENT_A} end`;
       const wire = `${row}\n\n\nfollow`;
       const pillRowStart = 0;
-      const firstBlank = row.length + 1;
+      const firstBlank = listEmbeddedBlankBandProbeWires(wireToDoc(wire))[0]!;
       const secondPill = wire.indexOf(`@${AGENT_A}`, wire.indexOf(`@${AGENT_A}`) + 1);
       host.editor.setDocFromWire(wire, pillRowStart, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
@@ -670,17 +947,16 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
 
     it("seven-blank wire band column-0 round-trip with editor parity", () => {
-      const wire = `header\n\n\n\n\n\n\n tail`;
-      const firstBlank = "header\n".length;
-      const lastBlank = "header\n\n\n\n\n\n".length;
+      const wire = `header${"\n".repeat(8)} tail`;
+      const blanks = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
       const tailStart = wire.indexOf("tail");
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstBlank);
+      expectCaretParity(host.editor, host.root, blanks[0]!);
       host.editor.setDocFromWire(wire, tailStart, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expectCaretParity(host.editor, host.root, lastBlank);
-      host.editor.setDocFromWire(wire, firstBlank, { resetHistory: true });
+      expectCaretParity(host.editor, host.root, blanks[6]!);
+      host.editor.setDocFromWire(wire, blanks[0]!, { resetHistory: true });
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, 0);
     });
@@ -747,7 +1023,161 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(host.editor, host.root, firstMentionStart, "up to upper row");
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, secondMentionEnd, "down restores lower row");
+      expectCaretParity(host.editor, host.root, gapMidWire, "down restores lower row column");
+    });
+  });
+
+  describe("vertical — multiline wire line with same-wire soft wrap", () => {
+    const wire = wrappedFirstLineWire();
+    const L = landmarksForWrappedFirstLine(wire);
+    const layoutSamples = samplesForWrappedFirstLine(wire);
+
+    it("down from wrap row 1 stays on interior visual row", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.wrapRow1Wire, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.wrapRow2InteriorWire, "wrap row 2 interior");
+      expect(host.editor.getCursor()).not.toBe(L.line1Start);
+    });
+
+    it("down from wrap row 2 interior crosses to visual row below at row start", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.wrapRow2InteriorWire, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.line1Start, "visual row below");
+    });
+
+    it("round-trip — wrap interior down then up restores interior", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.wrapRow2InteriorWire, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.line1Start);
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.wrapRow2InteriorWire);
+    });
+
+    it("two-step down from wrap row 1 visits wrap row 2 before row below", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.wrapRow1Wire, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(L.wrapRow2InteriorWire);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.line1Start);
+    });
+  });
+
+  describe("vertical — middle wire line soft wrap between neighbours", () => {
+    const wire = sandwichWire();
+    const L = landmarksForSandwich(wire);
+    const layoutSamples = samplesForSandwich(wire);
+
+    it("down from middle wrap row 1 stays on middle wire line", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.middleWrapRow1, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.middleWrapRow2Interior, "middle wrap row 2");
+      expect(host.editor.getCursor()).not.toBe(L.bottomStart);
+    });
+
+    it("down from middle wrap row 2 interior crosses to bottom visual row", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.middleWrapRow2Interior, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.bottomStart);
+    });
+
+    it("up from middle wrap row 2 interior lands on middle wrap row 1", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.middleWrapRow2Interior, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.middleWrapRow1);
+    });
+
+    it("down from top visual row crosses to middle wrap row 1", () => {
+      setDocWithLayout(host.editor, host.root, wire, 0, layoutSamples);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.middleWrapRow1, "short top to middle");
+    });
+  });
+
+  describe("vertical — empty row below wrapped line", () => {
+    const wire = `${wrappedFirstLineWire().replace(/\nrow3$/, "")}\n\nbelow`;
+    const emptyLineWire = wire.indexOf("\n") + 1;
+    const belowStart = wire.lastIndexOf("\n") + 1;
+
+    function samples() {
+      const base = samplesForWrappedFirstLine(
+        wire.replace(/\n\nbelow$/, "\nrow3"),
+        VISUAL_ROW_TOP.r3
+      );
+      return [
+        ...base.filter((sample) => sample.wire < emptyLineWire),
+        { wire: emptyLineWire, top: VISUAL_ROW_TOP.r3, left: 0 },
+        { wire: belowStart, top: VISUAL_ROW_TOP.r4, left: 0 },
+        { wire: wire.length - 1, top: VISUAL_ROW_TOP.r4, left: 40 },
+      ];
+    }
+
+    it("down from wrap row 2 tail lands on empty row not row below", () => {
+      const wrapTail = emptyLineWire - 1;
+      setDocWithLayout(host.editor, host.root, wire, wrapTail, samples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, emptyLineWire, "empty row");
+      expect(host.editor.getCursor()).not.toBe(belowStart);
+    });
+
+    it("down from empty row crosses to row below", () => {
+      setDocWithLayout(host.editor, host.root, wire, emptyLineWire, samples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, belowStart);
+    });
+  });
+
+  describe("vertical — multiple visual rows below wrapped first line", () => {
+    const wire = `header @${AGENT_A} ${longTail()}\nline1\nline2`;
+    const L = landmarksForWrappedFirstLine(wire.replace(/\nline1\nline2$/, "\nrow3"));
+    const line1Start = wire.indexOf("\n") + 1;
+    const line2Start = wire.lastIndexOf("\n") + 1;
+
+    function samples() {
+      const base = samplesForWrappedFirstLine(
+        wire.replace(/\nline1\nline2$/, "\nrow3"),
+        VISUAL_ROW_TOP.r3
+      );
+      return [
+        ...base.slice(0, -2),
+        { wire: line1Start, top: VISUAL_ROW_TOP.r3, left: 0 },
+        { wire: line1Start + 4, top: VISUAL_ROW_TOP.r3, left: 40 },
+        { wire: line2Start, top: VISUAL_ROW_TOP.r4, left: 0 },
+        { wire: wire.length - 1, top: VISUAL_ROW_TOP.r4, left: 40 },
+      ];
+    }
+
+    it("down from wrap row 1 does not skip to lower rows", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.wrapRow1Wire, samples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(L.wrapRow2InteriorWire);
+      expect(host.editor.getCursor()).not.toBe(line1Start);
+      expect(host.editor.getCursor()).not.toBe(line2Start);
+    });
+
+    it("down from wrap row 2 interior crosses to first row below wrap", () => {
+      setDocWithLayout(host.editor, host.root, wire, L.wrapRow2InteriorWire, samples());
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, line1Start);
+      expect(host.editor.getCursor()).not.toBe(line2Start);
+    });
+  });
+
+  describe("vertical — wrapped line then Shift+Enter row below", () => {
+    const wire = `header @${AGENT_A} ${longTail(12)}\nrow3`;
+    const L = landmarksForWrappedFirstLine(wire);
+
+    it("down chain visits wrap row 2 then visual row below", () => {
+      setDocWithLayout(
+        host.editor,
+        host.root,
+        wire,
+        L.wrapRow1Wire,
+        samplesForWrappedFirstLine(wire)
+      );
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(L.wrapRow2InteriorWire);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, L.line1Start);
     });
   });
 

@@ -2,7 +2,6 @@ import { resolveMentionQueryMultilineInsert } from "../utils/handoff-note.js";
 import {
   describeLineBreakCaretRun,
   isHandoffNoteEnvTraceEnabled,
-  isWhitespaceOnlyLineBreakSpacer,
   lineBreakSuffixStartInText,
   traceLineBreakCaretBoundary,
 } from "./handoff-note-line-break-caret.js";
@@ -413,23 +412,12 @@ function applyLineBreakCaretPolicy(
   if (atContentEnd && hadNewlineSuffix && run.beforeMention && !run.afterMention && !inNewlineRun) {
     const insertPos = wireOffsetToDocPos(doc, run.suffixStartWire);
     const result = spliceDocSelection(doc, insertPos, insertPos, "\n");
-    const nextTextNode = result.doc.nodes[normalized.nodeIndex];
-    const prefixContentLength = run.suffixStartWire - run.textStartWire;
-    const stayOnContentLine = prefixContentLength <= 5;
-    if (nextTextNode?.type === "text" && !stayOnContentLine) {
-      return {
-        doc: result.doc,
-        selection: collapsedSelection(
-          normalizeDocPos(result.doc, {
-            nodeIndex: normalized.nodeIndex,
-            nodeOffset: nextTextNode.text.length,
-          })
-        ),
-      };
-    }
+    const resolvedWire = priorWire + 1;
     return {
       doc: result.doc,
-      selection: collapsedSelection(normalizeDocPos(result.doc, focus)),
+      selection: collapsedSelection(
+        normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolvedWire))
+      ),
     };
   }
 
@@ -456,25 +444,19 @@ function applyLineBreakCaretPolicy(
   const result = spliceDocSelection(doc, focus, focus, "\n");
 
   if (atContentEnd && !hadNewlineSuffix) {
-    if (run.afterMention) {
-      if (isWhitespaceOnlyLineBreakSpacer(textNode.text)) {
-        const resolvedWire = priorWire + 1;
-        traceLineBreakCaretBoundary("line-break-after-mention-first-blank", {
-          priorWire,
-          resolvedWire,
-          requestedWire: priorWire,
-        });
-        return {
-          doc: result.doc,
-          selection: collapsedSelection(
-            normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolvedWire))
-          ),
-        };
-      }
-    }
+    const resolvedWire = priorWire + 1;
+    traceLineBreakCaretBoundary("line-break-content-end-blank", {
+      priorWire,
+      resolvedWire,
+      requestedWire: priorWire,
+      afterMention: run.afterMention,
+      beforeMention: run.beforeMention,
+    });
     return {
       doc: result.doc,
-      selection: collapsedSelection(normalizeDocPos(result.doc, focus)),
+      selection: collapsedSelection(
+        normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolvedWire))
+      ),
     };
   }
 
@@ -490,13 +472,11 @@ function applyLineBreakCaretPolicy(
       };
     }
     if (run.beforeMention && nextTextNode?.type === "text") {
+      const caretWire = priorWire + 1;
       return {
         doc: result.doc,
         selection: collapsedSelection(
-          normalizeDocPos(result.doc, {
-            nodeIndex: normalized.nodeIndex,
-            nodeOffset: nextTextNode.text.length,
-          })
+          normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire))
         ),
       };
     }
