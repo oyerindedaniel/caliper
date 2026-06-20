@@ -1,7 +1,7 @@
 // DO NOT DELETE THIS FILE
 const LOG_PREFIX = "[handoff-note]";
 
-/** Filter console with `ce.` / `caret>>` / `caret>>ver>>` / `mention.` / `dom.` for pipeline traces. */
+/** Filter console with `ce.` / `caret>>` / `click>>` / `delete>>` / `mention.` / `dom.` for pipeline traces. */
 export function flattenHandoffNoteLog(
   event: string,
   data: Record<string, unknown> = {},

@@ -358,6 +358,56 @@ describe("handoff-note-layout-map", () => {
       expect(layout.rowIndexForWire(lowerRowStart)).toBe(contentRowIndex);
       surface.remove();
     });
+
+    it("adds layout sample at content-to-content embedded newline inside text node", () => {
+      const wire = `header @${AGENT} \n\n\nmiddle line\nlower`;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      let middleLineStart = probes.at(-1)! + 1;
+      while (middleLineStart < wire.length && wire[middleLineStart] === "\n") {
+        middleLineStart++;
+      }
+      const lowerLineStart = wire.indexOf("\n", middleLineStart) + 1;
+      const headerTop = 141.1;
+      const middleTop = 250.0;
+      const lowerTop = 286.0;
+      const surface = mountSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      stubHandoffNoteMentionLayoutCoords(surface, new Map([[1, { top: headerTop, left: 80 }]]));
+      stubHandoffNoteAnchorRectAtWire(surface, doc, middleLineStart, { top: middleTop, left: 0 });
+      stubHandoffNoteAnchorRectAtWire(surface, doc, lowerLineStart, { top: lowerTop, left: 0 });
+      invalidateHandoffNoteLayoutCache();
+
+      const layout = buildHandoffNoteLayoutMap(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, wire.length - 1)
+      );
+
+      expect(layout.visualRowCount).toBeGreaterThanOrEqual(4);
+      const cached = getCachedMeasuredSamples(docToWire(doc), surface.clientWidth);
+      expect(cached?.some((sample) => sample.wire === lowerLineStart)).toBe(true);
+      expect(cached?.some((sample) => sample.wire === probes[0]!)).toBe(false);
+      const lowerSample = cached?.find((sample) => sample.wire === lowerLineStart);
+      expect(lowerSample?.top).toBe(lowerTop);
+      surface.remove();
+    });
+
+    it("keeps stacked blank rows as separate visual rows in dom acquire", () => {
+      const wire = "header\n\n";
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes).toHaveLength(2);
+      const surface = mountSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      invalidateHandoffNoteLayoutCache();
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, probes[1]!));
+      const blankRows = layout.rows.filter((row) => row.kind === "blank");
+      expect(blankRows).toHaveLength(2);
+      expectStrictlyIncreasing(blankRows.map((row) => row.top));
+      surface.remove();
+    });
   });
 
   describe("soft-wrap visual rows", () => {

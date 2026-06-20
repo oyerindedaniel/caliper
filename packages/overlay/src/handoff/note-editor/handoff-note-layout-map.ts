@@ -273,6 +273,61 @@ function cloneMeasuredSamples(samples: MeasuredWireOffset[]): MeasuredWireOffset
   return samples.map((sample) => ({ ...sample }));
 }
 
+function appendEmbeddedNewlineLineSamples(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[]
+): void {
+  const seen = new Set(measured.map((sample) => sample.wire));
+  let wireBase = 0;
+
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex];
+    if (node?.type !== "text" || !node.text.includes("\n")) {
+      if (node?.type === "text") {
+        wireBase += node.text.length;
+      } else if (node?.type === "mention") {
+        wireBase += 1 + node.agentId.length;
+      }
+      continue;
+    }
+
+    let lineStartLocal = 0;
+    for (let local = 0; local < node.text.length; local++) {
+      if (node.text[local] !== "\n") {
+        continue;
+      }
+      const before = node.text.slice(lineStartLocal, local);
+      const afterStart = local + 1;
+      const nextBreak = node.text.indexOf("\n", afterStart);
+      const after = node.text.slice(afterStart, nextBreak === -1 ? node.text.length : nextBreak);
+      lineStartLocal = afterStart;
+
+      if (
+        before.length === 0 ||
+        /^\s*$/.test(before) ||
+        after.length === 0 ||
+        /^\s*$/.test(after)
+      ) {
+        continue;
+      }
+
+      const lineStartWire = wireBase + afterStart;
+      if (seen.has(lineStartWire) || isEmbeddedBlankBandProbeWire(doc, lineStartWire)) {
+        continue;
+      }
+      const coord = measureWireCoord(root, doc, lineStartWire);
+      if (!coord) {
+        continue;
+      }
+      seen.add(lineStartWire);
+      measured.push(coord);
+    }
+
+    wireBase += node.text.length;
+  }
+}
+
 /** Content geometry only — blank probe wires never bracket the ladder. */
 function contentSamplesForBlankLadder(
   doc: HandoffNoteDoc,
@@ -1207,6 +1262,7 @@ function acquireDomMeasuredSamples(
   }
   applyDomAcquireSamplePins(root, doc, measured);
   appendSoftWrapLineSamples(root, doc, measured);
+  appendEmbeddedNewlineLineSamples(root, doc, measured);
   setMeasuredSamplesCache(wire, rootWidth, measured);
   logVerArrow("layout.acquire", {
     source: "dom",

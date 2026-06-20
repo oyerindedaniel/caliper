@@ -41,6 +41,25 @@ Mention-boundary breaks (caret on pill start) use the same caret rule: newline b
   - **Layout:** content rows and blank rows are ordered by measured **`top`** (visual Y). Mention end and immediately following text on the same paint band share one visual row before clustering. **Down from content:** skip inline blanks that share the current row’s measured top (first break on the same paint band). **Up** steps through each **visual** row above, not each wire `\n`. Row clustering merges pill midYs with measured sample tops for soft wrap. Horizontal bleed must not substitute when another visual row exists.
   - **Core helper:** `listEmbeddedBlankBandProbeWires` identifies break wires for **empty** visual rows only — not substantive wire-line breaks like `line1\nline2`, and not a content line-start `\n` before the next substantive segment.
 
+### Wire `\n` classification for layout (extends §36–38)
+
+On the wire, `\n` always means **start next line**. Layout and navigation classify the **segment after** that break:
+
+- **Empty segment after `\n`** (nothing or whitespace only until the next break) → **blank visual row**. Each empty line the user sees is one Up/Down step. Layout must **not collapse** consecutive empty rows into one row.
+- **Substantive text after `\n`** → **content visual row** (normal line break). Example: `line1\nline2` — row for `line1`, then row for `line2`. Layout must assign a **distinct measured top** per substantive wire line inside embedded text nodes, not fold the whole node into one visual row.
+
+Stacked Shift+Enter blanks (`\n\n` with empty segments) remain **separate blank visual rows** — Up/Down round-trip parity through each blank row.
+
+## Click ingress (text mousedown / selectionchange)
+
+Editor-owned reconciliation on `selectionchange` after user click. Builds on §76 pill-click; does **not** change §49 delete-at-probe policy.
+
+- **Rule 1 — click wins:** If a click resolves to a valid DOM text position on the editor, **accept it** as authority.
+- **Rule 2 — repair scope:** Repair on `selectionchange` runs only when the click lands in an **invalid or unrepresentable** region (e.g. pill interior strand, selection outside root) — not when live wire reads as a blank probe but the DOM still resolved meaningful text on the intended row.
+- **Rule 3 — no regress:** Repair must **never move the caret farther from the user’s click target** when a valid position already exists.
+
+Industry norm (VS Code, Google Docs, Notion, Slack, CodeMirror): **click location wins** unless the DOM cannot represent the requested position. §49 “content row end above band” is **Backspace-at-probe policy**, not click repair.
+
 ## Backspace / Delete at blank-band probes
 
 Editor-owned (`beforeInput` → `applyDocDelete`); same probe wires as arrow landing (`listEmbeddedBlankBandProbeWires`).

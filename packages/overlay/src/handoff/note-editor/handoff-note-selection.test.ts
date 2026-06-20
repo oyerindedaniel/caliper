@@ -171,7 +171,7 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(root, doc)).toBe(authority);
   });
 
-  it("snaps mis-hit blank probe to content row end when prior was on that row interior", () => {
+  it("accepts valid DOM text without probe snap when prior was on row interior", () => {
     const suffixWire = `header @caliper-aaaaaaa row\n\n\nlower `;
     const suffixDoc = wireToDoc(suffixWire);
     const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
@@ -183,8 +183,9 @@ describe("handoff-note-selection", () => {
     const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, wireOffsetToDocPos(bandDoc, 0), {
       mode: "strand-only",
     });
-    expect(docPosToWireOffset(bandDoc, repaired)).toBe(headerEnd);
-    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(headerEnd);
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(firstProbe);
+    expect(docPosToWireOffset(bandDoc, repaired)).not.toBe(headerEnd);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(firstProbe);
   });
 
   it("keeps blank probe when prior authority was already at content row end", () => {

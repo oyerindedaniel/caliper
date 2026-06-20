@@ -3,7 +3,6 @@ import {
   describeHandoffNoteCursorContext,
   docPosEqual,
   docPosToWireOffset,
-  isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
   normalizeDocPos,
   normalizeSelection,
@@ -48,28 +47,6 @@ function readRawWireFocus(root: HTMLElement, doc: HandoffNoteDoc): number {
   const range = selection.getRangeAt(0);
   const focus = domPointToDocPos(root, doc, range.endContainer, range.endOffset);
   return docPosToWireOffset(doc, focus);
-}
-
-/**
- * Click mis-hit the first blank-band probe after substantive content while prior
- * authority was still on that content row (not already at row end, not on a probe).
- */
-function shouldSnapClickProbeToContentRowEnd(
-  doc: HandoffNoteDoc,
-  fromWire: number,
-  liveWire: number
-): boolean {
-  if (!isEmbeddedBlankBandProbeWire(doc, liveWire)) {
-    return false;
-  }
-  const contentRowEnd = liveWire - 1;
-  if (contentRowEnd < 0 || fromWire >= contentRowEnd) {
-    return false;
-  }
-  if (isEmbeddedBlankBandProbeWire(doc, fromWire)) {
-    return false;
-  }
-  return true;
 }
 
 /** DOM caret fell behind editor authority (e.g. popover pick left selection at superseded @query). */
@@ -155,19 +132,14 @@ export function repairDocSelectionIfNeeded(
     return restored;
   }
 
-  if (fromWire !== undefined && shouldSnapClickProbeToContentRowEnd(doc, fromWire, focusWire)) {
-    const contentRowEnd = wireOffsetToDocPos(doc, focusWire - 1);
+  if (options?.mode === "strand-only") {
+    const resolvedWire = docPosToWireOffset(doc, live.focus);
     flattenHandoffNoteLog("caret>>repair", {
-      branch: "snapClickProbeToContentRowEnd",
+      branch: "strandOnlyAccept",
       liveWire: focusWire,
       fromWire,
-      snapTo: focusWire - 1,
+      resolvedWire,
     });
-    setDocSelection(root, doc, collapsedSelection(contentRowEnd), { from, source: "repair" });
-    return contentRowEnd;
-  }
-
-  if (options?.mode === "strand-only") {
     return normalizeDocPos(doc, live.focus, { from });
   }
 

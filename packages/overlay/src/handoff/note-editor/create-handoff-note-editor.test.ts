@@ -709,36 +709,50 @@ describe("createHandoffNoteEditor", () => {
     expect(host.editor.getCursor()).toBe(mentionStart);
   });
 
-  describe("selectionchange — embedded blank-band click ingress", () => {
+  describe("selectionchange — click ingress", () => {
     const agentId = "caliper-aaaaaaa";
+    const twoPillWire = `prefix @${agentId} @${agentId} \n\n lower `;
     const suffixWire = `header @${agentId} row\n\n\nlower `;
 
-    it("snaps mis-hit blank probe to content row end when prior was on row interior", () => {
-      const doc = wireToDoc(suffixWire);
-      const probes = listEmbeddedBlankBandProbeWires(doc);
-      const headerEnd = probes[0]! - 1;
-      const [firstProbe] = probes;
+    it("accepts valid DOM text on multi-pill row without probe snap", () => {
+      const doc = wireToDoc(twoPillWire);
+      const prefixEnd = "prefix".length;
 
-      host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
-      setSelectionAtWire(host.root, host.editor.getDoc(), firstProbe!, firstProbe!);
+      host.editor.setDocFromWire(twoPillWire, 0, { resetHistory: true });
+      setSelectionAtWire(host.root, doc, prefixEnd, prefixEnd);
       dispatchSelectionChange(host.root);
 
-      expect(host.editor.getCursor()).toBe(headerEnd);
-      expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(headerEnd);
+      expect(host.editor.getCursor()).toBe(prefixEnd);
+      expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(prefixEnd);
+      expect(host.editor.getCursor()).not.toBe(listEmbeddedBlankBandProbeWires(doc)[0]! - 1);
     });
 
-    it("keeps blank probe when prior authority was already at content row end", () => {
+    it("accepts blank probe when click targets probe band", () => {
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
       const headerEnd = probes[0]! - 1;
       const [firstProbe] = probes;
 
       host.editor.setDocFromWire(suffixWire, headerEnd, { resetHistory: true });
-      setSelectionAtWire(host.root, host.editor.getDoc(), firstProbe!, firstProbe!);
+      setSelectionAtWire(host.root, doc, firstProbe!, firstProbe!);
       dispatchSelectionChange(host.root);
 
       expect(host.editor.getCursor()).toBe(firstProbe);
       expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(firstProbe);
+    });
+
+    it("does not snap mis-hit probe to content row end when prior was on row interior", () => {
+      const doc = wireToDoc(suffixWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+      const [firstProbe] = probes;
+
+      host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
+      setSelectionAtWire(host.root, doc, firstProbe!, firstProbe!);
+      dispatchSelectionChange(host.root);
+
+      expect(host.editor.getCursor()).toBe(firstProbe);
+      expect(host.editor.getCursor()).not.toBe(headerEnd);
     });
   });
 

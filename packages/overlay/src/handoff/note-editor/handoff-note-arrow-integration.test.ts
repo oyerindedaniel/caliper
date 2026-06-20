@@ -1173,7 +1173,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
     });
 
-    it("keydown backspace after click snap to content row end nibbles suffix text", () => {
+    it("keydown backspace after probe click steps to header end then nibbles suffix", () => {
       const suffixWire = `header @${AGENT_COMPOSITE} row\n\n\nlower `;
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
@@ -1183,11 +1183,15 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
       setSelectionAtWire(host.root, host.editor.getDoc(), firstProbe!, firstProbe!);
       dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(firstProbe);
+
+      expect(pressBackspace()).toBe(true);
       expect(host.editor.getCursor()).toBe(headerEnd);
+      expect(host.editor.getWire()).toBe(suffixWire);
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
-      expectCaretParity(host.editor, host.root, headerEnd - 1, "nibble after click snap");
+      expectCaretParity(host.editor, host.root, headerEnd - 1, "nibble after probe backspace step");
     });
 
     it("keydown backspace after blank-band step to header end chips trailing suffix", () => {
@@ -1632,6 +1636,94 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).not.toBe(tailWire - 1);
       expect(host.editor.getCursor()).toBeLessThan(tailWire - 5);
       expectCaretParity(host.editor, host.root, host.editor.getCursor(), "vertical up from tail");
+    });
+  });
+
+  describe("vertical — post-blank-band substantive wire lines", () => {
+    const wire = `prefix @${AGENT_A} @${AGENT_A} \n\n middle\nlower `;
+
+    function sessionLandmarks() {
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      let middleLineStart = probes.at(-1)! + 1;
+      while (middleLineStart < wire.length && wire[middleLineStart] === "\n") {
+        middleLineStart++;
+      }
+      const lowerLineStart = wire.indexOf("\n", middleLineStart) + 1;
+      return { probes, middleLineStart, lowerLineStart, eof: wire.length - 1 };
+    }
+
+    it("up from bottom row hits middle content row before blank band", () => {
+      const { probes, middleLineStart, eof } = sessionLandmarks();
+      host.editor.setDocFromWire(wire, eof, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(middleLineStart);
+      expect(host.editor.getCursor()).not.toBe(probes[0]);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(probes.at(-1));
+    });
+
+    it("down from middle row crosses to lower content row", () => {
+      const { middleLineStart, lowerLineStart } = sessionLandmarks();
+      host.editor.setDocFromWire(wire, middleLineStart, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(lowerLineStart);
+    });
+
+    it("up from middle row enters blank band above", () => {
+      const { probes, middleLineStart } = sessionLandmarks();
+      host.editor.setDocFromWire(wire, middleLineStart, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(probes.at(-1));
+    });
+  });
+
+  describe("vertical — stacked blank rows round-trip", () => {
+    const wire = "header\n\n";
+
+    it("up and down visit each blank row separately", () => {
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes).toHaveLength(2);
+      const upperBlank = probes[0]!;
+      const lowerBlank = probes[1]!;
+
+      host.editor.setDocFromWire(wire, lowerBlank, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(upperBlank);
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, lowerBlank, "stacked blank round-trip");
+    });
+  });
+
+  describe("click ingress — prefix edit after intentional click", () => {
+    const wire = `prefix @${AGENT_A} @${AGENT_A} \n\n lower `;
+
+    function pressBackspace(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+      );
+    }
+
+    it("backspace nibbles prefix after click at prefix end", () => {
+      const prefixEnd = "prefix".length;
+      host.editor.setDocFromWire(wire, 0, { resetHistory: true });
+      setSelectionAtWire(host.root, host.editor.getDoc(), prefixEnd, prefixEnd);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(prefixEnd);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`prefi @${AGENT_A} @${AGENT_A} \n\n lower `);
+      expectCaretParity(host.editor, host.root, prefixEnd - 1, "prefix nibble");
     });
   });
 });

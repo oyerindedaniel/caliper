@@ -13,6 +13,8 @@ import {
   docsEqual,
   insertMentionAtSelection,
   isArrow,
+  isEmbeddedBlankBandProbeWire,
+  normalizeDocPos,
   normalizeHandoffNoteDoc,
   normalizeSelection,
   resolveDocHorizontalArrowMove,
@@ -28,6 +30,9 @@ import {
   parseHandoffNoteDomToDoc,
   renderHandoffNoteDoc,
   updateMentionPresentation,
+  isHandoffBlankAnchorElement,
+  isHandoffMentionElement,
+  isHandoffWireBreakElement,
   type RenderOutcome,
 } from "./handoff-note-dom.js";
 import { resolveSelectedMentionArrowExit } from "./handoff-note-mention-selection.js";
@@ -40,6 +45,7 @@ import {
 import {
   flattenHandoffNoteLog,
   handoffNoteLayoutProbe,
+  handoffNoteSelectionSnapshot,
   logCaretTrace,
 } from "../handoff-note-debug.js";
 import {
@@ -48,7 +54,11 @@ import {
   resolveDomVerticalArrowMove,
   setDocSelection,
 } from "./handoff-note-selection.js";
-import { domRectAnchorMidY, getDocAnchorRect } from "./handoff-note-dom-points.js";
+import {
+  domPointToDocPos,
+  domRectAnchorMidY,
+  getDocAnchorRect,
+} from "./handoff-note-dom-points.js";
 import {
   buildHandoffNoteLayoutMap,
   invalidateHandoffNoteLayoutCache,
@@ -144,6 +154,71 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     lastRenderOutcome = { domReplaced: false, docChanged: false };
   };
 
+  const classifyNativeAnchor = (node: Node | null): { kind: string; parentKind: string | null } => {
+    if (!node) {
+      return { kind: "none", parentKind: null };
+    }
+    const parent = node.parentNode;
+    const classify = (target: Node | null): string => {
+      if (!target) {
+        return "none";
+      }
+      if (target.nodeType === Node.TEXT_NODE) {
+        const parentEl = target.parentNode;
+        if (isHandoffBlankAnchorElement(parentEl)) {
+          return "blankAnchorText";
+        }
+        if (parentEl && isHandoffMentionElement(parentEl)) {
+          return "mentionText";
+        }
+        return "text";
+      }
+      if (isHandoffBlankAnchorElement(target)) {
+        return "blankAnchor";
+      }
+      if (isHandoffWireBreakElement(target)) {
+        return "wireBreak";
+      }
+      if (isHandoffMentionElement(target)) {
+        return "mention";
+      }
+      if (target instanceof HTMLElement) {
+        return target.tagName.toLowerCase();
+      }
+      return `node:${target.nodeType}`;
+    };
+    return { kind: classify(node), parentKind: classify(parent) };
+  };
+
+  const summarizeDomPoint = (container: Node | null, offset: number | null | undefined) => {
+    if (!container || offset == null) {
+      return null;
+    }
+    const text = container.nodeType === Node.TEXT_NODE ? (container.textContent ?? "") : null;
+    let domChildIndex: number | null = null;
+    if (root) {
+      let current: Node | null = container;
+      while (current && current.parentNode !== root) {
+        current = current.parentNode;
+      }
+      if (current && current.parentNode === root) {
+        domChildIndex = Array.prototype.indexOf.call(root.childNodes, current);
+      }
+    }
+    return {
+      ...classifyNativeAnchor(container),
+      offset,
+      domChildIndex,
+      textLength: text?.length ?? null,
+      textAround:
+        text !== null
+          ? text.slice(Math.max(0, offset - 12), Math.min(text.length, offset + 12))
+          : container instanceof HTMLElement
+            ? (container.textContent ?? "").slice(0, 40)
+            : null,
+    };
+  };
+
   const reconcileSelectionFromDom = (source: "selectionchange" | "sync") => {
     if (!root) {
       return;
@@ -155,6 +230,15 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       live.anchor.nodeOffset !== live.focus.nodeOffset
     ) {
       selection = normalizeSelection(doc, live, { from: priorFocus });
+      if (source === "selectionchange") {
+        logCaretTrace("click>>selectionchange", {
+          priorWire: docPosToWireOffset(doc, priorFocus),
+          liveWire: docPosToWireOffset(doc, live.focus),
+          resolvedWire: docPosToWireOffset(doc, selection.focus),
+          repairMode: "nonCollapsed",
+          adopted: "live",
+        });
+      }
       return;
     }
     const repairMode = source === "selectionchange" ? "strand-only" : "full";
@@ -163,7 +247,51 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     const priorWire = docPosToWireOffset(doc, priorFocus);
     const liveWire = docPosToWireOffset(doc, live.focus);
     const resolvedWire = docPosToWireOffset(doc, focus);
-    if (liveWire !== resolvedWire) {
+    if (source === "selectionchange") {
+      const liveRect = getDocAnchorRect(root, doc, live.focus);
+      const native = root.ownerDocument.getSelection();
+      const range = native && native.rangeCount > 0 ? native.getRangeAt(0) : null;
+      const anchorNode = native?.anchorNode ?? null;
+      const anchorOffset = native?.anchorOffset ?? null;
+      const endContainer = range?.endContainer ?? null;
+      const endOffset = range?.endOffset ?? null;
+      const rawFromAnchor =
+        anchorNode && anchorOffset !== null
+          ? domPointToDocPos(root, doc, anchorNode, anchorOffset)
+          : null;
+      const rawFromRangeEnd =
+        endContainer && endOffset !== null
+          ? domPointToDocPos(root, doc, endContainer, endOffset)
+          : null;
+      const normalizedFromRangeEnd = rawFromRangeEnd
+        ? normalizeDocPos(doc, rawFromRangeEnd, { from: rawFromRangeEnd })
+        : null;
+      logCaretTrace("click>>selectionchange", {
+        priorWire,
+        liveWire,
+        resolvedWire,
+        repairMode,
+        adopted: liveWire === resolvedWire ? "live" : "repaired",
+        liveIsBlankProbe: isEmbeddedBlankBandProbeWire(doc, liveWire),
+        resolvedIsBlankProbe: isEmbeddedBlankBandProbeWire(doc, resolvedWire),
+        liveCaretMidY: liveRect ? Math.round(domRectAnchorMidY(liveRect) * 100) / 100 : null,
+        native: handoffNoteSelectionSnapshot(root),
+        nativeAnchor: classifyNativeAnchor(anchorNode),
+        nativeAnchorPoint: summarizeDomPoint(anchorNode, anchorOffset),
+        rangeEndPoint: summarizeDomPoint(endContainer, endOffset),
+        translate: {
+          rawFromAnchor,
+          rawFromAnchorWire: rawFromAnchor ? docPosToWireOffset(doc, rawFromAnchor) : null,
+          rawFromRangeEnd,
+          rawFromRangeEndWire: rawFromRangeEnd ? docPosToWireOffset(doc, rawFromRangeEnd) : null,
+          normalizedFromRangeEnd,
+          normalizedFromRangeEndWire: normalizedFromRangeEnd
+            ? docPosToWireOffset(doc, normalizedFromRangeEnd)
+            : null,
+          liveFocus: live.focus,
+        },
+      });
+    } else if (liveWire !== resolvedWire) {
       logCaretTrace(`reconcileSelectionFromDom>>${source}`, {
         priorFocus,
         priorWire,
@@ -638,6 +766,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         return;
       }
 
+      const authorityBefore = docPosToWireOffset(doc, selection.focus);
       const active = syncSelectionFromDom();
 
       if (
@@ -645,10 +774,25 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         event.inputType === "deleteContentForward"
       ) {
         const direction = event.inputType === "deleteContentBackward" ? "backspace" : "delete";
+        const activeWire = docPosToWireOffset(doc, active.focus);
+        logCaretTrace(`delete>>ingress>>beforeInput.${direction}`, {
+          authorityBefore,
+          activeWire,
+          wire: docToWire(doc),
+        });
         const deleted = applyDocDelete(doc, active, direction);
         if (!deleted) {
+          logCaretTrace(`delete>>noop>>beforeInput.${direction}`, {
+            activeWire,
+            wire: docToWire(doc),
+          });
           return;
         }
+        logCaretTrace(`delete>>applied>>beforeInput.${direction}`, {
+          priorWire: activeWire,
+          caretWire: docPosToWireOffset(deleted.doc, deleted.selection.focus),
+          wire: docToWire(deleted.doc),
+        });
         event.preventDefault();
         mutate(deleted.doc, deleted.selection, `beforeInput.${direction}`, true);
         return;
@@ -720,6 +864,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         return performRedo();
       }
 
+      const authorityBefore = docPosToWireOffset(doc, selection.focus);
       const active = syncSelectionFromDom();
       const collapsed =
         active.anchor.nodeIndex === active.focus.nodeIndex &&
@@ -800,14 +945,29 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         if (!collapsed) {
           return false;
         }
+        const activeWire = docPosToWireOffset(doc, active.focus);
+        logCaretTrace(`delete>>ingress>>keydown.${event.key}`, {
+          authorityBefore,
+          activeWire,
+          wire: docToWire(doc),
+        });
         const deleted = applyDocDelete(
           doc,
           active,
           event.key === "Backspace" ? "backspace" : "delete"
         );
         if (!deleted) {
+          logCaretTrace(`delete>>noop>>keydown.${event.key}`, {
+            activeWire,
+            wire: docToWire(doc),
+          });
           return false;
         }
+        logCaretTrace(`delete>>applied>>keydown.${event.key}`, {
+          priorWire: activeWire,
+          caretWire: docPosToWireOffset(deleted.doc, deleted.selection.focus),
+          wire: docToWire(deleted.doc),
+        });
         event.preventDefault();
         mutate(deleted.doc, deleted.selection, `keydown.${event.key}`, true);
         return true;
