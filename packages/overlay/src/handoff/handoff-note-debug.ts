@@ -46,6 +46,9 @@ export function handoffNoteDomSnapshot(
     if (node instanceof HTMLBRElement && node.hasAttribute("data-handoff-line-pad")) {
       return { kind: "linePad" };
     }
+    if (node instanceof HTMLSpanElement && node.hasAttribute("data-handoff-blank-anchor")) {
+      return { kind: "blankAnchor" };
+    }
     if (node instanceof HTMLElement) {
       return { kind: "element", tag: node.tagName, text: node.textContent ?? "" };
     }

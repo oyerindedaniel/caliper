@@ -8,7 +8,10 @@ import {
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
 } from "./handoff-note-embedded-newlines.js";
-import { type HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
+import {
+  resolveWireLineColumn,
+  type HandoffNoteVerticalArrowDirection,
+} from "./handoff-note-wire-lines.js";
 
 export type { HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
 
@@ -299,16 +302,17 @@ export function resolveVerticalArrowMinWireLineStart(
     return null;
   }
 
-  let minWireSample = targetSamples[0]!;
-  for (const sample of targetSamples) {
-    if (sample.wire < minWireSample.wire) {
-      minWireSample = sample;
-    }
+  const anchorWire = Math.min(...targetSamples.map((sample) => sample.wire));
+  const wire = docToWire(doc);
+  const { lineStart } = resolveWireLineColumn(wire, anchorWire);
+  let substantiveStart = lineStart;
+  while (substantiveStart < wire.length && wire[substantiveStart] === "\n") {
+    substantiveStart++;
   }
 
-  const landing = snapMentionInterior(doc, minWireSample.wire, direction);
+  const landing = snapMentionInterior(doc, substantiveStart, direction);
   const branch =
-    landing === minWireSample.wire
+    landing === substantiveStart
       ? "visual-line-start-minWire"
       : "visual-line-start-mentionInterior";
   return { offset: landing, branch };

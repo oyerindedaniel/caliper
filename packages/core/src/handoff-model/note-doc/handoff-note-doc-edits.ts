@@ -16,6 +16,11 @@ import {
   resolveHandoffNoteMentionEdit,
 } from "./handoff-note-doc.js";
 import {
+  insertDocPosAfterEmbeddedBlankProbe,
+  resolveBackspaceBeforeEmbeddedBlankProbe,
+  resolveEmbeddedBlankBandDelete,
+} from "./handoff-note-embedded-newlines.js";
+import {
   collapsedSelection,
   docPosToWireOffset,
   normalizeDocPos,
@@ -237,6 +242,21 @@ export function applyDocDelete(
   }
 
   const focus = normalizeDocPos(doc, selection.focus);
+  const focusWire = docPosToWireOffset(doc, focus);
+
+  const blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction);
+  if (blankBandDelete) {
+    return {
+      doc: blankBandDelete.doc,
+      selection: collapsedSelection(
+        normalizeDocPos(
+          blankBandDelete.doc,
+          wireOffsetToDocPos(blankBandDelete.doc, blankBandDelete.caretWire)
+        )
+      ),
+    };
+  }
+
   if (selectionCollapsed(selection) && isInterMentionGap(doc, focus)) {
     return applyInterMentionGapDelete(doc, selection, direction);
   }
@@ -245,12 +265,24 @@ export function applyDocDelete(
     return null;
   }
 
-  const focusWire = docPosToWireOffset(doc, focus);
-
   if (direction === "backspace") {
     const mentionStartBackspace = applyBackspaceAtMentionStart(doc, focus);
     if (mentionStartBackspace) {
       return mentionStartBackspace;
+    }
+    if (focusWire > 0) {
+      const beforeProbe = resolveBackspaceBeforeEmbeddedBlankProbe(doc, focusWire);
+      if (beforeProbe) {
+        return {
+          doc: beforeProbe.doc,
+          selection: collapsedSelection(
+            normalizeDocPos(
+              beforeProbe.doc,
+              wireOffsetToDocPos(beforeProbe.doc, beforeProbe.caretWire)
+            )
+          ),
+        };
+      }
     }
   }
 
@@ -268,14 +300,19 @@ export function applyDocDelete(
     if (focusWire <= 0) {
       return null;
     }
+    const deleteFocus = insertDocPosAfterEmbeddedBlankProbe(doc, focus);
+    const deleteFocusWire = docPosToWireOffset(doc, deleteFocus);
+    if (deleteFocusWire <= 0) {
+      return null;
+    }
     return withCaretAtTextEndBeforeMention(
       doc,
-      spliceDocSelection(doc, wireOffsetToDocPos(doc, focusWire - 1), focus, ""),
+      spliceDocSelection(doc, wireOffsetToDocPos(doc, deleteFocusWire - 1), deleteFocus, ""),
       focus
     );
   }
 
-  if (focusWire >= docLength(doc)) {
+  if (focusWire + 1 >= docLength(doc)) {
     return null;
   }
   return spliceDocSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), "");
@@ -319,7 +356,8 @@ export function applyDocInsertText(
     return multilineQueryInsert;
   }
 
-  const focusWire = docPosToWireOffset(doc, focus);
+  const insertFocus = insertDocPosAfterEmbeddedBlankProbe(doc, focus);
+  const focusWire = docPosToWireOffset(doc, insertFocus);
   const boundary = describeHandoffNoteCursorContext(doc, focusWire);
 
   if (boundary.kind === "mention-boundary" && boundary.edge === "end" && replacement === "@") {
@@ -361,7 +399,7 @@ export function applyDocInsertText(
     }
   }
 
-  return spliceDocSelection(doc, focus, focus, replacement);
+  return spliceDocSelection(doc, insertFocus, insertFocus, replacement);
 }
 
 function appendInPreMentionText(

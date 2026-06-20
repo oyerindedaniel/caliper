@@ -3,8 +3,10 @@ import {
   docPosToWireOffset,
   docTextNodeHasEmbeddedNewline,
   docToWire,
+  embeddedTextLedLowerRowSpanAfterBlankBand,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
+  isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
   listEmbeddedBlankBandProbeWires,
   wireOffsetToDocPos,
   type HandoffNoteDoc,
@@ -15,7 +17,9 @@ import { isHandoffMentionElement, isHandoffWireBreakElement } from "./handoff-no
 import {
   docPosToRenderedDomChildIndex,
   appendSoftWrapLineSamples,
+  domRectAnchorMidY,
   getDocAnchorRect,
+  hasPositionedDomRect,
   resolveDomPointAtDocPos,
 } from "./handoff-note-dom-points.js";
 
@@ -244,16 +248,16 @@ function measureWireBreakCoord(
 
   if (element && isHandoffWireBreakElement(element)) {
     const rect = element.getBoundingClientRect();
-    if (rect.width > 0 || rect.height > 0) {
-      return { wire, top: rect.top + rect.height / 2, left: rect.left };
+    if (hasPositionedDomRect(rect)) {
+      return { wire, top: domRectAnchorMidY(rect), left: rect.left };
     }
   }
 
   const rect = getDocAnchorRect(root, doc, pos);
-  if (!rect) {
+  if (!rect || !hasPositionedDomRect(rect)) {
     return null;
   }
-  return { wire, top: rect.top + rect.height / 2, left: rect.left };
+  return { wire, top: domRectAnchorMidY(rect), left: rect.left };
 }
 
 function upsertMeasuredSample(measured: MeasuredWireOffset[], sample: MeasuredWireOffset): void {
@@ -278,7 +282,7 @@ function contentSamplesForBlankLadder(
   return measured.filter((sample) => !probes.has(sample.wire));
 }
 
-/** Blank-band probes must not sort above earlier content (sub-pixel `<br>` noise in headless DOM). */
+/** Blank-band probes must not sort above earlier content on the same wire line. */
 function contentBandTopBeforeBlankProbe(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
@@ -303,181 +307,6 @@ function contentBandTopBeforeBlankProbe(
     return lineMaxTop;
   }
   return Number.isFinite(priorMaxTop) ? priorMaxTop : null;
-}
-
-function wireLineStartOffsets(wire: string): number[] {
-  const starts = [0];
-  for (let index = 0; index < wire.length; index++) {
-    if (wire[index] === "\n") {
-      starts.push(index + 1);
-    }
-  }
-  return starts;
-}
-
-function isSubstantiveWireLineSegment(wire: string, lineStart: number): boolean {
-  const lineEnd = wire.indexOf("\n", lineStart);
-  const segment = wire.slice(lineStart, lineEnd === -1 ? wire.length : lineEnd);
-  return segment.length > 0 && !/^\s*$/.test(segment);
-}
-
-type CollapsedLayoutAnchor = { wire: number; kind: "line-start" | "blank-probe" };
-
-function listCollapsedLayoutAnchors(doc: HandoffNoteDoc): CollapsedLayoutAnchor[] {
-  const wire = docToWire(doc);
-  const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
-  const anchors: CollapsedLayoutAnchor[] = [{ wire: 0, kind: "line-start" }];
-  for (let offset = 0; offset < wire.length; offset++) {
-    if (probes.has(offset)) {
-      anchors.push({ wire: offset, kind: "blank-probe" });
-    }
-  }
-  for (const lineStart of wireLineStartOffsets(wire)) {
-    if (lineStart === 0) {
-      continue;
-    }
-    if (probes.has(lineStart)) {
-      continue;
-    }
-    if (!isSubstantiveWireLineSegment(wire, lineStart)) {
-      continue;
-    }
-    if (!anchors.some((anchor) => anchor.wire === lineStart)) {
-      anchors.push({ wire: lineStart, kind: "line-start" });
-    }
-  }
-  return anchors.sort((left, right) => left.wire - right.wire);
-}
-
-function measuredTopStrideIsCollapsed(measured: MeasuredWireOffset[], lineHeight: number): boolean {
-  const gap = minimumDistinctTopGap(measured.map((sample) => sample.top));
-  return gap === null || gap <= lineHeight * 0.5;
-}
-
-/** Headless DOM often collapses every sample to top 0 — assign monotonic tops by wire order. */
-function synthesizeCollapsedMeasuredRowTops(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  lineHeight: number
-): void {
-  const blankProbes = listEmbeddedBlankBandProbeWires(doc);
-  if (blankProbes.length === 0) {
-    return;
-  }
-  if (!measuredTopStrideIsCollapsed(measured, lineHeight)) {
-    return;
-  }
-  const wire = docToWire(doc);
-  const anchors = listCollapsedLayoutAnchors(doc);
-  if (anchors.length < 2) {
-    return;
-  }
-
-  const contentBandTop = measured.find((sample) => sample.wire === 0)?.top ?? 0;
-  let rowTop = contentBandTop;
-  let inlineBlankPending = false;
-
-  for (const anchor of anchors) {
-    if (anchor.wire === 0) {
-      applyMeasuredBandTop(doc, measured, wire, 0, rowTop);
-      inlineBlankPending = true;
-      continue;
-    }
-
-    if (anchor.kind === "blank-probe" && inlineBlankPending) {
-      upsertMeasuredSample(measured, {
-        wire: anchor.wire,
-        top: rowTop,
-        left: measured.find((sample) => sample.wire === anchor.wire)?.left ?? 0,
-      });
-      inlineBlankPending = false;
-      continue;
-    }
-
-    rowTop += lineHeight;
-    if (anchor.kind === "blank-probe") {
-      upsertMeasuredSample(measured, {
-        wire: anchor.wire,
-        top: rowTop,
-        left: measured.find((sample) => sample.wire === anchor.wire)?.left ?? 0,
-      });
-      continue;
-    }
-
-    applyMeasuredBandTop(doc, measured, wire, anchor.wire, rowTop);
-    inlineBlankPending = true;
-  }
-}
-
-function shouldSynthesizeSubstantiveWireLineTops(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  lineHeight: number
-): boolean {
-  if (!doc.nodes.some((node) => node.type === "mention")) {
-    return false;
-  }
-  if (listEmbeddedBlankBandProbeWires(doc).length > 0) {
-    return false;
-  }
-  const wire = docToWire(doc);
-  const lineStarts = wireLineStartOffsets(wire).filter((start) =>
-    isSubstantiveWireLineSegment(wire, start)
-  );
-  if (lineStarts.length < 2) {
-    return false;
-  }
-  if (measuredTopStrideIsCollapsed(measured, lineHeight)) {
-    return true;
-  }
-  const lineTops = lineStarts.map((start) => {
-    const sample = measured.find((entry) => entry.wire === start);
-    return sample?.top ?? measured[0]?.top ?? 0;
-  });
-  return new Set(lineTops).size < lineStarts.length;
-}
-
-function synthesizeCollapsedSubstantiveWireLineTops(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  lineHeight: number
-): void {
-  if (!shouldSynthesizeSubstantiveWireLineTops(doc, measured, lineHeight)) {
-    return;
-  }
-  const wire = docToWire(doc);
-  const lineStarts = wireLineStartOffsets(wire).filter((start) =>
-    isSubstantiveWireLineSegment(wire, start)
-  );
-  if (lineStarts.length < 2) {
-    return;
-  }
-  let rowTop = measured.find((sample) => sample.wire === lineStarts[0])?.top ?? 0;
-  for (const lineStart of lineStarts) {
-    applyMeasuredBandTop(doc, measured, wire, lineStart, rowTop);
-    rowTop += lineHeight;
-  }
-}
-
-function applyMeasuredBandTop(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  wire: string,
-  lineStart: number,
-  top: number
-): void {
-  const lineEnd = wire.indexOf("\n", lineStart);
-  const endWire = lineEnd === -1 ? docLength(doc) : lineEnd;
-  for (const sample of measured) {
-    if (sample.wire >= lineStart && sample.wire <= endWire) {
-      sample.top = top;
-    }
-  }
-  upsertMeasuredSample(measured, {
-    wire: lineStart,
-    top,
-    left: measured.find((sample) => sample.wire === lineStart)?.left ?? 0,
-  });
 }
 
 /** Prefix of an embedded-newline text node (before its first `\n`) shares the preceding pill band. */
@@ -564,11 +393,17 @@ function blankProbesInSameBand(
   });
 }
 
-type BlankBandPlacementKind = "inline" | "between" | "trailing" | "leading" | "lattice";
+type BlankBandPlacementKind =
+  | "inline"
+  | "between"
+  | "trailing"
+  | "leading"
+  | "lattice"
+  | "wireBreak";
 
 /**
- * Blank row top from the content-band ladder (not raw `<br>` Y).
- * wireBreak is auxiliary (left column only); sort order follows floor/ceiling brackets.
+ * Blank row top from DOM wire-break / blank-anchor measure when available.
+ * Content-band ladder is fallback only (no root or missing geometry).
  */
 function placeBlankProbeOnContentLadder(
   doc: HandoffNoteDoc,
@@ -632,7 +467,7 @@ function blankPlacementMetric(coord: MeasuredWireOffset | null): {
 
 /**
  * Phase 1: one blank row per contract probe (existence from structure).
- * Phase 2: top from content-band ladder; wireBreak supplies left when available.
+ * Phase 2: top from wire-break DOM when measured; ladder fallback when not.
  */
 function buildSemanticBlankLayoutRows(
   doc: HandoffNoteDoc,
@@ -650,13 +485,21 @@ function buildSemanticBlankLayoutRows(
     const floor = contentBandTopBeforeBlankProbe(doc, ladderBasis, probeWire);
     const ceiling = contentBandTopBelowBlankProbe(doc, ladderBasis, probeWire);
     const bandProbes = blankProbesInSameBand(doc, ladderBasis, probes, probeWire);
-    const { top, kind: placementKind } = placeBlankProbeOnContentLadder(
+    const ladderPlacement = placeBlankProbeOnContentLadder(
       doc,
       ladderBasis,
       probeWire,
       lineHeight,
       probes
     );
+    const wireBreakTop =
+      wireBreakCoord !== null &&
+      Number.isFinite(wireBreakCoord.top) &&
+      (wireBreakCoord.top !== 0 || wireBreakCoord.left !== 0)
+        ? wireBreakCoord.top
+        : null;
+    const top = wireBreakTop ?? ladderPlacement.top;
+    const placementKind = wireBreakTop !== null ? "wireBreak" : ladderPlacement.kind;
     const sample: MeasuredWireOffset = {
       wire: probeWire,
       top,
@@ -719,6 +562,7 @@ function sortLayoutRowsByVisualTop(rows: HandoffNoteLayoutRow[]): HandoffNoteLay
 }
 
 function buildDocOrderedLayoutMap(
+  doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   pillMidYs: number[],
   lineHeight: number,
@@ -749,7 +593,7 @@ function buildDocOrderedLayoutMap(
       if (direct !== undefined) {
         return direct;
       }
-      return resolveRowIndexFromBracketingSamples(wireOffset, measured, rowCenters);
+      return resolveRowIndexFromBracketingSamples(wireOffset, measured, rowCenters, doc);
     },
     coordsForWire(wireOffset: number) {
       return resolveCoordFromBracketingSamples(wireOffset, measured);
@@ -876,11 +720,40 @@ function pinMentionSampleRows(
   }
 }
 
-function resolveRowIndexFromBracketingSamples(
+function rowIndexForEmbeddedTextLedLowerRowWire(
+  doc: HandoffNoteDoc,
   wire: number,
   measured: MeasuredWireOffset[],
   rowCenters: number[]
+): number | null {
+  if (!isWireOnEmbeddedTextLedLowerRowAfterBlankBand(doc, wire)) {
+    return null;
+  }
+  const span = embeddedTextLedLowerRowSpanAfterBlankBand(doc);
+  if (!span) {
+    return null;
+  }
+  const sorted = [...measured].sort((left, right) => left.wire - right.wire);
+  const anchor = sorted.find((sample) => sample.wire >= span.lineStartWire);
+  if (!anchor || rowCenters.length === 0) {
+    return null;
+  }
+  return nearestRowCenterIndex(anchor.top, rowCenters);
+}
+
+function resolveRowIndexFromBracketingSamples(
+  wire: number,
+  measured: MeasuredWireOffset[],
+  rowCenters: number[],
+  doc?: HandoffNoteDoc
 ): number {
+  if (doc) {
+    const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(doc, wire, measured, rowCenters);
+    if (lowerRow !== null) {
+      return lowerRow;
+    }
+  }
+
   if (measured.length === 0 || rowCenters.length === 0) {
     return -1;
   }
@@ -1036,11 +909,22 @@ function resolveRowIndexForDocWire(
   root: HTMLElement,
   wire: number,
   rowByWire: Map<number, number>,
-  rowCenters: number[]
+  rowCenters: number[],
+  measured: MeasuredWireOffset[]
 ): number {
   const direct = rowByWire.get(wire);
   if (direct !== undefined) {
     return direct;
+  }
+
+  const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(doc, wire, measured, rowCenters);
+  if (lowerRow !== null) {
+    logVerArrow("resolve.rowAssign", {
+      wire,
+      branch: "embedded-text-led-lower-row",
+      rowIndex: lowerRow,
+    });
+    return lowerRow;
   }
 
   const pos = wireOffsetToDocPos(doc, wire);
@@ -1238,15 +1122,6 @@ function applyStructuralSamplePins(
   pinEmbeddedNewlinePrefixBandTops(doc, measured, root);
 }
 
-function repairCollapsedMeasuredGeometry(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  lineHeight: number
-): void {
-  synthesizeCollapsedMeasuredRowTops(doc, measured, lineHeight);
-  synthesizeCollapsedSubstantiveWireLineTops(doc, measured, lineHeight);
-}
-
 type InferLayoutFromMeasuredOptions = {
   root?: HTMLElement;
   pillMidYs?: number[];
@@ -1254,7 +1129,7 @@ type InferLayoutFromMeasuredOptions = {
 
 /**
  * Layout inference pipeline (runs on every build):
- * clone DOM cache → structuralPins → environmentRepair → blankMaterialize → clusterSort.
+ * clone DOM cache → structuralPins → blankMaterialize → clusterSort.
  *
  * DOM acquire cache stores content samples only and is immutable. Infer mutates a working
  * copy; blank ladder brackets read a frozen content-only snapshot, never prior blank upserts.
@@ -1277,7 +1152,6 @@ function inferLayoutFromMeasured(
       hasRoot: root !== undefined,
     });
     applyStructuralSamplePins(doc, working, root);
-    repairCollapsedMeasuredGeometry(doc, working, lineHeight);
 
     const blankRows = buildSemanticBlankLayoutRows(doc, working, lineHeight, root);
 
@@ -1288,7 +1162,7 @@ function inferLayoutFromMeasured(
     });
 
     if (root || blankRows.length > 0) {
-      return buildDocOrderedLayoutMap(working, pillMidYs, lineHeight, blankRows);
+      return buildDocOrderedLayoutMap(doc, working, pillMidYs, lineHeight, blankRows);
     }
   }
 
@@ -1378,11 +1252,20 @@ export function buildHandoffNoteLayoutMap(
   const layout: HandoffNoteLayoutMap = {
     ...baseLayout,
     rowIndexForWire(wireOffset: number) {
+      const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(
+        doc,
+        wireOffset,
+        measured,
+        rowCenters
+      );
+      if (lowerRow !== null) {
+        return lowerRow;
+      }
       const direct = baseLayout.rowIndexForWire(wireOffset);
       if (direct >= 0) {
         return direct;
       }
-      return resolveRowIndexForDocWire(doc, root, wireOffset, rowByWire, rowCenters);
+      return resolveRowIndexForDocWire(doc, root, wireOffset, rowByWire, rowCenters, measured);
     },
     coordsForWire(wireOffset: number) {
       return baseLayout.coordsForWire(wireOffset) ?? measureWireCoord(root, doc, wireOffset);

@@ -1,7 +1,15 @@
-import { describe, expect, it, beforeEach } from "vitest";
-import { normalizeHandoffNoteDoc, wireToDoc } from "@caliper/core";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import {
+  docPosToWireOffset,
+  listEmbeddedBlankBandProbeWires,
+  normalizeHandoffNoteDoc,
+  wireOffsetToDocPos,
+  wireToDoc,
+} from "@caliper/core";
+import { domPointToDocPos, resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
 import {
   HANDOFF_LINE_PAD_ATTR,
+  HANDOFF_BLANK_ANCHOR_ATTR,
   HANDOFF_WIRE_BREAK_ATTR,
   parseHandoffNoteDom,
   parseHandoffNoteDomToDoc,
@@ -9,9 +17,12 @@ import {
   renderedDomChildCount,
   tryPatchDocDom,
   isHandoffMentionElement,
+  isHandoffBlankAnchorElement,
+  isHandoffWireBreakElement,
   sameRenderedDocStructure,
   getHandoffNoteEditorTabStops,
 } from "./handoff-note-dom.js";
+import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
 import { readDomWireCursor, setSelectionAtWire } from "./handoff-note-test-helpers.js";
 
 function createEditorRoot(): HTMLDivElement {
@@ -360,6 +371,81 @@ describe("handoff-note-dom", () => {
       expect(range.startContainer).toBe(root);
       expect(range.startOffset).toBe(root.childNodes.length - 1);
       expect(readDomWireCursor(root, doc)).toBe(wire.length);
+    });
+  });
+
+  describe("embedded blank band wire-break caret", () => {
+    const AGENT = "caliper-aaaaaaa";
+    const suffixBlankBandWire = () => `header @${AGENT} \n\n\ntail @${AGENT} `;
+
+    beforeEach(() => {
+      invalidateHandoffNoteLayoutCache();
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 480 });
+    });
+
+    afterEach(() => {
+      invalidateHandoffNoteLayoutCache();
+    });
+
+    it("interior text offset resolves to a text node", () => {
+      const doc = wireToDoc("hello");
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const point = resolveDomPointAtDocPos(root, doc, { nodeIndex: 0, nodeOffset: 2 });
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+    });
+
+    it("blank probe resolves to blank-band anchor text, not bare wire-break", () => {
+      const wire = suffixBlankBandWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes).toHaveLength(2);
+
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      for (const probeWire of probes) {
+        const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, probeWire));
+        expect(point, `wire ${probeWire}`).not.toBeNull();
+        expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+        expect(
+          isHandoffBlankAnchorElement(point!.node.parentNode),
+          `wire ${probeWire} should land in <span ${HANDOFF_BLANK_ANCHOR_ATTR}>`
+        ).toBe(true);
+        expect(point?.offset).toBe(0);
+      }
+    });
+
+    it("non-probe wire-break still resolves to br element", () => {
+      const wire = suffixBlankBandWire();
+      const doc = wireToDoc(wire);
+      const lineStartBeforeTail = wire.indexOf("tail") - 1;
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const point = resolveDomPointAtDocPos(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, lineStartBeforeTail)
+      );
+      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+        true
+      );
+    });
+
+    it("parse ignores blank-band anchor spans", () => {
+      const wire = suffixBlankBandWire();
+      const doc = wireToDoc(wire);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      expect(parseHandoffNoteDom(root)).toBe(wire);
+    });
+
+    it("blank-band anchor DOM point round-trips through domPointToDocPos", () => {
+      const wire = suffixBlankBandWire();
+      const doc = wireToDoc(wire);
+      const probeWire = listEmbeddedBlankBandProbeWires(doc)[1]!;
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, probeWire));
+      expect(point).not.toBeNull();
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(probeWire);
     });
   });
 });

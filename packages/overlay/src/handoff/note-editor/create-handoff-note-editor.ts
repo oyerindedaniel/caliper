@@ -48,8 +48,11 @@ import {
   resolveDomVerticalArrowMove,
   setDocSelection,
 } from "./handoff-note-selection.js";
-import { getDocAnchorRect } from "./handoff-note-dom-points.js";
-import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
+import { domRectAnchorMidY, getDocAnchorRect } from "./handoff-note-dom-points.js";
+import {
+  buildHandoffNoteLayoutMap,
+  invalidateHandoffNoteLayoutCache,
+} from "./handoff-note-layout-map.js";
 
 export type HandoffNoteEditorHost = {
   getWire(): string;
@@ -341,6 +344,9 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
 
   const mutateSelection = (focus: HandoffNoteDocPos, source: string, key?: string) => {
     selectedMentionNodeIndex = null;
+    const priorFocus = selection.focus;
+    const priorWire = docPosToWireOffset(doc, priorFocus);
+    const requestedWire = docPosToWireOffset(doc, focus);
     const nextSelection = collapsedSelection(focus);
     if (!root) {
       selection = normalizeSelection(doc, nextSelection);
@@ -348,10 +354,47 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     }
     writeSelection(nextSelection, source);
     refreshMentionPresentation();
+    const authorityWire = docPosToWireOffset(doc, selection.focus);
+    const liveSelection = readDocSelection(root, doc);
+    const liveWire = docPosToWireOffset(doc, liveSelection.focus);
+    if (source === "arrowKey") {
+      const layout = buildHandoffNoteLayoutMap(root, doc, selection.focus);
+      const authorityRect = getDocAnchorRect(root, doc, selection.focus);
+      const liveRect = getDocAnchorRect(root, doc, liveSelection.focus);
+      const authorityRowIndex = layout.rowIndexForWire(authorityWire);
+      const requestedRowIndex = layout.rowIndexForWire(requestedWire);
+      const liveRowIndex = layout.rowIndexForWire(liveWire);
+      const authorityRowTop =
+        authorityRowIndex >= 0 ? layout.rows[authorityRowIndex]?.top : undefined;
+      const authorityCaretMidY = authorityRect ? domRectAnchorMidY(authorityRect) : null;
+      const liveCaretMidY = liveRect ? domRectAnchorMidY(liveRect) : null;
+      logCaretTrace("arrowKey>>parity", {
+        ...(key ? { key } : {}),
+        priorWire,
+        requestedWire,
+        authorityWire,
+        liveWire,
+        priorRowIndex: layout.rowIndexForWire(priorWire),
+        requestedRowIndex,
+        authorityRowIndex,
+        liveRowIndex,
+        rowStep: authorityRowIndex - layout.rowIndexForWire(priorWire),
+        wiresMatch: authorityWire === liveWire,
+        docPosMatch: docPosEqual(selection.focus, liveSelection.focus),
+        authorityCaretMidY: authorityCaretMidY ? Math.round(authorityCaretMidY * 100) / 100 : null,
+        liveCaretMidY: liveCaretMidY ? Math.round(liveCaretMidY * 100) / 100 : null,
+        authorityRowTop: authorityRowTop ? Math.round(authorityRowTop * 100) / 100 : null,
+        caretRowMidDelta:
+          authorityCaretMidY !== null && authorityRowTop !== undefined
+            ? Math.round((authorityCaretMidY - authorityRowTop) * 100) / 100
+            : null,
+        layoutRowTops: layout.rows.map((row) => Math.round(row.top * 100) / 100),
+      });
+    }
     flattenHandoffNoteLog(`caret>>${source}`, {
       ...(key ? { key } : {}),
-      selectionIn: selection,
-      selectionOut: readDocSelection(root, doc),
+      selectionIn: priorFocus,
+      selectionOut: liveSelection.focus,
     });
   };
 

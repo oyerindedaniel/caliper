@@ -1,6 +1,7 @@
 import {
   docToWire,
   formatHandoffAgentIdPill,
+  listEmbeddedBlankBandProbeWires,
   type HandoffNoteDoc,
   type HandoffNoteNode,
 } from "@caliper/core";
@@ -12,6 +13,8 @@ export const HANDOFF_AGENT_ID_ATTR = "data-agent-id";
 export const HANDOFF_MENTION_NODE_INDEX_ATTR = "data-handoff-mention-node-index";
 export const HANDOFF_WIRE_BREAK_ATTR = "data-handoff-wire-break";
 export const HANDOFF_LINE_PAD_ATTR = "data-handoff-line-pad";
+export const HANDOFF_BLANK_ANCHOR_ATTR = "data-handoff-blank-anchor";
+export const HANDOFF_BLANK_ANCHOR_CHAR = "\u200b";
 
 export type HandoffNotePresentationOptions = {
   colorByAgentId: Map<string, string>;
@@ -44,6 +47,32 @@ export function isHandoffLinePadElement(node: Node): node is HTMLBRElement {
   return node instanceof HTMLBRElement && node.hasAttribute(HANDOFF_LINE_PAD_ATTR);
 }
 
+export function isHandoffBlankAnchorElement(
+  node: Node | null | undefined
+): node is HTMLSpanElement {
+  return node instanceof HTMLSpanElement && node.hasAttribute(HANDOFF_BLANK_ANCHOR_ATTR);
+}
+
+/** Wire offset at the `\n` between split parts `breakPartIndex` and `breakPartIndex + 1`. */
+export function wireOffsetAtTextBreak(
+  text: string,
+  wireBase: number,
+  breakPartIndex: number
+): number {
+  const parts = text.split("\n");
+  let wire = wireBase;
+  for (let index = 0; index < breakPartIndex; index++) {
+    wire += parts[index]!.length + 1;
+  }
+  wire += parts[breakPartIndex]!.length;
+  return wire;
+}
+
+export type WireTextDomOptions = {
+  wireBase?: number;
+  blankProbeWires?: ReadonlySet<number>;
+};
+
 export function readMentionAgentId(element: HTMLSpanElement): string {
   return element.getAttribute(HANDOFF_AGENT_ID_ATTR) ?? "";
 }
@@ -66,11 +95,13 @@ function isRenderedDocNode(node: HandoffNoteNode): boolean {
   return node.type !== "text" || Boolean(node.text);
 }
 
-/** DOM children produced by splitting wire newlines inside one text node. */
-export function countWireTextDomChildren(text: string): number {
+/** DOM children produced by splitting wire newlines inside one text node (plus blank-band anchors). */
+export function countWireTextDomChildren(text: string, options?: WireTextDomOptions): number {
   if (!text.includes("\n")) {
     return text ? 1 : 0;
   }
+  const wireBase = options?.wireBase ?? 0;
+  const probeWires = options?.blankProbeWires;
   let count = 0;
   const parts = text.split("\n");
   for (let index = 0; index < parts.length; index++) {
@@ -79,23 +110,34 @@ export function countWireTextDomChildren(text: string): number {
     }
     if (index < parts.length - 1) {
       count++;
+      const breakWire = wireOffsetAtTextBreak(text, wireBase, index);
+      if (probeWires?.has(breakWire)) {
+        count++;
+      }
     }
   }
   return count;
 }
 
-/** Rendered DOM child count including wire breaks and optional EOF line-pad. */
+/** Rendered DOM child count including wire breaks, blank-band anchors, and optional EOF line-pad. */
 export function renderedDomChildCount(doc: HandoffNoteDoc): number {
+  const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
   let count = 0;
+  let wireCursor = 0;
   for (const node of doc.nodes) {
     if (node.type === "text") {
       if (!node.text) {
         continue;
       }
-      count += countWireTextDomChildren(node.text);
+      count += countWireTextDomChildren(node.text, {
+        wireBase: wireCursor,
+        blankProbeWires: probeWires,
+      });
+      wireCursor += node.text.length;
       continue;
     }
     count++;
+    wireCursor += mentionWireLength(node.agentId);
   }
   if (docToWire(doc).endsWith("\n")) {
     count++;
@@ -130,14 +172,27 @@ function createLinePadElement(): HTMLBRElement {
   return br;
 }
 
-/** Map wire `\n` inside a text node to `<br data-handoff-wire-break>` siblings. */
-export function appendWireTextToDom(parent: HTMLElement, text: string): void {
+function createBlankAnchorElement(): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.setAttribute(HANDOFF_BLANK_ANCHOR_ATTR, "true");
+  span.appendChild(document.createTextNode(HANDOFF_BLANK_ANCHOR_CHAR));
+  return span;
+}
+
+/** Map wire `\n` inside a text node to `<br>` siblings; blank probes get a caret anchor after the break. */
+export function appendWireTextToDom(
+  parent: HTMLElement,
+  text: string,
+  options?: WireTextDomOptions
+): void {
   if (!text.includes("\n")) {
     if (text) {
       parent.appendChild(document.createTextNode(text));
     }
     return;
   }
+  const wireBase = options?.wireBase ?? 0;
+  const probeWires = options?.blankProbeWires;
   const parts = text.split("\n");
   for (let index = 0; index < parts.length; index++) {
     const part = parts[index]!;
@@ -146,6 +201,10 @@ export function appendWireTextToDom(parent: HTMLElement, text: string): void {
     }
     if (index < parts.length - 1) {
       parent.appendChild(createWireBreakElement());
+      const breakWire = wireOffsetAtTextBreak(text, wireBase, index);
+      if (probeWires?.has(breakWire)) {
+        parent.appendChild(createBlankAnchorElement());
+      }
     }
   }
 }
@@ -159,19 +218,41 @@ function appendDocLinePadIfNeeded(root: HTMLElement, doc: HandoffNoteDoc): void 
 /** childIndex → doc.nodes index (skips empty text nodes, matching render). */
 export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
   const map: number[] = [];
+  const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+  let wireCursor = 0;
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
     const node = doc.nodes[nodeIndex]!;
     if (!isRenderedDocNode(node)) {
       continue;
     }
-    if (node.type === "text") {
-      const domCount = countWireTextDomChildren(node.text);
-      for (let index = 0; index < domCount; index++) {
-        map.push(nodeIndex);
-      }
+    if (node.type === "mention") {
+      map.push(nodeIndex);
+      wireCursor += mentionWireLength(node.agentId);
       continue;
     }
-    map.push(nodeIndex);
+    const text = node.text;
+    if (!text.includes("\n")) {
+      if (text) {
+        map.push(nodeIndex);
+      }
+      wireCursor += text.length;
+      continue;
+    }
+    const parts = text.split("\n");
+    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+      const part = parts[partIndex]!;
+      if (part) {
+        map.push(nodeIndex);
+      }
+      if (partIndex < parts.length - 1) {
+        map.push(nodeIndex);
+        const breakWire = wireOffsetAtTextBreak(text, wireCursor, partIndex);
+        if (probeWires.has(breakWire)) {
+          map.push(nodeIndex);
+        }
+      }
+    }
+    wireCursor += text.length;
   }
   if (docWireEndsWithNewline(doc)) {
     const lastTextIndex = [...doc.nodes]
@@ -253,17 +334,24 @@ function fullRebuildDocDom(
     return;
   }
 
+  const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+  let wireCursor = 0;
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
     const node = doc.nodes[nodeIndex]!;
     if (node.type === "text") {
       if (node.text) {
-        appendWireTextToDom(root, node.text);
+        appendWireTextToDom(root, node.text, {
+          wireBase: wireCursor,
+          blankProbeWires: probeWires,
+        });
+        wireCursor += node.text.length;
       }
       continue;
     }
     const color = options.colorByAgentId.get(node.agentId) ?? "";
     const highlighted = options.selectedMentionNodeIndex === nodeIndex;
     root.appendChild(createMentionElement(node.agentId, color, highlighted, nodeIndex));
+    wireCursor += mentionWireLength(node.agentId);
   }
 
   appendDocLinePadIfNeeded(root, doc);
@@ -419,6 +507,9 @@ export function parseHandoffNoteDom(root: HTMLElement): string {
     if (isHandoffLinePadElement(child)) {
       continue;
     }
+    if (isHandoffBlankAnchorElement(child)) {
+      continue;
+    }
     if (isHandoffMentionElement(child)) {
       const agentId = readMentionAgentId(child);
       if (agentId) {
@@ -460,6 +551,9 @@ export function parseHandoffNoteDomToDoc(root: HTMLElement): HandoffNoteDoc {
       continue;
     }
     if (isHandoffLinePadElement(child)) {
+      continue;
+    }
+    if (isHandoffBlankAnchorElement(child)) {
       continue;
     }
     if (isHandoffMentionElement(child)) {

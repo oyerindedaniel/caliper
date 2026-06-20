@@ -1,9 +1,15 @@
-import { wireOffsetToDocPos } from "@caliper/core";
+import {
+  collapsedSelection,
+  listEmbeddedBlankBandProbeWires,
+  wireOffsetToDocPos,
+  wireToDoc,
+} from "@caliper/core";
 import { describe, expect, it, beforeEach } from "vitest";
 import { createHandoffNoteEditor } from "./create-handoff-note-editor.js";
 import { readMentionNodeIndex } from "./handoff-note-dom.js";
 import {
   dispatchSelectionChange,
+  readDomWireCursor,
   selectionAtWire,
   setSelectionAtWire,
   strandSelectionInMentionPill,
@@ -37,9 +43,14 @@ describe("createHandoffNoteEditor", () => {
   });
 
   it("applies mention backspace on a mention", () => {
-    host.editor.setDocFromWire("Hi @caliper-abc123 there", "Hi @caliper-abc123 there".length);
-    const mentionEnd = "Hi @caliper-abc123".length;
-    host.editor.applyDoc(host.editor.getDoc(), selectionAtWire(host.editor.getDoc(), mentionEnd));
+    const agentId = "caliper-abc123";
+    host.editor.setDocFromWire(`Hi @${agentId} there`, `Hi @${agentId} there`.length);
+    const doc = host.editor.getDoc();
+    const mentionIndex = doc.nodes.findIndex((node) => node.type === "mention");
+    host.editor.applyDoc(
+      doc,
+      collapsedSelection({ nodeIndex: mentionIndex, nodeOffset: 1 + agentId.length })
+    );
 
     const event = new KeyboardEvent("keydown", { key: "Backspace", bubbles: true });
     const handled = host.editor.handleKeyDown(event);
@@ -171,10 +182,15 @@ describe("createHandoffNoteEditor", () => {
   });
 
   it("undoes mention deletion", () => {
-    const wire = "Hi @caliper-abc123 there";
+    const agentId = "caliper-abc123";
+    const wire = `Hi @${agentId} there`;
     host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
-    const mentionEnd = "Hi @caliper-abc123".length;
-    host.editor.applyDoc(host.editor.getDoc(), selectionAtWire(host.editor.getDoc(), mentionEnd));
+    const doc = host.editor.getDoc();
+    const mentionIndex = doc.nodes.findIndex((node) => node.type === "mention");
+    host.editor.applyDoc(
+      doc,
+      collapsedSelection({ nodeIndex: mentionIndex, nodeOffset: 1 + agentId.length })
+    );
 
     const event = new KeyboardEvent("keydown", { key: "Backspace", bubbles: true });
     expect(host.editor.handleKeyDown(event)).toBe(true);
@@ -691,6 +707,39 @@ describe("createHandoffNoteEditor", () => {
     setSelectionAtWire(host.root, host.editor.getDoc(), mentionStart);
     dispatchSelectionChange(host.root);
     expect(host.editor.getCursor()).toBe(mentionStart);
+  });
+
+  describe("selectionchange — embedded blank-band click ingress", () => {
+    const agentId = "caliper-aaaaaaa";
+    const suffixWire = `header @${agentId} row\n\n\nlower `;
+
+    it("snaps mis-hit blank probe to content row end when prior was on row interior", () => {
+      const doc = wireToDoc(suffixWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+      const [firstProbe] = probes;
+
+      host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
+      setSelectionAtWire(host.root, host.editor.getDoc(), firstProbe!, firstProbe!);
+      dispatchSelectionChange(host.root);
+
+      expect(host.editor.getCursor()).toBe(headerEnd);
+      expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(headerEnd);
+    });
+
+    it("keeps blank probe when prior authority was already at content row end", () => {
+      const doc = wireToDoc(suffixWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+      const [firstProbe] = probes;
+
+      host.editor.setDocFromWire(suffixWire, headerEnd, { resetHistory: true });
+      setSelectionAtWire(host.root, host.editor.getDoc(), firstProbe!, firstProbe!);
+      dispatchSelectionChange(host.root);
+
+      expect(host.editor.getCursor()).toBe(firstProbe);
+      expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(firstProbe);
+    });
   });
 
   it("restores regressed DOM authority on edit ingress via beforeInput sync", () => {

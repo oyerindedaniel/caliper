@@ -1,4 +1,22 @@
-import { docToWire, type HandoffNoteDoc } from "./handoff-note-doc.js";
+import {
+  docToWire,
+  offsetAtDocPosition,
+  spliceDocWireRange,
+  type HandoffNoteDoc,
+  type HandoffNoteEdit,
+} from "./handoff-note-doc.js";
+
+export type EmbeddedBlankBandDeleteBranch =
+  | "backspace-content-above"
+  | "backspace-blank-above"
+  | "delete-blank-below"
+  | "delete-lower-row";
+
+export type EmbeddedBlankBandDeleteMove = {
+  doc: HandoffNoteDoc;
+  caretWire: number;
+  branch: EmbeddedBlankBandDeleteBranch;
+};
 
 function wireLineStartOffsets(wire: string): number[] {
   const starts = [0];
@@ -85,4 +103,162 @@ export function docTextNodeHasEmbeddedNewline(doc: HandoffNoteDoc, nodeIndex: nu
 
 export function isEmbeddedBlankBandProbeWire(doc: HandoffNoteDoc, wire: number): boolean {
   return listEmbeddedBlankBandProbeWires(doc).includes(wire);
+}
+
+/** Typing at a blank-band probe wire rests on the `\n`; insert after it, not before. */
+export function insertDocPosAfterEmbeddedBlankProbe(
+  doc: HandoffNoteDoc,
+  pos: { nodeIndex: number; nodeOffset: number }
+): { nodeIndex: number; nodeOffset: number } {
+  const wire = offsetAtDocPosition(doc, pos.nodeIndex, pos.nodeOffset);
+  if (!isEmbeddedBlankBandProbeWire(doc, wire)) {
+    return pos;
+  }
+  const node = doc.nodes[pos.nodeIndex];
+  if (node?.type !== "text") {
+    return pos;
+  }
+  return {
+    nodeIndex: pos.nodeIndex,
+    nodeOffset: Math.min(pos.nodeOffset + 1, node.text.length),
+  };
+}
+
+/** Text-led lower visual row after an embedded blank band (exit `\n` through line end). */
+export type EmbeddedTextLedLowerRowSpan = {
+  exitNewlineWire: number;
+  lineStartWire: number;
+  lineEndWire: number;
+};
+
+export function embeddedTextLedLowerRowSpanAfterBlankBand(
+  doc: HandoffNoteDoc
+): EmbeddedTextLedLowerRowSpan | null {
+  const text = docToWire(doc);
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  if (probes.length === 0) {
+    return null;
+  }
+
+  const searchFrom = probes[probes.length - 1]! + 1;
+  for (let wire = searchFrom; wire < text.length; wire++) {
+    if (text[wire] !== "\n") {
+      continue;
+    }
+    if (isEmbeddedBlankBandProbeWire(doc, wire)) {
+      continue;
+    }
+    const lineEnd = text.indexOf("\n", wire + 1);
+    const segment = text.slice(wire + 1, lineEnd === -1 ? text.length : lineEnd);
+    if (segment.length === 0 || !/\S/.test(segment) || segment[0] === "@") {
+      continue;
+    }
+    return {
+      exitNewlineWire: wire,
+      lineStartWire: wire + 1,
+      lineEndWire: lineEnd === -1 ? text.length : lineEnd,
+    };
+  }
+  return null;
+}
+
+export function isWireOnEmbeddedTextLedLowerRowAfterBlankBand(
+  doc: HandoffNoteDoc,
+  wire: number
+): boolean {
+  const span = embeddedTextLedLowerRowSpanAfterBlankBand(doc);
+  if (!span) {
+    return false;
+  }
+  return wire >= span.exitNewlineWire && wire < span.lineEndWire;
+}
+
+/** Backspace/delete at blank-band probe wires — caret policy plus wire splice. */
+export function resolveEmbeddedBlankBandDelete(
+  doc: HandoffNoteDoc,
+  focusWire: number,
+  direction: HandoffNoteEdit
+): EmbeddedBlankBandDeleteMove | null {
+  if (!isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    return null;
+  }
+
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  const probeIndex = probes.indexOf(focusWire);
+  if (probeIndex < 0) {
+    return null;
+  }
+
+  const wire = docToWire(doc);
+
+  if (direction === "backspace") {
+    if (probeIndex === 0) {
+      const rowEnd = focusWire - 1;
+      if (rowEnd < 0) {
+        return null;
+      }
+      return { doc, caretWire: rowEnd, branch: "backspace-content-above" };
+    }
+
+    const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+    const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
+    return {
+      doc: nextDoc,
+      caretWire: remaining[probeIndex - 1]!,
+      branch: "backspace-blank-above",
+    };
+  }
+
+  if (focusWire + 1 >= wire.length) {
+    return null;
+  }
+
+  const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  if (probeIndex < probes.length - 1) {
+    const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
+    return {
+      doc: nextDoc,
+      caretWire: remaining[probeIndex]!,
+      branch: "delete-blank-below",
+    };
+  }
+
+  const resultWire = docToWire(nextDoc);
+  const span = embeddedTextLedLowerRowSpanAfterBlankBand(nextDoc);
+  let caretWire = span?.lineStartWire ?? focusWire;
+  if (!span) {
+    while (caretWire < resultWire.length && resultWire[caretWire] === "\n") {
+      caretWire += 1;
+    }
+  }
+
+  return {
+    doc: nextDoc,
+    caretWire,
+    branch: "delete-lower-row",
+  };
+}
+
+/** Backspace on trailing row content immediately before a blank-band probe. */
+export function resolveBackspaceBeforeEmbeddedBlankProbe(
+  doc: HandoffNoteDoc,
+  focusWire: number
+): EmbeddedBlankBandDeleteMove | null {
+  const wire = docToWire(doc);
+  if (focusWire < 0 || focusWire + 1 >= wire.length) {
+    return null;
+  }
+  if (!isEmbeddedBlankBandProbeWire(doc, focusWire + 1)) {
+    return null;
+  }
+  if (wire[focusWire] === "\n") {
+    return null;
+  }
+
+  const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  return {
+    doc: nextDoc,
+    caretWire: Math.max(0, focusWire - 1),
+    branch: "backspace-content-above",
+  };
 }

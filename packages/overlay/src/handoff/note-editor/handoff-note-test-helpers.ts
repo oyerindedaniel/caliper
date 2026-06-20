@@ -1,8 +1,10 @@
 import {
   collapsedSelection,
   docPosToWireOffset,
+  listEmbeddedBlankBandProbeWires,
   normalizeDocPos,
   wireOffsetToDocPos,
+  wireToDoc,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
@@ -11,6 +13,7 @@ import { getDocAnchorRect, resolveDomPointAtDocPos } from "./handoff-note-dom-po
 import {
   buildHandoffNoteLayoutMap,
   invalidateHandoffNoteLayoutCache,
+  setMeasuredSamplesCache,
 } from "./handoff-note-layout-map.js";
 import { readMentionNodeIndex } from "./handoff-note-dom.js";
 
@@ -95,6 +98,86 @@ export function readHandoffNoteLayoutRowIndexForTests(
   focus = wireOffsetToDocPos(doc, wire)
 ): number {
   return buildHandoffNoteLayoutMap(root, doc, focus).rowIndexForWire(wire);
+}
+
+type MeasuredLayoutSample = { wire: number; top: number; left: number };
+
+function wireLineStartOffsets(wire: string): number[] {
+  const starts = [0];
+  for (let index = 0; index < wire.length; index++) {
+    if (wire[index] === "\n") {
+      starts.push(index + 1);
+    }
+  }
+  return starts;
+}
+
+function isSubstantiveWireLineSegment(wire: string, lineStart: number): boolean {
+  const lineEnd = wire.indexOf("\n", lineStart);
+  const segment = wire.slice(lineStart, lineEnd === -1 ? wire.length : lineEnd);
+  return segment.length > 0 && !/^\s*$/.test(segment);
+}
+
+/** Test-only: monotonic row tops for jsdom when DOM measure collapses (replaces removed production synthesize*). */
+export function monotonicMeasuredLayoutSamples(
+  wire: string,
+  options?: { baseTop?: number; stride?: number }
+): MeasuredLayoutSample[] {
+  const baseTop = options?.baseTop ?? 100;
+  const stride = options?.stride ?? 36;
+  const doc = wireToDoc(wire);
+  const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
+  type Anchor = { wire: number; kind: "line-start" | "blank-probe" };
+  const anchors: Anchor[] = [{ wire: 0, kind: "line-start" }];
+  for (const probeWire of probes) {
+    anchors.push({ wire: probeWire, kind: "blank-probe" });
+  }
+  for (const lineStart of wireLineStartOffsets(wire)) {
+    if (lineStart === 0 || probes.has(lineStart)) {
+      continue;
+    }
+    if (!isSubstantiveWireLineSegment(wire, lineStart)) {
+      continue;
+    }
+    if (!anchors.some((anchor) => anchor.wire === lineStart)) {
+      anchors.push({ wire: lineStart, kind: "line-start" });
+    }
+  }
+  anchors.sort((left, right) => left.wire - right.wire);
+
+  const byWire = new Map<number, MeasuredLayoutSample>();
+  let rowTop = baseTop;
+  let inlineBlankPending = false;
+
+  for (const anchor of anchors) {
+    if (anchor.wire === 0) {
+      byWire.set(0, { wire: 0, top: rowTop, left: 0 });
+      inlineBlankPending = true;
+      continue;
+    }
+    if (anchor.kind === "blank-probe" && inlineBlankPending) {
+      byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
+      inlineBlankPending = false;
+      continue;
+    }
+    rowTop += stride;
+    if (anchor.kind === "blank-probe") {
+      byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
+    } else {
+      byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
+      inlineBlankPending = true;
+    }
+  }
+
+  return [...byWire.values()].sort((left, right) => left.wire - right.wire);
+}
+
+export function seedMonotonicMeasuredLayout(
+  root: HTMLElement,
+  wire: string,
+  options?: { baseTop?: number; stride?: number }
+): void {
+  setMeasuredSamplesCache(wire, root.clientWidth, monotonicMeasuredLayoutSamples(wire, options));
 }
 
 /** Stub pill geometry so jsdom layout tests match playground wrap rows. */

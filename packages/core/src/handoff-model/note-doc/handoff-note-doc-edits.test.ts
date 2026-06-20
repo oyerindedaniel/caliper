@@ -13,6 +13,7 @@ import {
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import { docToWire, normalizeHandoffNoteDoc, wireToDoc } from "./handoff-note-doc.js";
+import { listEmbeddedBlankBandProbeWires } from "./handoff-note-embedded-newlines.js";
 import { resolveActiveHandoffMentionQueryDoc } from "../utils/handoff-note.js";
 
 describe("spliceDocSelection", () => {
@@ -151,6 +152,199 @@ describe("applyDocInsertText", () => {
     expect(state.selection.focus.nodeIndex).toBe(afterD.nodeIndex);
     expect(state.selection.focus.nodeOffset).toBeGreaterThan(afterD.nodeOffset);
     expect(doc.nodes[state.selection.focus.nodeIndex]?.type).toBe("text");
+  });
+
+  it("inserts on the blank row after arrow lands on an embedded probe wire", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} \n\n\ntail`;
+    const doc = wireToDoc(wire);
+    const probes = listEmbeddedBlankBandProbeWires(doc);
+    expect(probes).toHaveLength(2);
+
+    const onSecondBlank = wireOffsetToDocPos(doc, probes[1]!);
+    const result = applyDocInsertText(doc, collapsedSelection(onSecondBlank), "x");
+
+    expect(docToWire(result.doc)).toBe(`header @${agent} \n\nx\ntail`);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(probes[1]! + 2);
+  });
+
+  it("inserts on the first blank row when caret rests on the first embedded probe", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} \n\n\ntail`;
+    const doc = wireToDoc(wire);
+    const [firstProbe] = listEmbeddedBlankBandProbeWires(doc);
+
+    const result = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, firstProbe!)),
+      "x"
+    );
+
+    expect(docToWire(result.doc)).toBe(`header @${agent} \nx\n\ntail`);
+  });
+});
+
+describe("embedded blank-band delete contract", () => {
+  const agent = "caliper-aaaaaaa";
+
+  function blankBandSuffixWire(lower = "tail"): string {
+    return `header @${agent} \n\n\n${lower}`;
+  }
+
+  function headerRowEndWire(wire: string, probes: number[]): number {
+    return probes[0]! - 1;
+  }
+
+  describe("backspace", () => {
+    it("on first blank with content above moves caret to header row end without mutating wire", () => {
+      const wire = blankBandSuffixWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = headerRowEndWire(wire, probes);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[0]!)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(wire);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(headerEnd);
+    });
+
+    it("on second blank with blank above removes one blank-row newline and lands on remaining blank", () => {
+      const wire = blankBandSuffixWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[1]!)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(`header @${agent} \n\ntail`);
+      const [remainingBlank] = listEmbeddedBlankBandProbeWires(result!.doc);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(remainingBlank);
+    });
+
+    it("after stepping to header row end removes trailing header space on next backspace", () => {
+      const wire = blankBandSuffixWire();
+      let doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      const stepped = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[0]!)),
+        "backspace"
+      )!;
+      expect(docToWire(stepped.doc)).toBe(wire);
+
+      const nibbled = applyDocDelete(stepped.doc, stepped.selection, "backspace")!;
+      expect(docToWire(nibbled.doc)).toBe(`header @${agent}\n\n\ntail`);
+    });
+
+    it("backspace at top of blank band with nothing above is a no-op", () => {
+      const wire = `\n\n\ntail`;
+      const doc = wireToDoc(wire);
+      const [leadingBlank] = listEmbeddedBlankBandProbeWires(doc);
+
+      expect(
+        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, leadingBlank!)), "backspace")
+      ).toBeNull();
+    });
+  });
+
+  describe("delete forward", () => {
+    it("on first blank with blank below removes blank-row newline and lands on next blank row", () => {
+      const wire = blankBandSuffixWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[0]!)),
+        "delete"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(`header @${agent} \n\ntail`);
+      const [nextBlank] = listEmbeddedBlankBandProbeWires(result!.doc);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(nextBlank);
+    });
+
+    it("on second blank before lower content removes blank-row newline and lands on lower row start", () => {
+      const wire = blankBandSuffixWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[1]!)),
+        "delete"
+      );
+
+      expect(result).not.toBeNull();
+      const resultWire = docToWire(result!.doc);
+      expect(resultWire).toBe(`header @${agent} \n\ntail`);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
+        resultWire.indexOf("tail")
+      );
+    });
+
+    it("delete at bottom of blank band with nothing below is a no-op", () => {
+      const wire = `header @${agent} \n\n`;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      expect(
+        applyDocDelete(
+          doc,
+          collapsedSelection(wireOffsetToDocPos(doc, probes[probes.length - 1]!)),
+          "delete"
+        )
+      ).toBeNull();
+    });
+  });
+
+  describe("full composite wire", () => {
+    const compositeWire = `header @${agent} \n\n\ntail @${agent} `;
+
+    it("backspace on first blank with mention tail preserves wire and lands at header row end", () => {
+      const doc = wireToDoc(compositeWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = headerRowEndWire(compositeWire, probes);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[0]!)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(compositeWire);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(headerEnd);
+    });
+
+    it("delete on second blank before mention tail lands at tail row start", () => {
+      const doc = wireToDoc(compositeWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[1]!)),
+        "delete"
+      );
+
+      expect(result).not.toBeNull();
+      const resultWire = docToWire(result!.doc);
+      expect(resultWire).toBe(`header @${agent} \n\ntail @${agent} `);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
+        resultWire.indexOf("tail")
+      );
+    });
   });
 });
 

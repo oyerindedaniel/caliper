@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { docToWire, wireToDoc } from "./handoff-note-doc.js";
 import {
   docTextNodeHasEmbeddedNewline,
+  embeddedTextLedLowerRowSpanAfterBlankBand,
+  insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandProbeWire,
+  isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
 } from "./handoff-note-embedded-newlines.js";
-import { docToWire, wireToDoc } from "./handoff-note-doc.js";
 
 describe("embedded blank band probes", () => {
   it("lists one probe for header blank tail storage (header\\n\\ntail)", () => {
@@ -17,6 +20,14 @@ describe("embedded blank band probes", () => {
   it("lists two probes for two empty segments before substantive tail", () => {
     const doc = wireToDoc("header\n\n\ntail");
     expect(listEmbeddedBlankBandProbeWires(doc)).toEqual([6, 7]);
+  });
+
+  it("shifts insert doc pos to after the probe newline", () => {
+    const doc = wireToDoc("header\n\n\ntail");
+    const probe = listEmbeddedBlankBandProbeWires(doc)[1]!;
+    const atProbe = { nodeIndex: 0, nodeOffset: probe };
+    const insertPos = insertDocPosAfterEmbeddedBlankProbe(doc, atProbe);
+    expect(insertPos.nodeOffset).toBe(probe + 1);
   });
 
   it("lists mention-adjacent suffix blank probes for one empty segment", () => {
@@ -50,6 +61,29 @@ describe("embedded blank band probes", () => {
   it("lists EOF trailing blank probes for consecutive Shift+Enter suffix", () => {
     const doc = wireToDoc("content\n\n");
     expect(listEmbeddedBlankBandProbeWires(doc)).toEqual([7, 8]);
+  });
+
+  it("detects text-led lower row span after embedded blank band", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} \n\n\nlower @${agent} `;
+    const doc = wireToDoc(wire);
+    const lowerStart = wire.indexOf("lower");
+
+    expect(embeddedTextLedLowerRowSpanAfterBlankBand(doc)).toEqual({
+      exitNewlineWire: lowerStart - 1,
+      lineStartWire: lowerStart,
+      lineEndWire: wire.length,
+    });
+    expect(isWireOnEmbeddedTextLedLowerRowAfterBlankBand(doc, lowerStart - 1)).toBe(true);
+    expect(isWireOnEmbeddedTextLedLowerRowAfterBlankBand(doc, lowerStart)).toBe(true);
+  });
+
+  it("does not treat mention-led lower row after blank band as text-led span", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} \n\n\n@${agent} `;
+    const doc = wireToDoc(wire);
+
+    expect(embeddedTextLedLowerRowSpanAfterBlankBand(doc)).toBeNull();
   });
 });
 

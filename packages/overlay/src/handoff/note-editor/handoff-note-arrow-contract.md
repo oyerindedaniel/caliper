@@ -41,6 +41,18 @@ Mention-boundary breaks (caret on pill start) use the same caret rule: newline b
   - **Layout:** content rows and blank rows are ordered by measured **`top`** (visual Y). Mention end and immediately following text on the same paint band share one visual row before clustering. **Down from content:** skip inline blanks that share the current row’s measured top (first break on the same paint band). **Up** steps through each **visual** row above, not each wire `\n`. Row clustering merges pill midYs with measured sample tops for soft wrap. Horizontal bleed must not substitute when another visual row exists.
   - **Core helper:** `listEmbeddedBlankBandProbeWires` identifies break wires for **empty** visual rows only — not substantive wire-line breaks like `line1\nline2`, and not a content line-start `\n` before the next substantive segment.
 
+## Backspace / Delete at blank-band probes
+
+Editor-owned (`beforeInput` → `applyDocDelete`); same probe wires as arrow landing (`listEmbeddedBlankBandProbeWires`).
+
+- **Insert at probe:** caret rests on the `\n`; splice **after** the break (same as typing on a new blank row).
+- **Backspace at probe, substantive row above:** wire unchanged; caret moves to the **content row end** immediately above the band (last offset on that row before the break). A further backspace on trailing row text immediately before the probe removes that character normally.
+- **Backspace at probe, blank row above:** remove this blank row’s leading `\n`; caret lands on the **remaining blank probe** above.
+- **Backspace at probe, top of blank band (nothing above to step or merge into):** no-op (`null`).
+- **Delete at probe, blank row below:** remove this blank row’s leading `\n`; caret lands on the **next blank probe** in the shortened band.
+- **Delete at probe, substantive row below:** remove this blank row’s leading `\n`; caret lands at the **lower content row visual start** (text-led or mention-led).
+- **Delete at probe, bottom of blank band (nothing below to step into):** no-op (`null`).
+
 ## Left / Right — horizontal only
 
 - Move one logical step along the wire on the **current line** (same primitive as vertical boundary bleed).

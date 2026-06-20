@@ -193,12 +193,30 @@ describe("resolveVerticalArrowRowStartLanding", () => {
     expect(landing?.offset).not.toBe(37);
     expect(landing?.branch).toBe("visual-row-start-column");
   });
+
+  it("lands at goal column when exiting blank band to content row", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header\n\nrow @${agent} tail\n\n\n@${agent} `;
+    const doc = wireToDoc(wire);
+    const rowStart = wire.indexOf("row");
+    const mentionStart = wire.indexOf("@");
+    const samples = [
+      { wire: 0, left: 0 },
+      { wire: mentionStart, left: 0 },
+      { wire: rowStart + 4, left: 80 },
+      { wire: rowStart, left: 120 },
+    ];
+
+    const landing = resolveVerticalArrowRowStartLanding(doc, "up", samples, 120);
+    expect(landing?.offset).toBe(rowStart);
+    expect(landing?.branch).toBe("visual-row-start-column");
+  });
 });
 
 describe("resolveVerticalArrowMinWireLineStart", () => {
   const agent = "caliper-aaaaaaa";
 
-  it("lands on leftmost wire when exiting blank band to content row", () => {
+  it("picks leftmost wire regardless of goal column", () => {
     const wire = `header\n\nrow @${agent} tail\n\n\n@${agent} `;
     const doc = wireToDoc(wire);
     const rowStart = wire.indexOf("row");
@@ -211,6 +229,21 @@ describe("resolveVerticalArrowMinWireLineStart", () => {
 
     const landing = resolveVerticalArrowMinWireLineStart(doc, "up", samples);
     expect(landing?.offset).toBe(rowStart);
+    expect(landing?.branch).toBe("visual-line-start-minWire");
+  });
+
+  it("blank-band exit lands substantive wire-line start not mention sample", () => {
+    const wire = `header @${agent} \n\n\ntail @${agent} `;
+    const doc = wireToDoc(wire);
+    const tailRowStart = wire.indexOf("tail");
+    const mentionStart = wire.indexOf("@", tailRowStart);
+    const samples = [
+      { wire: mentionStart, left: 0 },
+      { wire: wire.length - 1, left: 0 },
+    ];
+
+    const landing = resolveVerticalArrowMinWireLineStart(doc, "down", samples);
+    expect(landing?.offset).toBe(tailRowStart);
     expect(landing?.branch).toBe("visual-line-start-minWire");
   });
 });

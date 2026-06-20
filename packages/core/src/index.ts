@@ -162,8 +162,10 @@ export {
 } from "./handoff-model/note-doc/handoff-note-doc-edits.js";
 export {
   docTextNodeHasEmbeddedNewline,
+  embeddedTextLedLowerRowSpanAfterBlankBand,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
+  isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
 } from "./handoff-model/note-doc/handoff-note-embedded-newlines.js";

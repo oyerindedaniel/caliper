@@ -4,6 +4,7 @@ import {
   collapsedSelection,
   docPosToWireOffset,
   docToWire,
+  listEmbeddedBlankBandProbeWires,
   normalizeDocPos,
   resolveDocHorizontalArrowMove,
   resolveHandoffNoteArrowMove,
@@ -168,6 +169,41 @@ describe("handoff-note-selection", () => {
     });
     expect(docPosToWireOffset(doc, full)).toBe(authority);
     expect(readDomWireCursor(root, doc)).toBe(authority);
+  });
+
+  it("snaps mis-hit blank probe to content row end when prior was on that row interior", () => {
+    const suffixWire = `header @caliper-aaaaaaa row\n\n\nlower `;
+    const suffixDoc = wireToDoc(suffixWire);
+    const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
+    const headerEnd = probes[0]! - 1;
+    const [firstProbe] = probes;
+    const { root: bandRoot, doc: bandDoc } = mountEditor(suffixWire);
+
+    setSelectionAtWire(bandRoot, bandDoc, firstProbe!, firstProbe!);
+    const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, wireOffsetToDocPos(bandDoc, 0), {
+      mode: "strand-only",
+    });
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(headerEnd);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(headerEnd);
+  });
+
+  it("keeps blank probe when prior authority was already at content row end", () => {
+    const suffixWire = `header @caliper-aaaaaaa row\n\n\nlower `;
+    const suffixDoc = wireToDoc(suffixWire);
+    const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
+    const headerEnd = probes[0]! - 1;
+    const [firstProbe] = probes;
+    const { root: bandRoot, doc: bandDoc } = mountEditor(suffixWire);
+
+    setSelectionAtWire(bandRoot, bandDoc, firstProbe!, firstProbe!);
+    const repaired = repairDocSelectionIfNeeded(
+      bandRoot,
+      bandDoc,
+      wireOffsetToDocPos(bandDoc, headerEnd),
+      { mode: "strand-only" }
+    );
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(firstProbe);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(firstProbe);
   });
 
   it("sets and reads wire cursor at text and mention boundaries", () => {
@@ -408,7 +444,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, 57),
         "up",
         [...ORACLE_SAMPLES],
-        ROW2_TOP,
         600,
         TEXT_LINE_HEIGHT
       );
@@ -421,7 +456,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, 37),
         "down",
         [...ORACLE_SAMPLES],
-        ROW1_TOP,
         600,
         TEXT_LINE_HEIGHT
       );
@@ -452,7 +486,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, 0),
         "down",
         liveLikeSamples,
-        ROW1_TOP,
         ROW_START_LEFT,
         TEXT_LINE_HEIGHT
       );
@@ -480,7 +513,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, wrappedBandStart),
         "up",
         samples,
-        24,
         0,
         16
       );
@@ -494,7 +526,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, 0),
         "down",
         samples,
-        0,
         0,
         16
       );
@@ -847,7 +878,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, 0),
         "down",
         [...WRAP_SAMPLES],
-        ROW1_TOP,
         ROW_START_LEFT,
         LINE_HEIGHT
       );
@@ -863,7 +893,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, PREFIX_MID_WIRE),
         "down",
         [...WRAP_SAMPLES],
-        ROW1_TOP,
         PREFIX_GOAL_LEFT,
         LINE_HEIGHT
       );
@@ -880,7 +909,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, WRAPPED_INTERIOR_WIRE),
         "up",
         [...WRAP_SAMPLES],
-        ROW2_TOP,
         PREFIX_GOAL_LEFT,
         LINE_HEIGHT
       );
@@ -897,7 +925,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, PREFIX_MID_WIRE),
         "down",
         [...WRAP_SAMPLES],
-        ROW1_TOP,
         PREFIX_GOAL_LEFT,
         LINE_HEIGHT
       );
@@ -908,7 +935,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         down.pos,
         "up",
         [...WRAP_SAMPLES],
-        ROW2_TOP,
         PREFIX_GOAL_LEFT,
         LINE_HEIGHT
       );
@@ -939,7 +965,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, FROM_WIRE),
         "down",
         [...WRAP_SAMPLES],
-        ROW1_TOP,
         GOAL_LEFT,
         LINE_HEIGHT
       );
@@ -956,7 +981,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, CONTINUATION_WIRE),
         "up",
         [...WRAP_SAMPLES],
-        ROW2_TOP,
         GOAL_LEFT,
         LINE_HEIGHT
       );
@@ -1011,7 +1035,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, secondMentionEnd),
         "up",
         [...layoutSamples],
-        ROW2_TOP,
         GOAL_COLUMN,
         LINE_HEIGHT
       );
@@ -1031,7 +1054,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         wireOffsetToDocPos(doc, secondMentionEnd),
         "up",
         [...layoutSamples],
-        ROW2_TOP,
         GOAL_COLUMN,
         LINE_HEIGHT
       );
@@ -1042,7 +1064,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         up.pos,
         "down",
         [...layoutSamples],
-        ROW1_TOP,
         GOAL_COLUMN,
         LINE_HEIGHT
       );
@@ -1056,7 +1077,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         down.pos,
         "down",
         [...layoutSamples],
-        ROW2_TOP,
         GOAL_COLUMN,
         LINE_HEIGHT
       );
