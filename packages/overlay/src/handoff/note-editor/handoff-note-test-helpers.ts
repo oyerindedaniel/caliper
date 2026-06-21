@@ -22,6 +22,32 @@ export function dispatchSelectionChange(root: HTMLElement): void {
   root.ownerDocument.dispatchEvent(new Event("selectionchange"));
 }
 
+/** Test-only: native caret at the trailing edge of a text node (browser row-tail click). */
+export function setDomCaretAtTextEnd(root: HTMLElement, textNode: Text): void {
+  const selection = root.ownerDocument.getSelection();
+  if (!selection) {
+    throw new Error("expected document selection");
+  }
+  const range = root.ownerDocument.createRange();
+  range.setStart(textNode, textNode.length);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/** Test-only: native caret at the leading edge of a text node (browser row-head click). */
+export function setDomCaretAtTextStart(root: HTMLElement, textNode: Text): void {
+  const selection = root.ownerDocument.getSelection();
+  if (!selection) {
+    throw new Error("expected document selection");
+  }
+  const range = root.ownerDocument.createRange();
+  range.setStart(textNode, 0);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 /** Test-only: park the native caret inside a mention pill text node (simulates browser strand). */
 export function strandSelectionInMentionPill(root: HTMLElement, pillTextOffset = 3): void {
   const pill = root.querySelector("span[data-handoff-mention]");

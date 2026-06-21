@@ -31,6 +31,7 @@ import {
   readDomWireSelection,
   readHandoffNoteLayoutRowIndexForTests,
   readHandoffNoteLayoutSamplesForTests,
+  setDomCaretAtTextEnd,
   setSelectionAtWire,
   stubCaretProbeAtDocPos,
   stubHandoffNoteAnchorRectAtWire,
@@ -186,6 +187,23 @@ describe("handoff-note-selection", () => {
     expect(docPosToWireOffset(bandDoc, repaired)).toBe(firstProbe);
     expect(docPosToWireOffset(bandDoc, repaired)).not.toBe(headerEnd);
     expect(readDomWireCursor(bandRoot, bandDoc)).toBe(firstProbe);
+  });
+
+  it("accepts content text-node tail as content row end on strand-only ingress", () => {
+    const plainWire = `hello\n\n\nlower `;
+    const plainDoc = wireToDoc(plainWire);
+    const probes = listEmbeddedBlankBandProbeWires(plainDoc);
+    const headerEnd = probes[0]! - 1;
+    const { root: bandRoot, doc: bandDoc } = mountEditor(plainWire);
+    const firstText = bandRoot.childNodes[0];
+    expect(firstText?.nodeType).toBe(Node.TEXT_NODE);
+
+    setDomCaretAtTextEnd(bandRoot, firstText as Text);
+    const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, wireOffsetToDocPos(bandDoc, 0), {
+      mode: "strand-only",
+    });
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(headerEnd);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(headerEnd);
   });
 
   it("keeps blank probe when prior authority was already at content row end", () => {

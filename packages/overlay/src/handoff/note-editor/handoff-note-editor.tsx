@@ -6,7 +6,6 @@ import {
   readMentionNodeIndex,
 } from "./handoff-note-dom.js";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
-import { handoffNoteSelectionSnapshot, logCaretTrace } from "../handoff-note-debug.js";
 
 export type HandoffNoteEditorProps = {
   wire: Accessor<string>;
@@ -103,11 +102,6 @@ export function HandoffNoteEditor(props: HandoffNoteEditorProps) {
           return;
         }
         editor.clearMentionSelection();
-        logCaretTrace("click>>mousedown", {
-          authorityWire: editor.getCursor(),
-          wire: editor.getWire(),
-          native: handoffNoteSelectionSnapshot(rootRef),
-        });
       }}
       onFocusIn={(event) => {
         const target = event.target;

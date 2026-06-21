@@ -44,6 +44,46 @@ function findMentionAncestor(root: HTMLElement, node: Node): HTMLSpanElement | n
   return null;
 }
 
+/** Browser trailing edge on a split wire-text part before the next `\n` (§53 Rule 4). */
+export function isContentTextNodeDomTailBeforeBreak(
+  domOffset: number,
+  part: string,
+  partIndex: number,
+  partCount: number
+): boolean {
+  return domOffset === part.length && part.length > 0 && partIndex < partCount - 1;
+}
+
+/**
+ * §53 Rule 4 — read path: text-node tail belongs to content row end, not the following `\n`.
+ * Blank-band probe wires come only from blank infrastructure DOM, not content text tails.
+ */
+export function docOffsetFromContentTextNodeDomPoint(
+  nodeOffsetBase: number,
+  domOffset: number,
+  part: string,
+  partIndex: number,
+  partCount: number
+): number {
+  if (isContentTextNodeDomTailBeforeBreak(domOffset, part, partIndex, partCount)) {
+    return nodeOffsetBase + domOffset - 1;
+  }
+  return nodeOffsetBase + domOffset;
+}
+
+/** §53 Rule 4 — write path: content row end renders at the browser text-node tail before a break. */
+export function domOffsetForContentRowEndInSplitText(
+  docOffsetInPart: number,
+  part: string,
+  partIndex: number,
+  partCount: number
+): number {
+  if (docOffsetInPart === part.length - 1 && part.length > 0 && partIndex < partCount - 1) {
+    return part.length;
+  }
+  return docOffsetInPart;
+}
+
 function isLastRenderedDocNode(doc: HandoffNoteDoc, nodeIndex: number): boolean {
   for (let index = doc.nodes.length - 1; index >= 0; index--) {
     const node = doc.nodes[index]!;
@@ -145,7 +185,10 @@ function resolveTextDomPointAtOffset(
       if (remaining < part.length && part) {
         const domNode = root.childNodes[childIdx];
         if (domNode?.nodeType === Node.TEXT_NODE) {
-          return { node: domNode, offset: remaining };
+          return {
+            node: domNode,
+            offset: domOffsetForContentRowEndInSplitText(remaining, part, partIndex, parts.length),
+          };
         }
       }
       if (remaining === part.length && partIndex < parts.length - 1) {
@@ -380,7 +423,16 @@ export function domPointToDocPos(
       const part = parts[partIndex]!;
       const textChild = root.childNodes[childIdx];
       if (textChild === container) {
-        return { nodeIndex, nodeOffset: nodeOffset + offset };
+        return {
+          nodeIndex,
+          nodeOffset: docOffsetFromContentTextNodeDomPoint(
+            nodeOffset,
+            offset,
+            part,
+            partIndex,
+            parts.length
+          ),
+        };
       }
       if (part) {
         nodeOffset += part.length;

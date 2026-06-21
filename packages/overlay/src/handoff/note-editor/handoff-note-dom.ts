@@ -6,7 +6,7 @@ import {
   type HandoffNoteNode,
 } from "@caliper/core";
 import { PREFIX } from "../../css/styles.js";
-import { flattenHandoffNoteLog, handoffNoteDomSnapshot } from "../handoff-note-debug.js";
+import { handoffNoteDomSnapshot } from "../handoff-note-debug.js";
 
 export const HANDOFF_MENTION_ATTR = "data-handoff-mention";
 export const HANDOFF_AGENT_ID_ATTR = "data-agent-id";
@@ -327,8 +327,6 @@ function fullRebuildDocDom(
   doc: HandoffNoteDoc,
   options: HandoffNotePresentationOptions
 ): void {
-  flattenHandoffNoteLog("dom.render", { wireAfter: docToWire(doc), mode: "fullRebuild" });
-
   root.replaceChildren();
   if (doc.nodes.length === 0) {
     return;

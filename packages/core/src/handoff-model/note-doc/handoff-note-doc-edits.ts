@@ -19,6 +19,7 @@ import {
   insertDocPosAfterEmbeddedBlankProbe,
   resolveBackspaceBeforeEmbeddedBlankProbe,
   resolveEmbeddedBlankBandDelete,
+  resolveEmbeddedBlankBandLineStartCollapse,
 } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
@@ -257,6 +258,19 @@ export function applyDocDelete(
     };
   }
 
+  const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(doc, focusWire);
+  if (lineStartCollapse && (direction === "backspace" || direction === "delete")) {
+    return {
+      doc: lineStartCollapse.doc,
+      selection: collapsedSelection(
+        normalizeDocPos(
+          lineStartCollapse.doc,
+          wireOffsetToDocPos(lineStartCollapse.doc, lineStartCollapse.caretWire)
+        )
+      ),
+    };
+  }
+
   if (selectionCollapsed(selection) && isInterMentionGap(doc, focus)) {
     return applyInterMentionGapDelete(doc, selection, direction);
   }
@@ -270,19 +284,17 @@ export function applyDocDelete(
     if (mentionStartBackspace) {
       return mentionStartBackspace;
     }
-    if (focusWire > 0) {
-      const beforeProbe = resolveBackspaceBeforeEmbeddedBlankProbe(doc, focusWire);
-      if (beforeProbe) {
-        return {
-          doc: beforeProbe.doc,
-          selection: collapsedSelection(
-            normalizeDocPos(
-              beforeProbe.doc,
-              wireOffsetToDocPos(beforeProbe.doc, beforeProbe.caretWire)
-            )
-          ),
-        };
-      }
+    const beforeProbe = resolveBackspaceBeforeEmbeddedBlankProbe(doc, focusWire);
+    if (beforeProbe) {
+      return {
+        doc: beforeProbe.doc,
+        selection: collapsedSelection(
+          normalizeDocPos(
+            beforeProbe.doc,
+            wireOffsetToDocPos(beforeProbe.doc, beforeProbe.caretWire)
+          )
+        ),
+      };
     }
   }
 

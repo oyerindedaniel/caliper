@@ -246,14 +246,108 @@ describe("embedded blank-band delete contract", () => {
       expect(docToWire(nibbled.doc)).toBe(`header @${agent}\n\n\ntail`);
     });
 
-    it("backspace at top of blank band with nothing above is a no-op", () => {
-      const wire = `\n\n\ntail`;
+    it("backspace at single-char header row end before blank band removes the character", () => {
+      const wire = `h\n\n\ntail`;
       const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes[0]).toBe(1);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[0]! - 1)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(`\n\n\ntail`);
+    });
+
+    it("after §69 step from first blank to single-char header row end removes header on next backspace", () => {
+      const wire = `h\n\n\ntail`;
+      let doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+
+      const stepped = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[0]!)),
+        "backspace"
+      )!;
+      expect(docToWire(stepped.doc)).toBe(wire);
+      expect(docPosToWireOffset(stepped.doc, stepped.selection.focus)).toBe(probes[0]! - 1);
+
+      const nibbled = applyDocDelete(stepped.doc, stepped.selection, "backspace")!;
+      expect(docToWire(nibbled.doc)).toBe(`\n\n\ntail`);
+    });
+
+    it("after clearing single-char header backspace on lower blank removes one blank-row newline", () => {
+      let doc = wireToDoc(`h\n\n\ntail`);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0)),
+        "backspace"
+      )!;
+      expect(docToWire(cleared.doc)).toBe(`\n\n\ntail`);
+
+      const probes = listEmbeddedBlankBandProbeWires(cleared.doc);
+      const result = applyDocDelete(
+        cleared.doc,
+        collapsedSelection(wireOffsetToDocPos(cleared.doc, probes[1]!)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(`\n\ntail`);
+      const [remainingBlank] = listEmbeddedBlankBandProbeWires(result!.doc);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(remainingBlank);
+    });
+
+    it("backspace on first probe with empty row above collapses one blank toward lower content", () => {
+      const doc = wireToDoc(`\n\n\ntail`);
       const [leadingBlank] = listEmbeddedBlankBandProbeWires(doc);
 
-      expect(
-        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, leadingBlank!)), "backspace")
-      ).toBeNull();
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, leadingBlank!)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(`\n\ntail`);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
+        listEmbeddedBlankBandProbeWires(result!.doc)[0]
+      );
+    });
+
+    it("repeated backspace through leading blank band lands at lower row visual start", () => {
+      let doc = wireToDoc(`\n\n\nlower`);
+      let state = collapsedSelection(wireOffsetToDocPos(doc, 0));
+
+      for (const expectedWire of [`\n\nlower`, `\nlower`, `lower`]) {
+        const collapsed = applyDocDelete(doc, state, "backspace");
+        expect(collapsed).not.toBeNull();
+        expect(docToWire(collapsed!.doc)).toBe(expectedWire);
+        doc = collapsed!.doc;
+        state = collapsed!.selection;
+      }
+      expect(docPosToWireOffset(doc, state.focus)).toBe(0);
+    });
+
+    it("after deleting sole header character repeated backspace collapses blank band to lower start", () => {
+      let doc = wireToDoc(`h\n\n\nlower`);
+      let state = collapsedSelection(wireOffsetToDocPos(doc, 0));
+      const cleared = applyDocDelete(doc, state, "backspace")!;
+      expect(docToWire(cleared.doc)).toBe(`\n\n\nlower`);
+      doc = cleared.doc;
+      state = cleared.selection;
+
+      for (const expectedWire of [`\n\nlower`, `\nlower`, `lower`]) {
+        const collapsed = applyDocDelete(doc, state, "backspace");
+        expect(collapsed).not.toBeNull();
+        expect(docToWire(collapsed!.doc)).toBe(expectedWire);
+        doc = collapsed!.doc;
+        state = collapsed!.selection;
+      }
+      expect(docPosToWireOffset(doc, state.focus)).toBe(0);
     });
   });
 
@@ -306,6 +400,20 @@ describe("embedded blank-band delete contract", () => {
           "delete"
         )
       ).toBeNull();
+    });
+
+    it("repeated delete through leading blank band lands at lower row visual start", () => {
+      let doc = wireToDoc(`\n\n\nlower`);
+      let state = collapsedSelection(wireOffsetToDocPos(doc, 0));
+
+      for (const expectedWire of [`\n\nlower`, `\nlower`, `lower`]) {
+        const collapsed = applyDocDelete(doc, state, "delete");
+        expect(collapsed).not.toBeNull();
+        expect(docToWire(collapsed!.doc)).toBe(expectedWire);
+        doc = collapsed!.doc;
+        state = collapsed!.selection;
+      }
+      expect(docPosToWireOffset(doc, state.focus)).toBe(0);
     });
   });
 

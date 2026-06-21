@@ -9,6 +9,8 @@ import {
 export type EmbeddedBlankBandDeleteBranch =
   | "backspace-content-above"
   | "backspace-blank-above"
+  | "backspace-collapse-empty-above"
+  | "backspace-line-start-collapse"
   | "delete-blank-below"
   | "delete-lower-row";
 
@@ -30,6 +32,66 @@ function wireLineStartOffsets(wire: string): number[] {
 
 function isBlankBandSegment(segment: string): boolean {
   return segment.length === 0 || /^\s*$/.test(segment);
+}
+
+/** True when substantive content sits on the row immediately above `probeWire`. */
+export function embeddedBlankBandHasSubstantiveRowAbove(wire: string, probeWire: number): boolean {
+  if (probeWire <= 0) {
+    return false;
+  }
+  const lineStart = wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const segment = wire.slice(lineStart, probeWire);
+  return segment.length > 0 && /\S/.test(segment);
+}
+
+/** True when the blank band has a filled content row above its first probe (header row). */
+export function embeddedBlankBandHasSubstantiveContentAboveBand(
+  wire: string,
+  probes: number[]
+): boolean {
+  const firstProbe = probes[0];
+  if (firstProbe === undefined) {
+    return false;
+  }
+  return embeddedBlankBandHasSubstantiveRowAbove(wire, firstProbe);
+}
+
+/** First wire offset of substantive content (skips leading `\n` run and whitespace-only segments). */
+export function embeddedBlankBandSubstantiveContentStartWire(doc: HandoffNoteDoc): number {
+  const wire = docToWire(doc);
+  const lineStarts = wireLineStartOffsets(wire);
+  for (const start of lineStarts) {
+    const lineEnd = wire.indexOf("\n", start);
+    const segment = wire.slice(start, lineEnd === -1 ? wire.length : lineEnd);
+    if (segment.length > 0 && /\S/.test(segment)) {
+      return start;
+    }
+  }
+  return wire.length;
+}
+
+function collapseBlankBandBackspaceLanding(nextDoc: HandoffNoteDoc, probeIndex: number): number {
+  const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
+  if (probeIndex > 0) {
+    return remaining[probeIndex - 1]!;
+  }
+  if (remaining.length > 0) {
+    return remaining[0]!;
+  }
+  return embeddedBlankBandSubstantiveContentStartWire(nextDoc);
+}
+
+function collapseBlankBandDeleteLanding(nextDoc: HandoffNoteDoc, probeIndex: number): number {
+  const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
+  if (probeIndex < remaining.length) {
+    return remaining[probeIndex]!;
+  }
+  const wire = docToWire(nextDoc);
+  const substantiveStart = embeddedBlankBandSubstantiveContentStartWire(nextDoc);
+  if (substantiveStart > 0 && wire[0] === "\n") {
+    return 0;
+  }
+  return substantiveStart;
 }
 
 function isSubstantiveLineStart(wire: string, start: number): boolean {
@@ -192,20 +254,16 @@ export function resolveEmbeddedBlankBandDelete(
   const wire = docToWire(doc);
 
   if (direction === "backspace") {
-    if (probeIndex === 0) {
+    if (probeIndex === 0 && embeddedBlankBandHasSubstantiveContentAboveBand(wire, probes)) {
       const rowEnd = focusWire - 1;
-      if (rowEnd < 0) {
-        return null;
-      }
       return { doc, caretWire: rowEnd, branch: "backspace-content-above" };
     }
 
     const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
-    const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
     return {
       doc: nextDoc,
-      caretWire: remaining[probeIndex - 1]!,
-      branch: "backspace-blank-above",
+      caretWire: collapseBlankBandBackspaceLanding(nextDoc, probeIndex),
+      branch: probeIndex === 0 ? "backspace-collapse-empty-above" : "backspace-blank-above",
     };
   }
 
@@ -215,22 +273,23 @@ export function resolveEmbeddedBlankBandDelete(
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
   if (probeIndex < probes.length - 1) {
-    const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
     return {
       doc: nextDoc,
-      caretWire: remaining[probeIndex]!,
+      caretWire: collapseBlankBandDeleteLanding(nextDoc, probeIndex),
       branch: "delete-blank-below",
     };
   }
 
-  const resultWire = docToWire(nextDoc);
-  const span = embeddedTextLedLowerRowSpanAfterBlankBand(nextDoc);
-  let caretWire = span?.lineStartWire ?? focusWire;
-  if (!span) {
-    while (caretWire < resultWire.length && resultWire[caretWire] === "\n") {
-      caretWire += 1;
-    }
+  if (!embeddedBlankBandHasSubstantiveContentAboveBand(wire, probes)) {
+    return {
+      doc: nextDoc,
+      caretWire: collapseBlankBandDeleteLanding(nextDoc, probeIndex),
+      branch: "delete-lower-row",
+    };
   }
+
+  const span = embeddedTextLedLowerRowSpanAfterBlankBand(nextDoc);
+  const caretWire = span?.lineStartWire ?? embeddedBlankBandSubstantiveContentStartWire(nextDoc);
 
   return {
     doc: nextDoc,
@@ -260,5 +319,40 @@ export function resolveBackspaceBeforeEmbeddedBlankProbe(
     doc: nextDoc,
     caretWire: Math.max(0, focusWire - 1),
     branch: "backspace-content-above",
+  };
+}
+
+/**
+ * Backspace on a line-start `\n` before substantive content when every segment above is empty.
+ * Not a blank-band probe — same collapse landing as blank-band ladder exhaustion.
+ */
+export function resolveEmbeddedBlankBandLineStartCollapse(
+  doc: HandoffNoteDoc,
+  focusWire: number
+): EmbeddedBlankBandDeleteMove | null {
+  if (isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    return null;
+  }
+  const wire = docToWire(doc);
+  if (focusWire < 0 || focusWire >= wire.length || wire[focusWire] !== "\n") {
+    return null;
+  }
+  const lineStart = focusWire <= 0 ? 0 : wire.lastIndexOf("\n", focusWire - 1) + 1;
+  const segmentAbove = wire.slice(lineStart, focusWire);
+  if (segmentAbove.length > 0 && /\S/.test(segmentAbove)) {
+    return null;
+  }
+  const afterBreak = wire.slice(focusWire + 1);
+  const nextLineEnd = afterBreak.indexOf("\n");
+  const nextSegment = nextLineEnd === -1 ? afterBreak : afterBreak.slice(0, nextLineEnd);
+  if (nextSegment.length === 0 || !/\S/.test(nextSegment)) {
+    return null;
+  }
+
+  const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  return {
+    doc: nextDoc,
+    caretWire: embeddedBlankBandSubstantiveContentStartWire(nextDoc),
+    branch: "backspace-line-start-collapse",
   };
 }

@@ -57,6 +57,7 @@ Editor-owned reconciliation on `selectionchange` after user click. Builds on §7
 - **Rule 1 — click wins:** If a click resolves to a valid DOM text position on the editor, **accept it** as authority.
 - **Rule 2 — repair scope:** Repair on `selectionchange` runs only when the click lands in an **invalid or unrepresentable** region (e.g. pill interior strand, selection outside root) — not when live wire reads as a blank probe but the DOM still resolved meaningful text on the intended row.
 - **Rule 3 — no regress:** Repair must **never move the caret farther from the user’s click target** when a valid position already exists.
+- **Rule 4 — text-node tail ownership:** The trailing edge of a substantive content text node (browser `offset === text.length` on that node) maps to **content row end** — the last character on that row — not the following wire `\n` or blank-band probe. Blank-band probe wires apply only when the browser places the selection in blank-band infrastructure (blank anchor, wire-break caret target, or explicit probe resolution from `resolveDomPointAtDocPos` at a probe wire).
 
 Industry norm (VS Code, Google Docs, Notion, Slack, CodeMirror): **click location wins** unless the DOM cannot represent the requested position. §49 “content row end above band” is **Backspace-at-probe policy**, not click repair.
 
@@ -65,12 +66,12 @@ Industry norm (VS Code, Google Docs, Notion, Slack, CodeMirror): **click locatio
 Editor-owned (`beforeInput` → `applyDocDelete`); same probe wires as arrow landing (`listEmbeddedBlankBandProbeWires`).
 
 - **Insert at probe:** caret rests on the `\n`; splice **after** the break (same as typing on a new blank row).
-- **Backspace at probe, substantive row above:** wire unchanged; caret moves to the **content row end** immediately above the band (last offset on that row before the break). A further backspace on trailing row text immediately before the probe removes that character normally.
-- **Backspace at probe, blank row above:** remove this blank row’s leading `\n`; caret lands on the **remaining blank probe** above.
-- **Backspace at probe, top of blank band (nothing above to step or merge into):** no-op (`null`).
-- **Delete at probe, blank row below:** remove this blank row’s leading `\n`; caret lands on the **next blank probe** in the shortened band.
-- **Delete at probe, substantive row below:** remove this blank row’s leading `\n`; caret lands at the **lower content row visual start** (text-led or mention-led).
-- **Delete at probe, bottom of blank band (nothing below to step into):** no-op (`null`).
+- **Content row chip:** backspace on trailing row text immediately before a probe removes characters normally (including the last character on the row). Deleting the last character does **not** promote the caret into the blank band; the next backspace begins **blank collapse** from the current visual row.
+- **Blank-band collapse (Backspace):** when the caret is on a blank-band probe and the row above has **no substantive text** (empty or whitespace-only segment), each backspace removes this blank row’s `\n` and lands on the **remaining blank probe above**, or — when the band is exhausted upward — on the **visual start of the next substantive row below** the band. When the row above **has** substantive text, the first backspace on that probe still **steps** to the content row end above (wire unchanged); further backspace on that row chips text, then collapse as above once the row is empty.
+- **Line-start collapse (Backspace):** a `\n` immediately before lower substantive content (line-start storage, not a blank-band probe) collapses on backspace when every segment above it in the wire is empty — same landing rule as blank-band collapse (next substantive row **visual start**).
+- **Blank-band collapse (Delete):** mirror downward — on a blank-band probe, each delete removes this blank row’s `\n` and lands on the **next blank probe below**, or on the **lower substantive row visual start** when that was the last blank before content. Does not skip character delete on filled rows; collapse runs only from blank probes (or equivalent empty-row positions).
+- **Delete at probe, substantive row below (last blank before content):** same as collapse landing — lower content row **visual start**.
+- **Band edge no-op:** backspace/delete only no-op when there is nothing to merge in that direction **and** no substantive row to land on (e.g. doc end with trailing blanks only).
 
 ## Left / Right — horizontal only
 
@@ -82,6 +83,7 @@ Editor-owned (`beforeInput` → `applyDocDelete`); same probe wires as arrow lan
 ## Shared
 
 - **Authority:** editor doc position wins; repair/sync before acting on keydown.
+- **DOM boundary mapping:** `domPointToDocPos` applies §53 Rule 4 at ingress — text-node tails belong to content row end; blank-band probes come only from blank infrastructure DOM. Delete policy uses the blank-band collapse family above (§64–74).
 - **Mentions:** vertical crosses rows; horizontal crosses tokens on a row.
 - **Tests:** integration and unit tests assert **contract behavior**, not implementation branches. A failing test means the code or the oracle is wrong — **never weaken the contract** to green a patch. Wrong tests get fixed or removed; symptom-specific landing rules are not added to satisfy a test.
 - **Logging (debug):** direction, `fromWire`, `toWire`, `branch`, `lineIndex` delta.

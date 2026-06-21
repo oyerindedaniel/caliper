@@ -6,7 +6,13 @@ import {
   wireOffsetToDocPos,
   wireToDoc,
 } from "@caliper/core";
-import { domPointToDocPos, resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
+import {
+  docOffsetFromContentTextNodeDomPoint,
+  domOffsetForContentRowEndInSplitText,
+  domPointToDocPos,
+  isContentTextNodeDomTailBeforeBreak,
+  resolveDomPointAtDocPos,
+} from "./handoff-note-dom-points.js";
 import {
   HANDOFF_LINE_PAD_ATTR,
   HANDOFF_BLANK_ANCHOR_ATTR,
@@ -446,6 +452,66 @@ describe("handoff-note-dom", () => {
       expect(point).not.toBeNull();
       const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
       expect(docPosToWireOffset(doc, roundTrip)).toBe(probeWire);
+    });
+
+    it("content text-node trailing edge maps to content row end not blank probe", () => {
+      const wire = `hello\n\n\nlower `;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const firstText = root.childNodes[0];
+      expect(firstText?.nodeType).toBe(Node.TEXT_NODE);
+      const pos = domPointToDocPos(root, doc, firstText!, firstText!.textContent!.length);
+      expect(docPosToWireOffset(doc, pos)).toBe(headerEnd);
+      expect(docPosToWireOffset(doc, pos)).not.toBe(probes[0]);
+    });
+
+    it("line-break text-node tail maps to row end not storage newline", () => {
+      const wire = `line1\nline2`;
+      const doc = wireToDoc(wire);
+      expect(listEmbeddedBlankBandProbeWires(doc)).toHaveLength(0);
+      const line1End = "line1".length - 1;
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const firstText = root.childNodes[0];
+      expect(firstText?.textContent).toBe("line1");
+      const pos = domPointToDocPos(root, doc, firstText!, firstText!.textContent!.length);
+      expect(docPosToWireOffset(doc, pos)).toBe(line1End);
+      expect(docPosToWireOffset(doc, pos)).not.toBe("line1".length);
+    });
+
+    it("content row end round-trips through resolveDomPointAtDocPos at text-node tail", () => {
+      const wire = `hello\n\n\nlower `;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, headerEnd));
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point?.offset).toBe("hello".length);
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(headerEnd);
+    });
+  });
+
+  describe("text-node boundary ownership primitives (§53 Rule 4)", () => {
+    it("detects browser text-node tail before a wire break", () => {
+      expect(isContentTextNodeDomTailBeforeBreak(5, "hello", 0, 4)).toBe(true);
+      expect(isContentTextNodeDomTailBeforeBreak(4, "hello", 0, 4)).toBe(false);
+      expect(isContentTextNodeDomTailBeforeBreak(5, "hello", 3, 4)).toBe(false);
+    });
+
+    it("maps text-node tail to content row end on read", () => {
+      expect(docOffsetFromContentTextNodeDomPoint(0, 5, "hello", 0, 4)).toBe(4);
+      expect(docOffsetFromContentTextNodeDomPoint(0, 3, "hello", 0, 4)).toBe(3);
+    });
+
+    it("maps content row end to text-node tail on write", () => {
+      expect(domOffsetForContentRowEndInSplitText(4, "hello", 0, 4)).toBe(5);
+      expect(domOffsetForContentRowEndInSplitText(3, "hello", 0, 4)).toBe(3);
     });
   });
 });

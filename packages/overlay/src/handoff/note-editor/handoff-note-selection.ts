@@ -20,6 +20,7 @@ import {
 import {
   flattenHandoffNoteLog,
   handoffNoteDomSnapshot,
+  logCaretBoundaryTrace,
   logVerArrow,
 } from "../handoff-note-debug.js";
 import {
@@ -103,12 +104,6 @@ export function repairDocSelectionIfNeeded(
 ): HandoffNoteDocPos {
   const live = readDocSelection(root, doc);
   if (!docPosEqualNormalized(doc, live.anchor, live.focus)) {
-    flattenHandoffNoteLog("caret>>repair", {
-      branch: "nonCollapsedRange",
-      anchor: live.anchor,
-      focus: live.focus,
-      from,
-    });
     return live.focus;
   }
 
@@ -122,34 +117,26 @@ export function repairDocSelectionIfNeeded(
     (fromWire <= context.start || fromWire > context.end)
   ) {
     const restored = wireOffsetToDocPos(doc, fromWire);
-    flattenHandoffNoteLog("caret>>repair", {
+    logCaretBoundaryTrace("repair", {
       branch: "restoreFromOutsideMention",
-      readStart: focusWire,
+      liveWire: focusWire,
       fromWire,
-      restoreTo: fromWire,
+      resolvedWire: fromWire,
     });
     setDocSelection(root, doc, collapsedSelection(restored), { from, source: "repair" });
     return restored;
   }
 
   if (options?.mode === "strand-only") {
-    const resolvedWire = docPosToWireOffset(doc, live.focus);
-    flattenHandoffNoteLog("caret>>repair", {
-      branch: "strandOnlyAccept",
-      liveWire: focusWire,
-      fromWire,
-      resolvedWire,
-    });
     return normalizeDocPos(doc, live.focus, { from });
   }
 
   if (from !== undefined && shouldRestoreAuthorityOverDom(doc, live.focus, from)) {
-    flattenHandoffNoteLog("caret>>repair", {
+    logCaretBoundaryTrace("repair", {
       branch: "restoreAuthority",
-      live: live.focus,
       liveWire: docPosToWireOffset(doc, live.focus),
-      from,
       fromWire: docPosToWireOffset(doc, from),
+      resolvedWire: docPosToWireOffset(doc, from),
     });
     setDocSelection(root, doc, collapsedSelection(from), { from, source: "repair.authority" });
     return from;
@@ -160,12 +147,6 @@ export function repairDocSelectionIfNeeded(
     return normalized;
   }
 
-  flattenHandoffNoteLog("caret>>repair", {
-    branch: "snapDocPos",
-    read: live.focus,
-    from,
-    snapped: normalized,
-  });
   setDocSelection(root, doc, collapsedSelection(normalized), { from, source: "repair" });
   return normalized;
 }
@@ -198,11 +179,15 @@ export function setDocSelection(
   const source = options?.source ?? "unknown";
 
   if (!startPoint || !endPoint) {
-    flattenHandoffNoteLog(`caret>>setDoc>>${source}>>miss`, {
-      requested: docSel,
-      from: options?.from,
-      dom: handoffNoteDomSnapshot(root),
-    });
+    flattenHandoffNoteLog(
+      `caret>>setDoc>>${source}>>miss`,
+      {
+        requested: docSel,
+        from: options?.from,
+        dom: handoffNoteDomSnapshot(root),
+      },
+      "warn"
+    );
     return;
   }
 
@@ -211,14 +196,6 @@ export function setDocSelection(
   range.setEnd(endPoint.node, endPoint.offset);
   native.removeAllRanges();
   native.addRange(range);
-
-  flattenHandoffNoteLog(`caret>>setDoc>>${source}`, {
-    requested: docSel,
-    wire: {
-      start: docPosToWireOffset(doc, docSel.anchor),
-      end: docPosToWireOffset(doc, docSel.focus),
-    },
-  });
 }
 
 function pickClosestOnLine(line: MeasuredWireOffset[], targetLeft: number): MeasuredWireOffset {

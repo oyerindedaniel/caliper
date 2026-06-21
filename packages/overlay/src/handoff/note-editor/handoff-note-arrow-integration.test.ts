@@ -25,9 +25,11 @@ import {
   readDomWireCursor,
   monotonicMeasuredLayoutSamples,
   seedMonotonicMeasuredLayout,
+  dispatchSelectionChange,
+  setDomCaretAtTextEnd,
+  setDomCaretAtTextStart,
   setSelectionAtWire,
   stubHandoffNoteMentionLayoutCoords,
-  dispatchSelectionChange,
 } from "./handoff-note-test-helpers.js";
 
 const AGENT_A = "caliper-aaaaaaa";
@@ -1051,6 +1053,74 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
   });
 
+  describe("text-node boundary ownership — edit ingress", () => {
+    function pressBackspace(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+      );
+    }
+
+    function pressDelete(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
+      );
+    }
+
+    it("backspace after plain text-node tail click nibbles on first press", () => {
+      const plainWire = `hello\n\n\nlower `;
+      const doc = wireToDoc(plainWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+
+      host.editor.setDocFromWire(plainWire, 0, { resetHistory: true });
+      const firstText = host.root.childNodes[0];
+      expect(firstText?.nodeType).toBe(Node.TEXT_NODE);
+      setDomCaretAtTextEnd(host.root, firstText as Text);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(headerEnd);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`hell\n\n\nlower `);
+      expectCaretParity(host.editor, host.root, headerEnd - 1, "plain text-node tail");
+    });
+
+    it("backspace after mention suffix text-node tail click nibbles on first press", () => {
+      const suffixWire = `header @${AGENT_COMPOSITE} row\n\n\nlower `;
+      const doc = wireToDoc(suffixWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+
+      host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
+      const rowTailText = [...host.root.childNodes].find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent === " row"
+      );
+      expect(rowTailText).toBeDefined();
+      setDomCaretAtTextEnd(host.root, rowTailText as Text);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(headerEnd);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
+    });
+
+    it("delete after lower-row text-node head click nibbles on first press", () => {
+      const wire = `hello\n\n\nlower `;
+      const lowerStart = wire.indexOf("lower");
+
+      host.editor.setDocFromWire(wire, 0, { resetHistory: true });
+      const lowerText = [...host.root.childNodes].find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.startsWith("lower")
+      );
+      expect(lowerText).toBeDefined();
+      setDomCaretAtTextStart(host.root, lowerText as Text);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(lowerStart);
+
+      expect(pressDelete()).toBe(true);
+      expect(host.editor.getWire()).toBe(`hello\n\n\nower `);
+    });
+  });
+
   describe("embedded blank-band delete after arrow", () => {
     const wire = `header @${AGENT_COMPOSITE} \n\n\ntail @${AGENT_COMPOSITE} `;
 
@@ -1209,6 +1279,51 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
+    });
+
+    it("keydown backspace at single-char header row end deletes character before blank band", () => {
+      const suffixWire = `h\n\n\ntail`;
+      const doc = wireToDoc(suffixWire);
+      const headerEnd = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
+
+      host.editor.setDocFromWire(suffixWire, headerEnd, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n\ntail`);
+    });
+
+    it("keydown backspace after probe step from single-char header deletes header character", () => {
+      const suffixWire = `h\n\n\ntail`;
+      const doc = wireToDoc(suffixWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const headerEnd = probes[0]! - 1;
+
+      host.editor.setDocFromWire(suffixWire, probes[0]!, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(suffixWire);
+      expect(host.editor.getCursor()).toBe(headerEnd);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n\ntail`);
+    });
+
+    it("keydown backspace after clearing sole header character collapses blank band to lower start", () => {
+      const suffixWire = `h\n\n\nlower `;
+      host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n\nlower `);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\nlower `);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\nlower `);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`lower `);
+      expect(host.editor.getCursor()).toBe(0);
     });
   });
 

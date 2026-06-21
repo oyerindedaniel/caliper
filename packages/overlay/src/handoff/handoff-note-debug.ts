@@ -1,7 +1,136 @@
 // DO NOT DELETE THIS FILE
+import {
+  docPosToWireOffset,
+  docToWire,
+  isEmbeddedBlankBandProbeWire,
+  listEmbeddedBlankBandProbeWires,
+  type HandoffNoteDoc,
+  type HandoffNoteDocPos,
+} from "@caliper/core";
+
 const LOG_PREFIX = "[handoff-note]";
 
-/** Filter console with `ce.` / `caret>>` / `click>>` / `delete>>` / `mention.` / `dom.` for pipeline traces. */
+function escapeWireChar(char: string | undefined): string | null {
+  if (char === undefined) {
+    return null;
+  }
+  if (char === "\n") {
+    return "\\n";
+  }
+  if (char === "\r") {
+    return "\\r";
+  }
+  return char;
+}
+
+/** Escaped wire for console — newlines visible as \\n. */
+export function escapeWireForLog(wire: string): string {
+  return wire.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+}
+
+/** Predict §69–71 blank-band delete branch when focus is on a probe wire (dry-run). */
+function predictBlankBandDeleteBranch(
+  doc: HandoffNoteDoc,
+  focusWire: number,
+  direction: "backspace" | "delete"
+): { branch: string; predictedCaretWire: number } | null {
+  if (!isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    return null;
+  }
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  const probeIndex = probes.indexOf(focusWire);
+  if (probeIndex < 0) {
+    return null;
+  }
+  const wire = docToWire(doc);
+  if (direction === "backspace") {
+    if (probeIndex === 0) {
+      const rowEnd = focusWire - 1;
+      if (rowEnd < 0) {
+        return null;
+      }
+      return { branch: "backspace-content-above", predictedCaretWire: rowEnd };
+    }
+    return {
+      branch: "backspace-blank-above",
+      predictedCaretWire: probes[probeIndex - 1]!,
+    };
+  }
+  if (focusWire + 1 >= wire.length) {
+    return null;
+  }
+  if (probeIndex < probes.length - 1) {
+    return { branch: "delete-blank-below", predictedCaretWire: probes[probeIndex + 1]! };
+  }
+  return { branch: "delete-lower-row", predictedCaretWire: focusWire };
+}
+
+export function buildCaretStateSnapshot(options: {
+  doc: HandoffNoteDoc;
+  authorityFocus?: HandoffNoteDocPos;
+  activeFocus?: HandoffNoteDocPos;
+  root?: HTMLElement;
+  direction?: "backspace" | "delete";
+}): Record<string, unknown> {
+  const wire = docToWire(options.doc);
+  const probes = listEmbeddedBlankBandProbeWires(options.doc);
+  const authorityWire =
+    options.authorityFocus !== undefined
+      ? docPosToWireOffset(options.doc, options.authorityFocus)
+      : undefined;
+  const activeWire =
+    options.activeFocus !== undefined
+      ? docPosToWireOffset(options.doc, options.activeFocus)
+      : undefined;
+  const focusWire = activeWire ?? authorityWire ?? 0;
+  const atProbe = isEmbeddedBlankBandProbeWire(options.doc, focusWire);
+  const probeIndex = atProbe ? probes.indexOf(focusWire) : -1;
+
+  const snapshot: Record<string, unknown> = {
+    wireLen: wire.length,
+    wire: escapeWireForLog(wire),
+    contractProbes: probes,
+    focusWire,
+    atProbe,
+    charBefore: focusWire > 0 ? escapeWireChar(wire[focusWire - 1]) : null,
+    charAt: focusWire < wire.length ? escapeWireChar(wire[focusWire]) : null,
+    charAfter: focusWire + 1 < wire.length ? escapeWireChar(wire[focusWire + 1]) : null,
+  };
+
+  if (authorityWire !== undefined) {
+    snapshot.authorityWire = authorityWire;
+  }
+  if (activeWire !== undefined) {
+    snapshot.activeWire = activeWire;
+  }
+  if (authorityWire !== undefined && activeWire !== undefined) {
+    snapshot.authorityDrift = authorityWire !== activeWire;
+  }
+  if (probeIndex >= 0) {
+    snapshot.probeIndex = probeIndex;
+    snapshot.firstProbe = probeIndex === 0;
+  }
+
+  if (options.direction !== undefined) {
+    const predicted = predictBlankBandDeleteBranch(options.doc, focusWire, options.direction);
+    if (predicted) {
+      snapshot.predictedBlankBandBranch = predicted.branch;
+      snapshot.predictedCaretWire = predicted.predictedCaretWire;
+    }
+  }
+
+  if (options.root) {
+    snapshot.dom = handoffNoteSelectionSnapshot(options.root);
+  }
+
+  return snapshot;
+}
+
+export function logEditStateTrace(phase: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`state>>${phase}`, data);
+}
+
+/** Filter console with `state>>` / `caret>>` / `delete>>` / `dom.` for pipeline traces. */
 export function flattenHandoffNoteLog(
   event: string,
   data: Record<string, unknown> = {},
@@ -13,6 +142,10 @@ export function flattenHandoffNoteLog(
     return;
   }
   console.log(`${LOG_PREFIX} ${event}`, line);
+}
+
+export function logCaretBoundaryTrace(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`caret>>${source}`, data);
 }
 
 export function logCaretTrace(source: string, data: Record<string, unknown> = {}): void {
