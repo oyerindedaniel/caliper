@@ -420,6 +420,55 @@ describe("handoff-note-dom", () => {
       }
     });
 
+    it("prefix-only leading blank probes resolve to wire-break, not blank anchor", () => {
+      for (const wire of [`\n`, `\n\n`, `\n\n\ntail`]) {
+        const doc = wireToDoc(wire);
+        const focusWire = listEmbeddedBlankBandProbeWires(doc)[0]!;
+
+        renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+        const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, focusWire));
+        expect(point, wire).not.toBeNull();
+        expect(
+          point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node),
+          wire
+        ).toBe(true);
+        const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+        expect(docPosToWireOffset(doc, roundTrip)).toBe(focusWire);
+      }
+    });
+
+    it("chip landing with delete provenance resolves interior probe to wire-break", () => {
+      const wire = "header \n\n\nmiddle\n\n\n\n\nlower";
+      const doc = wireToDoc(wire);
+      const interiorProbe = listEmbeddedBlankBandProbeWires(doc)[4]!;
+
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, interiorProbe), {
+        chipBeforeBlankBand: true,
+      });
+      expect(point).not.toBeNull();
+      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+        true
+      );
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(interiorProbe);
+    });
+
+    it("sandwiched blank probe still resolves to blank-band anchor without chip provenance", () => {
+      const wire = suffixBlankBandWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      for (const probeWire of probes) {
+        const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, probeWire));
+        expect(point, `wire ${probeWire}`).not.toBeNull();
+        expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+        expect(isHandoffBlankAnchorElement(point!.node.parentNode)).toBe(true);
+      }
+    });
+
     it("non-probe wire-break still resolves to br element", () => {
       const wire = suffixBlankBandWire();
       const doc = wireToDoc(wire);

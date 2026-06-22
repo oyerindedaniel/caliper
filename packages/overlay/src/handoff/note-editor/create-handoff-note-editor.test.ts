@@ -413,11 +413,13 @@ describe("createHandoffNoteEditor", () => {
 
     host.editor.handleBeforeInput(lineBreak());
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    expect(host.editor.getCursor()).toBe(wire.length + 1);
+    const firstProbes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(firstProbes[firstProbes.length - 1]!);
 
     host.editor.handleBeforeInput(lineBreak());
     expect(host.editor.getWire()).toBe(`${wire}\n\n`);
-    expect(host.editor.getCursor()).toBe(wire.length + 2);
+    const secondProbes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(secondProbes[secondProbes.length - 1]!);
   });
 
   it("first line break after single mention with substantive post-pill text lands on blank", () => {
@@ -434,7 +436,8 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    expect(host.editor.getCursor()).toBe(wire.length + 1);
+    const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(probes[probes.length - 1]!);
   });
 
   it("first line break after mention with whitespace-only post-pill tail lands on blank", () => {
@@ -451,7 +454,8 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    expect(host.editor.getCursor()).toBe(wire.length + 1);
+    const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(probes[probes.length - 1]!);
   });
 
   it("consecutive line breaks at later mention with substantive inter-pill gap land on new blank", () => {

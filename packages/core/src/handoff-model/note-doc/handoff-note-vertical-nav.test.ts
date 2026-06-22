@@ -290,7 +290,7 @@ describe("resolveVerticalArrowVisualLanding", () => {
 });
 
 describe("resolveVerticalArrowWireMove", () => {
-  it("session repro: up chain from tail blank band never lands on prefix mention", () => {
+  it("up chain from tail blank band never lands on prefix mention", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";
     const wire = `row @${agentA} mid @${agentB} \n\ntail @${agentA} `;

@@ -19,7 +19,11 @@ import {
   insertDocPosAfterEmbeddedBlankProbe,
   resolveBackspaceBeforeEmbeddedBlankProbe,
   resolveEmbeddedBlankBandDelete,
+  resolveEmbeddedBlankBandEofLineBreakCaretWire,
+  resolveBackspaceFromEmptyContentRowEnd,
+  resolveDeleteFromEmptyContentRowEnd,
   resolveEmbeddedBlankBandLineStartCollapse,
+  type HandoffBlankBandDeleteOptions,
 } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
@@ -33,7 +37,18 @@ import {
 export type HandoffDocEditResult = {
   doc: HandoffNoteDoc;
   selection: HandoffNoteSelection;
+  chipBeforeBlankBand?: boolean;
 };
+
+export type HandoffDocDeleteContext = HandoffBlankBandDeleteOptions;
+
+function docEditResult(
+  doc: HandoffNoteDoc,
+  selection: HandoffNoteSelection,
+  chipBeforeBlankBand?: boolean
+): HandoffDocEditResult {
+  return chipBeforeBlankBand ? { doc, selection, chipBeforeBlankBand: true } : { doc, selection };
+}
 
 function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   return (
@@ -236,7 +251,8 @@ export function spliceDocSelection(
 export function applyDocDelete(
   doc: HandoffNoteDoc,
   selection: HandoffNoteSelection,
-  direction: HandoffNoteEdit
+  direction: HandoffNoteEdit,
+  context?: HandoffDocDeleteContext
 ): HandoffDocEditResult | null {
   if (!selectionCollapsed(selection)) {
     return spliceDocSelection(doc, selection.anchor, selection.focus, "");
@@ -244,31 +260,67 @@ export function applyDocDelete(
 
   const focus = normalizeDocPos(doc, selection.focus);
   const focusWire = docPosToWireOffset(doc, focus);
+  const deleteOptions = context;
 
-  const blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction);
+  const blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction, deleteOptions);
   if (blankBandDelete) {
-    return {
-      doc: blankBandDelete.doc,
-      selection: collapsedSelection(
+    return docEditResult(
+      blankBandDelete.doc,
+      collapsedSelection(
         normalizeDocPos(
           blankBandDelete.doc,
           wireOffsetToDocPos(blankBandDelete.doc, blankBandDelete.caretWire)
         )
       ),
-    };
+      blankBandDelete.chipBeforeBlankBand
+    );
   }
 
-  const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(doc, focusWire);
+  if (direction === "backspace") {
+    const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(doc, focusWire, deleteOptions);
+    if (emptyRowEnd) {
+      return docEditResult(
+        emptyRowEnd.doc,
+        collapsedSelection(
+          normalizeDocPos(
+            emptyRowEnd.doc,
+            wireOffsetToDocPos(emptyRowEnd.doc, emptyRowEnd.caretWire)
+          )
+        )
+      );
+    }
+  }
+
+  if (direction === "delete") {
+    const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, deleteOptions);
+    if (emptyRowEnd) {
+      return docEditResult(
+        emptyRowEnd.doc,
+        collapsedSelection(
+          normalizeDocPos(
+            emptyRowEnd.doc,
+            wireOffsetToDocPos(emptyRowEnd.doc, emptyRowEnd.caretWire)
+          )
+        )
+      );
+    }
+  }
+
+  const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(
+    doc,
+    focusWire,
+    deleteOptions
+  );
   if (lineStartCollapse && (direction === "backspace" || direction === "delete")) {
-    return {
-      doc: lineStartCollapse.doc,
-      selection: collapsedSelection(
+    return docEditResult(
+      lineStartCollapse.doc,
+      collapsedSelection(
         normalizeDocPos(
           lineStartCollapse.doc,
           wireOffsetToDocPos(lineStartCollapse.doc, lineStartCollapse.caretWire)
         )
-      ),
-    };
+      )
+    );
   }
 
   if (selectionCollapsed(selection) && isInterMentionGap(doc, focus)) {
@@ -286,15 +338,16 @@ export function applyDocDelete(
     }
     const beforeProbe = resolveBackspaceBeforeEmbeddedBlankProbe(doc, focusWire);
     if (beforeProbe) {
-      return {
-        doc: beforeProbe.doc,
-        selection: collapsedSelection(
+      return docEditResult(
+        beforeProbe.doc,
+        collapsedSelection(
           normalizeDocPos(
             beforeProbe.doc,
             wireOffsetToDocPos(beforeProbe.doc, beforeProbe.caretWire)
           )
         ),
-      };
+        beforeProbe.chipBeforeBlankBand
+      );
     }
   }
 
@@ -589,7 +642,20 @@ function finishLineBreak(
   result: HandoffDocEditResult
 ): HandoffDocEditResult {
   traceLineBreakDispatch(branch, priorWire, result);
-  return result;
+  const resolvedWire = docPosToWireOffset(result.doc, result.selection.focus);
+  if (resolveMentionQueryMultilineInsert(docToWire(result.doc), docToWire(result.doc).length)) {
+    return result;
+  }
+  const caretWire = resolveEmbeddedBlankBandEofLineBreakCaretWire(result.doc, resolvedWire);
+  if (caretWire === resolvedWire) {
+    return result;
+  }
+  return {
+    doc: result.doc,
+    selection: collapsedSelection(
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire))
+    ),
+  };
 }
 
 function applyMentionBoundaryLineBreak(

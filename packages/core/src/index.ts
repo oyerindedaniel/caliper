@@ -158,16 +158,23 @@ export {
   applyDocLineBreak,
   insertMentionAtSelection,
   spliceDocSelection,
+  type HandoffDocDeleteContext,
   type HandoffDocEditResult,
 } from "./handoff-model/note-doc/handoff-note-doc-edits.js";
 export {
   docTextNodeHasEmbeddedNewline,
+  embeddedBlankBandAtEmptyContentRowEnd,
   embeddedTextLedLowerRowSpanAfterBlankBand,
+  isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
   isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
+  listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
+  resolveEmbeddedBlankBandDelete,
+  resolveEmbeddedBlankBandEofLineBreakCaretWire,
+  type HandoffBlankBandDeleteOptions,
 } from "./handoff-model/note-doc/handoff-note-embedded-newlines.js";
 export {
   HANDOFF_COLOR_COUNT,

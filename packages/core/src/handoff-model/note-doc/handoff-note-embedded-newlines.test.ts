@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
 import {
   docTextNodeHasEmbeddedNewline,
+  embeddedBlankBandAtEmptyContentRowEnd,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   insertDocPosAfterEmbeddedBlankProbe,
+  isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
+  listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
 } from "./handoff-note-embedded-newlines.js";
@@ -84,6 +87,64 @@ describe("embedded blank band probes", () => {
     const doc = wireToDoc(wire);
 
     expect(embeddedTextLedLowerRowSpanAfterBlankBand(doc)).toBeNull();
+  });
+
+  it("splits probe runs into bands separated by substantive wire rows", () => {
+    const wire = `header \n\n\nmiddle\n\n\nlower`;
+    const doc = wireToDoc(wire);
+    const groups = listEmbeddedBlankBandGroups(doc);
+    const probes = listEmbeddedBlankBandProbeWires(doc);
+    const middleStart = wire.indexOf("middle");
+    const lowerStart = wire.indexOf("lower");
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.probes).toEqual(probes.filter((probe) => probe < middleStart));
+    expect(groups[1]!.probes).toEqual(
+      probes.filter((probe) => probe > middleStart && probe < lowerStart)
+    );
+  });
+
+  describe("empty content row end", () => {
+    it("is true at band head with another blank below when caret semantic or structural match", () => {
+      const doc = wireToDoc(`\n\n\ntail`);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, 0)).toBe(true);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(false);
+    });
+
+    it("is true for chip landing via caret semantic even on interior probe index", () => {
+      const doc = wireToDoc(`header \n\n\nmiddle\n\n\n\n\nlower`);
+      const interiorProbe = listEmbeddedBlankBandProbeWires(doc)[4]!;
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, interiorProbe)).toBe(false);
+      expect(
+        embeddedBlankBandAtEmptyContentRowEnd(doc, interiorProbe, {
+          chipBeforeBlankBand: true,
+        })
+      ).toBe(true);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(doc, interiorProbe, {
+          chipBeforeBlankBand: true,
+        })
+      ).toBe(false);
+    });
+
+    it("is true for prefix-only lone leading blank with no substantive tail", () => {
+      const doc = wireToDoc(`\n`);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, 0)).toBe(true);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(false);
+    });
+
+    it("is false once only one blank remains before substantive tail", () => {
+      const doc = wireToDoc(`\n\ntail`);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, 0)).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(true);
+    });
+
+    it("is false on sandwiched blank visual rows without caret semantic", () => {
+      const doc = wireToDoc(`header\n\n\ntail`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe)).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe)).toBe(true);
+    });
   });
 });
 

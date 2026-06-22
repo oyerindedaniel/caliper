@@ -2,6 +2,7 @@
 import {
   docPosToWireOffset,
   docToWire,
+  isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
   type HandoffNoteDoc,
@@ -28,7 +29,7 @@ export function escapeWireForLog(wire: string): string {
   return wire.replace(/\r/g, "\\r").replace(/\n/g, "\\n");
 }
 
-/** Predict §69–71 blank-band delete branch when focus is on a probe wire (dry-run). */
+/** Predict blank-band delete branch when focus is on a probe wire (dry-run). */
 function predictBlankBandDeleteBranch(
   doc: HandoffNoteDoc,
   focusWire: number,
@@ -71,6 +72,7 @@ export function buildCaretStateSnapshot(options: {
   activeFocus?: HandoffNoteDocPos;
   root?: HTMLElement;
   direction?: "backspace" | "delete";
+  chipBeforeBlankBand?: boolean;
 }): Record<string, unknown> {
   const wire = docToWire(options.doc);
   const probes = listEmbeddedBlankBandProbeWires(options.doc);
@@ -84,6 +86,9 @@ export function buildCaretStateSnapshot(options: {
       : undefined;
   const focusWire = activeWire ?? authorityWire ?? 0;
   const atProbe = isEmbeddedBlankBandProbeWire(options.doc, focusWire);
+  const atDeleteProbe = isEmbeddedBlankBandDeleteProbeWire(options.doc, focusWire, {
+    chipBeforeBlankBand: options.chipBeforeBlankBand,
+  });
   const probeIndex = atProbe ? probes.indexOf(focusWire) : -1;
 
   const snapshot: Record<string, unknown> = {
@@ -92,6 +97,8 @@ export function buildCaretStateSnapshot(options: {
     contractProbes: probes,
     focusWire,
     atProbe,
+    atDeleteProbe,
+    chipBeforeBlankBand: options.chipBeforeBlankBand ?? false,
     charBefore: focusWire > 0 ? escapeWireChar(wire[focusWire - 1]) : null,
     charAt: focusWire < wire.length ? escapeWireChar(wire[focusWire]) : null,
     charAfter: focusWire + 1 < wire.length ? escapeWireChar(wire[focusWire + 1]) : null,

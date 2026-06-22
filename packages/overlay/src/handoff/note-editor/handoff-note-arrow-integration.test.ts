@@ -21,6 +21,7 @@ import {
   setMeasuredSamplesCache,
   invalidateHandoffNoteLayoutCache,
 } from "./handoff-note-layout-map.js";
+import { isHandoffBlankAnchorElement, isHandoffWireBreakElement } from "./handoff-note-dom.js";
 import {
   readDomWireCursor,
   monotonicMeasuredLayoutSamples,
@@ -66,6 +67,15 @@ function expectCaretParity(
   const liveDom = readDomWireCursor(root, editor.getDoc());
   expect(authority, label ? `${label} authority` : "authority").toBe(wire);
   expect(liveDom, label ? `${label} live DOM` : "live DOM").toBe(wire);
+}
+
+function expectDomCaretPaintedAtWireBreak(root: HTMLElement, label?: string): void {
+  const node = root.ownerDocument.getSelection()?.anchorNode;
+  const onWireBreak = node instanceof HTMLBRElement && isHandoffWireBreakElement(node);
+  const inBlankAnchor =
+    node?.nodeType === Node.TEXT_NODE && isHandoffBlankAnchorElement(node.parentNode);
+  expect(onWireBreak, label ? `${label} wire-break paint` : "wire-break paint").toBe(true);
+  expect(inBlankAnchor, label ? `${label} not blank anchor` : "not blank anchor").toBe(false);
 }
 
 function setDocWithLayout(
@@ -1053,6 +1063,123 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
   });
 
+  describe("EOF trailing blank band — editor pipeline", () => {
+    function insertLineBreak(): void {
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertLineBreak",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    }
+
+    function insertText(data: string): void {
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    }
+
+    function pressBackspace(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+      );
+    }
+
+    it("two EOF breaks then type fills lower blank row", () => {
+      const prefix = "content";
+      host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
+
+      insertLineBreak();
+      insertLineBreak();
+      insertText("d");
+
+      expect(host.editor.getWire()).toBe(`${prefix}\n\nd`);
+      expect(listEmbeddedBlankBandProbeWires(host.editor.getDoc())).toEqual([prefix.length]);
+    });
+
+    it("two EOF breaks backspace on lower blank without typing collapses one row", () => {
+      const prefix = "content";
+      host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
+
+      insertLineBreak();
+      insertLineBreak();
+
+      const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+      expect(host.editor.getCursor()).toBe(probes[1]!);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`${prefix}\n`);
+      expect(host.editor.getCursor()).toBe(probes[0]!);
+    });
+
+    it("two EOF breaks type arrow up backspace collapses blank not content above", () => {
+      const prefix = "content";
+      host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, prefix);
+
+      insertLineBreak();
+      insertLineBreak();
+      insertText("d");
+
+      const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+      const openedWire = host.editor.getWire();
+      seedMonotonicMeasuredLayout(host.root, openedWire);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, probes[0]!, "arrow up to upper blank");
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`${prefix}\nd`);
+      expect(host.editor.getCursor()).toBe(prefix.length - 1);
+    });
+
+    it("two EOF breaks type arrow up delete collapses blank not content above or below", () => {
+      const prefix = "content";
+      host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, prefix);
+
+      insertLineBreak();
+      insertLineBreak();
+      insertText("d");
+
+      const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+      seedMonotonicMeasuredLayout(host.root, host.editor.getWire());
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, probes[0]!, "arrow up to upper blank");
+
+      expect(
+        host.editor.handleKeyDown(
+          new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
+        )
+      ).toBe(true);
+      expect(host.editor.getWire()).toBe(`${prefix}\nd`);
+      expect(host.editor.getCursor()).toBe(host.editor.getWire().lastIndexOf("d"));
+    });
+
+    it("mention row two EOF breaks type backspace on blank preserves pill", () => {
+      const prefix = `row @${AGENT_A} `;
+      host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
+
+      insertLineBreak();
+      insertLineBreak();
+      insertText("d");
+
+      const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+      host.editor.setDocFromWire(host.editor.getWire(), probes[0]!, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`${prefix}\nd`);
+      expect(host.editor.getDoc().nodes.filter((node) => node.type === "mention")).toHaveLength(1);
+    });
+  });
+
   describe("text-node boundary ownership — edit ingress", () => {
     function pressBackspace(): boolean {
       return host.editor.handleKeyDown(
@@ -1150,10 +1277,9 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       );
     }
 
-    it("backspace on upper blank after arrow down preserves wire and lands at header row end", () => {
+    it("backspace on upper sandwiched blank after arrow down collapses one blank row", () => {
       const doc = wireToDoc(wire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
-      const headerEnd = probes[0]! - 1;
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
       stubHandoffNoteMentionLayoutCoords(
         host.root,
@@ -1168,8 +1294,15 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       deleteBackward();
 
-      expect(host.editor.getWire()).toBe(wire);
-      expectCaretParity(host.editor, host.root, headerEnd, "upper blank backspace to header end");
+      expect(host.editor.getWire()).toBe(
+        `header @${AGENT_COMPOSITE} \n\ntail @${AGENT_COMPOSITE} `
+      );
+      expectCaretParity(
+        host.editor,
+        host.root,
+        probes[0]!,
+        "upper sandwiched blank backspace collapses one row"
+      );
     });
 
     it("backspace on lower blank after arrow down removes one blank-row newline", () => {
@@ -1243,11 +1376,10 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
     });
 
-    it("keydown backspace after probe click steps to header end then nibbles suffix", () => {
+    it("keydown backspace after probe click collapses sandwiched blanks before lower content", () => {
       const suffixWire = `header @${AGENT_COMPOSITE} row\n\n\nlower `;
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
-      const headerEnd = probes[0]! - 1;
       const [firstProbe] = probes;
 
       host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
@@ -1256,29 +1388,31 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).toBe(firstProbe);
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getCursor()).toBe(headerEnd);
-      expect(host.editor.getWire()).toBe(suffixWire);
+      expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\n\nlower `);
+      expect(host.editor.getCursor()).toBe(probes[0]!);
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
-      expectCaretParity(host.editor, host.root, headerEnd - 1, "nibble after probe backspace step");
+      expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\nlower `);
+      const resultWire = host.editor.getWire();
+      expectCaretParity(
+        host.editor,
+        host.root,
+        resultWire.indexOf("\n") - 1,
+        "sandwiched blank collapse reaches header row end"
+      );
     });
 
-    it("keydown backspace after blank-band step to header end chips trailing suffix", () => {
+    it("keydown backspace on sandwiched blank collapses one row before reaching header end", () => {
       const suffixWire = `header @${AGENT_COMPOSITE} row\n\n\nlower `;
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
-      const headerEnd = probes[0]! - 1;
 
       host.editor.setDocFromWire(suffixWire, probes[0]!, { resetHistory: true });
       stubHandoffNoteMentionLayoutCoords(host.root, new Map([[1, { top: 150, left: 80 }]]));
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(suffixWire);
-      expectCaretParity(host.editor, host.root, headerEnd, "blank probe backspace to header end");
-
-      expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
+      expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\n\nlower `);
+      expectCaretParity(host.editor, host.root, probes[0]!, "first sandwiched blank collapse");
     });
 
     it("keydown backspace at single-char header row end deletes character before blank band", () => {
@@ -1290,22 +1424,35 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`\n\n\ntail`);
+      expectCaretParity(host.editor, host.root, 0, "sole-char chip lands on empty content row end");
     });
 
-    it("keydown backspace after probe step from single-char header deletes header character", () => {
+    it("keydown backspace on sole-char row before blank band keeps editor/DOM parity", () => {
+      const suffixWire = `d\n\n`;
+      const doc = wireToDoc(suffixWire);
+      const rowEnd = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
+
+      host.editor.setDocFromWire(suffixWire, rowEnd, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n`);
+      expectCaretParity(host.editor, host.root, 0, "d chip to empty row end");
+    });
+
+    it("keydown backspace after probe on sandwiched blank reaches header row end", () => {
       const suffixWire = `h\n\n\ntail`;
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
-      const headerEnd = probes[0]! - 1;
 
       host.editor.setDocFromWire(suffixWire, probes[0]!, { resetHistory: true });
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(suffixWire);
-      expect(host.editor.getCursor()).toBe(headerEnd);
+      expect(host.editor.getWire()).toBe(`h\n\ntail`);
+      expect(host.editor.getCursor()).toBe(probes[0]!);
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(`\n\n\ntail`);
+      expect(host.editor.getWire()).toBe(`h\ntail`);
+      expect(host.editor.getCursor()).toBe(0);
     });
 
     it("keydown backspace after clearing sole header character collapses blank band to lower start", () => {
@@ -1324,6 +1471,22 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`lower `);
       expect(host.editor.getCursor()).toBe(0);
+    });
+
+    it("keydown backspace through prefix-only blank band keeps editor/DOM parity", () => {
+      host.editor.setDocFromWire(`\n\n\n`, 0, { resetHistory: true });
+
+      for (const expectedWire of [`\n\n`, `\n`, ``]) {
+        expect(pressBackspace()).toBe(true);
+        expect(host.editor.getWire()).toBe(expectedWire);
+        expectCaretParity(host.editor, host.root, 0, `collapse to ${JSON.stringify(expectedWire)}`);
+        if (expectedWire !== "") {
+          expectDomCaretPaintedAtWireBreak(
+            host.root,
+            `leading blank ${JSON.stringify(expectedWire)}`
+          );
+        }
+      }
     });
   });
 

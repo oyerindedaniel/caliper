@@ -14,10 +14,25 @@ export type EmbeddedBlankBandDeleteBranch =
   | "delete-blank-below"
   | "delete-lower-row";
 
+export type HandoffBlankBandDeleteOptions = {
+  /** Set for one delete cycle after clearing the last char on a row before a blank band. */
+  chipBeforeBlankBand?: boolean;
+};
+
 export type EmbeddedBlankBandDeleteMove = {
   doc: HandoffNoteDoc;
   caretWire: number;
   branch: EmbeddedBlankBandDeleteBranch;
+  chipBeforeBlankBand?: boolean;
+};
+
+export type EmbeddedBlankBandGroup = {
+  probes: number[];
+};
+
+export type EmbeddedBlankBandProbeContext = {
+  group: EmbeddedBlankBandGroup;
+  indexInGroup: number;
 };
 
 function wireLineStartOffsets(wire: string): number[] {
@@ -70,28 +85,235 @@ export function embeddedBlankBandSubstantiveContentStartWire(doc: HandoffNoteDoc
   return wire.length;
 }
 
-function collapseBlankBandBackspaceLanding(nextDoc: HandoffNoteDoc, probeIndex: number): number {
-  const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
-  if (probeIndex > 0) {
-    return remaining[probeIndex - 1]!;
+/** Consecutive blank-band probe runs separated by substantive wire rows. */
+export function listEmbeddedBlankBandGroups(doc: HandoffNoteDoc): EmbeddedBlankBandGroup[] {
+  const wire = docToWire(doc);
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  if (probes.length === 0) {
+    return [];
   }
-  if (remaining.length > 0) {
-    return remaining[0]!;
+
+  const groups: EmbeddedBlankBandGroup[] = [];
+  let current: number[] = [];
+
+  for (const probe of probes) {
+    if (current.length === 0) {
+      current.push(probe);
+      continue;
+    }
+    const prevProbe = current[current.length - 1]!;
+    const between = wire.slice(prevProbe + 1, probe);
+    if (between.length > 0 && /\S/.test(between)) {
+      groups.push({ probes: current });
+      current = [probe];
+    } else {
+      current.push(probe);
+    }
   }
-  return embeddedBlankBandSubstantiveContentStartWire(nextDoc);
+  if (current.length > 0) {
+    groups.push({ probes: current });
+  }
+  return groups;
 }
 
-function collapseBlankBandDeleteLanding(nextDoc: HandoffNoteDoc, probeIndex: number): number {
-  const remaining = listEmbeddedBlankBandProbeWires(nextDoc);
-  if (probeIndex < remaining.length) {
-    return remaining[probeIndex]!;
+export function embeddedBlankBandProbeContext(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): EmbeddedBlankBandProbeContext | null {
+  for (const group of listEmbeddedBlankBandGroups(doc)) {
+    const indexInGroup = group.probes.indexOf(probeWire);
+    if (indexInGroup >= 0) {
+      return { group, indexInGroup };
+    }
   }
-  const wire = docToWire(nextDoc);
-  const substantiveStart = embeddedBlankBandSubstantiveContentStartWire(nextDoc);
-  if (substantiveStart > 0 && wire[0] === "\n") {
-    return 0;
+  return null;
+}
+
+/** Content row end before `probeWire`; empty rows land at line start, not on delete-probe semantics. */
+export function embeddedBlankBandContentRowEndBeforeProbe(wire: string, probeWire: number): number {
+  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const segment = wire.slice(lineStart, probeWire);
+  if (segment.length > 0 && /\S/.test(segment)) {
+    return probeWire - 1;
+  }
+  return lineStart;
+}
+
+/**
+ * After Shift+Enter extends a trailing blank band at doc EOF, land on the new blank's
+ * probe wire so the next insert fills that visual row (not wire.length past the band).
+ */
+export function resolveEmbeddedBlankBandEofLineBreakCaretWire(
+  doc: HandoffNoteDoc,
+  resolvedWire: number
+): number {
+  const wire = docToWire(doc);
+  if (resolvedWire !== wire.length) {
+    return resolvedWire;
+  }
+  const groups = listEmbeddedBlankBandGroups(doc);
+  const lastGroup = groups[groups.length - 1];
+  if (!lastGroup || lastGroup.probes.length === 0) {
+    return resolvedWire;
+  }
+  if (embeddedBlankBandHasSubstantiveRowBelowGroup(wire, lastGroup)) {
+    return resolvedWire;
+  }
+  return lastGroup.probes[lastGroup.probes.length - 1]!;
+}
+
+/** True when substantive content sits on the row immediately below the band's last probe. */
+function embeddedBlankBandHasSubstantiveRowBelowGroup(
+  wire: string,
+  group: EmbeddedBlankBandGroup
+): boolean {
+  const lastProbe = group.probes[group.probes.length - 1]!;
+  const start = substantiveRowStartBelowProbe(wire, lastProbe);
+  if (start >= wire.length) {
+    return false;
+  }
+  const lineEnd = wire.indexOf("\n", start);
+  const segment = wire.slice(start, lineEnd === -1 ? wire.length : lineEnd);
+  return segment.length > 0 && /\S/.test(segment);
+}
+
+/**
+ * Empty content row end: caret on the line-start `\n` of a cleared content row,
+ * not blank-band delete infrastructure (contract Rule 4 + content row chip).
+ */
+export function embeddedBlankBandAtEmptyContentRowEnd(
+  doc: HandoffNoteDoc,
+  caretWire: number,
+  options?: HandoffBlankBandDeleteOptions
+): boolean {
+  if (options?.chipBeforeBlankBand) {
+    return true;
+  }
+  const wire = docToWire(doc);
+  if (embeddedBlankBandContentRowEndBeforeProbe(wire, caretWire) !== caretWire) {
+    return false;
+  }
+  if (!isEmbeddedBlankBandProbeWire(doc, caretWire)) {
+    return caretWire >= 0 && caretWire < wire.length && wire[caretWire] === "\n";
+  }
+  const context = embeddedBlankBandProbeContext(doc, caretWire);
+  if (!context) {
+    return false;
+  }
+  const { indexInGroup, group } = context;
+  if (group.probes.length === 1) {
+    return (
+      !embeddedBlankBandHasSubstantiveContentAboveBand(wire, group.probes) &&
+      !embeddedBlankBandHasSubstantiveRowBelowGroup(wire, group)
+    );
+  }
+  if (
+    indexInGroup === 0 &&
+    !embeddedBlankBandHasSubstantiveRowAbove(wire, caretWire) &&
+    indexInGroup < group.probes.length - 1
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** True when caret rests on blank-band infrastructure for delete/collapse (not empty content row end). */
+export function isEmbeddedBlankBandDeleteProbeWire(
+  doc: HandoffNoteDoc,
+  wire: number,
+  options?: HandoffBlankBandDeleteOptions
+): boolean {
+  if (!isEmbeddedBlankBandProbeWire(doc, wire)) {
+    return false;
+  }
+  return !embeddedBlankBandAtEmptyContentRowEnd(doc, wire, options);
+}
+
+function substantiveRowStartBelowProbe(wire: string, afterProbeWire: number): number {
+  let start = afterProbeWire;
+  while (start < wire.length && wire[start] === "\n") {
+    start += 1;
+  }
+  return start;
+}
+
+/** After removing a band-edge blank, land on line-start gate or substantive visual start. */
+function embeddedBlankBandDeleteEndLanding(
+  nextDoc: HandoffNoteDoc,
+  priorWire: string,
+  nextWire: string,
+  deletedProbeWire: number,
+  group: EmbeddedBlankBandGroup
+): number {
+  const substantiveStart = substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+  if (
+    substantiveStart > deletedProbeWire &&
+    nextWire[deletedProbeWire] === "\n" &&
+    !isEmbeddedBlankBandProbeWire(nextDoc, deletedProbeWire) &&
+    !embeddedBlankBandHasSubstantiveContentAboveBand(priorWire, group.probes)
+  ) {
+    return deletedProbeWire;
   }
   return substantiveStart;
+}
+
+function embeddedBlankBandProbeRange(
+  wire: string,
+  group: EmbeddedBlankBandGroup
+): { start: number; end: number } {
+  return {
+    start: group.probes[0]!,
+    end: substantiveRowStartBelowProbe(wire, group.probes[group.probes.length - 1]!),
+  };
+}
+
+function collapseBlankBandBackspaceLanding(
+  nextDoc: HandoffNoteDoc,
+  deletedProbeWire: number,
+  context: EmbeddedBlankBandProbeContext,
+  priorDoc: HandoffNoteDoc
+): number {
+  const nextWire = docToWire(nextDoc);
+  const priorWire = docToWire(priorDoc);
+  const { indexInGroup, group } = context;
+
+  if (indexInGroup > 0) {
+    const targetProbe = group.probes[indexInGroup - 1]!;
+    return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
+  }
+
+  const range = embeddedBlankBandProbeRange(nextWire, group);
+  const inBand = listEmbeddedBlankBandProbeWires(nextDoc).filter(
+    (probe) => probe >= range.start && probe < range.end
+  );
+  if (inBand.length > 0) {
+    return inBand[0]!;
+  }
+
+  if (
+    embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire) &&
+    embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)
+  ) {
+    return embeddedBlankBandContentRowEndBeforeProbe(priorWire, deletedProbeWire);
+  }
+
+  return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+}
+
+function collapseBlankBandDeleteLanding(
+  nextDoc: HandoffNoteDoc,
+  deletedProbeWire: number,
+  context: EmbeddedBlankBandProbeContext
+): number {
+  const nextWire = docToWire(nextDoc);
+  const { indexInGroup, group } = context;
+
+  if (indexInGroup < group.probes.length - 1) {
+    const targetProbe = group.probes[indexInGroup + 1]!;
+    return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
+  }
+
+  return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
 }
 
 function isSubstantiveLineStart(wire: string, start: number): boolean {
@@ -235,35 +457,54 @@ export function isWireOnEmbeddedTextLedLowerRowAfterBlankBand(
   return wire >= span.exitNewlineWire && wire < span.lineEndWire;
 }
 
+/** Blank row sandwiched between substantive rows above and below the band. */
+export function embeddedBlankBandIsSandwichedBlankRow(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): boolean {
+  const context = embeddedBlankBandProbeContext(doc, probeWire);
+  if (!context) {
+    return false;
+  }
+  const wire = docToWire(doc);
+  return (
+    embeddedBlankBandHasSubstantiveRowAbove(wire, probeWire) &&
+    embeddedBlankBandHasSubstantiveRowBelowGroup(wire, context.group)
+  );
+}
+
 /** Backspace/delete at blank-band probe wires — caret policy plus wire splice. */
 export function resolveEmbeddedBlankBandDelete(
   doc: HandoffNoteDoc,
   focusWire: number,
-  direction: HandoffNoteEdit
+  direction: HandoffNoteEdit,
+  options?: HandoffBlankBandDeleteOptions
 ): EmbeddedBlankBandDeleteMove | null {
-  if (!isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+  if (!isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, options)) {
     return null;
   }
 
-  const probes = listEmbeddedBlankBandProbeWires(doc);
-  const probeIndex = probes.indexOf(focusWire);
-  if (probeIndex < 0) {
+  const context = embeddedBlankBandProbeContext(doc, focusWire);
+  if (!context) {
     return null;
   }
 
+  const { indexInGroup } = context;
   const wire = docToWire(doc);
 
   if (direction === "backspace") {
-    if (probeIndex === 0 && embeddedBlankBandHasSubstantiveContentAboveBand(wire, probes)) {
-      const rowEnd = focusWire - 1;
-      return { doc, caretWire: rowEnd, branch: "backspace-content-above" };
+    if (indexInGroup === 0 && embeddedBlankBandHasSubstantiveRowAbove(wire, focusWire)) {
+      if (!embeddedBlankBandIsSandwichedBlankRow(doc, focusWire)) {
+        const rowEnd = focusWire - 1;
+        return { doc, caretWire: rowEnd, branch: "backspace-content-above" };
+      }
     }
 
     const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
     return {
       doc: nextDoc,
-      caretWire: collapseBlankBandBackspaceLanding(nextDoc, probeIndex),
-      branch: probeIndex === 0 ? "backspace-collapse-empty-above" : "backspace-blank-above",
+      caretWire: collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc),
+      branch: indexInGroup === 0 ? "backspace-collapse-empty-above" : "backspace-blank-above",
     };
   }
 
@@ -272,28 +513,32 @@ export function resolveEmbeddedBlankBandDelete(
   }
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
-  if (probeIndex < probes.length - 1) {
+  if (indexInGroup < context.group.probes.length - 1) {
     return {
       doc: nextDoc,
-      caretWire: collapseBlankBandDeleteLanding(nextDoc, probeIndex),
+      caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
       branch: "delete-blank-below",
     };
   }
 
-  if (!embeddedBlankBandHasSubstantiveContentAboveBand(wire, probes)) {
+  const nextWire = docToWire(nextDoc);
+  if (embeddedBlankBandHasSubstantiveRowBelowGroup(wire, context.group)) {
     return {
       doc: nextDoc,
-      caretWire: collapseBlankBandDeleteLanding(nextDoc, probeIndex),
+      caretWire: embeddedBlankBandDeleteEndLanding(
+        nextDoc,
+        wire,
+        nextWire,
+        focusWire,
+        context.group
+      ),
       branch: "delete-lower-row",
     };
   }
 
-  const span = embeddedTextLedLowerRowSpanAfterBlankBand(nextDoc);
-  const caretWire = span?.lineStartWire ?? embeddedBlankBandSubstantiveContentStartWire(nextDoc);
-
   return {
     doc: nextDoc,
-    caretWire,
+    caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
     branch: "delete-lower-row",
   };
 }
@@ -315,10 +560,109 @@ export function resolveBackspaceBeforeEmbeddedBlankProbe(
   }
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  const probeAfterDelete = focusWire;
+  const nextWire = docToWire(nextDoc);
+  const lineStart =
+    probeAfterDelete <= 0 ? 0 : nextWire.lastIndexOf("\n", probeAfterDelete - 1) + 1;
+  const rowSegment = nextWire.slice(lineStart, probeAfterDelete);
+  const rowEmptied = rowSegment.length === 0 || !/\S/.test(rowSegment);
   return {
     doc: nextDoc,
-    caretWire: Math.max(0, focusWire - 1),
+    caretWire: embeddedBlankBandContentRowEndBeforeProbe(nextWire, probeAfterDelete),
     branch: "backspace-content-above",
+    ...(rowEmptied ? { chipBeforeBlankBand: true } : {}),
+  };
+}
+
+/**
+ * Delete from band head awaiting input: removes one blank-row `\n`
+ * and lands on the next probe below or lower substantive visual start.
+ */
+export function resolveDeleteFromEmptyContentRowEnd(
+  doc: HandoffNoteDoc,
+  focusWire: number,
+  options?: HandoffBlankBandDeleteOptions
+): EmbeddedBlankBandDeleteMove | null {
+  if (!embeddedBlankBandAtEmptyContentRowEnd(doc, focusWire, options)) {
+    return null;
+  }
+  const wire = docToWire(doc);
+  if (focusWire < 0 || focusWire >= wire.length || wire[focusWire] !== "\n") {
+    return null;
+  }
+  if (!isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    return null;
+  }
+  const context = embeddedBlankBandProbeContext(doc, focusWire);
+  if (!context) {
+    return null;
+  }
+  if (focusWire + 1 >= wire.length) {
+    return null;
+  }
+
+  const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  const nextWire = docToWire(nextDoc);
+  const { indexInGroup, group } = context;
+
+  if (indexInGroup < group.probes.length - 1) {
+    return {
+      doc: nextDoc,
+      caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+      branch: "delete-blank-below",
+    };
+  }
+
+  if (embeddedBlankBandHasSubstantiveRowBelowGroup(wire, group)) {
+    return {
+      doc: nextDoc,
+      caretWire: embeddedBlankBandDeleteEndLanding(
+        nextDoc,
+        wire,
+        nextWire,
+        focusWire,
+        context.group
+      ),
+      branch: "delete-lower-row",
+    };
+  }
+
+  return {
+    doc: nextDoc,
+    caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+    branch: "delete-lower-row",
+  };
+}
+
+/**
+ * Backspace from empty content row end sitting on a band-edge `\n` (not delete-probe).
+ * Removes one blank-row newline — same ladder as blank-band collapse.
+ */
+export function resolveBackspaceFromEmptyContentRowEnd(
+  doc: HandoffNoteDoc,
+  focusWire: number,
+  options?: HandoffBlankBandDeleteOptions
+): EmbeddedBlankBandDeleteMove | null {
+  if (!embeddedBlankBandAtEmptyContentRowEnd(doc, focusWire, options)) {
+    return null;
+  }
+  const wire = docToWire(doc);
+  if (focusWire < 0 || focusWire >= wire.length || wire[focusWire] !== "\n") {
+    return null;
+  }
+  if (!isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    return null;
+  }
+  const context = embeddedBlankBandProbeContext(doc, focusWire);
+  if (!context) {
+    return null;
+  }
+
+  const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  return {
+    doc: nextDoc,
+    caretWire: collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc),
+    branch: "backspace-collapse-empty-above",
   };
 }
 
@@ -328,9 +672,10 @@ export function resolveBackspaceBeforeEmbeddedBlankProbe(
  */
 export function resolveEmbeddedBlankBandLineStartCollapse(
   doc: HandoffNoteDoc,
-  focusWire: number
+  focusWire: number,
+  options?: HandoffBlankBandDeleteOptions
 ): EmbeddedBlankBandDeleteMove | null {
-  if (isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+  if (isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, options)) {
     return null;
   }
   const wire = docToWire(doc);
