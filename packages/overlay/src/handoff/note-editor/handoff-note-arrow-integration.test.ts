@@ -1341,6 +1341,20 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(pressDelete()).toBe(true);
       expect(host.editor.getWire()).toBe(`hello\n\n\nower `);
     });
+
+    it("delete at visual start on sole-char row before blank band keeps caret before char", () => {
+      const wire = `dh\n\n\n`;
+      host.editor.setDocFromWire(wire, 0, { resetHistory: true });
+      const firstText = host.root.childNodes[0];
+      expect(firstText?.nodeType).toBe(Node.TEXT_NODE);
+      setDomCaretAtTextStart(host.root, firstText as Text);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(0);
+
+      expect(pressDelete()).toBe(true);
+      expect(host.editor.getWire()).toBe(`h\n\n\n`);
+      expectCaretParity(host.editor, host.root, 0, "sole-char row visual start after delete");
+    });
   });
 
   describe("embedded blank-band delete after arrow", () => {
@@ -1532,6 +1546,21 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`\n\n`);
       expectCaretParity(host.editor, host.root, 0, "d chip to empty row end");
+    });
+
+    it("keydown backspace on two-char row before blank band lands after remaining char", () => {
+      const suffixWire = `dh\n\n`;
+      host.editor.setDocFromWire(suffixWire, 1, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`d\n\n`);
+      expect(host.editor.getCursor()).toBe(1);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        1,
+        "two-char chip leaves caret after remaining sole char"
+      );
     });
 
     it("keydown backspace after probe on sandwiched blank reaches header row end", () => {

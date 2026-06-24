@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
-import { docPosToWireOffset } from "./handoff-note-doc-pos.js";
+import { docPosToWireOffset, wireOffsetToDocPos } from "./handoff-note-doc-pos.js";
 import {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
@@ -149,6 +149,15 @@ describe("embedded blank band probes", () => {
       expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe)).toBe(false);
       expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe)).toBe(true);
     });
+
+    it("is false when substantive row text still abuts the probe on delete infrastructure", () => {
+      const doc = wireToDoc(`ab\n\n`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const focus = wireOffsetToDocPos(doc, probe);
+      expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe, undefined, focus)).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe, undefined, focus)).toBe(true);
+    });
   });
 
   describe("embeddedBlankBandContentRowEndBeforeProbe", () => {
@@ -156,6 +165,13 @@ describe("embedded blank band probes", () => {
       const doc = wireToDoc(`header\n\n\ntail`);
       const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       expect(embeddedBlankBandContentRowEndBeforeProbe(doc, probe)).toBe(probe - 1);
+    });
+
+    it("sole substantive char lands after the char not visual start", () => {
+      const doc = wireToDoc(`d\n\n`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      expect(probe).toBe(1);
+      expect(embeddedBlankBandContentRowEndBeforeProbe(doc, probe)).toBe(probe);
     });
 
     it("snaps mention-interior physical end to mention-end wire", () => {

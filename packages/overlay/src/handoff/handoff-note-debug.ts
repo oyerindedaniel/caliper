@@ -11,6 +11,13 @@ import {
 
 const LOG_PREFIX = "[handoff-note]";
 
+/** Collapse identical back-to-back lines (duplicate sync, repair paint storms). */
+let lastDedupKey = "";
+let dedupSuppressed = 0;
+
+/** Skip repeated repair.authority paint lines with the same wire + DOM target. */
+let lastRepairAuthorityPaintKey = "";
+
 function escapeWireChar(char: string | undefined): string | null {
   if (char === undefined) {
     return null;
@@ -87,14 +94,20 @@ function docPosSame(a: HandoffNoteDocPos, b: HandoffNoteDocPos): boolean {
   return a.nodeIndex === b.nodeIndex && a.nodeOffset === b.nodeOffset;
 }
 
-export function buildCaretStateSnapshot(options: {
+export type CaretSnapshotOptions = {
   doc: HandoffNoteDoc;
   authorityFocus?: HandoffNoteDocPos;
   activeFocus?: HandoffNoteDocPos;
   root?: HTMLElement;
   direction?: "backspace" | "delete";
   chipBeforeBlankBand?: boolean;
-}): Record<string, unknown> {
+  /** Include full escaped wire (mutate diffs). Default false — use wireLen. */
+  includeWire?: boolean;
+  /** Full DOM selection + probe list + char context. Default false. */
+  verbose?: boolean;
+};
+
+export function buildCaretStateSnapshot(options: CaretSnapshotOptions): Record<string, unknown> {
   const wire = docToWire(options.doc);
   const probes = listEmbeddedBlankBandProbeWires(options.doc);
   const authorityWire =
@@ -111,19 +124,37 @@ export function buildCaretStateSnapshot(options: {
     chipBeforeBlankBand: options.chipBeforeBlankBand,
   });
   const probeIndex = atProbe ? probes.indexOf(focusWire) : -1;
+  const verbose = options.verbose === true;
+  const authorityDrift =
+    authorityWire !== undefined && activeWire !== undefined && authorityWire !== activeWire;
+  const docPosDrift =
+    options.authorityFocus !== undefined &&
+    options.activeFocus !== undefined &&
+    !docPosSame(options.authorityFocus, options.activeFocus);
+  const showDocPos =
+    verbose || authorityDrift || docPosDrift || atProbe || options.direction !== undefined;
 
   const snapshot: Record<string, unknown> = {
     wireLen: wire.length,
-    wire: escapeWireForLog(wire),
-    contractProbes: probes,
     focusWire,
     atProbe,
     atDeleteProbe,
     chipBeforeBlankBand: options.chipBeforeBlankBand ?? false,
-    charBefore: focusWire > 0 ? escapeWireChar(wire[focusWire - 1]) : null,
-    charAt: focusWire < wire.length ? escapeWireChar(wire[focusWire]) : null,
-    charAfter: focusWire + 1 < wire.length ? escapeWireChar(wire[focusWire + 1]) : null,
   };
+
+  if (options.includeWire) {
+    snapshot.wire = escapeWireForLog(wire);
+  } else {
+    snapshot.probeCount = probes.length;
+  }
+  if (verbose || atProbe) {
+    snapshot.contractProbes = probes;
+  }
+  if (options.direction !== undefined) {
+    snapshot.charBefore = focusWire > 0 ? escapeWireChar(wire[focusWire - 1]) : null;
+    snapshot.charAt = focusWire < wire.length ? escapeWireChar(wire[focusWire]) : null;
+    snapshot.charAfter = focusWire + 1 < wire.length ? escapeWireChar(wire[focusWire + 1]) : null;
+  }
 
   if (authorityWire !== undefined) {
     snapshot.authorityWire = authorityWire;
@@ -132,18 +163,18 @@ export function buildCaretStateSnapshot(options: {
     snapshot.activeWire = activeWire;
   }
   if (authorityWire !== undefined && activeWire !== undefined) {
-    snapshot.authorityDrift = authorityWire !== activeWire;
+    snapshot.authorityDrift = authorityDrift;
   }
-  if (options.authorityFocus !== undefined) {
+  if (showDocPos && options.authorityFocus !== undefined) {
     snapshot.authorityDoc = snapshotDocPos(options.doc, options.authorityFocus);
     snapshot.authorityOnMentionNodeEnd = caretOnMentionNodeEnd(options.doc, options.authorityFocus);
   }
-  if (options.activeFocus !== undefined) {
+  if (showDocPos && options.activeFocus !== undefined) {
     snapshot.activeDoc = snapshotDocPos(options.doc, options.activeFocus);
     snapshot.activeOnMentionNodeEnd = caretOnMentionNodeEnd(options.doc, options.activeFocus);
   }
   if (options.authorityFocus !== undefined && options.activeFocus !== undefined) {
-    snapshot.docPosDrift = !docPosSame(options.authorityFocus, options.activeFocus);
+    snapshot.docPosDrift = docPosDrift;
   }
   if (probeIndex >= 0) {
     snapshot.probeIndex = probeIndex;
@@ -159,7 +190,9 @@ export function buildCaretStateSnapshot(options: {
   }
 
   if (options.root) {
-    snapshot.dom = handoffNoteSelectionSnapshot(options.root);
+    snapshot.dom = verbose
+      ? handoffNoteSelectionSnapshot(options.root)
+      : handoffNoteSelectionSnapshotCompact(options.root);
   }
 
   return snapshot;
@@ -169,12 +202,26 @@ export function logEditStateTrace(phase: string, data: Record<string, unknown> =
   flattenHandoffNoteLog(`state>>${phase}`, data);
 }
 
-/** Filter console with `state>>` / `caret>>` / `delete>>` / `dom.` for pipeline traces. `caret>>setDoc>>` = doc→DOM paint. */
+/**
+ * Console filters: `state>>` edit ingress, `caret>>setDoc>>` paint, `caret>>repair` authority,
+ * `caret>>ver>>` layout (arrow only). Compact snapshots omit full wire/DOM unless verbose.
+ */
 export function flattenHandoffNoteLog(
   event: string,
   data: Record<string, unknown> = {},
   level: "log" | "warn" = "log"
 ): void {
+  const dedupKey = `${event}|${JSON.stringify(data)}`;
+  if (level === "log" && dedupKey === lastDedupKey) {
+    dedupSuppressed++;
+    return;
+  }
+  if (dedupSuppressed > 0) {
+    data = { ...data, dedupSuppressed };
+    dedupSuppressed = 0;
+  }
+  lastDedupKey = dedupKey;
+
   const line = JSON.stringify({ event, ts: Date.now(), ...data });
   if (level === "warn") {
     console.warn(`${LOG_PREFIX} ${event}`, line);
@@ -184,6 +231,14 @@ export function flattenHandoffNoteLog(
 }
 
 export function logCaretBoundaryTrace(source: string, data: Record<string, unknown> = {}): void {
+  if (source.startsWith("setDoc>>repair.authority")) {
+    const paint = data.paint as { nodeKind?: number; offset?: number } | undefined;
+    const paintKey = `${data.requestedWire}:${paint?.nodeKind}:${paint?.offset}`;
+    if (paintKey === lastRepairAuthorityPaintKey) {
+      return;
+    }
+    lastRepairAuthorityPaintKey = paintKey;
+  }
   flattenHandoffNoteLog(`caret>>${source}`, data);
 }
 
@@ -256,6 +311,26 @@ export function handoffNoteLayoutProbe(
 
 export function domPointInMentionPill(root: HTMLElement, node: Node): boolean {
   return root.contains(node) && node.parentElement?.closest?.("[data-handoff-mention]") !== null;
+}
+
+/** Lean native selection for state>> traces — k/o/pill matches full snapshot semantics. */
+export function handoffNoteSelectionSnapshotCompact(
+  root: HTMLElement | undefined
+): Record<string, unknown> {
+  if (!root) {
+    return { empty: true };
+  }
+  const selection = root.ownerDocument.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return { empty: true };
+  }
+  const anchor = selection.anchorNode;
+  const anchorInPill = anchor instanceof Node && domPointInMentionPill(root, anchor);
+  return {
+    k: anchor?.nodeType,
+    o: selection.anchorOffset,
+    pill: anchorInPill,
+  };
 }
 
 export function handoffNoteSelectionSnapshot(

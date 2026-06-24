@@ -16,7 +16,7 @@ import {
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import {
-  docPosAtEmbeddedBlankBandProbeAliasLanding,
+  docPosAfterContentRowChipBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandProbeWire,
@@ -378,20 +378,20 @@ export function resolveHandoffNoteDeleteIntent(
     return boundary;
   }
 
-  const blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction, context);
+  const blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction, context, focus);
   if (blankBandDelete) {
     return { kind: "result", result: blankBandMoveToResult(doc, blankBandDelete) };
   }
 
   if (direction === "backspace" && !blankCollapseBlockedAtAlias(doc, focus, focusWire)) {
-    const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(doc, focusWire, context);
+    const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(doc, focusWire, context, focus);
     if (emptyRowEnd) {
       return { kind: "result", result: blankBandMoveToResult(doc, emptyRowEnd) };
     }
   }
 
   if (direction === "delete" && !blankCollapseBlockedAtAlias(doc, focus, focusWire)) {
-    const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, context);
+    const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, context, focus);
     if (emptyRowEnd) {
       return { kind: "result", result: blankBandMoveToResult(doc, emptyRowEnd) };
     }
@@ -423,11 +423,13 @@ export function resolveHandoffNoteDeleteIntent(
 
   const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
   if (rowChip) {
-    const mentionLanding = docPosAtEmbeddedBlankBandProbeAliasLanding(
-      rowChip.doc,
-      rowChip.caretWire
-    );
-    const focusPos = mentionLanding ?? wireOffsetToDocPos(rowChip.doc, rowChip.caretWire);
+    const focusPos = rowChip.preserveMentionInterior
+      ? wireOffsetToDocPos(rowChip.doc, rowChip.caretWire)
+      : docPosAfterContentRowChipBeforeProbe(
+          rowChip.doc,
+          focusWire,
+          rowChip.chipBeforeBlankBand === true
+        );
     return {
       kind: "result",
       result: {

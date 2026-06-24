@@ -605,7 +605,7 @@ describe("handoff-note-dom", () => {
     });
   });
 
-  describe("text-node boundary ownership primitives (§53 Rule 4)", () => {
+  describe("text-node boundary ownership primitives (Rule 4 — handoff-note-arrow-contract.md)", () => {
     it("detects browser text-node tail before a wire break", () => {
       expect(isContentTextNodeDomTailBeforeBreak(5, "hello", 0, 4)).toBe(true);
       expect(isContentTextNodeDomTailBeforeBreak(4, "hello", 0, 4)).toBe(false);
@@ -620,6 +620,30 @@ describe("handoff-note-dom", () => {
     it("maps content row end to text-node tail on write", () => {
       expect(domOffsetForContentRowEndInSplitText(4, "hello", 0, 4)).toBe(5);
       expect(domOffsetForContentRowEndInSplitText(3, "hello", 0, 4)).toBe(3);
+    });
+
+    it("single-char row: visual start stays offset 0, tail reads as content row end", () => {
+      expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4)).toBe(0);
+      expect(isContentTextNodeDomTailBeforeBreak(1, "h", 0, 4)).toBe(false);
+      expect(docOffsetFromContentTextNodeDomPoint(0, 1, "h", 0, 4)).toBe(1);
+    });
+
+    it("round-trips visual start vs content row end on sole-char row before blank band", () => {
+      const wire = "h\n\n\n";
+      const doc = wireToDoc(wire);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const visualStart = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 0));
+      expect(visualStart?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(visualStart?.offset).toBe(0);
+      expect(
+        docPosToWireOffset(doc, domPointToDocPos(root, doc, visualStart!.node, visualStart!.offset))
+      ).toBe(0);
+
+      const rowEnd = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 1));
+      expect(
+        docPosToWireOffset(doc, domPointToDocPos(root, doc, rowEnd!.node, rowEnd!.offset))
+      ).toBe(1);
     });
   });
 });

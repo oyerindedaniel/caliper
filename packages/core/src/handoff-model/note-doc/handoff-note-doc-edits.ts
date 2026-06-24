@@ -35,8 +35,7 @@ import {
 export type HandoffDocEditResult = {
   doc: HandoffNoteDoc;
   selection: HandoffNoteSelection;
-  chipBeforeBlankBand?: boolean;
-};
+} & Pick<HandoffBlankBandDeleteOptions, "chipBeforeBlankBand">;
 
 export type HandoffDocDeleteContext = HandoffBlankBandDeleteOptions;
 
@@ -45,9 +44,7 @@ type HandoffDeleteCaretSnapOptions = {
   preserveMentionInterior?: boolean;
 };
 
-type HandoffDeleteFinalizeOptions = HandoffDeleteCaretSnapOptions & {
-  chipBeforeBlankBand?: boolean;
-};
+type HandoffDeleteFinalizeOptions = HandoffDeleteCaretSnapOptions & HandoffBlankBandDeleteOptions;
 
 function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   return (
@@ -107,9 +104,11 @@ function finalizeDeleteResult(
   direction: HandoffNoteEdit,
   options?: HandoffDeleteFinalizeOptions
 ): HandoffDocEditResult {
-  const base: HandoffDocEditResult = options?.chipBeforeBlankBand
-    ? { doc, selection, chipBeforeBlankBand: true }
-    : { doc, selection };
+  const base: HandoffDocEditResult = {
+    doc,
+    selection,
+    ...(options?.chipBeforeBlankBand ? { chipBeforeBlankBand: true } : {}),
+  };
   return applyDeleteCaretPolicy(base, direction, options);
 }
 

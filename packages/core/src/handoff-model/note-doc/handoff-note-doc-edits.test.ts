@@ -9,6 +9,7 @@ import {
 } from "./handoff-note-doc-edits.js";
 import {
   collapsedSelection,
+  docPosEqual,
   docPosToWireOffset,
   resolveDocVerticalArrowMove,
   wireOffsetToDocPos,
@@ -372,6 +373,22 @@ describe("embedded blank-band delete contract", () => {
       );
     });
 
+    it("backspace on two-char row before blank band lands after remaining sole char", () => {
+      const doc = wireToDoc(`dh\n\n`);
+      const beforeH = 1;
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, beforeH)),
+        "backspace"
+      );
+
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe(`d\n\n`);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(1);
+      expect(result!.chipBeforeBlankBand).toBeUndefined();
+    });
+
     it("multi-band chip on sole char before blank band leaves caret off delete-probe infrastructure", () => {
       const wire = "header \n\n\nmiddle\n\n\nd\n\n\nlower";
       const doc = wireToDoc(wire);
@@ -455,17 +472,37 @@ describe("embedded blank-band delete contract", () => {
       ).toBe(true);
     });
 
-    it("nibbling row content before band sets chip provenance only when the row is fully cleared", () => {
+    it("nibbling row content before band lands on char wire so next backspace chips without provenance", () => {
       let doc = wireToDoc(`hd\n\n\ntail`);
       let state = collapsedSelection(wireOffsetToDocPos(doc, 1));
 
       const mid = applyDocDelete(doc, state, "backspace")!;
       expect(docToWire(mid.doc)).toBe(`h\n\n\ntail`);
       expect(mid.chipBeforeBlankBand).toBeUndefined();
+      expect(docPosToWireOffset(mid.doc, mid.selection.focus)).toBe(0);
 
       const cleared = applyDocDelete(mid.doc, mid.selection, "backspace")!;
       expect(docToWire(cleared.doc)).toBe(`\n\n\ntail`);
       expect(cleared.chipBeforeBlankBand).toBe(true);
+    });
+
+    it("sandwiched partial chip lands char wire; explicit probe at same offset collapses", () => {
+      const doc1 = wireToDoc("h\n\n\ntail");
+      const probe = listEmbeddedBlankBandProbeWires(doc1)[0]!;
+      const explicit = wireOffsetToDocPos(doc1, probe);
+
+      const doc = wireToDoc("hd\n\n\ntail");
+      const mid = applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 1)), "backspace")!;
+
+      expect(docToWire(mid.doc)).toBe("h\n\n\ntail");
+      expect(docPosToWireOffset(mid.doc, mid.selection.focus)).not.toBe(probe);
+      expect(docPosEqual(explicit, mid.selection.focus)).toBe(false);
+
+      const cleared = applyDocDelete(mid.doc, mid.selection, "backspace")!;
+      expect(docToWire(cleared.doc)).toBe("\n\n\ntail");
+
+      const once = applyDocDelete(doc1, collapsedSelection(explicit), "backspace")!;
+      expect(docToWire(once.doc)).toBe("h\n\ntail");
     });
 
     it("forward delete sole-char clear before band arms chip without landing on delete-probe", () => {

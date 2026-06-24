@@ -46,19 +46,20 @@ function findMentionAncestor(root: HTMLElement, node: Node): HTMLSpanElement | n
   return null;
 }
 
-/** Browser trailing edge on a split wire-text part before the next `\n` (§53 Rule 4). */
+/** Browser trailing edge on a split wire-text part before the next `\n`. Contract: `handoff-note-arrow-contract.md` — click ingress, Rule 4 (text-node tail ownership). */
 export function isContentTextNodeDomTailBeforeBreak(
   domOffset: number,
   part: string,
   partIndex: number,
   partCount: number
 ): boolean {
-  return domOffset === part.length && part.length > 0 && partIndex < partCount - 1;
+  return domOffset === part.length && part.length > 1 && partIndex < partCount - 1;
 }
 
 /**
- * §53 Rule 4 — read path: text-node tail belongs to content row end, not the following `\n`.
- * Blank-band probe wires come only from blank infrastructure DOM, not content text tails.
+ * Rule 4 — read path (`handoff-note-arrow-contract.md`, click ingress): text-node tail belongs to
+ * content row end, not the following `\n`. Blank-band probe wires come only from blank
+ * infrastructure DOM, not content text tails.
  */
 export function docOffsetFromContentTextNodeDomPoint(
   nodeOffsetBase: number,
@@ -73,14 +74,14 @@ export function docOffsetFromContentTextNodeDomPoint(
   return nodeOffsetBase + domOffset;
 }
 
-/** §53 Rule 4 — write path: content row end renders at the browser text-node tail before a break. */
+/** Rule 4 — write path (`handoff-note-arrow-contract.md`, click ingress): content row end renders at the browser text-node tail before a break. */
 export function domOffsetForContentRowEndInSplitText(
   docOffsetInPart: number,
   part: string,
   partIndex: number,
   partCount: number
 ): number {
-  if (docOffsetInPart === part.length - 1 && part.length > 0 && partIndex < partCount - 1) {
+  if (docOffsetInPart === part.length - 1 && part.length > 1 && partIndex < partCount - 1) {
     return part.length;
   }
   return docOffsetInPart;
@@ -126,7 +127,7 @@ export function docPosToRenderedDomChildIndex(doc: HandoffNoteDoc, nodeIndex: nu
   return rendered;
 }
 
-/** Caret on a wire-break: blank-band anchor unless empty content row end (§53 Rule 4 + §69 chip). */
+/** Caret on a wire-break: blank-band anchor unless empty content row end (Rule 4 + content row chip; `handoff-note-arrow-contract.md`). */
 function domPointAfterWireBreak(
   root: HTMLElement,
   breakChildIdx: number,

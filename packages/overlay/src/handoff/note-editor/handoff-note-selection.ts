@@ -24,7 +24,7 @@ import {
   flattenHandoffNoteLog,
   domPointInMentionPill,
   handoffNoteDomSnapshot,
-  handoffNoteSelectionSnapshot,
+  handoffNoteSelectionSnapshotCompact,
   logCaretBoundaryTrace,
   logVerArrow,
 } from "../handoff-note-debug.js";
@@ -306,7 +306,7 @@ export function setDocSelection(
       offset: endPoint.offset,
       inMentionPill: domPointInMentionPill(root, endPoint.node),
     },
-    dom: handoffNoteSelectionSnapshot(root),
+    dom: handoffNoteSelectionSnapshotCompact(root),
   });
 }
 
