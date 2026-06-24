@@ -19,6 +19,7 @@ import {
   docPosAfterContentRowChipBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
   insertDocPosAfterEmbeddedBlankProbe,
+  isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   resolveBackspaceFromEmptyContentRowEnd,
   resolveDeleteFromEmptyContentRowEnd,
@@ -474,12 +475,18 @@ export function resolveHandoffNoteDeleteIntent(
     };
   }
 
-  if (focusWire + 1 >= docLength(doc)) {
-    return { kind: "noop" };
+  if (direction === "delete") {
+    if (isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, context, focus)) {
+      return { kind: "noop" };
+    }
+    if (focusWire >= docLength(doc)) {
+      return { kind: "noop" };
+    }
+    return {
+      kind: "result",
+      result: spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), ""),
+    };
   }
 
-  return {
-    kind: "result",
-    result: spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), ""),
-  };
+  return { kind: "noop" };
 }

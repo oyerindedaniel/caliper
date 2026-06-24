@@ -197,6 +197,53 @@ describe("handoff note delete intent — contract authority before handler chain
     });
   });
 
+  describe("forward delete — tail boundary at visual start", () => {
+    it("clears lone whitespace at doc visual start (post-mention spacer residue)", () => {
+      const doc = wireToDoc(" ");
+      const result = applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 0)), "delete");
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe("");
+    });
+
+    it("clears lone substantive char at doc visual start", () => {
+      const doc = wireToDoc("d");
+      const result = applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 0)), "delete");
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe("");
+    });
+
+    it("nips last char when caret is at its visual start", () => {
+      const doc = wireToDoc("hello");
+      const result = applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 4)), "delete");
+      expect(result).not.toBeNull();
+      expect(docToWire(result!.doc)).toBe("hell");
+    });
+
+    it("no-op at doc end when nothing remains ahead", () => {
+      const doc = wireToDoc("d");
+      expect(
+        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 1)), "delete")
+      ).toBeNull();
+    });
+
+    it("clears post-mention trailing spacer after forward delete removes pill from visual start", () => {
+      const wire = `@${agent} `;
+      const doc = wireToDoc(wire);
+      const afterMentionDelete = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0)),
+        "delete"
+      )!;
+      expect(docToWire(afterMentionDelete.doc)).toBe(" ");
+      const cleared = applyDocDelete(
+        afterMentionDelete.doc,
+        afterMentionDelete.selection,
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe("");
+    });
+  });
+
   describe("resolveHandoffNoteDeleteIntent — disambiguation", () => {
     it("inter-mention gap offset 0 backspace does not atomically remove a mention", () => {
       const wire = `Hi @${agent} @${agent} there`;
