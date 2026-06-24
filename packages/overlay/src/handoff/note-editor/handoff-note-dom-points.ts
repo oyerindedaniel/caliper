@@ -603,7 +603,26 @@ export function resolveDomPointAtDocPos(
     return { node: root, offset: renderedIndex };
   }
   if (normalized.nodeOffset >= tokenLength) {
-    return { node: root, offset: renderedIndex + 1 };
+    const afterRendered = renderedIndex + 1;
+    if (afterRendered < root.childNodes.length) {
+      const nextDom = root.childNodes[afterRendered]!;
+      if (nextDom.nodeType === Node.TEXT_NODE) {
+        if (isHandoffBlankAnchorElement(nextDom.parentNode)) {
+          return { node: root, offset: afterRendered };
+        }
+        return { node: nextDom, offset: 0 };
+      }
+    }
+    return { node: root, offset: afterRendered };
+  }
+  const pillTextNode = domNode.firstChild;
+  if (pillTextNode?.nodeType === Node.TEXT_NODE) {
+    const pillText = pillTextNode as Text;
+    const pillOffset = normalized.nodeOffset - 1;
+    return {
+      node: pillText,
+      offset: Math.max(0, Math.min(pillOffset, pillText.length)),
+    };
   }
 
   return { node: domNode, offset: 0 };

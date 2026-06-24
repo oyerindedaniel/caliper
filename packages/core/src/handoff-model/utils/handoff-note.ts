@@ -1,5 +1,6 @@
 import {
   HANDOFF_MENTION_PATTERN,
+  describeHandoffNoteCursorContext,
   docToWire,
   parseHandoffNoteWire,
   type HandoffNoteDoc,
@@ -165,7 +166,15 @@ export function resolveActiveHandoffMentionQueryDoc(
 ): ActiveHandoffDocMentionQuery | null {
   const focus = normalizeDocPos(doc, selection.focus);
   const focusWire = docPosToWireOffset(doc, focus);
-  const active = resolveActiveHandoffMentionQuery(docToWire(doc), focusWire);
+  const wire = docToWire(doc);
+  const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
+  if (caretContext.kind === "mention-interior") {
+    return null;
+  }
+  if (caretContext.kind === "mention-boundary" && caretContext.edge === "end") {
+    return null;
+  }
+  const active = resolveActiveHandoffMentionQuery(wire, focusWire);
   if (!active) {
     return null;
   }

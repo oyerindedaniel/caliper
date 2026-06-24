@@ -1,11 +1,14 @@
 import {
   collapsedSelection,
+  describeHandoffNoteCursorContext,
+  isEmbeddedBlankBandDeleteProbeWire,
   listEmbeddedBlankBandProbeWires,
   wireOffsetToDocPos,
   wireToDoc,
 } from "@caliper/core";
 import { describe, expect, it, beforeEach } from "vitest";
 import { createHandoffNoteEditor } from "./create-handoff-note-editor.js";
+import { handoffNoteSelectionSnapshot } from "../handoff-note-debug.js";
 import { readMentionNodeIndex } from "./handoff-note-dom.js";
 import {
   dispatchSelectionChange,
@@ -20,7 +23,11 @@ function mountEditorHost() {
   document.body.appendChild(root);
   const changes: string[] = [];
   const editor = createHandoffNoteEditor({
-    getColorByAgentId: () => new Map([["caliper-abc123", "#f00"]]),
+    getColorByAgentId: () =>
+      new Map([
+        ["caliper-abc123", "#f00"],
+        ["caliper-aaaaaaa", "#f00"],
+      ]),
     onWireChange: (wire) => changes.push(wire),
   });
   editor.setRoot(root);
@@ -56,6 +63,29 @@ describe("createHandoffNoteEditor", () => {
     const handled = host.editor.handleKeyDown(event);
     expect(handled).toBe(true);
     expect(host.editor.getWire()).toBe("Hi  there");
+  });
+
+  it("keydown backspace on trailing spacer after mention paints caret outside pill", () => {
+    const agentId = "caliper-abc123";
+    const wire = `header @${agentId} `;
+    host.editor.setDocFromWire(wire, wire.length);
+    const event = new KeyboardEvent("keydown", { key: "Backspace", bubbles: true });
+    expect(host.editor.handleKeyDown(event)).toBe(true);
+    expect(host.editor.getWire()).toBe(`header @${agentId}`);
+    expect(handoffNoteSelectionSnapshot(host.root).anchorInMentionPill).toBe(false);
+    expect(
+      describeHandoffNoteCursorContext(host.editor.getDoc(), host.editor.getCursor()).kind
+    ).toBe("mention-boundary");
+  });
+
+  it("keydown delete before mention paints caret outside pill", () => {
+    const agentId = "caliper-abc123";
+    const wire = `header @${agentId} tail`;
+    const atHeaderEnd = "header ".length;
+    host.editor.setDocFromWire(wire, atHeaderEnd);
+    const event = new KeyboardEvent("keydown", { key: "Delete", bubbles: true });
+    expect(host.editor.handleKeyDown(event)).toBe(true);
+    expect(handoffNoteSelectionSnapshot(host.root).anchorInMentionPill).toBe(false);
   });
 
   it("does not re-import wire when parent echoes the same doc and selection", () => {
@@ -757,6 +787,98 @@ describe("createHandoffNoteEditor", () => {
 
       expect(host.editor.getCursor()).toBe(firstProbe);
       expect(host.editor.getCursor()).not.toBe(headerEnd);
+    });
+
+    describe("probe-alias after whitespace chip — click from blank band then backspace", () => {
+      function assertSpacerChipDoesNotPaintDeleteProbe(
+        wire: string,
+        expectedWireAfter: string,
+        expectedCursorWire: number,
+        expectMentionBoundary: boolean
+      ) {
+        const doc = wireToDoc(wire);
+        const probes = listEmbeddedBlankBandProbeWires(doc);
+        const spacerWire = probes[0]! - 1;
+        const lastProbe = probes[probes.length - 1]!;
+
+        host.editor.setDocFromWire(wire, lastProbe, { resetHistory: true });
+        setSelectionAtWire(host.root, doc, spacerWire, spacerWire);
+        dispatchSelectionChange(host.root);
+        expect(host.editor.getCursor()).toBe(spacerWire);
+
+        const handled = host.editor.handleKeyDown(
+          new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+        );
+        expect(handled).toBe(true);
+        expect(host.editor.getWire()).toBe(expectedWireAfter);
+        expect(
+          isEmbeddedBlankBandDeleteProbeWire(host.editor.getDoc(), host.editor.getCursor())
+        ).toBe(false);
+        expect(handoffNoteSelectionSnapshot(host.root).anchorInMentionPill).toBe(false);
+        expect(host.editor.getCursor()).toBe(expectedCursorWire);
+        if (expectMentionBoundary) {
+          expect(
+            describeHandoffNoteCursorContext(host.editor.getDoc(), host.editor.getCursor()).kind
+          ).toBe("mention-boundary");
+        }
+      }
+
+      it("prefix + mention row + spacer", () => {
+        const agentId = "caliper-aaaaaaa";
+        assertSpacerChipDoesNotPaintDeleteProbe(
+          `header header @${agentId} \n\n\n`,
+          `header header @${agentId}\n\n\n`,
+          `header header @${agentId}`.length,
+          true
+        );
+      });
+
+      it("mention-only row + spacer", () => {
+        const agentId = "caliper-aaaaaaa";
+        assertSpacerChipDoesNotPaintDeleteProbe(
+          `@${agentId} \n\n\n`,
+          `@${agentId}\n\n\n`,
+          `@${agentId}`.length,
+          true
+        );
+      });
+
+      it("plain text tail + spacer", () => {
+        assertSpacerChipDoesNotPaintDeleteProbe(
+          `tail \n\n\n`,
+          `tail\n\n\n`,
+          `tail`.length - 1,
+          false
+        );
+      });
+
+      it("next backspace at mention node end removes mention not blank band", () => {
+        const agentId = "caliper-aaaaaaa";
+        const wire = `header @${agentId} \n\n\n`;
+        const doc = wireToDoc(wire);
+        const probes = listEmbeddedBlankBandProbeWires(doc);
+        const spacerWire = probes[0]! - 1;
+        const lastProbe = probes[probes.length - 1]!;
+
+        host.editor.setDocFromWire(wire, lastProbe, { resetHistory: true });
+        setSelectionAtWire(host.root, doc, spacerWire, spacerWire);
+        dispatchSelectionChange(host.root);
+
+        expect(
+          host.editor.handleKeyDown(
+            new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+          )
+        ).toBe(true);
+        expect(host.editor.getWire()).toBe(`header @${agentId}\n\n\n`);
+
+        expect(
+          host.editor.handleKeyDown(
+            new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+          )
+        ).toBe(true);
+        expect(host.editor.getWire()).toBe(`header \n\n\n`);
+        expect(host.editor.getWire()).not.toContain(agentId);
+      });
     });
   });
 

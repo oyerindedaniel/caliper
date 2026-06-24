@@ -45,6 +45,8 @@ import {
   logEditStateTrace,
 } from "../handoff-note-debug.js";
 import {
+  describeSyncRepairBranch,
+  liveIsProbeAliasOverMentionEndAuthority,
   readDocSelection,
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
@@ -160,11 +162,14 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     if (!root) {
       return;
     }
-    if (source === "selectionchange") {
-      clearPendingChipBeforeBlankBand();
-    }
     const priorFocus = selection.focus;
     const live = readDocSelection(root, doc);
+    if (
+      source === "selectionchange" &&
+      !liveIsProbeAliasOverMentionEndAuthority(doc, live.focus, priorFocus)
+    ) {
+      clearPendingChipBeforeBlankBand();
+    }
     if (
       live.anchor.nodeIndex !== live.focus.nodeIndex ||
       live.anchor.nodeOffset !== live.focus.nodeOffset
@@ -193,7 +198,28 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           root,
         }),
       });
-    } else if (source !== "selectionchange" && liveWire !== resolvedWire) {
+    } else if (source === "sync") {
+      const { probeAliasEligible, repairBranch } = describeSyncRepairBranch(
+        doc,
+        priorFocus,
+        live.focus,
+        focus
+      );
+      logEditStateTrace("reconcile>>sync", {
+        priorWire,
+        liveWire,
+        resolvedWire,
+        repairMode,
+        probeAliasEligible,
+        repairBranch,
+        ...buildCaretStateSnapshot({
+          doc,
+          authorityFocus: priorFocus,
+          activeFocus: focus,
+          root,
+        }),
+      });
+    } else if (liveWire !== resolvedWire) {
       logEditStateTrace(`reconcile>>${source}`, {
         priorWire,
         liveWire,
@@ -239,7 +265,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     afterRender: RenderOutcome = lastRenderOutcome
   ) => {
     const priorFocus = selection.focus;
-    selection = normalizeSelection(doc, nextSelection, { from: priorFocus });
+    selection = normalizeSelection(doc, nextSelection);
     if (!root) {
       return;
     }
@@ -248,7 +274,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     suppressDomSelectionSync = true;
     try {
       setDocSelection(root, doc, selection, {
-        from: priorFocus,
         source,
         blankBandDelete,
       });
@@ -352,9 +377,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     verticalGoalColumn = null;
     const prevDoc = doc;
     const normalized = normalizeHandoffNoteDoc(nextDoc);
-    const resolvedSelection = normalizeSelection(normalized, nextSelection, {
-      from: selection.focus,
-    });
+    const resolvedSelection = normalizeSelection(normalized, nextSelection);
     if (record) {
       recordMutation();
     }
@@ -636,7 +659,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         event.inputType === "deleteContentForward"
       ) {
         const direction = event.inputType === "deleteContentBackward" ? "backspace" : "delete";
-        const authorityWire = docPosToWireOffset(doc, selection.focus);
+        const authorityFocusBeforeSync = { ...selection.focus };
+        const authorityWire = docPosToWireOffset(doc, authorityFocusBeforeSync);
         const activeWire = docPosToWireOffset(doc, active.focus);
         logEditStateTrace(`delete>>beforeInput>>${direction}>>before`, {
           ingress: "beforeInput",
@@ -645,7 +669,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           activeWire,
           ...buildCaretStateSnapshot({
             doc,
-            authorityFocus: selection.focus,
+            authorityFocus: authorityFocusBeforeSync,
             activeFocus: active.focus,
             root,
             direction,
@@ -728,7 +752,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         return performRedo();
       }
 
-      const authorityBefore = docPosToWireOffset(doc, selection.focus);
+      const authorityFocusBeforeSync = { ...selection.focus };
+      const authorityBefore = docPosToWireOffset(doc, authorityFocusBeforeSync);
       const active = syncSelectionFromDom();
       const collapsed =
         active.anchor.nodeIndex === active.focus.nodeIndex &&
@@ -817,7 +842,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           activeWire,
           ...buildCaretStateSnapshot({
             doc,
-            authorityFocus: selection.focus,
+            authorityFocus: authorityFocusBeforeSync,
             activeFocus: active.focus,
             root,
             direction,

@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  applyDocDelete,
   applyDocInsertText,
   collapsedSelection,
   docPosToWireOffset,
@@ -19,6 +20,7 @@ import {
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
   resolveMeasuredVerticalArrowMove,
+  setDocSelection,
 } from "./handoff-note-selection.js";
 import {
   buildLayoutMapFromSamples,
@@ -105,7 +107,7 @@ describe("handoff-note-selection", () => {
     expect(pill.contains(root.ownerDocument.getSelection()?.anchorNode ?? null)).toBe(false);
   });
 
-  it("normalizes a native caret parked inside a mention pill", () => {
+  it("reads mention-interior DOM caret faithfully and repair restores outside authority", () => {
     const pill = root.querySelector("span[data-handoff-mention]")!;
     const pillText = pill.firstChild as Text;
     const selection = root.ownerDocument.getSelection()!;
@@ -116,7 +118,7 @@ describe("handoff-note-selection", () => {
     selection.addRange(range);
 
     const live = readDocCursor(root, doc);
-    expect(docPosToWireOffset(doc, live)).toBe(MENTION_START);
+    expect(docPosToWireOffset(doc, live)).toBe(MENTION_START + 4);
     const repaired = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, MENTION_END));
     expect(docPosToWireOffset(doc, repaired)).toBe(MENTION_START);
     expect(readDomWireCursor(root, doc)).toBe(MENTION_START);
@@ -137,7 +139,6 @@ describe("handoff-note-selection", () => {
     const repaired = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, MENTION_START));
     expect(docPosToWireOffset(doc, repaired)).toBe(MENTION_START);
     expect(readDomWireCursor(root, doc)).toBe(MENTION_START);
-    expect(pill.contains(selection.anchorNode)).toBe(false);
   });
 
   it("restores the prior offset when the browser parks left of a mention", () => {
@@ -154,6 +155,49 @@ describe("handoff-note-selection", () => {
     const repaired = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, leftOfMention));
     expect(docPosToWireOffset(doc, repaired)).toBe(leftOfMention);
     expect(readDomWireCursor(root, doc)).toBe(leftOfMention);
+  });
+
+  it("restores mention interior authority when DOM reads blank probe after blank-band step", () => {
+    const suffixWire = `header @caliper-aaaaaaa tail\n\n\n`;
+    const suffixDoc = wireToDoc(suffixWire);
+    const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
+    const mentionIdx = suffixDoc.nodes.findIndex((node) => node.type === "mention");
+    const mentionLastInterior = {
+      nodeIndex: mentionIdx,
+      nodeOffset: 1 + "caliper-aaaaaaa".length - 1,
+    };
+    const authorityWire = docPosToWireOffset(suffixDoc, mentionLastInterior);
+    const { root: bandRoot, doc: bandDoc } = mountEditor(suffixWire);
+
+    setDocSelection(bandRoot, bandDoc, collapsedSelection(mentionLastInterior), {
+      source: "test.authority",
+    });
+
+    setSelectionAtWire(bandRoot, bandDoc, probes[0]!, probes[0]!);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(probes[0]!);
+
+    const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, mentionLastInterior, {
+      mode: "full",
+    });
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(authorityWire);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(authorityWire);
+  });
+
+  it("full repair keeps mention interior when authority and live agree at same wire", () => {
+    const agent = "caliper-85l0t4y9j";
+    const wire = `hdhdhd @${agent}\n\n\n`;
+    const doc = wireToDoc(wire);
+    const interiorWire = wire.indexOf("j");
+    const mentionIdx = doc.nodes.findIndex((node) => node.type === "mention");
+    const interior = wireOffsetToDocPos(doc, interiorWire);
+    const { root } = mountEditor(wire);
+
+    setDocSelection(root, doc, collapsedSelection(interior), { source: "test.authority" });
+    expect(readDomWireCursor(root, doc)).toBe(interiorWire);
+
+    const repaired = repairDocSelectionIfNeeded(root, doc, interior, { mode: "full" });
+    expect(docPosToWireOffset(doc, repaired)).toBe(interiorWire);
+    expect(docPosToWireOffset(doc, repaired)).not.toBe(listEmbeddedBlankBandProbeWires(doc)[0]);
   });
 
   it("strand-only repair skips authority restore for valid boundary moves", () => {
@@ -225,6 +269,52 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(bandRoot, bandDoc)).toBe(firstProbe);
   });
 
+  it("full repair restores mention node end over text-node probe alias at same wire", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} \n\n\n`;
+    const doc = wireToDoc(wire);
+    const spacerWire = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
+    const chipped = applyDocDelete(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, spacerWire)),
+      "backspace"
+    )!;
+    const authority = chipped.selection.focus;
+    const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+    const { root: bandRoot, doc: bandDoc } = mountEditor(docToWire(chipped.doc));
+
+    setDocSelection(bandRoot, bandDoc, collapsedSelection(authority), { source: "test.authority" });
+    setSelectionAtWire(bandRoot, bandDoc, probeWire, probeWire);
+
+    const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, authority, { mode: "full" });
+    expect(bandDoc.nodes[repaired.nodeIndex]?.type).toBe("mention");
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(probeWire);
+  });
+
+  it("strand-only repair restores mention node end over text-node probe alias at same wire", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} \n\n\n`;
+    const doc = wireToDoc(wire);
+    const spacerWire = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
+    const chipped = applyDocDelete(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, spacerWire)),
+      "backspace"
+    )!;
+    const authority = chipped.selection.focus;
+    const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+    const { root: bandRoot, doc: bandDoc } = mountEditor(docToWire(chipped.doc));
+
+    setDocSelection(bandRoot, bandDoc, collapsedSelection(authority), { source: "test.authority" });
+    setSelectionAtWire(bandRoot, bandDoc, probeWire, probeWire);
+
+    const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, authority, {
+      mode: "strand-only",
+    });
+    expect(bandDoc.nodes[repaired.nodeIndex]?.type).toBe("mention");
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(probeWire);
+  });
+
   it("sets and reads wire cursor at text and mention boundaries", () => {
     setSelectionAtWire(root, doc, MENTION_START);
     expect(readDomWireCursor(root, doc)).toBe(MENTION_START);
@@ -236,11 +326,12 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(root, doc)).toBe(NOTE.length);
   });
 
-  it("snaps interior wire offsets when setting selection", () => {
-    setSelectionAtWire(root, doc, MENTION_START + 5);
-    expect(readDomWireCursor(root, doc)).toBe(MENTION_START);
+  it("round-trips mention-interior wire offsets and snaps with boundary from hints", () => {
+    const interior = MENTION_START + 5;
+    setSelectionAtWire(root, doc, interior);
+    expect(readDomWireCursor(root, doc)).toBe(interior);
 
-    setSelectionAtWire(root, doc, MENTION_START + 5, MENTION_START + 5, {
+    setSelectionAtWire(root, doc, interior, interior, {
       fromOffset: MENTION_START,
     });
     expect(readDomWireCursor(root, doc)).toBe(MENTION_END);

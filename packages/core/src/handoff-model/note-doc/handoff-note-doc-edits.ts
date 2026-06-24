@@ -13,16 +13,14 @@ import {
   spliceDocWireRange,
   type HandoffNoteDoc,
   type HandoffNoteEdit,
-  resolveHandoffNoteMentionEdit,
 } from "./handoff-note-doc.js";
+import { resolveHandoffNoteDeleteIntent } from "./handoff-note-delete-intent.js";
 import {
+  embeddedBlankBandContentRowEndBeforeProbe,
+  embeddedBlankBandHasSubstantiveRowAbove,
   insertDocPosAfterEmbeddedBlankProbe,
-  resolveBackspaceBeforeEmbeddedBlankProbe,
-  resolveEmbeddedBlankBandDelete,
+  isEmbeddedBlankBandProbeWire,
   resolveEmbeddedBlankBandEofLineBreakCaretWire,
-  resolveBackspaceFromEmptyContentRowEnd,
-  resolveDeleteFromEmptyContentRowEnd,
-  resolveEmbeddedBlankBandLineStartCollapse,
   type HandoffBlankBandDeleteOptions,
 } from "./handoff-note-embedded-newlines.js";
 import {
@@ -42,13 +40,14 @@ export type HandoffDocEditResult = {
 
 export type HandoffDocDeleteContext = HandoffBlankBandDeleteOptions;
 
-function docEditResult(
-  doc: HandoffNoteDoc,
-  selection: HandoffNoteSelection,
-  chipBeforeBlankBand?: boolean
-): HandoffDocEditResult {
-  return chipBeforeBlankBand ? { doc, selection, chipBeforeBlankBand: true } : { doc, selection };
-}
+type HandoffDeleteCaretSnapOptions = {
+  mentionRemoved?: boolean;
+  preserveMentionInterior?: boolean;
+};
+
+type HandoffDeleteFinalizeOptions = HandoffDeleteCaretSnapOptions & {
+  chipBeforeBlankBand?: boolean;
+};
 
 function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   return (
@@ -57,179 +56,61 @@ function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   );
 }
 
-function isInterMentionGap(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boolean {
-  const node = doc.nodes[focus.nodeIndex];
-  if (node?.type !== "text") {
-    return false;
-  }
-  const prev = doc.nodes[focus.nodeIndex - 1];
-  const next = doc.nodes[focus.nodeIndex + 1];
-  return prev?.type === "mention" && next?.type === "mention";
-}
-
-function mentionsMergedAt(doc: HandoffNoteDoc, leftMentionIdx: number): boolean {
-  return (
-    doc.nodes[leftMentionIdx]?.type === "mention" &&
-    doc.nodes[leftMentionIdx + 1]?.type === "mention"
-  );
-}
-
-function caretAtMentionEnd(doc: HandoffNoteDoc, mentionNodeIndex: number): HandoffNoteDocPos {
-  const node = doc.nodes[mentionNodeIndex]!;
-  const tokenLength = node.type === "mention" ? 1 + node.agentId.length : 0;
-  return { nodeIndex: mentionNodeIndex, nodeOffset: tokenLength };
-}
-
-function withCaretAfterInterMentionGapDelete(
-  result: HandoffDocEditResult,
-  gapNodeIndex: number
-): HandoffDocEditResult {
-  const leftMentionIdx = gapNodeIndex - 1;
-  if (!mentionsMergedAt(result.doc, leftMentionIdx)) {
-    return result;
-  }
-  return {
-    doc: result.doc,
-    selection: collapsedSelection(
-      normalizeDocPos(result.doc, caretAtMentionEnd(result.doc, leftMentionIdx))
-    ),
-  };
-}
-
-function wasAtTextEndBeforeMention(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boolean {
-  const textNode = doc.nodes[focus.nodeIndex];
-  const nextNode = doc.nodes[focus.nodeIndex + 1];
-  return (
-    textNode?.type === "text" &&
-    nextNode?.type === "mention" &&
-    focus.nodeOffset === textNode.text.length
-  );
-}
-
-function withCaretAtTextEndBeforeMention(
+/** Delete caret policy: no resting inside committed pills; content-row end after mention delete at probe. */
+export function snapDeleteCaretWire(
   doc: HandoffNoteDoc,
-  result: HandoffDocEditResult,
-  priorFocus: HandoffNoteDocPos
-): HandoffDocEditResult {
-  if (!wasAtTextEndBeforeMention(doc, priorFocus)) {
-    return result;
-  }
-  const textNode = result.doc.nodes[priorFocus.nodeIndex];
-  if (textNode?.type !== "text") {
-    return result;
-  }
-  return {
-    doc: result.doc,
-    selection: collapsedSelection(
-      normalizeDocPos(result.doc, {
-        nodeIndex: priorFocus.nodeIndex,
-        nodeOffset: textNode.text.length,
-      })
-    ),
-  };
-}
-
-function applyBackspaceAtMentionStart(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos
-): HandoffDocEditResult | null {
-  const node = doc.nodes[focus.nodeIndex];
-  if (node?.type !== "mention" || focus.nodeOffset !== 0) {
-    return null;
-  }
-
-  const focusWire = docPosToWireOffset(doc, focus);
-  const prev = doc.nodes[focus.nodeIndex - 1];
-
-  if (prev?.type === "text" && prev.text.length > 0) {
-    const textIdx = focus.nodeIndex - 1;
-    const result = spliceDocSelection(doc, wireOffsetToDocPos(doc, focusWire - 1), focus, "");
-    const textNode = result.doc.nodes[textIdx];
-    if (textNode?.type === "text") {
-      return {
-        doc: result.doc,
-        selection: collapsedSelection(
-          normalizeDocPos(result.doc, {
-            nodeIndex: textIdx,
-            nodeOffset: textNode.text.length,
-          })
-        ),
-      };
+  wire: number,
+  direction: HandoffNoteEdit,
+  options?: HandoffDeleteCaretSnapOptions
+): number {
+  const context = describeHandoffNoteCursorContext(doc, wire);
+  if (context.kind === "mention-interior") {
+    // Directional pair: backspace → mention-end, delete → mention-start (default).
+    // preserveMentionInterior is the backspace-only chip landing flag; delete symmetry uses
+    // mentionRemoved + content-row-end snap at probes, not interior preservation.
+    if (options?.preserveMentionInterior && direction === "backspace") {
+      return wire;
     }
+    return direction === "backspace" ? context.end : context.start;
+  }
+  if (
+    options?.mentionRemoved &&
+    isEmbeddedBlankBandProbeWire(doc, wire) &&
+    embeddedBlankBandHasSubstantiveRowAbove(docToWire(doc), wire)
+  ) {
+    return embeddedBlankBandContentRowEndBeforeProbe(doc, wire);
+  }
+  return wire;
+}
+
+function applyDeleteCaretPolicy(
+  result: HandoffDocEditResult,
+  direction: HandoffNoteEdit,
+  options?: HandoffDeleteCaretSnapOptions
+): HandoffDocEditResult {
+  const wire = docPosToWireOffset(result.doc, result.selection.focus);
+  const resolved = snapDeleteCaretWire(result.doc, wire, direction, options);
+  if (resolved === wire) {
     return result;
   }
-
-  const end = focusWire + 1 + node.agentId.length;
-  return spliceDocSelection(doc, focus, wireOffsetToDocPos(doc, end), "");
+  return {
+    ...result,
+    selection: collapsedSelection(
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolved))
+    ),
+  };
 }
 
-function isForwardDeleteNoOpAtAdjacentMentions(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos
-): boolean {
-  const node = doc.nodes[focus.nodeIndex];
-  if (node?.type !== "mention") {
-    return false;
-  }
-  const tokenLength = 1 + node.agentId.length;
-  if (focus.nodeOffset <= 0) {
-    return doc.nodes[focus.nodeIndex - 1]?.type === "mention";
-  }
-  if (focus.nodeOffset >= tokenLength) {
-    return doc.nodes[focus.nodeIndex + 1]?.type === "mention";
-  }
-  return false;
-}
-
-function applyInterMentionGapDelete(
+function finalizeDeleteResult(
   doc: HandoffNoteDoc,
   selection: HandoffNoteSelection,
-  direction: HandoffNoteEdit
-): HandoffDocEditResult | null {
-  const focus = normalizeDocPos(doc, selection.focus);
-  if (!isInterMentionGap(doc, focus)) {
-    return null;
-  }
-
-  const textNode = doc.nodes[focus.nodeIndex]!;
-  if (textNode.type !== "text") {
-    return null;
-  }
-
-  const gapNodeIndex = focus.nodeIndex;
-
-  if (direction === "delete") {
-    if (focus.nodeOffset >= textNode.text.length) {
-      return null;
-    }
-    const focusWire = docPosToWireOffset(doc, focus);
-    return withCaretAfterInterMentionGapDelete(
-      spliceDocSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), ""),
-      gapNodeIndex
-    );
-  }
-
-  if (focus.nodeOffset > 0) {
-    const focusWire = docPosToWireOffset(doc, focus);
-    return withCaretAfterInterMentionGapDelete(
-      withCaretAtTextEndBeforeMention(
-        doc,
-        spliceDocSelection(doc, wireOffsetToDocPos(doc, focusWire - 1), focus, ""),
-        focus
-      ),
-      gapNodeIndex
-    );
-  }
-
-  if (!textNode.text.length) {
-    return null;
-  }
-
-  const focusWire = docPosToWireOffset(doc, focus);
-  return withCaretAfterInterMentionGapDelete(
-    spliceDocSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), ""),
-    gapNodeIndex
-  );
+  direction: HandoffNoteEdit,
+  options?: HandoffDeleteFinalizeOptions
+): HandoffDocEditResult {
+  const base: HandoffDocEditResult = options?.chipBeforeBlankBand
+    ? { doc, selection, chipBeforeBlankBand: true }
+    : { doc, selection };
+  return applyDeleteCaretPolicy(base, direction, options);
 }
 
 export function spliceDocSelection(
@@ -258,129 +139,24 @@ export function applyDocDelete(
     return spliceDocSelection(doc, selection.anchor, selection.focus, "");
   }
 
-  const focus = normalizeDocPos(doc, selection.focus);
-  const focusWire = docPosToWireOffset(doc, focus);
-  const deleteOptions = context;
-
-  const blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction, deleteOptions);
-  if (blankBandDelete) {
-    return docEditResult(
-      blankBandDelete.doc,
-      collapsedSelection(
-        normalizeDocPos(
-          blankBandDelete.doc,
-          wireOffsetToDocPos(blankBandDelete.doc, blankBandDelete.caretWire)
-        )
-      ),
-      blankBandDelete.chipBeforeBlankBand
-    );
+  const intent = resolveHandoffNoteDeleteIntent(doc, selection, direction, context);
+  if (!intent) {
+    return null;
   }
-
-  if (direction === "backspace") {
-    const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(doc, focusWire, deleteOptions);
-    if (emptyRowEnd) {
-      return docEditResult(
-        emptyRowEnd.doc,
-        collapsedSelection(
-          normalizeDocPos(
-            emptyRowEnd.doc,
-            wireOffsetToDocPos(emptyRowEnd.doc, emptyRowEnd.caretWire)
-          )
-        )
-      );
-    }
-  }
-
-  if (direction === "delete") {
-    const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, deleteOptions);
-    if (emptyRowEnd) {
-      return docEditResult(
-        emptyRowEnd.doc,
-        collapsedSelection(
-          normalizeDocPos(
-            emptyRowEnd.doc,
-            wireOffsetToDocPos(emptyRowEnd.doc, emptyRowEnd.caretWire)
-          )
-        )
-      );
-    }
-  }
-
-  const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(
-    doc,
-    focusWire,
-    deleteOptions
-  );
-  if (lineStartCollapse && (direction === "backspace" || direction === "delete")) {
-    return docEditResult(
-      lineStartCollapse.doc,
-      collapsedSelection(
-        normalizeDocPos(
-          lineStartCollapse.doc,
-          wireOffsetToDocPos(lineStartCollapse.doc, lineStartCollapse.caretWire)
-        )
-      )
-    );
-  }
-
-  if (selectionCollapsed(selection) && isInterMentionGap(doc, focus)) {
-    return applyInterMentionGapDelete(doc, selection, direction);
-  }
-
-  if (direction === "delete" && isForwardDeleteNoOpAtAdjacentMentions(doc, focus)) {
+  if (intent.kind === "noop") {
     return null;
   }
 
-  if (direction === "backspace") {
-    const mentionStartBackspace = applyBackspaceAtMentionStart(doc, focus);
-    if (mentionStartBackspace) {
-      return mentionStartBackspace;
-    }
-    const beforeProbe = resolveBackspaceBeforeEmbeddedBlankProbe(doc, focusWire);
-    if (beforeProbe) {
-      return docEditResult(
-        beforeProbe.doc,
-        collapsedSelection(
-          normalizeDocPos(
-            beforeProbe.doc,
-            wireOffsetToDocPos(beforeProbe.doc, beforeProbe.caretWire)
-          )
-        ),
-        beforeProbe.chipBeforeBlankBand
-      );
-    }
+  const { result } = intent;
+  if (result.caretPolicyOnly) {
+    return applyDeleteCaretPolicy({ doc: result.doc, selection: result.selection }, direction);
   }
 
-  const mentionEdit = resolveHandoffNoteMentionEdit(doc, focusWire, direction);
-  if (mentionEdit) {
-    return {
-      doc: mentionEdit.doc,
-      selection: collapsedSelection(
-        normalizeDocPos(mentionEdit.doc, wireOffsetToDocPos(mentionEdit.doc, mentionEdit.cursor))
-      ),
-    };
-  }
-
-  if (direction === "backspace") {
-    if (focusWire <= 0) {
-      return null;
-    }
-    const deleteFocus = insertDocPosAfterEmbeddedBlankProbe(doc, focus);
-    const deleteFocusWire = docPosToWireOffset(doc, deleteFocus);
-    if (deleteFocusWire <= 0) {
-      return null;
-    }
-    return withCaretAtTextEndBeforeMention(
-      doc,
-      spliceDocSelection(doc, wireOffsetToDocPos(doc, deleteFocusWire - 1), deleteFocus, ""),
-      focus
-    );
-  }
-
-  if (focusWire + 1 >= docLength(doc)) {
-    return null;
-  }
-  return spliceDocSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), "");
+  return finalizeDeleteResult(result.doc, result.selection, direction, {
+    chipBeforeBlankBand: result.chipBeforeBlankBand,
+    preserveMentionInterior: result.preserveMentionInterior,
+    mentionRemoved: result.mentionRemoved,
+  });
 }
 
 function applyMentionQueryMultilineInsert(

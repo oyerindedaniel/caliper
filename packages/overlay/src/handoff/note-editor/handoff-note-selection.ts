@@ -3,6 +3,8 @@ import {
   describeHandoffNoteCursorContext,
   docPosEqual,
   docPosToWireOffset,
+  embeddedBlankBandContentRowEndBeforeProbe,
+  isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
   normalizeDocPos,
   normalizeSelection,
@@ -20,7 +22,9 @@ import {
 } from "@caliper/core";
 import {
   flattenHandoffNoteLog,
+  domPointInMentionPill,
   handoffNoteDomSnapshot,
+  handoffNoteSelectionSnapshot,
   logCaretBoundaryTrace,
   logVerArrow,
 } from "../handoff-note-debug.js";
@@ -52,6 +56,35 @@ function readRawWireFocus(root: HTMLElement, doc: HandoffNoteDoc): number {
 }
 
 /** DOM caret fell behind editor authority (e.g. popover pick left selection at superseded @query). */
+function authorityIsMentionNodeEnd(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): boolean {
+  const node = doc.nodes[pos.nodeIndex];
+  return node?.type === "mention" && pos.nodeOffset >= 1 + node.agentId.length;
+}
+
+/** Same wire: editor authority on mention node end, DOM painted text-node probe alias. */
+export function liveIsProbeAliasOverMentionEndAuthority(
+  doc: HandoffNoteDoc,
+  live: HandoffNoteDocPos,
+  from: HandoffNoteDocPos
+): boolean {
+  const wire = docPosToWireOffset(doc, live);
+  if (wire !== docPosToWireOffset(doc, from)) {
+    return false;
+  }
+  if (!authorityIsMentionNodeEnd(doc, from)) {
+    return false;
+  }
+  if (doc.nodes[live.nodeIndex]?.type !== "text") {
+    return false;
+  }
+  if (!isEmbeddedBlankBandProbeWire(doc, wire)) {
+    return false;
+  }
+  const semanticEnd = embeddedBlankBandContentRowEndBeforeProbe(doc, wire);
+  const semanticContext = describeHandoffNoteCursorContext(doc, semanticEnd);
+  return semanticContext.kind === "mention-boundary" && semanticContext.edge === "end";
+}
+
 function shouldRestoreAuthorityOverDom(
   doc: HandoffNoteDoc,
   live: HandoffNoteDocPos,
@@ -59,6 +92,32 @@ function shouldRestoreAuthorityOverDom(
 ): boolean {
   const liveWire = docPosToWireOffset(doc, live);
   const fromWire = docPosToWireOffset(doc, from);
+  const fromContext = describeHandoffNoteCursorContext(doc, fromWire);
+
+  if (liveIsProbeAliasOverMentionEndAuthority(doc, live, from)) {
+    return true;
+  }
+
+  if (
+    (fromContext.kind === "mention-boundary" && fromContext.edge === "end") ||
+    fromContext.kind === "mention-interior"
+  ) {
+    if (isEmbeddedBlankBandProbeWire(doc, liveWire) && liveWire > fromWire) {
+      return true;
+    }
+  }
+
+  if (fromContext.kind === "mention-boundary" && fromContext.edge === "start") {
+    const liveContext = describeHandoffNoteCursorContext(doc, liveWire);
+    if (
+      liveContext.kind === "mention-interior" &&
+      liveWire > fromWire &&
+      liveWire < fromContext.end
+    ) {
+      return true;
+    }
+  }
+
   if (liveWire >= fromWire) {
     return false;
   }
@@ -76,6 +135,29 @@ function shouldRestoreAuthorityOverDom(
   return false;
 }
 
+/** Diagnostics for reconcile>>sync — which repair path ran vs probe-alias eligibility. */
+export function describeSyncRepairBranch(
+  doc: HandoffNoteDoc,
+  priorFocus: HandoffNoteDocPos,
+  liveFocus: HandoffNoteDocPos,
+  resolvedFocus: HandoffNoteDocPos
+): { probeAliasEligible: boolean; repairBranch: string } {
+  const probeAliasEligible = liveIsProbeAliasOverMentionEndAuthority(doc, liveFocus, priorFocus);
+  if (
+    docPosEqualNormalized(doc, resolvedFocus, priorFocus) &&
+    !docPosEqualNormalized(doc, liveFocus, priorFocus)
+  ) {
+    return {
+      probeAliasEligible,
+      repairBranch: probeAliasEligible ? "probeAliasRestore" : "restoreAuthority",
+    };
+  }
+  if (!docPosEqualNormalized(doc, resolvedFocus, liveFocus)) {
+    return { probeAliasEligible, repairBranch: "normalized" };
+  }
+  return { probeAliasEligible, repairBranch: "acceptedLive" };
+}
+
 export function readDocSelection(root: HTMLElement, doc: HandoffNoteDoc): HandoffNoteSelection {
   const selection = root.ownerDocument.getSelection();
   if (!selection || selection.rangeCount === 0 || !root.contains(selection.anchorNode)) {
@@ -89,7 +171,7 @@ export function readDocSelection(root: HTMLElement, doc: HandoffNoteDoc): Handof
   const rawAnchor = domPointToDocPos(root, doc, range.startContainer, range.startOffset);
   const rawFocus = domPointToDocPos(root, doc, range.endContainer, range.endOffset);
   const anchor = normalizeDocPos(doc, rawAnchor);
-  const focus = normalizeDocPos(doc, rawFocus, { from: rawAnchor });
+  const focus = normalizeDocPos(doc, rawFocus);
   return { anchor, focus };
 }
 
@@ -129,6 +211,16 @@ export function repairDocSelectionIfNeeded(
   }
 
   if (options?.mode === "strand-only") {
+    if (from !== undefined && liveIsProbeAliasOverMentionEndAuthority(doc, live.focus, from)) {
+      logCaretBoundaryTrace("repair", {
+        branch: "restoreAuthority.probeAlias",
+        liveWire: docPosToWireOffset(doc, live.focus),
+        fromWire: docPosToWireOffset(doc, from),
+        resolvedWire: docPosToWireOffset(doc, from),
+      });
+      setDocSelection(root, doc, collapsedSelection(from), { from, source: "repair.authority" });
+      return from;
+    }
     return normalizeDocPos(doc, live.focus, { from });
   }
 
@@ -172,7 +264,7 @@ export function setDocSelection(
     blankBandDelete?: HandoffBlankBandDeleteOptions;
   }
 ): void {
-  const docSel = normalizeSelection(doc, selection, { from: options?.from });
+  const docSel = normalizeSelection(doc, selection);
   const docApi = root.ownerDocument;
   const native = docApi.getSelection();
   if (!native) {
@@ -202,6 +294,20 @@ export function setDocSelection(
   range.setEnd(endPoint.node, endPoint.offset);
   native.removeAllRanges();
   native.addRange(range);
+
+  const focusWire = docPosToWireOffset(doc, docSel.focus);
+  const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
+  logCaretBoundaryTrace(`setDoc>>${source}`, {
+    requestedWire: focusWire,
+    caretKind: caretContext.kind,
+    ...(caretContext.kind === "mention-boundary" ? { edge: caretContext.edge } : {}),
+    paint: {
+      nodeKind: endPoint.node.nodeType,
+      offset: endPoint.offset,
+      inMentionPill: domPointInMentionPill(root, endPoint.node),
+    },
+    dom: handoffNoteSelectionSnapshot(root),
+  });
 }
 
 function pickClosestOnLine(line: MeasuredWireOffset[], targetLeft: number): MeasuredWireOffset {

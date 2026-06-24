@@ -1180,6 +1180,101 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
   });
 
+  describe("substantive suffix with EOF blank band — chip through mention after click", () => {
+    const rowWire = `header @${AGENT_A} tail`;
+
+    function insertLineBreak(): void {
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertLineBreak",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    }
+
+    function pressBackspace(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+      );
+    }
+
+    function pressDelete(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
+      );
+    }
+
+    function clickRowSuffixEnd(): void {
+      const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+      const rowEnd = probes[0]! - 1;
+      const rowTailText = [...host.root.childNodes].find(
+        (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.startsWith(" tail")
+      );
+      expect(rowTailText).toBeDefined();
+      setDomCaretAtTextEnd(host.root, rowTailText as Text);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(rowEnd);
+    }
+
+    it("backspace after row end click chips suffix then mention-end removes mention at probe alias", () => {
+      host.editor.setDocFromWire(rowWire, rowWire.length, { resetHistory: true });
+      insertLineBreak();
+      insertLineBreak();
+      insertLineBreak();
+      clickRowSuffixEnd();
+
+      const agentToken = `@${AGENT_A}`;
+      for (let i = 0; i < 12 && host.editor.getWire().includes(agentToken); i++) {
+        expect(pressBackspace()).toBe(true);
+      }
+      expect(host.editor.getWire()).not.toContain(agentToken);
+      expect(host.editor.getWire()).toBe(`header \n\n\n`);
+      expect(host.editor.getDoc().nodes.filter((node) => node.type === "mention")).toHaveLength(0);
+    });
+
+    it("backspace after spacer chip survives browser selectionchange then removes mention", () => {
+      host.editor.setDocFromWire(rowWire, rowWire.length, { resetHistory: true });
+      insertLineBreak();
+      insertLineBreak();
+      insertLineBreak();
+      clickRowSuffixEnd();
+
+      const agentToken = `@${AGENT_A}`;
+      const targetWire = `header ${agentToken}\n\n\n`;
+      for (let i = 0; i < 20 && host.editor.getWire() !== targetWire; i++) {
+        expect(pressBackspace()).toBe(true);
+      }
+      expect(host.editor.getWire()).toBe(targetWire);
+
+      dispatchSelectionChange(host.root);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).not.toContain(agentToken);
+      expect(host.editor.getWire()).toBe(`header \n\n\n`);
+    });
+
+    it("delete after row visual start click chips prefix through mention", () => {
+      host.editor.setDocFromWire(rowWire, rowWire.length, { resetHistory: true });
+      insertLineBreak();
+      insertLineBreak();
+
+      const firstText = host.root.childNodes[0];
+      expect(firstText?.nodeType).toBe(Node.TEXT_NODE);
+      expect(firstText?.textContent).toBe("header ");
+      setDomCaretAtTextStart(host.root, firstText as Text);
+      dispatchSelectionChange(host.root);
+      expect(host.editor.getCursor()).toBe(0);
+
+      const agentToken = `@${AGENT_A}`;
+      for (let i = 0; i < "header ".length; i++) {
+        expect(pressDelete()).toBe(true);
+      }
+      expect(host.editor.getWire()).toBe(`${agentToken} tail\n\n`);
+      expect(host.editor.getDoc().nodes.filter((node) => node.type === "mention")).toHaveLength(1);
+    });
+  });
+
   describe("text-node boundary ownership — edit ingress", () => {
     function pressBackspace(): boolean {
       return host.editor.handleKeyDown(

@@ -164,6 +164,7 @@ export {
 export {
   docTextNodeHasEmbeddedNewline,
   embeddedBlankBandAtEmptyContentRowEnd,
+  embeddedBlankBandContentRowEndBeforeProbe,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,

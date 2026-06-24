@@ -141,6 +141,30 @@ describe("HandoffNoteDocPos", () => {
     );
     expect(docToWire(doc)).toBe("@caliper-a @caliper-b");
   });
+
+  it("normalizeDocPos preserves mention interior from wire offset", () => {
+    const agent = "caliper-aaaaaaa";
+    const wire = `header @${agent} tail\n\n\n`;
+    const doc = wireToDoc(wire);
+    const interiorWire = wire.indexOf("aaa") + 2;
+
+    const normalized = normalizeDocPos(doc, wireOffsetToDocPos(doc, interiorWire));
+
+    expect(describeHandoffNoteCursorContext(doc, interiorWire).kind).toBe("mention-interior");
+    expect(docPosToWireOffset(doc, normalized)).toBe(interiorWire);
+  });
+
+  it("normalizeDocPos with matching from hint preserves mention interior", () => {
+    const agent = "caliper-85l0t4y9j";
+    const wire = `hdhdhd @${agent}\n\n\n`;
+    const doc = wireToDoc(wire);
+    const interiorWire = wire.indexOf("j");
+    const pos = wireOffsetToDocPos(doc, interiorWire);
+
+    expect(docPosToWireOffset(doc, normalizeDocPos(doc, pos, { from: { ...pos } }))).toBe(
+      interiorWire
+    );
+  });
 });
 describe("resolveDocVerticalArrowMove", () => {
   const agentA = "caliper-aaaaaaa";

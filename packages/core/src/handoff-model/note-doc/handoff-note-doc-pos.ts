@@ -124,8 +124,7 @@ export function normalizeDocPos(
     const start = wire - pos.nodeOffset;
     const end = start + tokenLength;
     if (fromWire === wire) {
-      const mid = tokenLength / 2;
-      return { nodeIndex, nodeOffset: pos.nodeOffset < mid ? 0 : tokenLength };
+      return { nodeIndex, nodeOffset: pos.nodeOffset };
     }
     if (fromWire === start) {
       return { nodeIndex, nodeOffset: tokenLength };
@@ -152,8 +151,7 @@ export function normalizeDocPos(
     return { nodeIndex, nodeOffset: tokenLength };
   }
 
-  const mid = tokenLength / 2;
-  return { nodeIndex, nodeOffset: pos.nodeOffset < mid ? 0 : tokenLength };
+  return { nodeIndex, nodeOffset: pos.nodeOffset };
 }
 
 export function normalizeSelection(
@@ -161,10 +159,10 @@ export function normalizeSelection(
   selection: HandoffNoteSelection,
   options?: { from?: HandoffNoteDocPos }
 ): HandoffNoteSelection {
-  const from = options?.from ?? selection.focus;
+  const fromOpt = options?.from ? { from: options.from } : undefined;
   return {
-    anchor: normalizeDocPos(doc, selection.anchor, { from }),
-    focus: normalizeDocPos(doc, selection.focus, { from }),
+    anchor: normalizeDocPos(doc, selection.anchor, fromOpt),
+    focus: normalizeDocPos(doc, selection.focus, fromOpt),
   };
 }
 

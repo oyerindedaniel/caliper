@@ -1,6 +1,8 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   docPosToWireOffset,
+  describeHandoffNoteCursorContext,
+  isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
   normalizeHandoffNoteDoc,
   wireOffsetToDocPos,
@@ -529,6 +531,63 @@ describe("handoff-note-dom", () => {
       const pos = domPointToDocPos(root, doc, firstText!, firstText!.textContent!.length);
       expect(docPosToWireOffset(doc, pos)).toBe(line1End);
       expect(docPosToWireOffset(doc, pos)).not.toBe("line1".length);
+    });
+
+    it("mention-end boundary paints caret outside pill", () => {
+      const wire = `header @${AGENT} `;
+      const doc = wireToDoc(wire);
+      const mentionEndWire = `header @${AGENT}`.length;
+      const mentionEnd = wireOffsetToDocPos(doc, mentionEndWire);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const point = resolveDomPointAtDocPos(root, doc, mentionEnd);
+      expect(point).not.toBeNull();
+      const mentionEl = root.querySelector("[data-handoff-mention]");
+      expect(mentionEl?.contains(point!.node) ?? false).toBe(false);
+
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(mentionEndWire);
+      expect(describeHandoffNoteCursorContext(doc, mentionEndWire).kind).toBe("mention-boundary");
+    });
+
+    it("mention-start boundary paints caret outside pill", () => {
+      const wire = `header @${AGENT} tail`;
+      const doc = wireToDoc(wire);
+      const mentionIdx = doc.nodes.findIndex((node) => node.type === "mention");
+      const mentionStart = { nodeIndex: mentionIdx, nodeOffset: 0 };
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const point = resolveDomPointAtDocPos(root, doc, mentionStart);
+      expect(point).not.toBeNull();
+      const mentionEl = root.querySelector("[data-handoff-mention]");
+      expect(mentionEl?.contains(point!.node) ?? false).toBe(false);
+
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(wire.indexOf("@"));
+      expect(describeHandoffNoteCursorContext(doc, wire.indexOf("@"))).toEqual(
+        expect.objectContaining({ kind: "mention-boundary", edge: "start" })
+      );
+    });
+
+    it("mention end round-trips through resolveDomPointAtDocPos before EOF blank band", () => {
+      const wire = `header @${AGENT} tail\n\n\n`;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const mentionIdx = doc.nodes.findIndex((node) => node.type === "mention");
+      const mentionLastInterior = {
+        nodeIndex: mentionIdx,
+        nodeOffset: 1 + AGENT.length - 1,
+      };
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const point = resolveDomPointAtDocPos(root, doc, mentionLastInterior);
+      const mention = root.querySelector("span[data-handoff-mention]");
+      expect(point?.node).toBe(mention?.firstChild);
+      expect(point?.offset).toBeGreaterThan(0);
+
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(docPosToWireOffset(doc, mentionLastInterior));
+      expect(isEmbeddedBlankBandProbeWire(doc, docPosToWireOffset(doc, roundTrip))).toBe(false);
     });
 
     it("content row end round-trips through resolveDomPointAtDocPos at text-node tail", () => {

@@ -1,4 +1,6 @@
+import { type HandoffNoteDocPos, wireOffsetToDocPos } from "./handoff-note-doc-pos.js";
 import {
+  describeHandoffNoteCursorContext,
   docToWire,
   offsetAtDocPosition,
   spliceDocWireRange,
@@ -24,6 +26,7 @@ export type EmbeddedBlankBandDeleteMove = {
   caretWire: number;
   branch: EmbeddedBlankBandDeleteBranch;
   chipBeforeBlankBand?: boolean;
+  preserveMentionInterior?: boolean;
 };
 
 export type EmbeddedBlankBandGroup = {
@@ -129,14 +132,54 @@ export function embeddedBlankBandProbeContext(
   return null;
 }
 
-/** Content row end before `probeWire`; empty rows land at line start, not on delete-probe semantics. */
-export function embeddedBlankBandContentRowEndBeforeProbe(wire: string, probeWire: number): number {
+/**
+ * Semantic content row end immediately above a blank-band probe.
+ * Physical `probeWire - 1` may sit inside a mention atom; landing policy uses mention-end instead.
+ */
+export function embeddedBlankBandContentRowEndBeforeProbe(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): number {
+  const wire = docToWire(doc);
   const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
   const segment = wire.slice(lineStart, probeWire);
-  if (segment.length > 0 && /\S/.test(segment)) {
-    return probeWire - 1;
+  if (segment.length === 0 || !/\S/.test(segment)) {
+    return lineStart;
   }
-  return lineStart;
+  const physicalEnd = probeWire - 1;
+  const context = describeHandoffNoteCursorContext(doc, physicalEnd);
+  if (context.kind === "mention-interior") {
+    return context.end;
+  }
+  return physicalEnd;
+}
+
+/**
+ * Caret landing after chipping the last character before a probe.
+ * Whitespace-only chips use semantic row end; substantive chips that leave mention
+ * abutting the probe land on mention-interior so the next backspace removes the
+ * mention without nibbling blank infrastructure first.
+ */
+function embeddedBlankBandChipEndBeforeProbe(
+  doc: HandoffNoteDoc,
+  probeWire: number,
+  deletedChar: string
+): number {
+  const landing = embeddedBlankBandContentRowEndBeforeProbe(doc, probeWire);
+  if (/^\s$/.test(deletedChar)) {
+    return landing;
+  }
+  if (landing !== probeWire) {
+    return landing;
+  }
+  const physicalEnd = probeWire - 1;
+  if (
+    physicalEnd >= 0 &&
+    describeHandoffNoteCursorContext(doc, physicalEnd).kind === "mention-interior"
+  ) {
+    return physicalEnd;
+  }
+  return landing;
 }
 
 /**
@@ -190,11 +233,15 @@ export function embeddedBlankBandAtEmptyContentRowEnd(
     return true;
   }
   const wire = docToWire(doc);
-  if (embeddedBlankBandContentRowEndBeforeProbe(wire, caretWire) !== caretWire) {
+  if (embeddedBlankBandContentRowEndBeforeProbe(doc, caretWire) !== caretWire) {
     return false;
   }
   if (!isEmbeddedBlankBandProbeWire(doc, caretWire)) {
     return caretWire >= 0 && caretWire < wire.length && wire[caretWire] === "\n";
+  }
+  // Substantive content abutting probe: same wire is content row end, not delete infrastructure.
+  if (embeddedBlankBandSubstantiveContentAbutsProbe(doc, caretWire)) {
+    return true;
   }
   const context = embeddedBlankBandProbeContext(doc, caretWire);
   if (!context) {
@@ -294,7 +341,7 @@ function collapseBlankBandBackspaceLanding(
     embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire) &&
     embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)
   ) {
-    return embeddedBlankBandContentRowEndBeforeProbe(priorWire, deletedProbeWire);
+    return embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
   }
 
   return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
@@ -387,6 +434,79 @@ export function docTextNodeHasEmbeddedNewline(doc: HandoffNoteDoc, nodeIndex: nu
 
 export function isEmbeddedBlankBandProbeWire(doc: HandoffNoteDoc, wire: number): boolean {
   return listEmbeddedBlankBandProbeWires(doc).includes(wire);
+}
+
+/** Substantive row content sits immediately before the probe with no spacer char in between. */
+export function embeddedBlankBandSubstantiveContentAbutsProbe(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): boolean {
+  if (!isEmbeddedBlankBandProbeWire(doc, probeWire)) {
+    return false;
+  }
+  const wire = docToWire(doc);
+  if (wire[probeWire] !== "\n") {
+    return false;
+  }
+  const charBefore = probeWire - 1;
+  if (charBefore < 0) {
+    return false;
+  }
+  const ch = wire[charBefore];
+  if (ch === undefined || /\s/.test(ch)) {
+    return false;
+  }
+  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const segment = wire.slice(lineStart, probeWire);
+  return segment.length > 0 && /\S/.test(segment);
+}
+
+/**
+ * Probe wire aliases semantic content row end after a whitespace chip — authority
+ * belongs on the mention atom end or row tail, not blank-band zwsp infrastructure.
+ */
+export function docPosAtEmbeddedBlankBandProbeAliasLanding(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): HandoffNoteDocPos | null {
+  if (!embeddedBlankBandSubstantiveContentAbutsProbe(doc, probeWire)) {
+    return null;
+  }
+  const semanticWire = embeddedBlankBandContentRowEndBeforeProbe(doc, probeWire);
+  const semanticContext = describeHandoffNoteCursorContext(doc, semanticWire);
+  if (semanticContext.kind === "mention-boundary" && semanticContext.edge === "end") {
+    let offset = 0;
+    for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+      const node = doc.nodes[nodeIndex]!;
+      if (node.type === "text") {
+        offset += node.text.length;
+        continue;
+      }
+      if (offset === semanticContext.start) {
+        return { nodeIndex, nodeOffset: 1 + node.agentId.length };
+      }
+      offset += 1 + node.agentId.length;
+    }
+  }
+  return wireOffsetToDocPos(doc, semanticWire);
+}
+
+export function embeddedBlankBandMentionOnlyContentRowAbove(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): boolean {
+  const wire = docToWire(doc);
+  const rowEnd = probeWire - 1;
+  if (rowEnd < 0) {
+    return false;
+  }
+  const rowEndContext = describeHandoffNoteCursorContext(doc, rowEnd);
+  if (rowEndContext.kind !== "mention-interior" && rowEndContext.kind !== "mention-boundary") {
+    return false;
+  }
+  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const prefix = wire.slice(lineStart, rowEndContext.start);
+  return !/\S/.test(prefix);
 }
 
 /** Typing at a blank-band probe wire rests on the `\n`; insert after it, not before. */
@@ -489,14 +609,45 @@ export function resolveEmbeddedBlankBandDelete(
     return null;
   }
 
+  const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
+  if (caretContext.kind === "mention-interior") {
+    return null;
+  }
+  if (caretContext.kind === "mention-boundary" && !isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    return null;
+  }
+
   const { indexInGroup } = context;
   const wire = docToWire(doc);
 
   if (direction === "backspace") {
     if (indexInGroup === 0 && embeddedBlankBandHasSubstantiveRowAbove(wire, focusWire)) {
       if (!embeddedBlankBandIsSandwichedBlankRow(doc, focusWire)) {
-        const rowEnd = focusWire - 1;
-        return { doc, caretWire: rowEnd, branch: "backspace-content-above" };
+        if (embeddedBlankBandMentionOnlyContentRowAbove(doc, focusWire)) {
+          // Mention-only row: collapse blank infrastructure, not atomic mention delete.
+        } else {
+          const landing = embeddedBlankBandContentRowEndBeforeProbe(doc, focusWire);
+          if (landing !== focusWire) {
+            const charWire = focusWire - 1;
+            const deletedChar = wire[charWire];
+            if (
+              charWire === landing &&
+              deletedChar !== "\n" &&
+              deletedChar !== undefined &&
+              !/^\s$/.test(deletedChar)
+            ) {
+              const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
+              if (rowChip) {
+                return rowChip;
+              }
+            }
+            return {
+              doc,
+              caretWire: landing,
+              branch: "backspace-content-above",
+            };
+          }
+        }
       }
     }
 
@@ -543,8 +694,13 @@ export function resolveEmbeddedBlankBandDelete(
   };
 }
 
-/** Backspace on trailing row content immediately before a blank-band probe. */
-export function resolveBackspaceBeforeEmbeddedBlankProbe(
+/**
+ * Chip one character on the row immediately before a blank-band probe (§70).
+ * `focusWire` is the removed char; probe is at `focusWire + 1`.
+ * Called from `applyDocDelete` (caret on char) and from the blank-band step branch
+ * (backspace on probe when semantic landing equals the char behind).
+ */
+export function resolveRowChipBeforeEmbeddedBlankProbe(
   doc: HandoffNoteDoc,
   focusWire: number
 ): EmbeddedBlankBandDeleteMove | null {
@@ -558,6 +714,9 @@ export function resolveBackspaceBeforeEmbeddedBlankProbe(
   if (wire[focusWire] === "\n") {
     return null;
   }
+  if (describeHandoffNoteCursorContext(doc, focusWire).kind === "mention-interior") {
+    return null;
+  }
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
   const probeAfterDelete = focusWire;
@@ -566,11 +725,16 @@ export function resolveBackspaceBeforeEmbeddedBlankProbe(
     probeAfterDelete <= 0 ? 0 : nextWire.lastIndexOf("\n", probeAfterDelete - 1) + 1;
   const rowSegment = nextWire.slice(lineStart, probeAfterDelete);
   const rowEmptied = rowSegment.length === 0 || !/\S/.test(rowSegment);
+  const deletedChar = wire[focusWire]!;
+  const caretWire = embeddedBlankBandChipEndBeforeProbe(nextDoc, probeAfterDelete, deletedChar);
+  const landedInterior =
+    describeHandoffNoteCursorContext(nextDoc, caretWire).kind === "mention-interior";
   return {
     doc: nextDoc,
-    caretWire: embeddedBlankBandContentRowEndBeforeProbe(nextWire, probeAfterDelete),
+    caretWire,
     branch: "backspace-content-above",
     ...(rowEmptied ? { chipBeforeBlankBand: true } : {}),
+    ...(landedInterior ? { preserveMentionInterior: true } : {}),
   };
 }
 

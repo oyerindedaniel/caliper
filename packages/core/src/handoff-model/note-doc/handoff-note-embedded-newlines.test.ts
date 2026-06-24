@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
+import { docPosToWireOffset } from "./handoff-note-doc-pos.js";
 import {
   docTextNodeHasEmbeddedNewline,
+  docPosAtEmbeddedBlankBandProbeAliasLanding,
   embeddedBlankBandAtEmptyContentRowEnd,
+  embeddedBlankBandContentRowEndBeforeProbe,
+  embeddedBlankBandSubstantiveContentAbutsProbe,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandDeleteProbeWire,
@@ -144,6 +148,57 @@ describe("embedded blank band probes", () => {
       const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe)).toBe(false);
       expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe)).toBe(true);
+    });
+  });
+
+  describe("embeddedBlankBandContentRowEndBeforeProbe", () => {
+    it("returns plain text row end unchanged", () => {
+      const doc = wireToDoc(`header\n\n\ntail`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      expect(embeddedBlankBandContentRowEndBeforeProbe(doc, probe)).toBe(probe - 1);
+    });
+
+    it("snaps mention-interior physical end to mention-end wire", () => {
+      const agent = "caliper-aaaaaaa";
+      const doc = wireToDoc(`header @${agent}\n\n\n`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const mentionEnd = `header @${agent}`.length;
+      expect(probe - 1).toBeLessThan(mentionEnd);
+      expect(embeddedBlankBandContentRowEndBeforeProbe(doc, probe)).toBe(mentionEnd);
+    });
+  });
+
+  describe("probe-alias after whitespace chip", () => {
+    const agent = "caliper-abc123";
+
+    function chippedDocAfterSpacer(wireWithSpacer: string) {
+      return wireToDoc(wireWithSpacer.replace(/ \n/, "\n"));
+    }
+
+    it("prefix + mention row — substantive abuts probe and alias lands content row end", () => {
+      const doc = chippedDocAfterSpacer(`header header @${agent} \n\n\n`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
+      const landing = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probe)!;
+      expect(docPosToWireOffset(doc, landing)).toBe(
+        embeddedBlankBandContentRowEndBeforeProbe(doc, probe)
+      );
+    });
+
+    it("mention-only row — substantive abuts probe and alias lands mention-end", () => {
+      const doc = chippedDocAfterSpacer(`@${agent} \n\n\n`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
+      const landing = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probe)!;
+      expect(docPosToWireOffset(doc, landing)).toBe(`@${agent}`.length);
+    });
+
+    it("plain text tail — substantive abuts probe and alias lands row tail", () => {
+      const doc = chippedDocAfterSpacer(`tail \n\n\n`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
+      const landing = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probe)!;
+      expect(docPosToWireOffset(doc, landing)).toBe(`tail`.length - 1);
     });
   });
 });

@@ -66,6 +66,27 @@ function predictBlankBandDeleteBranch(
   return { branch: "delete-lower-row", predictedCaretWire: focusWire };
 }
 
+function snapshotDocPos(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): { nodeIndex: number; nodeOffset: number; nodeType: string } {
+  const node = doc.nodes[pos.nodeIndex];
+  return {
+    nodeIndex: pos.nodeIndex,
+    nodeOffset: pos.nodeOffset,
+    nodeType: node?.type ?? "missing",
+  };
+}
+
+function caretOnMentionNodeEnd(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): boolean {
+  const node = doc.nodes[pos.nodeIndex];
+  return node?.type === "mention" && pos.nodeOffset >= 1 + node.agentId.length;
+}
+
+function docPosSame(a: HandoffNoteDocPos, b: HandoffNoteDocPos): boolean {
+  return a.nodeIndex === b.nodeIndex && a.nodeOffset === b.nodeOffset;
+}
+
 export function buildCaretStateSnapshot(options: {
   doc: HandoffNoteDoc;
   authorityFocus?: HandoffNoteDocPos;
@@ -113,6 +134,17 @@ export function buildCaretStateSnapshot(options: {
   if (authorityWire !== undefined && activeWire !== undefined) {
     snapshot.authorityDrift = authorityWire !== activeWire;
   }
+  if (options.authorityFocus !== undefined) {
+    snapshot.authorityDoc = snapshotDocPos(options.doc, options.authorityFocus);
+    snapshot.authorityOnMentionNodeEnd = caretOnMentionNodeEnd(options.doc, options.authorityFocus);
+  }
+  if (options.activeFocus !== undefined) {
+    snapshot.activeDoc = snapshotDocPos(options.doc, options.activeFocus);
+    snapshot.activeOnMentionNodeEnd = caretOnMentionNodeEnd(options.doc, options.activeFocus);
+  }
+  if (options.authorityFocus !== undefined && options.activeFocus !== undefined) {
+    snapshot.docPosDrift = !docPosSame(options.authorityFocus, options.activeFocus);
+  }
   if (probeIndex >= 0) {
     snapshot.probeIndex = probeIndex;
     snapshot.firstProbe = probeIndex === 0;
@@ -137,7 +169,7 @@ export function logEditStateTrace(phase: string, data: Record<string, unknown> =
   flattenHandoffNoteLog(`state>>${phase}`, data);
 }
 
-/** Filter console with `state>>` / `caret>>` / `delete>>` / `dom.` for pipeline traces. */
+/** Filter console with `state>>` / `caret>>` / `delete>>` / `dom.` for pipeline traces. `caret>>setDoc>>` = doc→DOM paint. */
 export function flattenHandoffNoteLog(
   event: string,
   data: Record<string, unknown> = {},
@@ -220,6 +252,10 @@ export function handoffNoteLayoutProbe(
     scrollHeight: root.scrollHeight,
     nativeCaretRect,
   };
+}
+
+export function domPointInMentionPill(root: HTMLElement, node: Node): boolean {
+  return root.contains(node) && node.parentElement?.closest?.("[data-handoff-mention]") !== null;
 }
 
 export function handoffNoteSelectionSnapshot(
