@@ -1,4 +1,4 @@
-import {
+﻿import {
   docPosToWireOffset,
   docToWire,
   embeddedBlankBandAtEmptyContentRowEnd,

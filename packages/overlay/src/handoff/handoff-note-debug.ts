@@ -1,4 +1,4 @@
-// DO NOT DELETE THIS FILE
+﻿// DO NOT DELETE THIS FILE
 import {
   docPosToWireOffset,
   docToWire,

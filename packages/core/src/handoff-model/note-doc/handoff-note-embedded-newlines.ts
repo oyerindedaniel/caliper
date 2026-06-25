@@ -256,7 +256,7 @@ function embeddedBlankBandHasSubstantiveRowBelowGroup(
 
 /**
  * Empty content row end: caret on the line-start `\n` of a cleared content row,
- * not blank-band delete infrastructure (contract Rule 4 + content row chip).
+ * not blank-band delete infrastructure (content row end + chipBeforeBlankBand).
  */
 export function embeddedBlankBandAtEmptyContentRowEnd(
   doc: HandoffNoteDoc,
@@ -705,25 +705,30 @@ export function resolveEmbeddedBlankBandDelete(
 
   if (direction === "backspace") {
     if (indexInGroup === 0 && embeddedBlankBandHasSubstantiveRowAbove(wire, focusWire)) {
+      const charWire = focusWire - 1;
+      const deletedChar = wire[charWire];
+      if (
+        charWire >= 0 &&
+        deletedChar !== "\n" &&
+        deletedChar !== undefined &&
+        !/^\s$/.test(deletedChar) &&
+        describeHandoffNoteCursorContext(doc, charWire).kind !== "mention-interior" &&
+        !embeddedBlankBandMentionOnlyContentRowAbove(doc, focusWire)
+      ) {
+        const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
+        if (
+          rowChip &&
+          (!embeddedBlankBandIsSandwichedBlankRow(doc, focusWire) ||
+            rowChip.preserveMentionInterior)
+        ) {
+          return rowChip;
+        }
+      }
       if (!embeddedBlankBandIsSandwichedBlankRow(doc, focusWire)) {
         if (embeddedBlankBandMentionOnlyContentRowAbove(doc, focusWire)) {
           // Mention-only row: collapse blank infrastructure, not atomic mention delete.
         } else {
           const landing = embeddedBlankBandContentRowEndBeforeProbe(doc, focusWire);
-          const charWire = focusWire - 1;
-          const deletedChar = wire[charWire];
-          if (
-            charWire >= 0 &&
-            deletedChar !== "\n" &&
-            deletedChar !== undefined &&
-            !/^\s$/.test(deletedChar) &&
-            describeHandoffNoteCursorContext(doc, charWire).kind !== "mention-interior"
-          ) {
-            const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
-            if (rowChip) {
-              return rowChip;
-            }
-          }
           if (landing !== focusWire) {
             return {
               doc,
@@ -779,8 +784,50 @@ export function resolveEmbeddedBlankBandDelete(
 }
 
 /**
+ * Mention delete that clears substantive content on a row above a sandwiched
+ * blank band — arms chipBeforeBlankBand and lands on cleared-row visual start
+ * (band groups may merge on wire).
+ */
+export function resolveMentionDeleteRowClearChip(
+  priorDoc: HandoffNoteDoc,
+  focusWire: number,
+  nextDoc: HandoffNoteDoc
+): { caretWire: number } | null {
+  const priorWire = docToWire(priorDoc);
+  const lineStart = focusWire <= 0 ? 0 : priorWire.lastIndexOf("\n", focusWire - 1) + 1;
+  const lineEndIdx = priorWire.indexOf("\n", lineStart);
+  if (lineEndIdx === -1) {
+    return null;
+  }
+  const lineSegment = priorWire.slice(lineStart, lineEndIdx);
+  if (!/\S/.test(lineSegment)) {
+    return null;
+  }
+
+  const nextWire = docToWire(nextDoc);
+  const nextLineEndIdx = nextWire.indexOf("\n", lineStart);
+  const nextLineEnd = nextLineEndIdx === -1 ? nextWire.length : nextLineEndIdx;
+  const nextSegment = nextWire.slice(lineStart, nextLineEnd);
+  if (nextSegment.length > 0 && /\S/.test(nextSegment)) {
+    return null;
+  }
+
+  if (!isEmbeddedBlankBandProbeWire(priorDoc, lineEndIdx)) {
+    return null;
+  }
+  const context = embeddedBlankBandProbeContext(priorDoc, lineEndIdx);
+  if (!context) {
+    return null;
+  }
+  if (!embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, context.group)) {
+    return null;
+  }
+
+  return { caretWire: lineStart };
+}
+
+/**
  * Content row chip — remove one character on the row immediately before a blank-band probe.
- * Contract: `handoff-note-arrow-contract.md` → Backspace / Delete at blank-band probes (content row chip).
  * `focusWire` is the removed char; probe is at `focusWire + 1`.
  * Called from `applyDocDelete` (caret on char) and from the blank-band step branch
  * (backspace on probe when semantic landing equals the char behind).

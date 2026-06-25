@@ -1,4 +1,4 @@
-import {
+﻿import {
   applyDocDelete,
   applyDocInsertText,
   applyDocLineBreak,

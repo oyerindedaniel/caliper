@@ -1,4 +1,4 @@
-import {
+﻿import {
   collapsedSelection,
   describeHandoffNoteCursorContext,
   isEmbeddedBlankBandDeleteProbeWire,

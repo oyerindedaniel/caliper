@@ -1,4 +1,4 @@
-# Handoff note arrow navigation contract
+﻿# Handoff note arrow navigation contract
 
 Collapsed caret only. Doc/wire line = segment between `\n` characters (not visual wrap).
 

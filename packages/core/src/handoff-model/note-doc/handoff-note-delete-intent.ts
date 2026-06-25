@@ -25,6 +25,7 @@ import {
   resolveDeleteFromEmptyContentRowEnd,
   resolveEmbeddedBlankBandDelete,
   resolveEmbeddedBlankBandLineStartCollapse,
+  resolveMentionDeleteRowClearChip,
   resolveRowChipBeforeEmbeddedBlankProbe,
   type EmbeddedBlankBandDeleteMove,
   type HandoffBlankBandDeleteOptions,
@@ -303,6 +304,23 @@ function blankBandMoveToResult(
   };
 }
 
+function mentionRemoveIntentResult(
+  priorDoc: HandoffNoteDoc,
+  focusWire: number,
+  mentionEdit: { doc: HandoffNoteDoc; cursor: number }
+): HandoffNoteDeleteIntentResult {
+  const rowClearChip = resolveMentionDeleteRowClearChip(priorDoc, focusWire, mentionEdit.doc);
+  const caretWire = rowClearChip?.caretWire ?? mentionEdit.cursor;
+  return {
+    doc: mentionEdit.doc,
+    selection: collapsedSelection(
+      normalizeDocPos(mentionEdit.doc, wireOffsetToDocPos(mentionEdit.doc, caretWire))
+    ),
+    mentionRemoved: true,
+    ...(rowClearChip ? { chipBeforeBlankBand: true } : {}),
+  };
+}
+
 /**
  * Boundary disambiguation — doc position beats wire index before blank-band chain.
  * Backspace: mention node end → atomic remove (not blank collapse).
@@ -325,13 +343,7 @@ function resolveBoundaryDeleteIntent(
     if (edit) {
       return {
         kind: "result",
-        result: {
-          doc: edit.doc,
-          selection: collapsedSelection(
-            normalizeDocPos(edit.doc, wireOffsetToDocPos(edit.doc, edit.cursor))
-          ),
-          mentionRemoved: true,
-        },
+        result: mentionRemoveIntentResult(doc, focusWire, edit),
       };
     }
   }
@@ -345,7 +357,13 @@ function resolveBoundaryDeleteIntent(
   }
 
   if (direction === "delete" && wasAtTextEndBeforeMention(doc, focus)) {
-    return { kind: "noop" };
+    const wire = docToWire(doc);
+    const lineStart = focusWire <= 0 ? 0 : wire.lastIndexOf("\n", focusWire - 1) + 1;
+    const segment = wire.slice(lineStart, focusWire);
+    if (segment.length > 0 && /\S/.test(segment)) {
+      return { kind: "noop" };
+    }
+    return null;
   }
 
   return null;
@@ -446,13 +464,7 @@ export function resolveHandoffNoteDeleteIntent(
   if (mentionEdit) {
     return {
       kind: "result",
-      result: {
-        doc: mentionEdit.doc,
-        selection: collapsedSelection(
-          normalizeDocPos(mentionEdit.doc, wireOffsetToDocPos(mentionEdit.doc, mentionEdit.cursor))
-        ),
-        mentionRemoved: true,
-      },
+      result: mentionRemoveIntentResult(doc, focusWire, mentionEdit),
     };
   }
 
