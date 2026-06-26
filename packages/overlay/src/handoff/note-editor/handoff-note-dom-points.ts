@@ -90,11 +90,7 @@ export function domOffsetForContentRowEndInSplitText(
   if (docOffsetInPart === part.length - 1 && part.length > 1 && partIndex < partCount - 1) {
     return part.length;
   }
-  if (
-    docOffsetInPart === 0 &&
-    /^\s+$/.test(part) &&
-    partIndex < partCount - 1
-  ) {
+  if (docOffsetInPart === 0 && /^\s+$/.test(part) && partIndex < partCount - 1) {
     return part.length;
   }
   return docOffsetInPart;

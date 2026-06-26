@@ -615,9 +615,9 @@ describe("handoff-note-dom", () => {
       const point = resolveDomPointAtDocPos(root, chipped, focus);
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
       expect(point?.offset).toBeGreaterThan(0);
-      expect(docPosToWireOffset(chipped, domPointToDocPos(root, chipped, point!.node, point!.offset))).toBe(
-        rowEnd
-      );
+      expect(
+        docPosToWireOffset(chipped, domPointToDocPos(root, chipped, point!.node, point!.offset))
+      ).toBe(rowEnd);
       expect(describeHandoffNoteCursorContext(chipped, rowEnd).kind).toBe("mention-boundary");
     });
   });

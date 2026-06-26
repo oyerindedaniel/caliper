@@ -3,12 +3,21 @@
  * Core doc policy: handoff-note-doc-edits.test.ts
  * Overlay ingress: handoff-note-arrow-contract.md (blank-band delete)
  */
-import { describeHandoffNoteCursorContext, listEmbeddedBlankBandProbeWires, wireOffsetToDocPos, wireToDoc } from "@caliper/core";
+import {
+  describeHandoffNoteCursorContext,
+  listEmbeddedBlankBandProbeWires,
+  wireOffsetToDocPos,
+  wireToDoc,
+} from "@caliper/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
 import { resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
-import { dispatchSelectionChange, readDomWireCursor, setDomCaretAtTextStart } from "./handoff-note-test-helpers.js";
+import {
+  dispatchSelectionChange,
+  readDomWireCursor,
+  setDomCaretAtTextStart,
+} from "./handoff-note-test-helpers.js";
 
 const AGENT_A = "caliper-abc123";
 
@@ -164,7 +173,9 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(host.editor.getWire()).toBe(`header @${AGENT_A} \n\n\n`);
       const chippedDoc = host.editor.getDoc();
       const authorityWire = host.editor.getCursor();
-      expect(describeHandoffNoteCursorContext(chippedDoc, authorityWire).kind).toBe("mention-boundary");
+      expect(describeHandoffNoteCursorContext(chippedDoc, authorityWire).kind).toBe(
+        "mention-boundary"
+      );
       expect(readDomWireCursor(host.root, chippedDoc)).toBe(authorityWire);
 
       const point = resolveDomPointAtDocPos(
