@@ -3,15 +3,12 @@
  * Core doc policy: handoff-note-doc-edits.test.ts
  * Overlay ingress: handoff-note-arrow-contract.md (blank-band delete)
  */
-import { listEmbeddedBlankBandProbeWires, wireToDoc } from "@caliper/core";
+import { describeHandoffNoteCursorContext, listEmbeddedBlankBandProbeWires, wireOffsetToDocPos, wireToDoc } from "@caliper/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
+import { resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
-import {
-  dispatchSelectionChange,
-  readDomWireCursor,
-  setDomCaretAtTextStart,
-} from "./handoff-note-test-helpers.js";
+import { dispatchSelectionChange, readDomWireCursor, setDomCaretAtTextStart } from "./handoff-note-test-helpers.js";
 
 const AGENT_A = "caliper-abc123";
 
@@ -147,6 +144,36 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(pressBackspace(host.editor)).toBe(true);
       expect(host.editor.getWire()).toBe(`note @${AGENT_A}\n\n\nmiddle`);
       expect(host.editor.getWire()).toContain("middle");
+    });
+  });
+
+  describe("postfix chip before trailing blank band — DOM paint", () => {
+    function prefixMentionPostfixBeforeBand(postfix = "x") {
+      return `header @${AGENT_A} ${postfix}\n\n\n`;
+    }
+
+    it("last substantive char chip paints caret after spacer not mention-edge", () => {
+      const wire = prefixMentionPostfixBeforeBand();
+      const doc = wireToDoc(wire);
+      const [probe] = listEmbeddedBlankBandProbeWires(doc);
+      const rowEnd = probe! - 1;
+
+      host.editor.setDocFromWire(wire, rowEnd, { resetHistory: true });
+      expect(pressBackspace(host.editor)).toBe(true);
+
+      expect(host.editor.getWire()).toBe(`header @${AGENT_A} \n\n\n`);
+      const chippedDoc = host.editor.getDoc();
+      const authorityWire = host.editor.getCursor();
+      expect(describeHandoffNoteCursorContext(chippedDoc, authorityWire).kind).toBe("mention-boundary");
+      expect(readDomWireCursor(host.root, chippedDoc)).toBe(authorityWire);
+
+      const point = resolveDomPointAtDocPos(
+        host.root,
+        chippedDoc,
+        wireOffsetToDocPos(chippedDoc, authorityWire)
+      );
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point?.offset).toBeGreaterThan(0);
     });
   });
 });

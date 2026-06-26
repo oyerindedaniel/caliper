@@ -603,6 +603,23 @@ describe("handoff-note-dom", () => {
       const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
       expect(docPosToWireOffset(doc, roundTrip)).toBe(headerEnd);
     });
+
+    it("postfix chip whitespace tail paints after spacer not mention-edge alias", () => {
+      const chipped = wireToDoc(`header @${AGENT} \n\n\n`);
+      const probes = listEmbeddedBlankBandProbeWires(chipped);
+      const rowEnd = probes[0]! - 1;
+      const focus = wireOffsetToDocPos(chipped, rowEnd);
+
+      renderHandoffNoteDoc(root, chipped, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const point = resolveDomPointAtDocPos(root, chipped, focus);
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point?.offset).toBeGreaterThan(0);
+      expect(docPosToWireOffset(chipped, domPointToDocPos(root, chipped, point!.node, point!.offset))).toBe(
+        rowEnd
+      );
+      expect(describeHandoffNoteCursorContext(chipped, rowEnd).kind).toBe("mention-boundary");
+    });
   });
 
   describe("text-node boundary ownership primitives (Rule 4 — handoff-note-arrow-contract.md)", () => {
@@ -620,6 +637,12 @@ describe("handoff-note-dom", () => {
     it("maps content row end to text-node tail on write", () => {
       expect(domOffsetForContentRowEndInSplitText(4, "hello", 0, 4)).toBe(5);
       expect(domOffsetForContentRowEndInSplitText(3, "hello", 0, 4)).toBe(3);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4)).toBe(1);
+    });
+
+    it("maps whitespace-only tail before break on read", () => {
+      expect(isContentTextNodeDomTailBeforeBreak(1, " ", 0, 4)).toBe(true);
+      expect(docOffsetFromContentTextNodeDomPoint(0, 1, " ", 0, 4)).toBe(0);
     });
 
     it("single-char row: visual start stays offset 0, tail reads as content row end", () => {

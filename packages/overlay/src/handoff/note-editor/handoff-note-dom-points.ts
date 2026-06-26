@@ -53,7 +53,13 @@ export function isContentTextNodeDomTailBeforeBreak(
   partIndex: number,
   partCount: number
 ): boolean {
-  return domOffset === part.length && part.length > 1 && partIndex < partCount - 1;
+  if (domOffset !== part.length || partIndex >= partCount - 1) {
+    return false;
+  }
+  if (part.length > 1) {
+    return true;
+  }
+  return /^\s+$/.test(part);
 }
 
 /**
@@ -82,6 +88,13 @@ export function domOffsetForContentRowEndInSplitText(
   partCount: number
 ): number {
   if (docOffsetInPart === part.length - 1 && part.length > 1 && partIndex < partCount - 1) {
+    return part.length;
+  }
+  if (
+    docOffsetInPart === 0 &&
+    /^\s+$/.test(part) &&
+    partIndex < partCount - 1
+  ) {
     return part.length;
   }
   return docOffsetInPart;
@@ -610,6 +623,21 @@ export function resolveDomPointAtDocPos(
       if (nextDom.nodeType === Node.TEXT_NODE) {
         if (isHandoffBlankAnchorElement(nextDom.parentNode)) {
           return { node: root, offset: afterRendered };
+        }
+        const postText = doc.nodes[normalized.nodeIndex + 1];
+        if (postText?.type === "text" && postText.text.includes("\n")) {
+          const parts = postText.text.split("\n");
+          const firstPart = parts[0] ?? "";
+          if (parts.length > 1 && /^\s+$/.test(firstPart)) {
+            const wireBase = docPosToWireOffset(doc, {
+              nodeIndex: normalized.nodeIndex + 1,
+              nodeOffset: 0,
+            });
+            const breakWire = wireOffsetAtTextBreak(postText.text, wireBase, 0);
+            if (isEmbeddedBlankBandProbeWire(doc, breakWire)) {
+              return { node: nextDom, offset: firstPart.length };
+            }
+          }
         }
         return { node: nextDom, offset: 0 };
       }
