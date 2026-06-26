@@ -17,6 +17,8 @@ import {
 } from "./handoff-note-doc-pos.js";
 import {
   docPosAfterContentRowChipBeforeProbe,
+  docPosAtSandwichedRowMentionGate,
+  docTextNodeHasEmbeddedNewline,
   embeddedBlankBandSubstantiveContentAbutsProbe,
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandDeleteProbeWire,
@@ -104,6 +106,9 @@ function isInterMentionGap(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boole
   const prev = doc.nodes[focus.nodeIndex - 1];
   const next = doc.nodes[focus.nodeIndex + 1];
   if (!(prev?.type === "mention" && next?.type === "mention")) {
+    return false;
+  }
+  if (docTextNodeHasEmbeddedNewline(doc, focus.nodeIndex)) {
     return false;
   }
   const focusWire = docPosToWireOffset(doc, focus);
@@ -494,9 +499,21 @@ export function resolveHandoffNoteDeleteIntent(
     if (focusWire >= docLength(doc)) {
       return { kind: "noop" };
     }
+    const deletedChar = docToWire(doc)[focusWire]!;
+    const spliced = spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), "");
+    const mentionGate = docPosAtSandwichedRowMentionGate(spliced.doc, focusWire);
+    if (mentionGate && /^\s$/.test(deletedChar)) {
+      return {
+        kind: "result",
+        result: {
+          doc: spliced.doc,
+          selection: collapsedSelection(normalizeDocPos(spliced.doc, mentionGate)),
+        },
+      };
+    }
     return {
       kind: "result",
-      result: spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), ""),
+      result: spliced,
     };
   }
 

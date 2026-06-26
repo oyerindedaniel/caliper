@@ -1,5 +1,7 @@
 ﻿import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
+  applyDocDelete,
+  collapsedSelection,
   docPosToWireOffset,
   describeHandoffNoteCursorContext,
   isEmbeddedBlankBandProbeWire,
@@ -619,6 +621,39 @@ describe("handoff-note-dom", () => {
         docPosToWireOffset(chipped, domPointToDocPos(root, chipped, point!.node, point!.offset))
       ).toBe(rowEnd);
       expect(describeHandoffNoteCursorContext(chipped, rowEnd).kind).toBe("mention-boundary");
+    });
+
+    it("sandwiched row mention gate paints text tail not pill start after spacer forward delete", () => {
+      const wire = `header @${AGENT} row\n\n @${AGENT} \nlower`;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      let rowStart = probes[0]! + 1;
+      while (wire[rowStart] === "\n") {
+        rowStart += 1;
+      }
+      const mentionAt = wire.indexOf("@", rowStart);
+      const spaceWire = wire.lastIndexOf(" ", mentionAt);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+        "delete"
+      )!;
+      renderHandoffNoteDoc(root, cleared.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus);
+      expect(cleared.doc.nodes[cleared.selection.focus.nodeIndex]?.type).toBe("text");
+      expect(point?.node).toBe(root);
+      expect(point?.offset).toBeGreaterThan(0);
+      expect(
+        docPosToWireOffset(
+          cleared.doc,
+          domPointToDocPos(root, cleared.doc, point!.node, point!.offset)
+        )
+      ).toBe(spaceWire);
+      expect(isEmbeddedBlankBandProbeWire(cleared.doc, spaceWire)).toBe(false);
+      expect(describeHandoffNoteCursorContext(cleared.doc, spaceWire).kind).toBe(
+        "mention-boundary"
+      );
     });
   });
 

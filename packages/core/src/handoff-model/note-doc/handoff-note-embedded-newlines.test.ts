@@ -4,6 +4,7 @@ import { docPosToWireOffset, wireOffsetToDocPos } from "./handoff-note-doc-pos.j
 import {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
+  docPosAtSandwichedRowMentionGate,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
@@ -215,6 +216,40 @@ describe("embedded blank band probes", () => {
       expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
       const landing = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probe)!;
       expect(docPosToWireOffset(doc, landing)).toBe(`tail`.length - 1);
+    });
+  });
+
+  describe("sandwiched row mention gate", () => {
+    const agentA = "caliper-abc123";
+
+    function sandwichedMentionOnlyRowWire() {
+      return `header @${agentA} row\n\n @${agentA} \nlower`;
+    }
+
+    function mentionStartOnSandwichedRow(wire: string): number {
+      const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
+      let rowStart = probes[0]! + 1;
+      while (wire[rowStart] === "\n") {
+        rowStart += 1;
+      }
+      return wire.indexOf("@", rowStart);
+    }
+
+    it("returns text tail when mention starts sandwiched row below blank band", () => {
+      const wire = sandwichedMentionOnlyRowWire().replace(" @", "@");
+      const doc = wireToDoc(wire);
+      const mentionStart = mentionStartOnSandwichedRow(wire);
+      const gate = docPosAtSandwichedRowMentionGate(doc, mentionStart);
+      expect(gate).not.toBeNull();
+      expect(doc.nodes[gate!.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(doc, gate!)).toBe(mentionStart);
+    });
+
+    it("returns null when substantive prefix remains on sandwiched row", () => {
+      const wire = `header @${agentA} row\n\n tail @${agentA} \nlower`;
+      const doc = wireToDoc(wire);
+      const mentionStart = mentionStartOnSandwichedRow(wire);
+      expect(docPosAtSandwichedRowMentionGate(doc, mentionStart)).toBeNull();
     });
   });
 });

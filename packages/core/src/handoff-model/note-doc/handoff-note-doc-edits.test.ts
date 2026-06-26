@@ -19,6 +19,7 @@ import {
   describeHandoffNoteCursorContext,
   normalizeHandoffNoteDoc,
   wireToDoc,
+  type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
 import {
   embeddedBlankBandContentRowEndBeforeProbe,
@@ -2374,6 +2375,148 @@ describe("delete caret policy — blank-band family", () => {
       const afterPostfix = applyDocDelete(afterMention.doc, afterMention.selection, "delete")!;
       expect(docToWire(afterPostfix.doc)).toBe(`note \n\n\nmiddle`);
       expect(docToWire(afterPostfix.doc)).not.toContain("T");
+    });
+  });
+
+  describe("sandwiched row — mention gate delete", () => {
+    function sandwichedMentionRowWire(prefix = "tail") {
+      return `header @${agentA} row\n\n ${prefix} @${agentA} \nlower`;
+    }
+
+    function sandwichedMentionOnlyRowWire() {
+      return `header @${agentA} row\n\n @${agentA} \nlower`;
+    }
+
+    /** Two blank bands with mention-only row sandwiched below the upper band. */
+    function complexMultiBandMentionOnlySandwichedRowWire() {
+      return `header @${agentA} \n\n\n @${agentA} \nmiddle\n\n\ntail @${agentB} suffix`;
+    }
+
+    function sandwichedRowVisualStart(wire: string) {
+      let start = listEmbeddedBlankBandProbeWires(wireToDoc(wire))[0]! + 1;
+      while (wire[start] === "\n") {
+        start += 1;
+      }
+      return start;
+    }
+
+    function mentionStartOnSandwichedRow(wire: string) {
+      return wire.indexOf("@", sandwichedRowVisualStart(wire));
+    }
+
+    function spaceWireBeforeMentionOnSandwichedRow(wire: string) {
+      const mentionAt = mentionStartOnSandwichedRow(wire);
+      return wire.lastIndexOf(" ", mentionAt);
+    }
+
+    function expectMentionGateAuthority(
+      doc: HandoffNoteDoc,
+      focus: { nodeIndex: number; nodeOffset: number },
+      gateWire: number
+    ) {
+      expect(doc.nodes[focus.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(doc, focus)).toBe(gateWire);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, gateWire)).toBe(false);
+      expect(describeHandoffNoteCursorContext(doc, gateWire).kind).toBe("mention-boundary");
+    }
+
+    it("forward delete whitespace before mention rests on text gate not mention node", () => {
+      const wire = sandwichedMentionOnlyRowWire();
+      const doc = wireToDoc(wire);
+      const spaceWire = spaceWireBeforeMentionOnSandwichedRow(wire);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+        "delete"
+      )!;
+      expectMentionGateAuthority(cleared.doc, cleared.selection.focus, spaceWire);
+    });
+
+    it("mention-only sandwiched row — forward delete spacer without prior prefix chip", () => {
+      const wire = sandwichedMentionOnlyRowWire();
+      const doc = wireToDoc(wire);
+      const spaceWire = spaceWireBeforeMentionOnSandwichedRow(wire);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toMatch(/\n\n@caliper-abc123 \nlower/);
+      expectMentionGateAuthority(cleared.doc, cleared.selection.focus, spaceWire);
+    });
+
+    it("prefix chip ladder then spacer stays off delete-probe infrastructure", () => {
+      const wireStr = sandwichedMentionRowWire("tail");
+      let doc = wireToDoc(wireStr);
+      let selection = collapsedSelection(
+        wireOffsetToDocPos(doc, sandwichedRowVisualStart(wireStr))
+      );
+
+      for (const expectedChar of ["t", "a", "i", "l", " ", "@"] as const) {
+        const next = applyDocDelete(doc, selection, "delete")!;
+        const wire = docToWire(next.doc);
+        const fw = docPosToWireOffset(next.doc, next.selection.focus);
+        expect(isEmbeddedBlankBandDeleteProbeWire(next.doc, fw)).toBe(false);
+        if (expectedChar === " ") {
+          expect(wire[fw]).toBe(" ");
+        } else if (expectedChar === "@") {
+          expect(wire[fw]).toBe("@");
+          expectMentionGateAuthority(next.doc, next.selection.focus, fw);
+        } else {
+          expect(wire[fw]).toBe(expectedChar);
+        }
+        doc = next.doc;
+        selection = next.selection;
+      }
+    });
+
+    it("backspace at mention start removes spacer and lands on text mention gate", () => {
+      const wire = sandwichedMentionOnlyRowWire();
+      const doc = wireToDoc(wire);
+      const mentionStart = mentionStartOnSandwichedRow(wire);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, mentionStart)),
+        "backspace"
+      )!;
+      expect(docToWire(cleared.doc)).toMatch(/\n\n@caliper-abc123 \nlower/);
+      const gateWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
+      expectMentionGateAuthority(cleared.doc, cleared.selection.focus, gateWire);
+    });
+
+    it("backspace after prefix chip removes spacer and lands on text mention gate", () => {
+      const wireStr = sandwichedMentionRowWire("tail");
+      let doc = wireToDoc(wireStr);
+      let selection = collapsedSelection(
+        wireOffsetToDocPos(doc, sandwichedRowVisualStart(wireStr))
+      );
+      for (let i = 0; i < 4; i++) {
+        const next = applyDocDelete(doc, selection, "delete")!;
+        doc = next.doc;
+        selection = next.selection;
+      }
+      const mentionStart = mentionStartOnSandwichedRow(docToWire(doc));
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, mentionStart)),
+        "backspace"
+      )!;
+      const gateWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
+      expectMentionGateAuthority(cleared.doc, cleared.selection.focus, gateWire);
+    });
+
+    it("multi-band interchanged wire — forward delete spacer on mention-only sandwiched row", () => {
+      const wire = complexMultiBandMentionOnlySandwichedRowWire();
+      const doc = wireToDoc(wire);
+      const spaceWire = spaceWireBeforeMentionOnSandwichedRow(wire);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toContain(`@${agentA}`);
+      expect(docToWire(cleared.doc)).toContain("middle");
+      expectMentionGateAuthority(cleared.doc, cleared.selection.focus, spaceWire);
     });
   });
 

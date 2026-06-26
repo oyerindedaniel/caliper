@@ -1,4 +1,5 @@
 ﻿import {
+  describeHandoffNoteCursorContext,
   docPosToWireOffset,
   docToWire,
   embeddedBlankBandAtEmptyContentRowEnd,
@@ -598,6 +599,18 @@ export function resolveDomPointAtDocPos(
   }
 
   if (node.type === "text") {
+    const focusWire = docPosToWireOffset(doc, normalized);
+    const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
+    const nextDocNode = doc.nodes[normalized.nodeIndex + 1];
+    if (
+      caretContext.kind === "mention-boundary" &&
+      caretContext.edge === "start" &&
+      nextDocNode?.type === "mention" &&
+      normalized.nodeOffset >= node.text.length
+    ) {
+      const mentionRendered = docPosToRenderedDomChildIndex(doc, normalized.nodeIndex + 1);
+      return { node: root, offset: mentionRendered };
+    }
     return resolveTextDomPointAtOffset(root, node.text, normalized.nodeOffset, renderedIndex, {
       doc,
       docEndsWithNewline: docWireEndsWithNewline(doc),

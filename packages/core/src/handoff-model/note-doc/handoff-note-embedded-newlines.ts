@@ -602,6 +602,66 @@ export function docPosAtEmbeddedBlankBandProbeAliasLanding(
   return wireOffsetToDocPos(doc, semanticWire);
 }
 
+/**
+ * Sandwiched row below an embedded blank band: when the row's visual start is a
+ * mention atom, wire aliases mention-start to the preceding text-node tail after
+ * the band exit. Forward-delete whitespace landing must use that text tail so
+ * authority matches DOM (not pill-start paint that drifts toward blank-band infra).
+ */
+export function docPosAtSandwichedRowMentionGate(
+  doc: HandoffNoteDoc,
+  mentionStartWire: number
+): HandoffNoteDocPos | null {
+  const context = describeHandoffNoteCursorContext(doc, mentionStartWire);
+  if (context.kind !== "mention-boundary" || context.edge !== "start") {
+    return null;
+  }
+
+  let offset = 0;
+  let mentionNodeIndex = -1;
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    const nodeStart = offset;
+    if (node.type === "mention" && nodeStart === mentionStartWire) {
+      mentionNodeIndex = nodeIndex;
+      break;
+    }
+    offset += node.type === "text" ? node.text.length : 1 + node.agentId.length;
+  }
+  if (mentionNodeIndex <= 0) {
+    return null;
+  }
+
+  const prev = doc.nodes[mentionNodeIndex - 1];
+  if (prev?.type !== "text" || !prev.text.includes("\n")) {
+    return null;
+  }
+
+  const wire = docToWire(doc);
+  const probesAbove = listEmbeddedBlankBandProbeWires(doc).filter(
+    (probe) => probe < mentionStartWire
+  );
+  if (probesAbove.length === 0) {
+    return null;
+  }
+  const bandProbe = probesAbove[probesAbove.length - 1]!;
+  const bandContext = embeddedBlankBandProbeContext(doc, bandProbe);
+  if (!bandContext) {
+    return null;
+  }
+  if (!embeddedBlankBandHasSubstantiveRowBelowGroup(wire, bandContext.group)) {
+    return null;
+  }
+
+  const lineStart = mentionStartWire <= 0 ? 0 : wire.lastIndexOf("\n", mentionStartWire - 1) + 1;
+  const prefix = wire.slice(lineStart, mentionStartWire);
+  if (prefix.length > 0 && /\S/.test(prefix)) {
+    return null;
+  }
+
+  return { nodeIndex: mentionNodeIndex - 1, nodeOffset: prev.text.length };
+}
+
 export function embeddedBlankBandMentionOnlyContentRowAbove(
   doc: HandoffNoteDoc,
   probeWire: number

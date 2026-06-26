@@ -5,13 +5,15 @@
  */
 import {
   describeHandoffNoteCursorContext,
+  docPosToWireOffset,
+  isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
   wireOffsetToDocPos,
   wireToDoc,
 } from "@caliper/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
-import { resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
+import { domPointToDocPos, resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
 import {
   dispatchSelectionChange,
@@ -20,13 +22,17 @@ import {
 } from "./handoff-note-test-helpers.js";
 
 const AGENT_A = "caliper-abc123";
+const AGENT_B = "caliper-bbbbbbb";
 
 function mountEditorHost() {
   const root = document.createElement("div");
   root.style.width = "480px";
   document.body.appendChild(root);
   Object.defineProperty(root, "clientWidth", { configurable: true, value: 480 });
-  const colorByAgentId = new Map([[AGENT_A, "#06f"]]);
+  const colorByAgentId = new Map([
+    [AGENT_A, "#06f"],
+    [AGENT_B, "#f60"],
+  ]);
   const editor = createHandoffNoteEditor({
     getColorByAgentId: () => colorByAgentId,
     onWireChange: () => {},
@@ -167,6 +173,134 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(host.editor.getWire()).toContain("middle");
       expect(pressDelete(host.editor)).toBe(true);
       expect(host.editor.getWire()).toBe(`\n\n\n\n\nmiddle`);
+    });
+  });
+
+  describe("sandwiched row — mention gate delete", () => {
+    function sandwichedMentionRowWire(prefix = "tail") {
+      return `header @${AGENT_A} row\n\n ${prefix} @${AGENT_A} \nlower`;
+    }
+
+    function sandwichedMentionOnlyRowWire() {
+      return `header @${AGENT_A} row\n\n @${AGENT_A} \nlower`;
+    }
+
+    function complexMultiBandMentionOnlySandwichedRowWire() {
+      return `header @${AGENT_A} \n\n\n @${AGENT_A} \nmiddle\n\n\ntail @${AGENT_B} suffix`;
+    }
+
+    function sandwichedRowVisualStart(wire: string) {
+      let start = listEmbeddedBlankBandProbeWires(wireToDoc(wire))[0]! + 1;
+      while (wire[start] === "\n") {
+        start += 1;
+      }
+      return start;
+    }
+
+    function mentionStartOnSandwichedRow(wire: string) {
+      return wire.indexOf("@", sandwichedRowVisualStart(wire));
+    }
+
+    function spaceWireBeforeMentionOnSandwichedRow(wire: string) {
+      const mentionAt = mentionStartOnSandwichedRow(wire);
+      return wire.lastIndexOf(" ", mentionAt);
+    }
+
+    function expectMentionGateDomPaint(
+      root: HTMLElement,
+      doc: ReturnType<typeof wireToDoc>,
+      focus: { nodeIndex: number; nodeOffset: number },
+      gateWire: number
+    ) {
+      expect(doc.nodes[focus.nodeIndex]?.type).toBe("text");
+      expect(isEmbeddedBlankBandProbeWire(doc, gateWire)).toBe(false);
+      expect(describeHandoffNoteCursorContext(doc, gateWire).kind).toBe("mention-boundary");
+
+      const point = resolveDomPointAtDocPos(root, doc, focus);
+      expect(point?.node).toBe(root);
+      expect(point?.offset).toBeGreaterThan(0);
+      expect(docPosToWireOffset(doc, domPointToDocPos(root, doc, point!.node, point!.offset))).toBe(
+        gateWire
+      );
+    }
+
+    it("forward delete through prefix then spacer keeps DOM parity at mention gate", () => {
+      const wireStr = sandwichedMentionRowWire("tail");
+      host.editor.setDocFromWire(wireStr, sandwichedRowVisualStart(wireStr), {
+        resetHistory: true,
+      });
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toContain(`@${AGENT_A}`);
+      const caretWire = docPosToWireOffset(
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus
+      );
+      expectCaretParity(host.editor, host.root, caretWire);
+      expectMentionGateDomPaint(
+        host.root,
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus,
+        caretWire
+      );
+    });
+
+    it("mention-only row — forward delete spacer keeps DOM parity", () => {
+      const wire = sandwichedMentionOnlyRowWire();
+      const spaceWire = spaceWireBeforeMentionOnSandwichedRow(wire);
+      host.editor.setDocFromWire(wire, spaceWire, { resetHistory: true });
+      expect(pressDelete(host.editor)).toBe(true);
+      const caretWire = docPosToWireOffset(
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus
+      );
+      expectCaretParity(host.editor, host.root, caretWire);
+      expectMentionGateDomPaint(
+        host.root,
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus,
+        caretWire
+      );
+    });
+
+    it("backspace at mention start after spacer keeps DOM parity", () => {
+      const wire = sandwichedMentionOnlyRowWire();
+      const mentionStart = mentionStartOnSandwichedRow(wire);
+      host.editor.setDocFromWire(wire, mentionStart, { resetHistory: true });
+      expect(pressBackspace(host.editor)).toBe(true);
+      const caretWire = docPosToWireOffset(
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus
+      );
+      expectCaretParity(host.editor, host.root, caretWire);
+      expectMentionGateDomPaint(
+        host.root,
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus,
+        caretWire
+      );
+    });
+
+    it("multi-band interchanged wire — forward delete spacer keeps DOM parity", () => {
+      const wire = complexMultiBandMentionOnlySandwichedRowWire();
+      const spaceWire = spaceWireBeforeMentionOnSandwichedRow(wire);
+      host.editor.setDocFromWire(wire, spaceWire, { resetHistory: true });
+      expect(pressDelete(host.editor)).toBe(true);
+      const caretWire = docPosToWireOffset(
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus
+      );
+      expectCaretParity(host.editor, host.root, caretWire);
+      expectMentionGateDomPaint(
+        host.root,
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus,
+        caretWire
+      );
     });
   });
 

@@ -258,5 +258,24 @@ describe("handoff note delete intent — contract authority before handler chain
       const removed = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
       expect(docToWire(removed.doc).match(new RegExp(`@${agent}`, "g"))).toHaveLength(2);
     });
+
+    it("embedded-newline text between mentions is not an inter-mention gap for forward delete", () => {
+      const wire = `header @${agent} row\n\n @${agent} lower`;
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
+      let rowStart = probes[0]! + 1;
+      while (wire[rowStart] === "\n") {
+        rowStart += 1;
+      }
+      const mentionAt = wire.indexOf("@", rowStart);
+      const spaceWire = wire.lastIndexOf(" ", mentionAt);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+        "delete"
+      )!;
+      expect(doc.nodes[cleared.selection.focus.nodeIndex]?.type).toBe("text");
+      expect(docToWire(cleared.doc)).toMatch(/\n\n@caliper-abc123 lower/);
+    });
   });
 });
