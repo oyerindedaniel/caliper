@@ -4,7 +4,8 @@ import { docPosToWireOffset, wireOffsetToDocPos } from "./handoff-note-doc-pos.j
 import {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
-  docPosAtSandwichedRowMentionGate,
+  docPosAtMentionStartTextAlias,
+  mentionStartGluedToPrefixInWire,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
@@ -219,14 +220,10 @@ describe("embedded blank band probes", () => {
     });
   });
 
-  describe("sandwiched row mention gate", () => {
-    const agentA = "caliper-abc123";
+  describe("mention start text alias", () => {
+    const agent = "caliper-abc123";
 
-    function sandwichedMentionOnlyRowWire() {
-      return `header @${agentA} row\n\n @${agentA} \nlower`;
-    }
-
-    function mentionStartOnSandwichedRow(wire: string): number {
+    function mentionStartOnSandwichedRow(wire: string) {
       const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
       let rowStart = probes[0]! + 1;
       while (wire[rowStart] === "\n") {
@@ -235,21 +232,53 @@ describe("embedded blank band probes", () => {
       return wire.indexOf("@", rowStart);
     }
 
-    it("returns text tail when mention starts sandwiched row below blank band", () => {
+    function sandwichedMentionOnlyRowWire() {
+      return `header @${agent} row\n\n @${agent} \nlower`;
+    }
+
+    it("returns text tail for prefix row below blank band", () => {
+      const doc = wireToDoc(`head\n\nte @${agent} tail`);
+      const mentionAt = docToWire(doc).indexOf("@");
+      const alias = docPosAtMentionStartTextAlias(doc, mentionAt);
+      expect(alias).not.toBeNull();
+      expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(doc, alias!)).toBe(mentionAt);
+    });
+
+    it("returns text tail when mention-only row starts below blank band", () => {
       const wire = sandwichedMentionOnlyRowWire().replace(" @", "@");
       const doc = wireToDoc(wire);
       const mentionStart = mentionStartOnSandwichedRow(wire);
-      const gate = docPosAtSandwichedRowMentionGate(doc, mentionStart);
-      expect(gate).not.toBeNull();
-      expect(doc.nodes[gate!.nodeIndex]?.type).toBe("text");
-      expect(docPosToWireOffset(doc, gate!)).toBe(mentionStart);
+      const alias = docPosAtMentionStartTextAlias(doc, mentionStart);
+      expect(alias).not.toBeNull();
+      expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(doc, alias!)).toBe(mentionStart);
     });
 
-    it("returns null when substantive prefix remains on sandwiched row", () => {
-      const wire = `header @${agentA} row\n\n tail @${agentA} \nlower`;
+    it("returns text tail when sandwiched row has substantive prefix before mention", () => {
+      const wire = `header @${agent} row\n\n tail @${agent} \nlower`;
       const doc = wireToDoc(wire);
       const mentionStart = mentionStartOnSandwichedRow(wire);
-      expect(docPosAtSandwichedRowMentionGate(doc, mentionStart)).toBeNull();
+      const alias = docPosAtMentionStartTextAlias(doc, mentionStart);
+      expect(alias).not.toBeNull();
+      expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(doc, alias!)).toBe(mentionStart);
+    });
+  });
+
+  describe("mentionStartGluedToPrefixInWire", () => {
+    const agent = "caliper-abc123";
+
+    it("is true when chip ladder consumed the pre-mention spacer", () => {
+      const doc = wireToDoc(`head\n\nte@${agent} `);
+      const mentionAt = docToWire(doc).indexOf("@", docToWire(doc).indexOf("\n\n") + 2);
+      expect(mentionStartGluedToPrefixInWire(doc, mentionAt)).toBe(true);
+    });
+
+    it("is false when pre-mention spacer remains before atomic remove", () => {
+      const doc = wireToDoc(`header @${agent} \n\n\n`);
+      const mentionAt = docToWire(doc).indexOf("@");
+      expect(mentionStartGluedToPrefixInWire(doc, mentionAt)).toBe(false);
     });
   });
 });

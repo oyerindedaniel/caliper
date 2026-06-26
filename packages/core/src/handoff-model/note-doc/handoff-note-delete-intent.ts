@@ -17,7 +17,8 @@ import {
 } from "./handoff-note-doc-pos.js";
 import {
   docPosAfterContentRowChipBeforeProbe,
-  docPosAtSandwichedRowMentionGate,
+  docAfterForwardMentionRemoveAbsorbAdjacentSpacer,
+  docPosAtMentionStartTextAlias,
   docTextNodeHasEmbeddedNewline,
   embeddedBlankBandSubstantiveContentAbutsProbe,
   insertDocPosAfterEmbeddedBlankProbe,
@@ -29,6 +30,8 @@ import {
   resolveEmbeddedBlankBandLineStartCollapse,
   resolveMentionDeleteRowClearChip,
   resolveRowChipBeforeEmbeddedBlankProbe,
+  rowHasSubstantivePrefixBeforeMention,
+  mentionStartGluedToPrefixInWire,
   type EmbeddedBlankBandDeleteMove,
   type HandoffBlankBandDeleteOptions,
 } from "./handoff-note-embedded-newlines.js";
@@ -167,6 +170,13 @@ function wasAtTextEndBeforeMention(doc: HandoffNoteDoc, focus: HandoffNoteDocPos
     nextNode?.type === "mention" &&
     focus.nodeOffset === textNode.text.length
   );
+}
+
+/** True when another committed mention appears on the same row before mentionStartWire. */
+function sameRowWireHasPriorMention(doc: HandoffNoteDoc, mentionStartWire: number): boolean {
+  const wire = docToWire(doc);
+  const lineStart = mentionStartWire <= 0 ? 0 : wire.lastIndexOf("\n", mentionStartWire - 1) + 1;
+  return wire.slice(lineStart, mentionStartWire).includes("@");
 }
 
 function withCaretAtTextEndBeforeMention(
@@ -312,15 +322,26 @@ function blankBandMoveToResult(
 function mentionRemoveIntentResult(
   priorDoc: HandoffNoteDoc,
   focusWire: number,
-  mentionEdit: { doc: HandoffNoteDoc; cursor: number }
+  mentionEdit: { doc: HandoffNoteDoc; cursor: number },
+  direction: HandoffNoteEdit
 ): HandoffNoteDeleteIntentResult {
+  const mentionStartWire = mentionEdit.cursor;
   const rowClearChip = resolveMentionDeleteRowClearChip(priorDoc, focusWire, mentionEdit.doc);
-  const caretWire = rowClearChip?.caretWire ?? mentionEdit.cursor;
+  let doc = mentionEdit.doc;
+  let caretWire = rowClearChip?.caretWire ?? mentionStartWire;
+  if (
+    direction === "delete" &&
+    !rowClearChip &&
+    rowHasSubstantivePrefixBeforeMention(priorDoc, mentionStartWire) &&
+    mentionStartGluedToPrefixInWire(priorDoc, mentionStartWire)
+  ) {
+    const absorbed = docAfterForwardMentionRemoveAbsorbAdjacentSpacer(doc, caretWire);
+    doc = absorbed.doc;
+    caretWire = absorbed.caretWire;
+  }
   return {
-    doc: mentionEdit.doc,
-    selection: collapsedSelection(
-      normalizeDocPos(mentionEdit.doc, wireOffsetToDocPos(mentionEdit.doc, caretWire))
-    ),
+    doc,
+    selection: collapsedSelection(normalizeDocPos(doc, wireOffsetToDocPos(doc, caretWire))),
     mentionRemoved: true,
     ...(rowClearChip ? { chipBeforeBlankBand: true } : {}),
   };
@@ -330,6 +351,8 @@ function mentionRemoveIntentResult(
  * Boundary disambiguation — doc position beats wire index before blank-band chain.
  * Backspace: mention node end → atomic remove (not blank collapse).
  * Delete: mention node end at content row end → no forward nip on populated row.
+ * Delete: text alias at mention-start on a multi-pill row → no-op (does not nibble gap text).
+ * Delete: text alias at sole-mention row prefix gate → mention remove via mentionEdit.
  */
 function resolveBoundaryDeleteIntent(
   doc: HandoffNoteDoc,
@@ -348,7 +371,7 @@ function resolveBoundaryDeleteIntent(
     if (edit) {
       return {
         kind: "result",
-        result: mentionRemoveIntentResult(doc, focusWire, edit),
+        result: mentionRemoveIntentResult(doc, focusWire, edit, "backspace"),
       };
     }
   }
@@ -365,7 +388,7 @@ function resolveBoundaryDeleteIntent(
     const wire = docToWire(doc);
     const lineStart = focusWire <= 0 ? 0 : wire.lastIndexOf("\n", focusWire - 1) + 1;
     const segment = wire.slice(lineStart, focusWire);
-    if (segment.length > 0 && /\S/.test(segment)) {
+    if (segment.length > 0 && /\S/.test(segment) && sameRowWireHasPriorMention(doc, focusWire)) {
       return { kind: "noop" };
     }
     return null;
@@ -469,7 +492,7 @@ export function resolveHandoffNoteDeleteIntent(
   if (mentionEdit) {
     return {
       kind: "result",
-      result: mentionRemoveIntentResult(doc, focusWire, mentionEdit),
+      result: mentionRemoveIntentResult(doc, focusWire, mentionEdit, "delete"),
     };
   }
 
@@ -501,13 +524,13 @@ export function resolveHandoffNoteDeleteIntent(
     }
     const deletedChar = docToWire(doc)[focusWire]!;
     const spliced = spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), "");
-    const mentionGate = docPosAtSandwichedRowMentionGate(spliced.doc, focusWire);
-    if (mentionGate && /^\s$/.test(deletedChar)) {
+    const textAlias = docPosAtMentionStartTextAlias(spliced.doc, focusWire);
+    if (textAlias && /^\s$/.test(deletedChar)) {
       return {
         kind: "result",
         result: {
           doc: spliced.doc,
-          selection: collapsedSelection(normalizeDocPos(spliced.doc, mentionGate)),
+          selection: collapsedSelection(normalizeDocPos(spliced.doc, textAlias)),
         },
       };
     }

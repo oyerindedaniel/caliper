@@ -304,6 +304,37 @@ describe("handoff note delete integration (keydown + ingress)", () => {
     });
   });
 
+  describe("forward chip through mention — prefix row", () => {
+    function embeddedRowChipWire() {
+      return `head\n\ntext @${AGENT_A} \nlower @${AGENT_A} `;
+    }
+
+    function chipCaretWireInPrefixRow(wire: string) {
+      return wire.indexOf("text") + 2;
+    }
+
+    it("forward chip through mention remove keeps DOM parity without phantom spacer", () => {
+      const wireStr = embeddedRowChipWire();
+      const chipCaret = chipCaretWireInPrefixRow(wireStr);
+      host.editor.setDocFromWire(wireStr, chipCaret, { resetHistory: true });
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe(`head\n\nte\nlower @${AGENT_A} `);
+      const caretWire = docPosToWireOffset(
+        host.editor.getDoc(),
+        host.editor.getSelectionState().focus
+      );
+      expect(caretWire).toBe(chipCaret);
+      expect(host.editor.getWire()[caretWire]).toBe("\n");
+      expectCaretParity(host.editor, host.root, caretWire);
+      expect(
+        host.editor.getDoc().nodes[host.editor.getSelectionState().focus.nodeIndex]?.type
+      ).toBe("text");
+    });
+  });
+
   describe("glued postfix before mention — backspace at upper-band probe", () => {
     function sandwichedGluedWire() {
       return `note @${AGENT_A}T\n\n\nmiddle`;

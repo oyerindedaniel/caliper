@@ -2520,6 +2520,56 @@ describe("delete caret policy — blank-band family", () => {
     });
   });
 
+  describe("forward chip through mention — prefix row", () => {
+    function embeddedRowChipWire() {
+      return `head\n\ntext @${agentA} \nlower @${agentA} `;
+    }
+
+    function chipCaretWireInPrefixRow(wire: string) {
+      const rowPrefix = "text";
+      return wire.indexOf(rowPrefix) + 2;
+    }
+
+    it("spacer delete before mention with prefix rests on text alias not mention node", () => {
+      const wire = `head\n\nte @${agentA} tail`;
+      const doc = wireToDoc(wire);
+      const mentionAtWire = wire.indexOf("@");
+      const spaceWire = wire.lastIndexOf(" ", mentionAtWire);
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe(`head\n\nte@${agentA} tail`);
+      expect(cleared.doc.nodes[cleared.selection.focus.nodeIndex]?.type).toBe("text");
+      const mentionAt = docToWire(cleared.doc).indexOf("@", wire.indexOf("\n\n") + 2);
+      expect(docPosToWireOffset(cleared.doc, cleared.selection.focus)).toBe(mentionAt);
+      expect(isEmbeddedBlankBandDeleteProbeWire(cleared.doc, mentionAt)).toBe(false);
+      expect(describeHandoffNoteCursorContext(cleared.doc, mentionAt).kind).toBe(
+        "mention-boundary"
+      );
+    });
+
+    it("forward delete mention remove absorbs trailing spacer when row has prefix", () => {
+      const wireStr = embeddedRowChipWire();
+      let doc = wireToDoc(wireStr);
+      let selection = collapsedSelection(
+        wireOffsetToDocPos(doc, chipCaretWireInPrefixRow(wireStr))
+      );
+      for (let i = 0; i < 3; i++) {
+        const next = applyDocDelete(doc, selection, "delete")!;
+        doc = next.doc;
+        selection = next.selection;
+      }
+      const removed = applyDocDelete(doc, selection, "delete")!;
+      expect(docToWire(removed.doc)).toBe(`head\n\nte\nlower @${agentA} `);
+      const caretWire = docPosToWireOffset(removed.doc, removed.selection.focus);
+      expect(caretWire).toBe(chipCaretWireInPrefixRow(wireStr));
+      expect(docToWire(removed.doc)[caretWire]).toBe("\n");
+      expect(removed.doc.nodes[removed.selection.focus.nodeIndex]?.type).toBe("text");
+    });
+  });
+
   describe("complex structure — multi-band filled rows above and below", () => {
     it("backspace at upper-band first probe collapses one blank when band is sandwiched", () => {
       const wire = complexMultiBandWire();

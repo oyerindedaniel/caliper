@@ -603,12 +603,10 @@ export function docPosAtEmbeddedBlankBandProbeAliasLanding(
 }
 
 /**
- * Sandwiched row below an embedded blank band: when the row's visual start is a
- * mention atom, wire aliases mention-start to the preceding text-node tail after
- * the band exit. Forward-delete whitespace landing must use that text tail so
- * authority matches DOM (not pill-start paint that drifts toward blank-band infra).
+ * Mention-start wire aliases to the preceding text-node tail (not the mention atom).
+ * Used for forward-delete whitespace landing and DOM paint at mention boundaries.
  */
-export function docPosAtSandwichedRowMentionGate(
+export function docPosAtMentionStartTextAlias(
   doc: HandoffNoteDoc,
   mentionStartWire: number
 ): HandoffNoteDocPos | null {
@@ -633,33 +631,64 @@ export function docPosAtSandwichedRowMentionGate(
   }
 
   const prev = doc.nodes[mentionNodeIndex - 1];
-  if (prev?.type !== "text" || !prev.text.includes("\n")) {
-    return null;
-  }
-
-  const wire = docToWire(doc);
-  const probesAbove = listEmbeddedBlankBandProbeWires(doc).filter(
-    (probe) => probe < mentionStartWire
-  );
-  if (probesAbove.length === 0) {
-    return null;
-  }
-  const bandProbe = probesAbove[probesAbove.length - 1]!;
-  const bandContext = embeddedBlankBandProbeContext(doc, bandProbe);
-  if (!bandContext) {
-    return null;
-  }
-  if (!embeddedBlankBandHasSubstantiveRowBelowGroup(wire, bandContext.group)) {
-    return null;
-  }
-
-  const lineStart = mentionStartWire <= 0 ? 0 : wire.lastIndexOf("\n", mentionStartWire - 1) + 1;
-  const prefix = wire.slice(lineStart, mentionStartWire);
-  if (prefix.length > 0 && /\S/.test(prefix)) {
+  if (prev?.type !== "text") {
     return null;
   }
 
   return { nodeIndex: mentionNodeIndex - 1, nodeOffset: prev.text.length };
+}
+
+/** Row above mention start has non-whitespace prefix on the same line. */
+export function rowHasSubstantivePrefixBeforeMention(
+  doc: HandoffNoteDoc,
+  mentionStartWire: number
+): boolean {
+  const wire = docToWire(doc);
+  const lineStart = mentionStartWire <= 0 ? 0 : wire.lastIndexOf("\n", mentionStartWire - 1) + 1;
+  const prefix = wire.slice(lineStart, mentionStartWire);
+  return prefix.length > 0 && /\S/.test(prefix);
+}
+
+/**
+ * Mention-start wire sits immediately after substantive text with no separator
+ * (chip ladder consumed the pre-mention spacer). Distinct from rows that still
+ * carry `prefix @mention` spacing before atomic interior remove.
+ */
+export function mentionStartGluedToPrefixInWire(
+  doc: HandoffNoteDoc,
+  mentionStartWire: number
+): boolean {
+  const wire = docToWire(doc);
+  if (mentionStartWire <= 0) {
+    return false;
+  }
+  const before = wire[mentionStartWire - 1];
+  return before !== undefined && before !== " " && before !== "\n" && /\S/.test(before);
+}
+
+/**
+ * After forward-delete mention remove on a prefixed row, absorb the single
+ * mention-adjacent spacer left at mention-start wire so the chip frontier
+ * does not rest on phantom whitespace.
+ */
+export function docAfterForwardMentionRemoveAbsorbAdjacentSpacer(
+  doc: HandoffNoteDoc,
+  mentionStartWire: number
+): { doc: HandoffNoteDoc; caretWire: number } {
+  const wire = docToWire(doc);
+  if (wire[mentionStartWire] !== " ") {
+    return { doc, caretWire: mentionStartWire };
+  }
+  const lineEndIdx = wire.indexOf("\n", mentionStartWire);
+  const lineEnd = lineEndIdx === -1 ? wire.length : lineEndIdx;
+  const afterSpace = wire.slice(mentionStartWire + 1, lineEnd);
+  if (afterSpace.length > 0 && /\S/.test(afterSpace)) {
+    return { doc, caretWire: mentionStartWire };
+  }
+  return {
+    doc: spliceDocWireRange(doc, mentionStartWire, mentionStartWire + 1, ""),
+    caretWire: mentionStartWire,
+  };
 }
 
 export function embeddedBlankBandMentionOnlyContentRowAbove(
