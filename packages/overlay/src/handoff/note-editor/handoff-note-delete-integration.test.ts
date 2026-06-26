@@ -73,6 +73,44 @@ describe("handoff note delete integration (keydown + ingress)", () => {
     host.root.remove();
   });
 
+  describe("prefix-only blank band — chip then collapse ladder", () => {
+    it("forward delete — each nip lands on band head with DOM parity", () => {
+      const tail = "tail";
+      host.editor.setDocFromWire(`h\n\n\n${tail}`, 0, { resetHistory: true });
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n\n${tail}`);
+
+      for (const expectedWire of [`\n\n${tail}`, `\n${tail}`, tail]) {
+        expect(pressDelete(host.editor)).toBe(true);
+        expect(host.editor.getWire()).toBe(expectedWire);
+        expectCaretParity(host.editor, host.root, 0);
+      }
+    });
+
+    it("backspace mirror — chip then collapse lands on band head each nip", () => {
+      const tail = "tail";
+      host.editor.setDocFromWire(`h\n\n\n${tail}`, 0, { resetHistory: true });
+      expect(pressDelete(host.editor)).toBe(true);
+
+      for (const expectedWire of [`\n\n${tail}`, `\n${tail}`, tail]) {
+        expect(pressBackspace(host.editor)).toBe(true);
+        expect(host.editor.getWire()).toBe(expectedWire);
+        expectCaretParity(host.editor, host.root, 0);
+      }
+    });
+
+    it("delete at last probe when another blank remains lands at band head", () => {
+      const tail = "tail";
+      const wire = `\n\n\n${tail}`;
+      const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
+      host.editor.setDocFromWire(wire, probes[1]!, { resetHistory: true });
+
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n${tail}`);
+      expectCaretParity(host.editor, host.root, 0);
+    });
+  });
+
   describe("prefix before mention — row clear and chipBeforeBlankBand", () => {
     function tier1Wire() {
       return `\n\n\nT @${AGENT_A}\n\n\nmiddle`;

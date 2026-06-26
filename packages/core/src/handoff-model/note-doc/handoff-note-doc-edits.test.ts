@@ -445,12 +445,11 @@ describe("embedded blank-band delete contract", () => {
         chipBeforeBlankBand: cleared.chipBeforeBlankBand,
       })!;
       expect(docToWire(collapsed.doc)).toBe(`\n\ntail`);
-      expect(
-        isEmbeddedBlankBandDeleteProbeWire(
-          collapsed.doc,
-          docPosToWireOffset(collapsed.doc, collapsed.selection.focus)
-        )
-      ).toBe(true);
+      expectOffDeleteProbeInfrastructure(
+        collapsed.doc,
+        docPosToWireOffset(collapsed.doc, collapsed.selection.focus),
+        collapsed.chipBeforeBlankBand
+      );
     });
 
     it("single-blank band enters collapse infrastructure immediately after chip", () => {
@@ -464,12 +463,11 @@ describe("embedded blank-band delete contract", () => {
       )!;
 
       expect(docToWire(cleared.doc)).toBe(`\n\ntail`);
-      expect(
-        isEmbeddedBlankBandDeleteProbeWire(
-          cleared.doc,
-          docPosToWireOffset(cleared.doc, cleared.selection.focus)
-        )
-      ).toBe(true);
+      expectOffDeleteProbeInfrastructure(
+        cleared.doc,
+        docPosToWireOffset(cleared.doc, cleared.selection.focus),
+        cleared.chipBeforeBlankBand
+      );
     });
 
     it("nibbling row content before band lands on char wire so next backspace chips without provenance", () => {
@@ -532,6 +530,69 @@ describe("embedded blank-band delete contract", () => {
         chipBeforeBlankBand: cleared.chipBeforeBlankBand,
       })!;
       expect(docToWire(collapsed.doc)).toBe(`\n\ntail`);
+      expect(docPosToWireOffset(collapsed.doc, collapsed.selection.focus)).toBe(0);
+    });
+
+    it("chip-then-collapse ladder — each delete nip lands on remaining band head", () => {
+      const tail = "tail";
+      let state = applyDocDelete(
+        wireToDoc(`h\n\n\n${tail}`),
+        collapsedSelection(wireOffsetToDocPos(wireToDoc(`h\n\n\n${tail}`), 0)),
+        "delete"
+      )!;
+      expect(state.chipBeforeBlankBand).toBe(true);
+
+      const shapes = [`\n\n${tail}`, `\n${tail}`, tail] as const;
+      for (const expectedWire of shapes) {
+        state = applyDocDelete(state.doc, state.selection, "delete", {
+          chipBeforeBlankBand: state.chipBeforeBlankBand,
+        })!;
+        expect(docToWire(state.doc)).toBe(expectedWire);
+        expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(0);
+      }
+    });
+
+    it("backspace mirror — chip-then-collapse ladder lands on band head each nip", () => {
+      const tail = "tail";
+      let state = applyDocDelete(
+        wireToDoc(`h\n\n\n${tail}`),
+        collapsedSelection(wireOffsetToDocPos(wireToDoc(`h\n\n\n${tail}`), 0)),
+        "delete"
+      )!;
+      const shapes = [`\n\n${tail}`, `\n${tail}`, tail] as const;
+      for (const expectedWire of shapes) {
+        state = applyDocDelete(state.doc, state.selection, "backspace", {
+          chipBeforeBlankBand: state.chipBeforeBlankBand,
+        })!;
+        expect(docToWire(state.doc)).toBe(expectedWire);
+        expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(0);
+      }
+    });
+
+    it("delete at last probe when another blank remains lands at band head", () => {
+      const tail = "tail";
+      const doc = wireToDoc(`\n\n\n${tail}`);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[1]!)),
+        "delete"
+      )!;
+      expect(docToWire(result!.doc)).toBe(`\n\n${tail}`);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(0);
+    });
+
+    it("delete at sole probe before substantive tail lands on line-start gate before content", () => {
+      const tail = "tail";
+      const doc = wireToDoc(`\n\n${tail}`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probe)),
+        "delete"
+      )!;
+      expect(docToWire(result!.doc)).toBe(`\n${tail}`);
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(0);
     });
 
     function chipMentionRowBeforeBand(): {

@@ -283,10 +283,13 @@ export function embeddedBlankBandAtEmptyContentRowEnd(
   }
   const { indexInGroup, group } = context;
   if (group.probes.length === 1) {
-    return (
-      !embeddedBlankBandHasSubstantiveContentAboveBand(wire, group.probes) &&
-      !embeddedBlankBandHasSubstantiveRowBelowGroup(wire, group)
-    );
+    if (embeddedBlankBandHasSubstantiveContentAboveBand(wire, group.probes)) {
+      return false;
+    }
+    if (!embeddedBlankBandHasSubstantiveRowBelowGroup(wire, group)) {
+      return true;
+    }
+    return caretWire === group.probes[0]!;
   }
   if (
     indexInGroup === 0 &&
@@ -319,7 +322,7 @@ function substantiveRowStartBelowProbe(wire: string, afterProbeWire: number): nu
   return start;
 }
 
-/** After removing a band-edge blank, land on line-start gate or substantive visual start. */
+/** After removing a band-edge blank, land on the next probe below or substantive visual start. */
 function embeddedBlankBandDeleteEndLanding(
   nextDoc: HandoffNoteDoc,
   priorWire: string,
@@ -327,16 +330,45 @@ function embeddedBlankBandDeleteEndLanding(
   deletedProbeWire: number,
   group: EmbeddedBlankBandGroup
 ): number {
-  const substantiveStart = substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
-  if (
-    substantiveStart > deletedProbeWire &&
-    nextWire[deletedProbeWire] === "\n" &&
-    !isEmbeddedBlankBandProbeWire(nextDoc, deletedProbeWire) &&
-    !embeddedBlankBandHasSubstantiveContentAboveBand(priorWire, group.probes)
-  ) {
+  const range = embeddedBlankBandProbeRange(nextWire, group);
+  const remaining = listEmbeddedBlankBandProbeWires(nextDoc).filter(
+    (probe) => probe >= range.start && probe < range.end
+  );
+
+  if (embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)) {
+    if (embeddedBlankBandHasSubstantiveContentAboveBand(priorWire, group.probes)) {
+      return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+    }
+    if (remaining.length > 0) {
+      return remaining[0]!;
+    }
+  }
+
+  if (nextWire[deletedProbeWire] === "\n") {
     return deletedProbeWire;
   }
-  return substantiveStart;
+  return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+}
+
+function collapseBlankBandEmptyRowEndLanding(
+  priorDoc: HandoffNoteDoc,
+  nextDoc: HandoffNoteDoc,
+  deletedProbeWire: number,
+  context: EmbeddedBlankBandProbeContext
+): number {
+  const priorWire = docToWire(priorDoc);
+  const nextWire = docToWire(nextDoc);
+  const { indexInGroup, group } = context;
+
+  if (indexInGroup < group.probes.length - 1) {
+    return collapseBlankBandDeleteLanding(nextDoc, deletedProbeWire, context);
+  }
+
+  if (embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)) {
+    return embeddedBlankBandDeleteEndLanding(nextDoc, priorWire, nextWire, deletedProbeWire, group);
+  }
+
+  return collapseBlankBandDeleteLanding(nextDoc, deletedProbeWire, context);
 }
 
 function embeddedBlankBandProbeRange(
@@ -899,7 +931,6 @@ export function resolveDeleteFromEmptyContentRowEnd(
   }
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
-  const nextWire = docToWire(nextDoc);
   const { indexInGroup, group } = context;
 
   if (indexInGroup < group.probes.length - 1) {
@@ -910,23 +941,9 @@ export function resolveDeleteFromEmptyContentRowEnd(
     };
   }
 
-  if (embeddedBlankBandHasSubstantiveRowBelowGroup(wire, group)) {
-    return {
-      doc: nextDoc,
-      caretWire: embeddedBlankBandDeleteEndLanding(
-        nextDoc,
-        wire,
-        nextWire,
-        focusWire,
-        context.group
-      ),
-      branch: "delete-lower-row",
-    };
-  }
-
   return {
     doc: nextDoc,
-    caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+    caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
     branch: "delete-lower-row",
   };
 }
@@ -959,7 +976,7 @@ export function resolveBackspaceFromEmptyContentRowEnd(
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
   return {
     doc: nextDoc,
-    caretWire: collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc),
+    caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
     branch: "backspace-collapse-empty-above",
   };
 }

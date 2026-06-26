@@ -137,10 +137,10 @@ describe("embedded blank band probes", () => {
       expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(false);
     });
 
-    it("is false once only one blank remains before substantive tail", () => {
+    it("is true at prefix-only band head when one blank remains before substantive tail", () => {
       const doc = wireToDoc(`\n\ntail`);
-      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, 0)).toBe(false);
-      expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(true);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, 0)).toBe(true);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(false);
     });
 
     it("is false on sandwiched blank visual rows without caret semantic", () => {

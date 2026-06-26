@@ -423,7 +423,7 @@ describe("handoff-note-dom", () => {
     });
 
     it("prefix-only leading blank probes resolve to wire-break, not blank anchor", () => {
-      for (const wire of [`\n`, `\n\n`, `\n\n\ntail`]) {
+      for (const wire of [`\n`, `\n\n`, `\n\n\ntail`, `\n\ntail`]) {
         const doc = wireToDoc(wire);
         const focusWire = listEmbeddedBlankBandProbeWires(doc)[0]!;
 
