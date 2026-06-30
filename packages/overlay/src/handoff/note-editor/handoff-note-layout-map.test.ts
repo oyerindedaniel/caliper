@@ -444,5 +444,315 @@ describe("handoff-note-layout-map", () => {
       expect(layout.rowIndexForWire(prefixStart)).toBe(0);
       surface.remove();
     });
+
+    it("assigns fully soft-wrapped post-mention tail interior to continuation row", () => {
+      const wire = `dh @${AGENT} d @${AGENT} tail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const tailInterior = tailStart + 2;
+      const tailPastEnd = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 609.68 },
+        { wire: tailPastEnd, top: row1Top, left: 370.02 },
+        { wire: tailStart, top: 140.67, left: 609.68 },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+
+      expect(layout.rowIndexForWire(tailStart - 1)).toBe(0);
+      expect(layout.rowIndexForWire(tailInterior)).toBe(1);
+      expect(layout.rowIndexForWire(tailPastEnd)).toBe(1);
+      surface.remove();
+    });
+
+    it("coords for soft-wrap tail interior use wrap-row column not row-0 tail column", () => {
+      const wire = `dh @${AGENT} d @${AGENT} tail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const tailInterior = tailStart + 2;
+      const tailPastEnd = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const wrapStartLeft = 370.02;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 609.68 },
+        { wire: tailPastEnd, top: row1Top, left: wrapStartLeft },
+        { wire: tailStart, top: 140.67, left: 609.68 },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+      const coord = layout.coordsForWire(tailInterior);
+
+      expect(coord).not.toBeNull();
+      expect(coord!.left).toBeGreaterThan(wrapStartLeft - 5);
+      expect(coord!.left).toBeLessThan(wrapStartLeft + 5);
+      expect(coord!.left).toBeLessThan(400);
+      surface.remove();
+    });
+
+    it("coords for embedded substantive lower wire line bracket within lower segment only", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `dh @${agent} d @${agent} \ndhd`;
+      const doc = wireToDoc(wire);
+      const lowerLineStart = wire.indexOf("\n") + 1;
+      const lowerInterior = lowerLineStart + 1;
+      const lowerPastEnd = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const lowerStartLeft = 370.02;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: lowerLineStart - 1, top: row0Top, left: 609.68 },
+        { wire: lowerPastEnd, top: row1Top, left: lowerStartLeft },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, lowerInterior)
+      );
+      const coord = layout.coordsForWire(lowerInterior);
+
+      expect(coord).not.toBeNull();
+      expect(coord!.left).toBeGreaterThan(lowerStartLeft - 5);
+      expect(coord!.left).toBeLessThan(lowerStartLeft + 5);
+      expect(coord!.left).toBeLessThan(450);
+      surface.remove();
+    });
+
+    it("shorter-row sticky preserves goal when landing on wrap continuation row", () => {
+      const wire = `dh @${AGENT} d @${AGENT} tail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const tailPastEnd = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const wideGoal = 609.68;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: wideGoal },
+        { wire: tailPastEnd, top: row1Top, left: 370.02 },
+        { wire: tailStart, top: 140.67, left: wideGoal },
+      ]);
+      const layout = buildHandoffNoteLayoutMap(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, tailStart - 1)
+      );
+      const wrapRow = layout.rows[1]!;
+      const wrapRowMax = Math.max(...wrapRow.samples.map((sample) => sample.left));
+      const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          fromRowIndex: 0,
+          targetRowIndex: 1,
+          targetRow: wrapRow,
+          effectiveGoalColumn: wideGoal,
+          landedColumn: wrapRowMax,
+          edgeTolerance,
+          useRowStartLandingOnTarget: false,
+        })
+      ).toBe(true);
+      surface.remove();
+    });
+
+    it("shorter-row sticky re-anchors on Up into same-wire soft-wrap prefix row", () => {
+      const agent = "caliper-aaaaaaaaaaa";
+      const wire = `header @${agent} tail @${agent} `;
+      const doc = wireToDoc(wire);
+      const secondMentionEnd = wire.length - 1;
+      const firstMentionStart = docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: 0 });
+      const row1Top = 141.09897422790527;
+      const row2Top = 159.29689598083496;
+      const wideGoal = 482.7083435058594;
+      const surface = document.createElement("div");
+      surface.style.width = "480px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 480 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row1Top, left: 347 },
+        { wire: firstMentionStart, top: row1Top, left: 360 },
+        { wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 0 }), top: row1Top, left: 480 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: agent.length }),
+          top: row2Top,
+          left: 505.39,
+        },
+        { wire: secondMentionEnd, top: row2Top, left: wideGoal },
+      ]);
+      const layout = buildHandoffNoteLayoutMap(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, secondMentionEnd)
+      );
+      const prefixRow = layout.rows[0]!;
+      const prefixMax = Math.max(...prefixRow.samples.map((sample) => sample.left));
+      const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          fromRowIndex: 1,
+          targetRowIndex: 0,
+          targetRow: prefixRow,
+          effectiveGoalColumn: wideGoal,
+          landedColumn: prefixMax,
+          edgeTolerance,
+          useRowStartLandingOnTarget: false,
+        })
+      ).toBe(false);
+      surface.remove();
+    });
+
+    it("shorter-row sticky preserves goal on Up through wire line break", () => {
+      const wire = "hi\nmuch longer lower line";
+      const doc = wireToDoc(wire);
+      const upperEnd = wire.indexOf("\n") - 1;
+      const lowerPastEnd = wire.length;
+      const row0Top = 100;
+      const row1Top = 118;
+      const upperMaxLeft = 95;
+      const lowerWideLeft = 440;
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: row0Top, left: 40 },
+          { wire: upperEnd, top: row0Top, left: upperMaxLeft },
+          { wire: lowerPastEnd, top: row1Top, left: lowerWideLeft },
+        ],
+        18,
+        doc
+      );
+      const upperRow = layout.rows[0]!;
+      const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          fromRowIndex: 1,
+          targetRowIndex: 0,
+          targetRow: upperRow,
+          effectiveGoalColumn: lowerWideLeft,
+          landedColumn: upperMaxLeft,
+          edgeTolerance,
+          useRowStartLandingOnTarget: false,
+        })
+      ).toBe(true);
+    });
+
+    it("segment offset landing maps sparse lower row interior to prefix offset above", () => {
+      const agent = AGENT;
+      const wire = `dhd @${agent} d @${agent} dhd`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("dhd", 1);
+      const tailInterior = tailStart + 1;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 4, top: row0Top, left: 367.23 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 484.39,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 617.32 },
+        { wire: wire.length, top: row1Top, left: 362.67 },
+        { wire: tailStart, top: 140.67, left: 617.32 },
+      ]);
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+      const landing = layout.resolveSegmentOffsetLanding(tailInterior, 1, 0);
+      expect(landing).not.toBeNull();
+      expect(landing!.sourceStartWire).toBe(tailStart);
+      expect(landing!.targetStartWire).toBe(0);
+      expect(tailInterior - landing!.sourceStartWire).toBe(1);
+      expect(landing!.targetStartWire + (tailInterior - landing!.sourceStartWire)).toBe(1);
+      surface.remove();
+    });
+
+    it("segment offset landing maps prefix offset down to sparse lower line", () => {
+      const agent = AGENT;
+      const wire = `dhd @${agent} d @${agent} \ndhd`;
+      const doc = wireToDoc(wire);
+      const lowerLineStart = wire.indexOf("\n") + 1;
+      const lowerInterior = lowerLineStart + 1;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 4, top: row0Top, left: 367.23 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 484.39,
+        },
+        { wire: lowerLineStart - 1, top: row0Top, left: 617.32 },
+        { wire: wire.length, top: row1Top, left: 362.67 },
+      ]);
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 1));
+      const landing = layout.resolveSegmentOffsetLanding(1, 0, 1);
+      expect(landing).not.toBeNull();
+      expect(landing!.sourceStartWire).toBe(0);
+      expect(landing!.targetStartWire).toBe(lowerLineStart);
+      expect(landing!.targetStartWire + (1 - landing!.sourceStartWire)).toBe(lowerInterior);
+      surface.remove();
+    });
   });
 });

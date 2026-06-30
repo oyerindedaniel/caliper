@@ -2089,6 +2089,357 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
   });
 
+  describe("vertical — full soft-wrapped post-mention tail", () => {
+    const agent = AGENT_A;
+    const wire = `dh @${agent} d @${agent} tail`;
+    const doc = wireToDoc(wire);
+    const tailStart = wire.indexOf("tail");
+    const tailInterior = tailStart + 2;
+    const tailPastEnd = wire.length;
+    const row0Head = 0;
+    const row0Top = 141.1;
+    const row1Top = 158.86;
+    const row0EndAfterSpacer = tailStart - 1;
+
+    function compactWrapSamples() {
+      return [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 609.68 },
+        { wire: tailPastEnd, top: row1Top, left: 370.02 },
+        { wire: tailStart, top: 140.67, left: 609.68 },
+      ];
+    }
+
+    beforeEach(() => {
+      host.root.style.width = "310px";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
+    });
+
+    it("up from wrapped tail interior uses vertical layout not horizontal bleed", () => {
+      host.editor.setDocFromWire(wire, tailInterior, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).not.toBe(tailInterior - 1);
+      expect(host.editor.getCursor()).toBeLessThan(tailStart);
+      expectCaretParity(host.editor, host.root, host.editor.getCursor(), "up from wrap interior");
+    });
+
+    it("up from wrapped tail interior preserves wrap fragment column on row above", () => {
+      const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      host.editor.setDocFromWire(wire, tailInterior, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBeLessThan(secondMentionStart);
+      expect(host.editor.getCursor()).not.toBe(row0EndAfterSpacer);
+      expectCaretParity(host.editor, host.root, host.editor.getCursor(), "wrap column up");
+    });
+
+    it("up from wrapped tail interior preserves intra-segment offset on doc prefix", () => {
+      const wrapWire = `dh @${agent} d @${agent} dhd`;
+      const wrapDoc = wireToDoc(wrapWire);
+      const tailStart = wrapWire.lastIndexOf("dhd");
+      const tailInterior = tailStart + 1;
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 617.32 },
+        { wire: wrapWire.length, top: row1Top, left: 362.67 },
+        { wire: tailStart, top: 140.67, left: 617.32 },
+      ];
+      host.editor.setDocFromWire(wrapWire, tailInterior, { resetHistory: true });
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(1);
+      expectCaretParity(host.editor, host.root, 1, "wrap segment offset up");
+    });
+
+    it("down from matching doc prefix preserves intra-segment offset on wrapped tail", () => {
+      const wrapWire = `dh @${agent} d @${agent} dhd`;
+      const wrapDoc = wireToDoc(wrapWire);
+      const tailStart = wrapWire.lastIndexOf("dhd");
+      const tailInterior = tailStart + 1;
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 617.32 },
+        { wire: wrapWire.length, top: row1Top, left: 362.67 },
+        { wire: tailStart, top: 140.67, left: 617.32 },
+      ];
+      host.editor.setDocFromWire(wrapWire, 1, { resetHistory: true });
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(tailInterior);
+      expectCaretParity(host.editor, host.root, tailInterior, "wrap segment offset down");
+    });
+
+    it("down from row 0 head lands on wrapped tail without horizontal bleed", () => {
+      host.editor.setDocFromWire(wire, row0Head, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(tailStart);
+      expect(host.editor.getCursor()).not.toBe(row0Head + 1);
+      expectCaretParity(host.editor, host.root, host.editor.getCursor(), "down from row 0 head");
+    });
+
+    it("top bleed then down lands wrap continuation start", () => {
+      const wrapWire = `dhd @${agent} d @${agent} dhd`;
+      const wrapDoc = wireToDoc(wrapWire);
+      const wrapTailStart = wrapWire.lastIndexOf("dhd");
+      const wrapTailPastEnd = wrapWire.length;
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 507.67,
+        },
+        { wire: wrapTailStart - 1, top: row0Top, left: 624.82 },
+        { wire: wrapTailPastEnd, top: row1Top, left: 370.17 },
+        { wire: wrapTailStart, top: 140.67, left: 624.82 },
+      ];
+      host.editor.setDocFromWire(wrapWire, 3, { resetHistory: true });
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      while (host.editor.getCursor() > 0) {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      }
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, wrapTailStart, "down after top bleed");
+    });
+
+    it("bottom bleed then up preserves current column on upper row", () => {
+      const wrapWire = `dhd @${agent} d @${agent} dhd`;
+      const wrapDoc = wireToDoc(wrapWire);
+      const wrapTailStart = wrapWire.lastIndexOf("dhd");
+      const wrapTailPastEnd = wrapWire.length;
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 507.67,
+        },
+        { wire: wrapTailStart - 1, top: row0Top, left: 624.82 },
+        { wire: wrapTailPastEnd, top: row1Top, left: 370.17 },
+        { wire: wrapTailStart, top: 140.67, left: 624.82 },
+      ];
+      host.editor.setDocFromWire(wrapWire, wrapTailStart, { resetHistory: true });
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      while (host.editor.getCursor() < wrapTailPastEnd) {
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      }
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, 4, "up after bottom bleed");
+    });
+
+    it("up from lower row keeps authority on upper row before top bleed", () => {
+      const wrapWire = `dhd @${agent} d @${agent} tail @${agent} `;
+      const wrapDoc = wireToDoc(wrapWire);
+      const firstMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 1, nodeOffset: 0 });
+      const firstPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 2, nodeOffset: 0 });
+      const secondMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 });
+      const secondPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 4, nodeOffset: 0 });
+      const thirdMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 5, nodeOffset: 0 });
+      const thirdPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 6, nodeOffset: 0 });
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: firstMentionStart, top: row0Top, left: 374.73 },
+        { wire: firstPostStart - 1, top: row0Top, left: 491.89 },
+        { wire: secondMentionStart, top: row0Top, left: 507.67 },
+        { wire: secondPostStart, top: row1Top, left: 624.82 },
+        { wire: thirdMentionStart, top: row1Top, left: 404.76 },
+        { wire: thirdPostStart - 1, top: row1Top, left: 521.92 },
+        { wire: wrapWire.length, top: row1Top, left: 525.47 },
+        { wire: firstPostStart, top: row0Top - 0.43, left: 491.89 },
+        { wire: secondPostStart + 1, top: row0Top - 0.43, left: 624.82 },
+      ];
+      host.editor.setDocFromWire(wrapWire, wrapWire.length, { resetHistory: true });
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      const upperLanding = host.editor.getCursor();
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBeLessThan(upperLanding);
+    });
+
+    it("down from row 0 end after spacer and up round-trip without horizontal bleed", () => {
+      host.editor.setDocFromWire(wire, row0EndAfterSpacer, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBeGreaterThanOrEqual(tailStart);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(row0EndAfterSpacer);
+      expectCaretParity(host.editor, host.root, row0EndAfterSpacer, "down then up from row 0 end");
+    });
+
+    it("up from wrapped tail interior after horizontal step uses vertical layout", () => {
+      host.editor.setDocFromWire(wire, tailPastEnd, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+      expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
+      expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(tailInterior);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).not.toBe(tailInterior - 1);
+      expect(host.editor.getCursor()).toBeLessThan(tailStart);
+      expectCaretParity(host.editor, host.root, host.editor.getCursor(), "left then up");
+    });
+  });
+
+  describe("vertical — wire line break sticky column through shorter upper row", () => {
+    const wire = "hi\nmuch longer lower line";
+    const upperEnd = wire.indexOf("\n") - 1;
+    const lowerPastEnd = wire.length;
+    const row0Top = 100;
+    const row1Top = 118;
+    const upperMaxLeft = 95;
+    const lowerWideLeft = 440;
+
+    function lineBreakSamples() {
+      return [
+        { wire: 0, top: row0Top, left: 40 },
+        { wire: upperEnd, top: row0Top, left: upperMaxLeft },
+        { wire: lowerPastEnd, top: row1Top, left: lowerWideLeft },
+      ];
+    }
+
+    it("up from wide lower row preserves sticky for down round-trip", () => {
+      host.editor.setDocFromWire(wire, lowerPastEnd, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, lineBreakSamples());
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBeLessThanOrEqual(upperEnd);
+      expectCaretParity(host.editor, host.root, host.editor.getCursor(), "up to shorter upper");
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(lowerPastEnd);
+      expectCaretParity(host.editor, host.root, lowerPastEnd, "down restores wide lower column");
+    });
+  });
+
+  describe("vertical — shift-enter lower line intra-segment offset", () => {
+    const agent = AGENT_A;
+    const wire = `dhd @${agent} d @${agent} \ndhd`;
+    const doc = wireToDoc(wire);
+    const lowerLineStart = wire.indexOf("\n") + 1;
+    const lowerInterior = lowerLineStart + 1;
+    const row0Top = 141.1;
+    const row1Top = 158.86;
+
+    function shiftEnterLowerSamples() {
+      return [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 4, top: row0Top, left: 367.23 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 484.39,
+        },
+        { wire: lowerLineStart - 1, top: row0Top, left: 609.68 },
+        { wire: wire.length, top: row1Top, left: 362.67 },
+      ];
+    }
+
+    beforeEach(() => {
+      host.root.style.width = "310px";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
+    });
+
+    it("up from lower line interior preserves character offset in doc prefix", () => {
+      host.editor.setDocFromWire(wire, lowerInterior, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, shiftEnterLowerSamples());
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(1);
+      expectCaretParity(host.editor, host.root, 1, "shift-enter segment offset up");
+    });
+
+    it("down from matching doc prefix preserves character offset in lower line", () => {
+      host.editor.setDocFromWire(wire, 1, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, shiftEnterLowerSamples());
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(lowerInterior);
+      expectCaretParity(host.editor, host.root, lowerInterior, "shift-enter segment offset down");
+    });
+  });
+
+  describe("vertical — embedded substantive lower wire line column", () => {
+    const agent = AGENT_A;
+    const wire = `dh @${agent} d @${agent} \ndhd`;
+    const doc = wireToDoc(wire);
+    const lowerLineStart = wire.indexOf("\n") + 1;
+    const lowerInterior = lowerLineStart + 1;
+    const lowerPastEnd = wire.length;
+    const row0Top = 141.1;
+    const row1Top = 158.86;
+    const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+    const row0EndAfterSpacer = lowerLineStart - 1;
+
+    function lowerLineSamples() {
+      return [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: row0EndAfterSpacer, top: row0Top, left: 609.68 },
+        { wire: lowerPastEnd, top: row1Top, left: 370.02 },
+      ];
+    }
+
+    beforeEach(() => {
+      host.root.style.width = "310px";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
+    });
+
+    it("up from lower line interior preserves line-start column not mention band", () => {
+      host.editor.setDocFromWire(wire, lowerInterior, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, lowerLineSamples());
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBeLessThan(secondMentionStart);
+      expect(host.editor.getCursor()).not.toBe(row0EndAfterSpacer);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        host.editor.getCursor(),
+        "embedded lower column up"
+      );
+    });
+  });
+
   describe("vertical — post-blank-band substantive wire lines", () => {
     const wire = `prefix @${AGENT_A} @${AGENT_A} \n\n middle\nlower `;
 

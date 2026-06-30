@@ -20,11 +20,14 @@ import {
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
   resolveMeasuredVerticalArrowMove,
+  resolveVerticalTargetLineIndex,
   setDocSelection,
 } from "./handoff-note-selection.js";
 import {
   buildLayoutMapFromSamples,
   invalidateHandoffNoteLayoutCache,
+  type HandoffNoteLayoutMap,
+  type HandoffNoteLayoutRow,
 } from "./handoff-note-layout-map.js";
 import { renderHandoffNoteDoc } from "./handoff-note-dom.js";
 import {
@@ -1191,6 +1194,133 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         LINE_HEIGHT
       );
       expect(downAgain.handled).toBe(false);
+    });
+  });
+
+  describe("vertical target line — down co-top inline blank skip", () => {
+    const doc = wireToDoc("row\nbelow");
+
+    function layoutWithRows(rows: HandoffNoteLayoutRow[]): HandoffNoteLayoutMap {
+      return {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: () => -1,
+        coordsForWire: () => null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+        resolveSegmentOffsetLanding: () => null,
+      };
+    }
+
+    it("down skips co-top inline blank to the next content row", () => {
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 100,
+          minLeft: 0,
+          maxLeft: 80,
+          samples: [{ wire: 0, top: 100, left: 0 }],
+        },
+        {
+          kind: "blank",
+          top: 100,
+          minLeft: 0,
+          maxLeft: 0,
+          breakProbeWire: 3,
+          samples: [{ wire: 3, top: 100, left: 0 }],
+        },
+        {
+          kind: "content",
+          top: 118,
+          minLeft: 0,
+          maxLeft: 80,
+          samples: [{ wire: 4, top: 118, left: 0 }],
+        },
+      ];
+      expect(resolveVerticalTargetLineIndex(doc, layoutWithRows(rows), "down", 0, 1)).toBe(2);
+    });
+
+    it("down does not skip blank on its own visual row", () => {
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 100,
+          minLeft: 0,
+          maxLeft: 80,
+          samples: [{ wire: 0, top: 100, left: 0 }],
+        },
+        {
+          kind: "blank",
+          top: 118,
+          minLeft: 0,
+          maxLeft: 0,
+          breakProbeWire: 3,
+          samples: [{ wire: 3, top: 118, left: 0 }],
+        },
+        {
+          kind: "content",
+          top: 136,
+          minLeft: 0,
+          maxLeft: 80,
+          samples: [{ wire: 4, top: 136, left: 0 }],
+        },
+      ];
+      expect(resolveVerticalTargetLineIndex(doc, layoutWithRows(rows), "down", 0, 1)).toBe(1);
+    });
+  });
+
+  describe("vertical row-start landing on sparse visual rows", () => {
+    const agent = "caliper-aaaaaaa";
+
+    it("down from row start lands soft-wrap continuation start before past-end", () => {
+      const wire = `dhd @${agent} d @${agent} dhd`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.lastIndexOf("dhd");
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 0),
+        "down",
+        [
+          { wire: 0, top: 141.1, left: 347.5 },
+          { wire: 4, top: 141.1, left: 374.73 },
+          {
+            wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+            top: 141.1,
+            left: 507.67,
+          },
+          { wire: tailStart - 1, top: 141.1, left: 624.82 },
+          { wire: wire.length, top: 158.86, left: 370.17 },
+          { wire: tailStart, top: 140.67, left: 624.82 },
+        ],
+        347.5,
+        18
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(tailStart);
+    });
+
+    it("down from row start lands embedded lower row start when only row end is sampled", () => {
+      const wire = `head @${agent} tail @${agent} \nlower`;
+      const doc = wireToDoc(wire);
+      const lowerStart = wire.indexOf("\n") + 1;
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 0),
+        "down",
+        [
+          { wire: 0, top: 100, left: 0 },
+          { wire: wire.indexOf("@"), top: 100, left: 48 },
+          { wire: lowerStart - 1, top: 100, left: 260 },
+          { wire: wire.length, top: 118, left: 64 },
+        ],
+        0,
+        18
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerStart);
     });
   });
 });

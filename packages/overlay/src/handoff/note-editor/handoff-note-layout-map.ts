@@ -36,6 +36,27 @@ export type HandoffNoteLayoutRow = {
   breakProbeWire?: number;
 };
 
+export type SegmentOffsetLanding = {
+  sourceStartWire: number;
+  targetStartWire: number;
+  targetEndWire: number;
+};
+
+type TextRunBounds = {
+  startWire: number;
+  endWire: number;
+};
+
+export type ShorterRowStickyGoalInput = {
+  fromRowIndex: number;
+  targetRowIndex: number;
+  targetRow: HandoffNoteLayoutRow;
+  effectiveGoalColumn: number;
+  landedColumn: number;
+  edgeTolerance: number;
+  useRowStartLandingOnTarget: boolean;
+};
+
 export type HandoffNoteLayoutMap = {
   samples: MeasuredWireOffset[];
   rows: HandoffNoteLayoutRow[];
@@ -43,6 +64,12 @@ export type HandoffNoteLayoutMap = {
   visualRowCount: number;
   rowIndexForWire(wire: number): number;
   coordsForWire(wire: number): MeasuredWireOffset | null;
+  shouldPreserveGoalColumnOnShorterRowLanding(input: ShorterRowStickyGoalInput): boolean;
+  resolveSegmentOffsetLanding(
+    sourceWire: number,
+    sourceRowIndex: number,
+    targetRowIndex: number
+  ): SegmentOffsetLanding | null;
 };
 
 type LayoutCache = {
@@ -616,12 +643,206 @@ function sortLayoutRowsByVisualTop(rows: HandoffNoteLayoutRow[]): HandoffNoteLay
   });
 }
 
+export function isSparseColumnRow(row: HandoffNoteLayoutRow): boolean {
+  if (row.samples.length <= 1) {
+    return true;
+  }
+  const distinctLefts = new Set(row.samples.map((sample) => Math.round(sample.left)));
+  return distinctLefts.size <= 1;
+}
+
+function textNodeWireBounds(doc: HandoffNoteDoc, nodeIndex: number): TextRunBounds | null {
+  const node = doc.nodes[nodeIndex];
+  if (node?.type !== "text") {
+    return null;
+  }
+  const startWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
+  return {
+    startWire,
+    endWire: startWire + node.text.length,
+  };
+}
+
+function leadingTextRunBounds(
+  doc: HandoffNoteDoc,
+  row: HandoffNoteLayoutRow
+): TextRunBounds | null {
+  if (row.samples.length === 0) {
+    return null;
+  }
+  const startWire = Math.min(...row.samples.map((sample) => sample.wire));
+  const pos = wireOffsetToDocPos(doc, startWire);
+  const bounds = textNodeWireBounds(doc, pos.nodeIndex);
+  if (!bounds || startWire < bounds.startWire || startWire > bounds.endWire) {
+    return null;
+  }
+  return {
+    startWire,
+    endWire: bounds.endWire,
+  };
+}
+
+function postMentionWrapSourceRun(
+  sourceWire: number,
+  sourceRow: HandoffNoteLayoutRow,
+  wrapSpans: Map<number, PostMentionSoftWrapSpan>
+): TextRunBounds | null {
+  for (const span of wrapSpans.values()) {
+    if (
+      sourceWire >= span.continuationStartWire &&
+      sourceWire <= span.nodeEndWire &&
+      rowTopMatchesContinuationRow(sourceRow, span.continuationTop, 2)
+    ) {
+      return {
+        startWire: span.continuationStartWire,
+        endWire: span.nodeEndWire,
+      };
+    }
+  }
+  return null;
+}
+
+function postMentionWrapRowRun(
+  row: HandoffNoteLayoutRow,
+  wrapSpans: Map<number, PostMentionSoftWrapSpan>
+): TextRunBounds | null {
+  for (const span of wrapSpans.values()) {
+    if (
+      rowTopMatchesContinuationRow(row, span.continuationTop, 2) &&
+      row.samples.some(
+        (sample) => sample.wire >= span.continuationStartWire && sample.wire <= span.nodeEndWire
+      )
+    ) {
+      return {
+        startWire: span.continuationStartWire,
+        endWire: span.nodeEndWire,
+      };
+    }
+  }
+  return null;
+}
+
+function embeddedNewlineSourceRun(doc: HandoffNoteDoc, sourceWire: number): TextRunBounds | null {
+  const wire = docToWire(doc);
+  const breakWire = wire.lastIndexOf("\n", Math.max(0, sourceWire - 1));
+  if (breakWire < 0) {
+    return null;
+  }
+  const startWire = breakWire + 1;
+  const nextBreak = wire.indexOf("\n", startWire);
+  const endWire = nextBreak === -1 ? wire.length : nextBreak;
+  if (sourceWire < startWire || sourceWire > endWire) {
+    return null;
+  }
+  const segment = wire.slice(startWire, endWire);
+  if (segment.length === 0 || /^\s*$/.test(segment)) {
+    return null;
+  }
+  return { startWire, endWire };
+}
+
+function embeddedNewlineRowRun(
+  doc: HandoffNoteDoc,
+  row: HandoffNoteLayoutRow
+): TextRunBounds | null {
+  if (row.samples.length === 0) {
+    return null;
+  }
+  const wire = docToWire(doc);
+  const anchorWire = Math.max(...row.samples.map((sample) => sample.wire));
+  const breakWire = wire.lastIndexOf("\n", Math.max(0, anchorWire - 1));
+  if (breakWire < 0) {
+    return null;
+  }
+  const startWire = breakWire + 1;
+  const nextBreak = wire.indexOf("\n", startWire);
+  const endWire = nextBreak === -1 ? wire.length : nextBreak;
+  if (anchorWire < startWire || anchorWire > endWire) {
+    return null;
+  }
+  const segment = wire.slice(startWire, endWire);
+  if (segment.length === 0 || /^\s*$/.test(segment)) {
+    return null;
+  }
+  return { startWire, endWire };
+}
+
+function matchingSegmentOffsetLanding(
+  doc: HandoffNoteDoc,
+  sourceWire: number,
+  sourceRun: TextRunBounds | null,
+  targetRun: TextRunBounds | null
+): SegmentOffsetLanding | null {
+  if (!sourceRun || !targetRun) {
+    return null;
+  }
+  const offset = sourceWire - sourceRun.startWire;
+  if (offset < 0 || offset > sourceRun.endWire - sourceRun.startWire) {
+    return null;
+  }
+  if (offset > targetRun.endWire - targetRun.startWire) {
+    return null;
+  }
+  const wire = docToWire(doc);
+  const sourcePrefix = wire.slice(sourceRun.startWire, sourceRun.startWire + offset);
+  const targetPrefix = wire.slice(targetRun.startWire, targetRun.startWire + offset);
+  if (sourcePrefix !== targetPrefix) {
+    return null;
+  }
+  return {
+    sourceStartWire: sourceRun.startWire,
+    targetStartWire: targetRun.startWire,
+    targetEndWire: targetRun.endWire,
+  };
+}
+
+function resolveSegmentOffsetLandingInternal(
+  doc: HandoffNoteDoc,
+  rows: HandoffNoteLayoutRow[],
+  wrapSpans: Map<number, PostMentionSoftWrapSpan>,
+  sourceWire: number,
+  sourceRowIndex: number,
+  targetRowIndex: number
+): SegmentOffsetLanding | null {
+  if (Math.abs(targetRowIndex - sourceRowIndex) !== 1) {
+    return null;
+  }
+  const sourceRow = rows[sourceRowIndex];
+  const targetRow = rows[targetRowIndex];
+  if (
+    !sourceRow ||
+    !targetRow ||
+    sourceRow.kind !== "content" ||
+    targetRow.kind !== "content" ||
+    sourceRow.samples.length === 0 ||
+    targetRow.samples.length === 0
+  ) {
+    return null;
+  }
+  if (targetRowIndex < sourceRowIndex) {
+    return matchingSegmentOffsetLanding(
+      doc,
+      sourceWire,
+      postMentionWrapSourceRun(sourceWire, sourceRow, wrapSpans) ??
+        embeddedNewlineSourceRun(doc, sourceWire),
+      leadingTextRunBounds(doc, targetRow)
+    );
+  }
+  return matchingSegmentOffsetLanding(
+    doc,
+    sourceWire,
+    leadingTextRunBounds(doc, sourceRow),
+    postMentionWrapRowRun(targetRow, wrapSpans) ?? embeddedNewlineRowRun(doc, targetRow)
+  );
+}
+
 function buildDocOrderedLayoutMap(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   pillMidYs: number[],
   lineHeight: number,
-  blankRows: HandoffNoteLayoutRow[]
+  blankRows: HandoffNoteLayoutRow[],
+  wrapSpans: Map<number, PostMentionSoftWrapSpan> = new Map()
 ): HandoffNoteLayoutMap {
   const probeWires = new Set(blankRows.map((row) => row.breakProbeWire!));
   const contentMeasured = measured.filter((sample) => !probeWires.has(sample.wire));
@@ -648,10 +869,46 @@ function buildDocOrderedLayoutMap(
       if (direct !== undefined) {
         return direct;
       }
-      return resolveRowIndexFromBracketingSamples(wireOffset, measured, rowCenters, doc);
+      return resolveRowIndexFromBracketingSamples(wireOffset, measured, rowCenters, doc, wrapSpans);
     },
     coordsForWire(wireOffset: number) {
-      return resolveCoordFromBracketingSamples(wireOffset, measured);
+      let rowIndex = rowByWire.get(wireOffset);
+      if (rowIndex === undefined) {
+        rowIndex = resolveRowIndexFromBracketingSamples(
+          wireOffset,
+          measured,
+          rowCenters,
+          doc,
+          wrapSpans
+        );
+      }
+      const row = rows[rowIndex];
+      if (row && row.kind === "content" && rowIndex > 0 && row.samples.length > 0) {
+        const scoped = resolveCoordFromBracketingSamplesInternal(wireOffset, row.samples);
+        if (scoped) {
+          return { wire: wireOffset, top: row.top, left: scoped.left };
+        }
+      }
+      return resolveCoordFromBracketingSamples(wireOffset, measured, { doc, wrapSpans });
+    },
+    shouldPreserveGoalColumnOnShorterRowLanding(input) {
+      return evaluateShorterRowStickyGoalPreservation(
+        doc,
+        rows,
+        wrapSpans,
+        resolvedLineHeight,
+        input
+      );
+    },
+    resolveSegmentOffsetLanding(sourceWire, sourceRowIndex, targetRowIndex) {
+      return resolveSegmentOffsetLandingInternal(
+        doc,
+        rows,
+        wrapSpans,
+        sourceWire,
+        sourceRowIndex,
+        targetRowIndex
+      );
     },
   };
 }
@@ -796,16 +1053,170 @@ function rowIndexForEmbeddedTextLedLowerRowWire(
   return nearestRowCenterIndex(anchor.top, rowCenters);
 }
 
+type PostMentionSoftWrapSpan = {
+  postMentionStartWire: number;
+  continuationStartWire: number;
+  continuationTop: number;
+  continuationStartLeft: number;
+  nodeEndWire: number;
+  lowerAnchorWire: number;
+  tailSamples: MeasuredWireOffset[];
+};
+
+function rowTopMatchesContinuationRow(
+  row: HandoffNoteLayoutRow,
+  continuationTop: number,
+  tolerance: number
+): boolean {
+  return Math.abs(row.top - continuationTop) <= tolerance;
+}
+
+function isPostMentionWrapContinuationRowIndex(
+  rowIndex: number,
+  rows: HandoffNoteLayoutRow[],
+  wrapSpans: Map<number, PostMentionSoftWrapSpan>,
+  rowTopTolerance: number
+): boolean {
+  const row = rows[rowIndex];
+  if (!row || row.kind !== "content") {
+    return false;
+  }
+  for (const span of wrapSpans.values()) {
+    if (!rowTopMatchesContinuationRow(row, span.continuationTop, rowTopTolerance)) {
+      continue;
+    }
+    if (row.samples.some((sample) => sample.wire >= span.continuationStartWire)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Up into the prefix visual row above a same-wire soft-wrap split re-anchors sticky column. */
+function isSoftWrapPrefixReAnchorTarget(
+  doc: HandoffNoteDoc | undefined,
+  fromRowIndex: number,
+  targetRowIndex: number,
+  rows: HandoffNoteLayoutRow[]
+): boolean {
+  if (doc === undefined || targetRowIndex !== fromRowIndex - 1) {
+    return false;
+  }
+  const targetRow = rows[targetRowIndex];
+  const fromRow = rows[fromRowIndex];
+  if (
+    !targetRow ||
+    !fromRow ||
+    targetRow.kind !== "content" ||
+    fromRow.kind !== "content" ||
+    targetRow.samples.length === 0 ||
+    fromRow.samples.length === 0
+  ) {
+    return false;
+  }
+  const targetMaxWire = Math.max(...targetRow.samples.map((sample) => sample.wire));
+  const fromMinWire = Math.min(...fromRow.samples.map((sample) => sample.wire));
+  if (targetMaxWire >= fromMinWire) {
+    return false;
+  }
+  const wire = docToWire(doc);
+  for (let offset = targetMaxWire + 1; offset < fromMinWire; offset++) {
+    if (wire[offset] === "\n") {
+      return false;
+    }
+  }
+  return true;
+}
+
+function evaluateShorterRowStickyGoalPreservation(
+  doc: HandoffNoteDoc | undefined,
+  rows: HandoffNoteLayoutRow[],
+  wrapSpans: Map<number, PostMentionSoftWrapSpan>,
+  lineHeight: number,
+  input: ShorterRowStickyGoalInput
+): boolean {
+  const {
+    fromRowIndex,
+    targetRowIndex,
+    targetRow,
+    effectiveGoalColumn,
+    landedColumn,
+    edgeTolerance,
+    useRowStartLandingOnTarget,
+  } = input;
+  if (useRowStartLandingOnTarget) {
+    return false;
+  }
+  const targetRowMaxColumn =
+    targetRow.samples.length > 0
+      ? Math.max(...targetRow.samples.map((sample) => sample.left))
+      : null;
+  if (
+    targetRowMaxColumn === null ||
+    effectiveGoalColumn <= targetRowMaxColumn + edgeTolerance ||
+    Math.abs(landedColumn - targetRowMaxColumn) > edgeTolerance
+  ) {
+    return false;
+  }
+  const rowTopTolerance = Math.max(2, lineHeight * 0.25);
+  if (isPostMentionWrapContinuationRowIndex(targetRowIndex, rows, wrapSpans, rowTopTolerance)) {
+    return true;
+  }
+  if (
+    targetRowIndex < fromRowIndex &&
+    !isSoftWrapPrefixReAnchorTarget(doc, fromRowIndex, targetRowIndex, rows)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function rowIndexForPostMentionSoftWrapContinuation(
+  doc: HandoffNoteDoc,
+  wire: number,
+  rowCenters: number[],
+  wrapSpans: Map<number, PostMentionSoftWrapSpan>
+): number | null {
+  const pos = wireOffsetToDocPos(doc, wire);
+  const node = doc.nodes[pos.nodeIndex];
+  if (node?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, pos.nodeIndex)) {
+    return null;
+  }
+  if (doc.nodes[pos.nodeIndex - 1]?.type !== "mention") {
+    return null;
+  }
+  const span = wrapSpans.get(pos.nodeIndex);
+  if (!span) {
+    return null;
+  }
+  if (wire >= span.continuationStartWire && wire <= span.lowerAnchorWire) {
+    return nearestRowCenterIndex(span.continuationTop, rowCenters);
+  }
+  return null;
+}
+
 function resolveRowIndexFromBracketingSamples(
   wire: number,
   measured: MeasuredWireOffset[],
   rowCenters: number[],
-  doc?: HandoffNoteDoc
+  doc?: HandoffNoteDoc,
+  wrapSpans?: Map<number, PostMentionSoftWrapSpan>
 ): number {
   if (doc) {
     const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(doc, wire, measured, rowCenters);
     if (lowerRow !== null) {
       return lowerRow;
+    }
+    if (wrapSpans && wrapSpans.size > 0) {
+      const wrapContinuation = rowIndexForPostMentionSoftWrapContinuation(
+        doc,
+        wire,
+        rowCenters,
+        wrapSpans
+      );
+      if (wrapContinuation !== null) {
+        return wrapContinuation;
+      }
     }
   }
 
@@ -845,7 +1256,7 @@ function resolveRowIndexFromBracketingSamples(
   return nearestRowCenterIndex(top, rowCenters);
 }
 
-function resolveCoordFromBracketingSamples(
+function resolveCoordFromBracketingSamplesInternal(
   wire: number,
   measured: MeasuredWireOffset[]
 ): MeasuredWireOffset | null {
@@ -891,6 +1302,32 @@ function resolveCoordFromBracketingSamples(
     top: prev.top + ratio * (next.top - prev.top),
     left: prev.left + ratio * (next.left - prev.left),
   };
+}
+
+type CoordBracketContext = {
+  doc?: HandoffNoteDoc;
+  wrapSpans?: Map<number, PostMentionSoftWrapSpan>;
+};
+
+function resolveCoordFromBracketingSamples(
+  wire: number,
+  measured: MeasuredWireOffset[],
+  context?: CoordBracketContext
+): MeasuredWireOffset | null {
+  if (context?.doc && context.wrapSpans && context.wrapSpans.size > 0) {
+    const pos = wireOffsetToDocPos(context.doc, wire);
+    const span = context.wrapSpans.get(pos.nodeIndex);
+    if (span && wire >= span.continuationStartWire && wire <= span.lowerAnchorWire) {
+      const scoped = [...span.tailSamples].sort((left, right) => left.wire - right.wire);
+      const bracketed = resolveCoordFromBracketingSamplesInternal(wire, scoped);
+      if (bracketed) {
+        return { wire, top: span.continuationTop, left: bracketed.left };
+      }
+      return { wire, top: span.continuationTop, left: span.continuationStartLeft };
+    }
+  }
+
+  return resolveCoordFromBracketingSamplesInternal(wire, measured);
 }
 
 /** Column match on a visual row when layout samples omit interior wire offsets. */
@@ -1017,42 +1454,186 @@ function resolveRowIndexForDocWire(
   return rowByWire.get(startWire) ?? rowByWire.get(endWire) ?? -1;
 }
 
-/** Mention end and the text node immediately after it share one visual band top. */
-function alignMentionAdjacentMeasuredRows(
+function postMentionRow0PrefixEndWire(
   doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[]
-): void {
-  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    const node = doc.nodes[nodeIndex];
-    if (node?.type !== "mention") {
+  textNodeIndex: number,
+  postMentionStartWire: number
+): number {
+  const node = doc.nodes[textNodeIndex];
+  if (node?.type !== "text") {
+    return postMentionStartWire - 1;
+  }
+  let offset = 0;
+  while (offset < node.text.length) {
+    const char = node.text[offset];
+    if (char !== " " && char !== "\t") {
+      break;
+    }
+    offset++;
+  }
+  if (offset === 0) {
+    return postMentionStartWire - 1;
+  }
+  return postMentionStartWire + offset - 1;
+}
+
+function buildPostMentionSoftWrapSpan(
+  doc: HandoffNoteDoc,
+  textNodeIndex: number,
+  postMentionStartWire: number,
+  measured: MeasuredWireOffset[],
+  sampleByWire: Map<number, MeasuredWireOffset>,
+  rowClusterTol: number
+): PostMentionSoftWrapSpan | null {
+  const node = doc.nodes[textNodeIndex];
+  if (node?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
+    return null;
+  }
+  const nodeEndWire = docPosToWireOffset(doc, {
+    nodeIndex: textNodeIndex,
+    nodeOffset: node.text.length,
+  });
+  const mentionEndWire = postMentionStartWire - 1;
+  const mentionBandTop =
+    sampleByWire.get(mentionEndWire)?.top ??
+    sampleByWire.get(postMentionStartWire)?.top ??
+    sampleByWire.get(mentionEndWire - 1)?.top;
+  if (mentionBandTop === undefined) {
+    return null;
+  }
+
+  const continuationStartWire =
+    postMentionRow0PrefixEndWire(doc, textNodeIndex, postMentionStartWire) + 1;
+  const tailSamples: MeasuredWireOffset[] = [];
+  let continuationTop: number | null = null;
+  let continuationStartLeft: number | null = null;
+  let lowerAnchorWire = continuationStartWire - 1;
+  const lowerTopFloor = mentionBandTop + rowClusterTol;
+
+  for (const sample of measured) {
+    if (sample.wire < continuationStartWire || sample.wire > nodeEndWire) {
       continue;
     }
+    tailSamples.push(sample);
+    if (sample.top <= lowerTopFloor) {
+      continue;
+    }
+    if (continuationTop === null || sample.top < continuationTop) {
+      continuationTop = sample.top;
+    }
+    if (continuationStartLeft === null || sample.left < continuationStartLeft) {
+      continuationStartLeft = sample.left;
+    }
+    if (sample.wire > lowerAnchorWire) {
+      lowerAnchorWire = sample.wire;
+    }
+  }
+
+  if (
+    continuationTop === null ||
+    continuationStartLeft === null ||
+    lowerAnchorWire < continuationStartWire
+  ) {
+    return null;
+  }
+
+  return {
+    postMentionStartWire,
+    continuationStartWire,
+    continuationTop,
+    continuationStartLeft,
+    nodeEndWire,
+    lowerAnchorWire,
+    tailSamples,
+  };
+}
+
+/** Mention loop: soft-wrap span detection, mention-adjacent align, tail sample promotion. */
+function applyPostMentionStructuralSamplePins(
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[],
+  rowClusterTol: number
+): Map<number, PostMentionSoftWrapSpan> {
+  const wrapSpans = new Map<number, PostMentionSoftWrapSpan>();
+  const sampleByWire = new Map<number, MeasuredWireOffset>();
+  for (const sample of measured) {
+    sampleByWire.set(sample.wire, sample);
+  }
+
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    if (doc.nodes[nodeIndex]?.type !== "mention") {
+      continue;
+    }
+    const textNodeIndex = nodeIndex + 1;
+    if (docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
+      continue;
+    }
+
     const postMentionStartWire = docPosToWireOffset(doc, {
-      nodeIndex: nodeIndex + 1,
+      nodeIndex: textNodeIndex,
       nodeOffset: 0,
     });
-    if (docTextNodeHasEmbeddedNewline(doc, nodeIndex + 1)) {
-      continue;
+    const span = buildPostMentionSoftWrapSpan(
+      doc,
+      textNodeIndex,
+      postMentionStartWire,
+      measured,
+      sampleByWire,
+      rowClusterTol
+    );
+    if (span) {
+      wrapSpans.set(textNodeIndex, span);
     }
+
     const mentionEndWire = postMentionStartWire - 1;
-    const endSample = measured.find((sample) => sample.wire === mentionEndWire);
-    const postSample = measured.find((sample) => sample.wire === postMentionStartWire);
+    const endSample = sampleByWire.get(mentionEndWire);
+    const postSample = sampleByWire.get(postMentionStartWire);
     if (!endSample && !postSample) {
       continue;
     }
+
     const bandTop = Math.max(endSample?.top ?? -Infinity, postSample?.top ?? -Infinity);
     if (endSample) {
       endSample.top = bandTop;
     }
-    if (postSample) {
+
+    let wrapTailTop: number | null = null;
+    if (postSample && span) {
+      if (
+        span.continuationStartWire === postMentionStartWire &&
+        span.continuationTop > bandTop + rowClusterTol
+      ) {
+        wrapTailTop = span.continuationTop;
+      }
+      postSample.top = wrapTailTop ?? bandTop;
+    } else if (postSample) {
       postSample.top = bandTop;
     }
+
+    if (span) {
+      for (const sample of span.tailSamples) {
+        sample.top = span.continuationTop;
+        if (Math.abs(sample.left - span.continuationStartLeft) > rowClusterTol) {
+          sample.left = span.continuationStartLeft;
+        }
+      }
+      logVerArrow("layout.softWrapTailPromote", {
+        postMentionStartWire,
+        continuationStartWire: span.continuationStartWire,
+        continuationTop: span.continuationTop,
+        continuationStartLeft: span.continuationStartLeft,
+      });
+    }
+
     logVerArrow("layout.mentionAdjacentAlign", {
       mentionEndWire,
       postMentionStartWire,
       bandTop,
+      wrapTailTop,
     });
   }
+
+  return wrapSpans;
 }
 
 /** Text after a mention on the same pill row inherits that pill's midY. */
@@ -1155,6 +1736,18 @@ function buildMapFromMeasured(
     coordsForWire(wireOffset: number) {
       return resolveCoordFromBracketingSamples(wireOffset, measured);
     },
+    shouldPreserveGoalColumnOnShorterRowLanding(input) {
+      return evaluateShorterRowStickyGoalPreservation(
+        undefined,
+        rows,
+        new Map(),
+        resolvedLineHeight,
+        input
+      );
+    },
+    resolveSegmentOffsetLanding() {
+      return null;
+    },
   };
 }
 
@@ -1172,9 +1765,14 @@ function applyStructuralSamplePins(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   root?: HTMLElement
-): void {
-  alignMentionAdjacentMeasuredRows(doc, measured);
+): Map<number, PostMentionSoftWrapSpan> {
+  const rowClusterTol = rowClusterTolerance(
+    [],
+    measured.map((sample) => sample.top)
+  );
+  const wrapSpans = applyPostMentionStructuralSamplePins(doc, measured, rowClusterTol);
   pinEmbeddedNewlinePrefixBandTops(doc, measured, root);
+  return wrapSpans;
 }
 
 type InferLayoutFromMeasuredOptions = {
@@ -1206,7 +1804,7 @@ function inferLayoutFromMeasured(
       sampleCountBefore: working.length,
       hasRoot: root !== undefined,
     });
-    applyStructuralSamplePins(doc, working, root);
+    const wrapSpans = applyStructuralSamplePins(doc, working, root);
 
     const blankRows = buildSemanticBlankLayoutRows(doc, working, lineHeight, root);
 
@@ -1217,7 +1815,7 @@ function inferLayoutFromMeasured(
     });
 
     if (root || blankRows.length > 0) {
-      return buildDocOrderedLayoutMap(doc, working, pillMidYs, lineHeight, blankRows);
+      return buildDocOrderedLayoutMap(doc, working, pillMidYs, lineHeight, blankRows, wrapSpans);
     }
   }
 
@@ -1374,12 +1972,19 @@ export function isAtLayoutRowStart(
   }
   const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
   const rowStartColumn = layoutVisualRowStartColumn(row);
+  const columnAtEdge = Math.abs(goalColumn - rowStartColumn) <= edgeTolerance;
+  if (!columnAtEdge) {
+    return false;
+  }
+  if (isSparseColumnRow(row)) {
+    const anchorWire = Math.max(...row.samples.map((sample) => sample.wire));
+    return wire >= anchorWire;
+  }
   let rowStartWire = row.samples[0]!.wire;
   for (const sample of row.samples) {
     if (sample.wire < rowStartWire) {
       rowStartWire = sample.wire;
     }
   }
-  const columnAtEdge = Math.abs(goalColumn - rowStartColumn) <= edgeTolerance;
-  return columnAtEdge && wire <= rowStartWire;
+  return wire <= rowStartWire;
 }
