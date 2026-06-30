@@ -21,11 +21,11 @@ import {
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandProbeWire,
   resolveEmbeddedBlankBandEofLineBreakCaretWire,
-  type HandoffBlankBandDeleteOptions,
 } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
   docPosToWireOffset,
+  expandSelectionFocusToDocEndIfNeeded,
   normalizeDocPos,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
@@ -35,16 +35,11 @@ import {
 export type HandoffDocEditResult = {
   doc: HandoffNoteDoc;
   selection: HandoffNoteSelection;
-} & Pick<HandoffBlankBandDeleteOptions, "chipBeforeBlankBand">;
-
-export type HandoffDocDeleteContext = HandoffBlankBandDeleteOptions;
+};
 
 type HandoffDeleteCaretSnapOptions = {
   mentionRemoved?: boolean;
-  preserveMentionInterior?: boolean;
 };
-
-type HandoffDeleteFinalizeOptions = HandoffDeleteCaretSnapOptions & HandoffBlankBandDeleteOptions;
 
 function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   return (
@@ -62,12 +57,6 @@ export function snapDeleteCaretWire(
 ): number {
   const context = describeHandoffNoteCursorContext(doc, wire);
   if (context.kind === "mention-interior") {
-    // Directional pair: backspace → mention-end, delete → mention-start (default).
-    // preserveMentionInterior is the backspace-only chip landing flag; delete symmetry uses
-    // mentionRemoved + content-row-end snap at probes, not interior preservation.
-    if (options?.preserveMentionInterior && direction === "backspace") {
-      return wire;
-    }
     return direction === "backspace" ? context.end : context.start;
   }
   if (
@@ -98,20 +87,6 @@ function applyDeleteCaretPolicy(
   };
 }
 
-function finalizeDeleteResult(
-  doc: HandoffNoteDoc,
-  selection: HandoffNoteSelection,
-  direction: HandoffNoteEdit,
-  options?: HandoffDeleteFinalizeOptions
-): HandoffDocEditResult {
-  const base: HandoffDocEditResult = {
-    doc,
-    selection,
-    ...(options?.chipBeforeBlankBand ? { chipBeforeBlankBand: true } : {}),
-  };
-  return applyDeleteCaretPolicy(base, direction, options);
-}
-
 export function spliceDocSelection(
   doc: HandoffNoteDoc,
   anchor: HandoffNoteDocPos,
@@ -131,14 +106,19 @@ export function spliceDocSelection(
 export function applyDocDelete(
   doc: HandoffNoteDoc,
   selection: HandoffNoteSelection,
-  direction: HandoffNoteEdit,
-  context?: HandoffDocDeleteContext
+  direction: HandoffNoteEdit
 ): HandoffDocEditResult | null {
   if (!selectionCollapsed(selection)) {
-    return spliceDocSelection(doc, selection.anchor, selection.focus, "");
+    const anchor = normalizeDocPos(doc, selection.anchor);
+    const focus = expandSelectionFocusToDocEndIfNeeded(
+      doc,
+      anchor,
+      normalizeDocPos(doc, selection.focus)
+    );
+    return spliceDocSelection(doc, anchor, focus, "");
   }
 
-  const intent = resolveHandoffNoteDeleteIntent(doc, selection, direction, context);
+  const intent = resolveHandoffNoteDeleteIntent(doc, selection, direction);
   if (!intent) {
     return null;
   }
@@ -147,15 +127,11 @@ export function applyDocDelete(
   }
 
   const { result } = intent;
-  if (result.caretPolicyOnly) {
-    return applyDeleteCaretPolicy({ doc: result.doc, selection: result.selection }, direction);
-  }
-
-  return finalizeDeleteResult(result.doc, result.selection, direction, {
-    chipBeforeBlankBand: result.chipBeforeBlankBand,
-    preserveMentionInterior: result.preserveMentionInterior,
-    mentionRemoved: result.mentionRemoved,
-  });
+  return applyDeleteCaretPolicy(
+    { doc: result.doc, selection: result.selection },
+    direction,
+    result.caretPolicyOnly ? undefined : { mentionRemoved: result.mentionRemoved }
+  );
 }
 
 function applyMentionQueryMultilineInsert(

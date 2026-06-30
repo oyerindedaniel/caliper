@@ -14,7 +14,6 @@
   resolveVerticalArrowVisualLanding,
   snapVerticalArrowLanding,
   wireOffsetToDocPos,
-  type HandoffBlankBandDeleteOptions,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
@@ -261,7 +260,6 @@ export function setDocSelection(
   options?: {
     from?: HandoffNoteDocPos;
     source?: string;
-    blankBandDelete?: HandoffBlankBandDeleteOptions;
   }
 ): void {
   const docSel = normalizeSelection(doc, selection);
@@ -271,9 +269,8 @@ export function setDocSelection(
     return;
   }
 
-  const domOptions = options?.blankBandDelete;
-  const startPoint = resolveDomPointAtDocPos(root, doc, docSel.anchor, domOptions);
-  const endPoint = resolveDomPointAtDocPos(root, doc, docSel.focus, domOptions);
+  const startPoint = resolveDomPointAtDocPos(root, doc, docSel.anchor);
+  const endPoint = resolveDomPointAtDocPos(root, doc, docSel.focus);
   const source = options?.source ?? "unknown";
 
   if (!startPoint || !endPoint) {

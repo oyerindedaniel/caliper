@@ -12,6 +12,7 @@ import {
   handoffNoteIsMentionEndProbeAliasWire,
 } from "./handoff-note-delete-intent.js";
 import {
+  isEmbeddedBlankBandDeleteProbeWire,
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
 } from "./handoff-note-embedded-newlines.js";
@@ -76,14 +77,53 @@ describe("handoff note delete intent — contract authority before handler chain
     });
   });
 
+  describe("glued postfix substantive chip — probe alias landing", () => {
+    function gluedPostfixUpperBandWire(postfix = "T") {
+      return `note @${agent}${postfix}\n\n\n`;
+    }
+
+    function chipGluedPostfixAtProbe(wire: string) {
+      const doc = wireToDoc(wire);
+      const [probe] = listEmbeddedBlankBandProbeWires(doc);
+      return applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, probe!)), "backspace")!;
+    }
+
+    it("substantive chip lands mention-node-end alias off delete-probe infrastructure", () => {
+      const chipped = chipGluedPostfixAtProbe(gluedPostfixUpperBandWire());
+      expect(handoffNoteCaretOnMentionNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(
+          chipped.doc,
+          docPosToWireOffset(chipped.doc, chipped.selection.focus),
+          chipped.selection.focus
+        )
+      ).toBe(false);
+    });
+
+    it("delete after substantive chip collapses blank preserving mention-end alias", () => {
+      const chipped = chipGluedPostfixAtProbe(gluedPostfixUpperBandWire());
+      const deleted = applyDocDelete(chipped.doc, chipped.selection, "delete")!;
+      expect(docToWire(deleted.doc)).toBe(`note @${agent}\n\n`);
+      expect(handoffNoteCaretOnMentionNodeEnd(deleted.doc, deleted.selection.focus)).toBe(true);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(
+          deleted.doc,
+          docPosToWireOffset(deleted.doc, deleted.selection.focus),
+          deleted.selection.focus
+        )
+      ).toBe(false);
+    });
+  });
+
   describe("delete — content row end mirror at probe alias", () => {
-    it("mention node end at probe alias — no-op without collapsing blank band", () => {
+    it("mention node end at probe alias — delete collapses blank band (look right)", () => {
       const wire = `header @${agent} \n\n\n`;
       const { doc, selection } = chipSpacerBeforeFirstProbe(wire);
       expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(true);
 
-      expect(applyDocDelete(doc, selection, "delete")).toBeNull();
-      expect(docToWire(doc)).toBe(`header @${agent}\n\n\n`);
+      const collapsed = applyDocDelete(doc, selection, "delete")!;
+      expect(docToWire(collapsed.doc)).toBe(`header @${agent}\n\n`);
+      expect(docToWire(collapsed.doc)).toContain(agent);
     });
 
     it("delete probe in text node past spacer — still collapses blank below", () => {
@@ -145,12 +185,14 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(docToWire(removed.doc)).toContain(agentB);
     });
 
-    it("upper band — delete at mention node end is no-op without collapsing upper band", () => {
+    it("upper band — delete at mention node end collapses upper blank band", () => {
       const { doc, selection } = chipSpacerBeforeUpperBandProbe(complexMultiBandWire());
       expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(true);
 
-      expect(applyDocDelete(doc, selection, "delete")).toBeNull();
-      expect(docToWire(doc)).toBe(`header @${agent}\n\n\nmiddle\n\n\ntail @${agentB} suffix`);
+      const collapsed = applyDocDelete(doc, selection, "delete")!;
+      expect(docToWire(collapsed.doc)).toBe(
+        `header @${agent}\n\nmiddle\n\n\ntail @${agentB} suffix`
+      );
     });
 
     function spacerBeforeBandFirstProbe(doc: ReturnType<typeof wireToDoc>, probeWire: number) {

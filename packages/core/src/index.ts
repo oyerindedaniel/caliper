@@ -120,6 +120,7 @@ export {
   docPosEqual,
   docPosToRenderedChildIndex,
   docPosToWireOffset,
+  expandSelectionFocusToDocEndIfNeeded,
   docSelectionToWireRange,
   docsStructurallyEqual,
   mentionCountInDoc,
@@ -158,13 +159,14 @@ export {
   applyDocLineBreak,
   insertMentionAtSelection,
   spliceDocSelection,
-  type HandoffDocDeleteContext,
   type HandoffDocEditResult,
 } from "./handoff-model/note-doc/handoff-note-doc-edits.js";
 export {
   docTextNodeHasEmbeddedNewline,
+  docPosAtEmbeddedBlankBandProbeAliasLanding,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
+  embeddedBlankBandSubstantiveContentAbutsProbe,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
@@ -175,7 +177,8 @@ export {
   listVisualRowAnchorWires,
   resolveEmbeddedBlankBandDelete,
   resolveEmbeddedBlankBandEofLineBreakCaretWire,
-  type HandoffBlankBandDeleteOptions,
+  handoffNoteCaretAtClearedContentRowEndBeforeProbe,
+  embeddedBlankBandRowAboveProbeIsEmpty,
 } from "./handoff-model/note-doc/handoff-note-embedded-newlines.js";
 export {
   HANDOFF_COLOR_COUNT,

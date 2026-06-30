@@ -207,8 +207,9 @@ describe("createHandoffNoteEditor", () => {
     const second = host.editor.handleKeyDown(
       new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
     );
-    expect(second).toBe(false);
-    expect(host.editor.getWire()).toBe(`@${agentA}@${agentB} `);
+    expect(second).toBe(true);
+    expect(host.editor.getWire()).toBe(`@${agentA}`);
+    expect(host.editor.getWire()).not.toContain(agentB);
   });
 
   it("undoes mention deletion", () => {
@@ -812,7 +813,11 @@ describe("createHandoffNoteEditor", () => {
         expect(handled).toBe(true);
         expect(host.editor.getWire()).toBe(expectedWireAfter);
         expect(
-          isEmbeddedBlankBandDeleteProbeWire(host.editor.getDoc(), host.editor.getCursor())
+          isEmbeddedBlankBandDeleteProbeWire(
+            host.editor.getDoc(),
+            host.editor.getCursor(),
+            host.editor.getSelectionState().focus
+          )
         ).toBe(false);
         expect(handoffNoteSelectionSnapshot(host.root).anchorInMentionPill).toBe(false);
         expect(host.editor.getCursor()).toBe(expectedCursorWire);

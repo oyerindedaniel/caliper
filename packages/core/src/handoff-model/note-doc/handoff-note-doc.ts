@@ -416,7 +416,6 @@ export function insertDocNodesAt(
     return { nodes: coalesceTextNodes(rebuilt) };
   }
 
-  const tokenLen = 1 + node.agentId.length;
   if (nodeOffset <= 0) {
     return {
       nodes: coalesceTextNodes([

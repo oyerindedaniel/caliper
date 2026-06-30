@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { applyDocDelete, applyDocLineBreak } from "./handoff-note-doc-edits.js";
+import {
+  collapsedSelection,
+  docPosToWireOffset,
+  wireOffsetToDocPos,
+} from "./handoff-note-doc-pos.js";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
-import { docPosToWireOffset, wireOffsetToDocPos } from "./handoff-note-doc-pos.js";
 import {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
@@ -9,6 +14,7 @@ import {
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
+  handoffNoteCaretAtClearedContentRowEndBeforeProbe,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandDeleteProbeWire,
@@ -117,19 +123,29 @@ describe("embedded blank band probes", () => {
       expect(isEmbeddedBlankBandDeleteProbeWire(doc, 0)).toBe(false);
     });
 
-    it("is true for chip landing via caret semantic even on interior probe index", () => {
-      const doc = wireToDoc(`header \n\n\nmiddle\n\n\n\n\nlower`);
-      const interiorProbe = listEmbeddedBlankBandProbeWires(doc)[4]!;
-      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, interiorProbe)).toBe(false);
+    it("is true when focus doc pos is cleared content row end before interior probe", () => {
+      const wire = `header \n\n\nmiddle\n\n\nd\n\n\nlower`;
+      const doc = wireToDoc(wire);
+      const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
+      const focus = wireOffsetToDocPos(doc, dPos);
+      const chipped = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
+      const clearedRowProbe = listEmbeddedBlankBandProbeWires(chipped.doc).find((blankBandProbe) =>
+        handoffNoteCaretAtClearedContentRowEndBeforeProbe(
+          chipped.doc,
+          chipped.selection.focus,
+          blankBandProbe
+        )
+      );
+      expect(clearedRowProbe).toBeDefined();
       expect(
-        embeddedBlankBandAtEmptyContentRowEnd(doc, interiorProbe, {
-          chipBeforeBlankBand: true,
-        })
+        embeddedBlankBandAtEmptyContentRowEnd(
+          chipped.doc,
+          clearedRowProbe!,
+          chipped.selection.focus
+        )
       ).toBe(true);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(doc, interiorProbe, {
-          chipBeforeBlankBand: true,
-        })
+        isEmbeddedBlankBandDeleteProbeWire(chipped.doc, clearedRowProbe!, chipped.selection.focus)
       ).toBe(false);
     });
 
@@ -157,8 +173,32 @@ describe("embedded blank band probes", () => {
       const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       const focus = wireOffsetToDocPos(doc, probe);
       expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
-      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe, undefined, focus)).toBe(false);
-      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe, undefined, focus)).toBe(true);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe, focus)).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe, focus)).toBe(true);
+    });
+
+    it("is false on interior band tail probe even when focus rests on lineStart alias", () => {
+      const agent = "agent";
+      const doc = wireToDoc(`header @${agent} \n\n\ntail @${agent} `);
+      const tailProbe = listEmbeddedBlankBandProbeWires(doc)[1]!;
+      const focus = wireOffsetToDocPos(doc, tailProbe);
+      expect(handoffNoteCaretAtClearedContentRowEndBeforeProbe(doc, focus, tailProbe)).toBe(false);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, tailProbe, focus)).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, tailProbe, focus)).toBe(true);
+    });
+
+    it("is false on EOF trailing band tail probe with focus at lineStart", () => {
+      let doc = wireToDoc("header");
+      let selection = collapsedSelection(wireOffsetToDocPos(doc, "header".length));
+      for (let i = 0; i < 2; i++) {
+        const next = applyDocLineBreak(doc, selection);
+        doc = next.doc;
+        selection = next.selection;
+      }
+      const tailProbe = listEmbeddedBlankBandProbeWires(doc)[1]!;
+      const focus = wireOffsetToDocPos(doc, tailProbe);
+      expect(handoffNoteCaretAtClearedContentRowEndBeforeProbe(doc, focus, tailProbe)).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, tailProbe, focus)).toBe(true);
     });
   });
 

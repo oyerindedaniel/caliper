@@ -2,12 +2,14 @@
   describeHandoffNoteCursorContext,
   docPosToWireOffset,
   docToWire,
+  docPosAtEmbeddedBlankBandProbeAliasLanding,
   embeddedBlankBandAtEmptyContentRowEnd,
+  embeddedBlankBandSubstantiveContentAbutsProbe,
+  isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
   normalizeDocPos,
   wireOffsetToDocPos,
-  type HandoffBlankBandDeleteOptions,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
@@ -144,7 +146,8 @@ function domPointAfterWireBreak(
   options?: {
     doc?: HandoffNoteDoc;
     breakWire?: number;
-    blankBandDelete?: HandoffBlankBandDeleteOptions;
+    /** Authority doc pos — required to disambiguate cleared sandwiched row end from delete-probe paint. */
+    focusDocPos?: HandoffNoteDocPos;
   }
 ): { node: Node; offset: number } {
   const br = root.childNodes[breakChildIdx];
@@ -156,7 +159,17 @@ function domPointAfterWireBreak(
     isHandoffBlankAnchorElement(anchor) &&
     options?.doc !== undefined &&
     options.breakWire !== undefined &&
-    embeddedBlankBandAtEmptyContentRowEnd(options.doc, options.breakWire, options.blankBandDelete)
+    embeddedBlankBandAtEmptyContentRowEnd(options.doc, options.breakWire, options.focusDocPos)
+  ) {
+    return { node: br, offset: 0 };
+  }
+  if (
+    isHandoffBlankAnchorElement(anchor) &&
+    options?.doc !== undefined &&
+    options.breakWire !== undefined &&
+    options.focusDocPos !== undefined &&
+    isEmbeddedBlankBandProbeWire(options.doc, options.breakWire) &&
+    !isEmbeddedBlankBandDeleteProbeWire(options.doc, options.breakWire, options.focusDocPos)
   ) {
     return { node: br, offset: 0 };
   }
@@ -176,12 +189,12 @@ function domPointAfterTextWireBreak(
   wireBase: number,
   partIndex: number,
   doc: HandoffNoteDoc,
-  blankBandDelete?: HandoffBlankBandDeleteOptions
+  focusDocPos: HandoffNoteDocPos
 ): { node: Node; offset: number } {
   return domPointAfterWireBreak(root, breakChildIdx, {
     doc,
     breakWire: wireOffsetAtTextBreak(text, wireBase, partIndex),
-    blankBandDelete,
+    focusDocPos,
   });
 }
 
@@ -205,7 +218,7 @@ function resolveTextDomPointAtOffset(
     isLastRenderedNode: boolean;
     wireBase: number;
     blankProbeWires: ReadonlySet<number>;
-    blankBandDelete?: HandoffBlankBandDeleteOptions;
+    focusDocPos: HandoffNoteDocPos;
   }
 ): { node: Node; offset: number } {
   const clamped = Math.max(0, Math.min(nodeOffset, text.length));
@@ -246,7 +259,7 @@ function resolveTextDomPointAtOffset(
           options.wireBase,
           partIndex,
           options.doc,
-          options.blankBandDelete
+          options.focusDocPos
         );
       }
       if (part === "" && remaining === 0) {
@@ -257,7 +270,7 @@ function resolveTextDomPointAtOffset(
           options.wireBase,
           partIndex,
           options.doc,
-          options.blankBandDelete
+          options.focusDocPos
         );
       }
       if (part && remaining === part.length) {
@@ -283,7 +296,7 @@ function resolveTextDomPointAtOffset(
           options.wireBase,
           partIndex,
           options.doc,
-          options.blankBandDelete
+          options.focusDocPos
         );
       }
       remaining -= 1;
@@ -299,7 +312,7 @@ function resolveTextDomPointAtOffset(
     return domPointAfterWireBreak(root, root.childNodes.length - 1, {
       doc: options.doc,
       breakWire: options.wireBase + text.length - 1,
-      blankBandDelete: options.blankBandDelete,
+      focusDocPos: options.focusDocPos,
     });
   }
 
@@ -310,7 +323,7 @@ function resolveTextDomPointAtOffset(
   return domPointAfterWireBreak(root, childIdx, {
     doc: options.doc,
     breakWire: options.wireBase + Math.max(0, clamped - 1),
-    blankBandDelete: options.blankBandDelete,
+    focusDocPos: options.focusDocPos,
   });
 }
 
@@ -333,13 +346,70 @@ function docPosAtPrecedingWireBreak(
   return null;
 }
 
+function docPosAtProbeAliasWhenSubstantiveAbuts(
+  doc: HandoffNoteDoc,
+  breakWire: number
+): HandoffNoteDocPos | null {
+  if (!embeddedBlankBandSubstantiveContentAbutsProbe(doc, breakWire)) {
+    return null;
+  }
+  return docPosAtEmbeddedBlankBandProbeAliasLanding(doc, breakWire);
+}
+
 function docPosFromRootDomChildIndex(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   targetChildIndex: number
 ): HandoffNoteDocPos {
   const targetNode = root.childNodes[targetChildIndex];
+  if (!targetNode) {
+    return wireOffsetToDocPos(doc, docToWire(doc).length);
+  }
+  if (isHandoffWireBreakElement(targetNode)) {
+    const prevDom = targetChildIndex > 0 ? root.childNodes[targetChildIndex - 1] : null;
+    const nextDom = targetNode.nextSibling;
+    if (
+      prevDom &&
+      isHandoffMentionElement(prevDom) &&
+      nextDom &&
+      isHandoffBlankAnchorElement(nextDom)
+    ) {
+      const mentionIdx = domNodeToDocIndex(root, doc, prevDom);
+      const agentId = prevDom.getAttribute("data-agent-id") ?? "";
+      if (mentionIdx !== null) {
+        const mentionEndWire = docPosToWireOffset(doc, {
+          nodeIndex: mentionIdx,
+          nodeOffset: mentionWireLength(agentId),
+        });
+        const alias = docPosAtProbeAliasWhenSubstantiveAbuts(doc, mentionEndWire);
+        if (alias) {
+          return alias;
+        }
+      }
+    }
+  }
   if (isHandoffBlankAnchorElement(targetNode)) {
+    const brDom = targetChildIndex > 0 ? root.childNodes[targetChildIndex - 1] : null;
+    const mentionDom = targetChildIndex > 1 ? root.childNodes[targetChildIndex - 2] : null;
+    if (
+      brDom &&
+      isHandoffWireBreakElement(brDom) &&
+      mentionDom &&
+      isHandoffMentionElement(mentionDom)
+    ) {
+      const mentionIdx = domNodeToDocIndex(root, doc, mentionDom);
+      const agentId = mentionDom.getAttribute("data-agent-id") ?? "";
+      if (mentionIdx !== null) {
+        const mentionEndWire = docPosToWireOffset(doc, {
+          nodeIndex: mentionIdx,
+          nodeOffset: mentionWireLength(agentId),
+        });
+        const alias = docPosAtProbeAliasWhenSubstantiveAbuts(doc, mentionEndWire);
+        if (alias) {
+          return alias;
+        }
+      }
+    }
     return (
       docPosAtPrecedingWireBreak(root, doc, targetNode) ??
       wireOffsetToDocPos(doc, docToWire(doc).length)
@@ -577,8 +647,7 @@ export function domPointToDocPos(
 export function resolveDomPointAtDocPos(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos,
-  options?: HandoffBlankBandDeleteOptions
+  pos: HandoffNoteDocPos
 ): { node: Node; offset: number } | null {
   const normalized = normalizeDocPos(doc, pos);
   const node = doc.nodes[normalized.nodeIndex];
@@ -617,7 +686,7 @@ export function resolveDomPointAtDocPos(
       isLastRenderedNode: isLastRenderedDocNode(doc, normalized.nodeIndex),
       wireBase: docPosToWireOffset(doc, { nodeIndex: normalized.nodeIndex, nodeOffset: 0 }),
       blankProbeWires: new Set(listEmbeddedBlankBandProbeWires(doc)),
-      blankBandDelete: options,
+      focusDocPos: normalized,
     });
   }
 
@@ -627,6 +696,16 @@ export function resolveDomPointAtDocPos(
   }
   if (normalized.nodeOffset >= tokenLength) {
     const afterRendered = renderedIndex + 1;
+    const postText = doc.nodes[normalized.nodeIndex + 1];
+    const abuttingProbe =
+      postText?.type === "text"
+        ? listEmbeddedBlankBandProbeWires(doc).find((probe) =>
+            embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)
+          )
+        : undefined;
+    if (abuttingProbe !== undefined) {
+      return { node: root, offset: afterRendered };
+    }
     if (afterRendered < root.childNodes.length) {
       const nextDom = root.childNodes[afterRendered]!;
       if (nextDom.nodeType === Node.TEXT_NODE) {

@@ -10,9 +10,11 @@
   docSelectionToWire,
   docToWire,
   docsEqual,
+  expandSelectionFocusToDocEndIfNeeded,
   insertMentionAtSelection,
   isArrow,
   normalizeHandoffNoteDoc,
+  normalizeDocPos,
   normalizeSelection,
   resolveDocHorizontalArrowMove,
   selectionsEqual,
@@ -22,7 +24,6 @@
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
-  type HandoffDocDeleteContext,
   listEmbeddedBlankBandProbeWires,
 } from "@caliper/core";
 import {
@@ -46,7 +47,6 @@ import {
 } from "../handoff-note-debug.js";
 import {
   describeSyncRepairBranch,
-  liveIsProbeAliasOverMentionEndAuthority,
   readDocSelection,
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
@@ -94,7 +94,6 @@ export type HandoffNoteEditor = HandoffNoteEditorHost & {
   isComposing(): boolean;
   resize(): void;
   refreshPresentation(): void;
-  refreshPresentation(): void;
   selectMentionNode(nodeIndex: number): void;
   clearMentionSelection(): void;
   getSelectedMentionNodeIndex(): number | null;
@@ -122,18 +121,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
   let lastRenderOutcome: RenderOutcome = { domReplaced: true, docChanged: true };
   let selectedMentionNodeIndex: number | null = null;
   let verticalGoalColumn: number | null = null;
-  let pendingBlankBandDelete: HandoffDocDeleteContext | undefined;
   const history = createHandoffNoteHistory();
-
-  const clearPendingBlankBandDelete = () => {
-    pendingBlankBandDelete = undefined;
-  };
-
-  const consumePendingBlankBandDelete = (): HandoffDocDeleteContext | undefined => {
-    const context = pendingBlankBandDelete;
-    pendingBlankBandDelete = undefined;
-    return context;
-  };
 
   const presentationOptions = () => ({
     colorByAgentId: options.getColorByAgentId(),
@@ -162,12 +150,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     }
     const priorFocus = selection.focus;
     const live = readDocSelection(root, doc);
-    if (
-      source === "selectionchange" &&
-      !liveIsProbeAliasOverMentionEndAuthority(doc, live.focus, priorFocus)
-    ) {
-      clearPendingBlankBandDelete();
-    }
     if (
       live.anchor.nodeIndex !== live.focus.nodeIndex ||
       live.anchor.nodeOffset !== live.focus.nodeOffset
@@ -275,12 +257,10 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       return;
     }
     const requestedWire = docPosToWireOffset(doc, selection.focus);
-    const blankBandDelete = pendingBlankBandDelete;
     suppressDomSelectionSync = true;
     try {
       setDocSelection(root, doc, selection, {
         source,
-        blankBandDelete,
       });
     } finally {
       suppressDomSelectionSync = false;
@@ -371,13 +351,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     nextDoc: HandoffNoteDoc,
     nextSelection: HandoffNoteSelection,
     source: string,
-    record = true,
-    deleteProvenance?: Pick<HandoffDocDeleteContext, "chipBeforeBlankBand">
+    record = true
   ) => {
-    clearPendingBlankBandDelete();
-    if (deleteProvenance?.chipBeforeBlankBand) {
-      pendingBlankBandDelete = { chipBeforeBlankBand: true };
-    }
     selectedMentionNodeIndex = null;
     verticalGoalColumn = null;
     const prevDoc = doc;
@@ -406,7 +381,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           doc,
           authorityFocus: resolvedSelection.focus,
           root,
-          chipBeforeBlankBand: pendingBlankBandDelete?.chipBeforeBlankBand,
           includeWire: true,
         }),
       });
@@ -414,7 +388,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
   };
 
   const mutateSelection = (focus: HandoffNoteDocPos, source: string, _key?: string) => {
-    clearPendingBlankBandDelete();
     selectedMentionNodeIndex = null;
     const nextSelection = collapsedSelection(focus);
     if (!root) {
@@ -427,7 +400,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
 
   const restoreSnapshot = (snapshot: HandoffNoteHistorySnapshot) => {
     history.runRestore(() => {
-      clearPendingBlankBandDelete();
       const prevDoc = doc;
       doc = normalizeHandoffNoteDoc(snapshot.doc);
       selection = normalizeSelection(doc, snapshot.selection);
@@ -584,7 +556,13 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       if (collapsed) {
         return;
       }
-      const result = spliceDocSelection(doc, active.anchor, active.focus, "");
+      const anchor = normalizeDocPos(doc, active.anchor);
+      const focus = expandSelectionFocusToDocEndIfNeeded(
+        doc,
+        anchor,
+        normalizeDocPos(doc, active.focus)
+      );
+      const result = spliceDocSelection(doc, anchor, focus, "");
       mutate(result.doc, result.selection, "deleteSelection", true);
     },
 
@@ -681,7 +659,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
             direction,
           }),
         });
-        const deleted = applyDocDelete(doc, active, direction, consumePendingBlankBandDelete());
+        const deleted = applyDocDelete(doc, active, direction);
         logEditStateTrace(`delete>>beforeInput>>${direction}>>result`, {
           ingress: "beforeInput",
           noop: !deleted,
@@ -694,9 +672,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           return;
         }
         event.preventDefault();
-        mutate(deleted.doc, deleted.selection, `beforeInput.${direction}`, true, {
-          chipBeforeBlankBand: deleted.chipBeforeBlankBand,
-        });
+        mutate(deleted.doc, deleted.selection, `beforeInput.${direction}`, true);
         return;
       }
 
@@ -850,7 +826,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
             direction,
           }),
         });
-        const deleted = applyDocDelete(doc, active, direction, consumePendingBlankBandDelete());
+        const deleted = applyDocDelete(doc, active, direction);
         logEditStateTrace(`delete>>keydown>>${direction}>>result`, {
           ingress: "keydown",
           priorWire: authorityBefore,
@@ -865,9 +841,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           return false;
         }
         event.preventDefault();
-        mutate(deleted.doc, deleted.selection, `keydown.${event.key}`, true, {
-          chipBeforeBlankBand: deleted.chipBeforeBlankBand,
-        });
+        mutate(deleted.doc, deleted.selection, `keydown.${event.key}`, true);
         return true;
       }
 

@@ -4,6 +4,7 @@ import {
   collapsedSelection,
   docPosToWireOffset,
   describeHandoffNoteCursorContext,
+  isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
   normalizeHandoffNoteDoc,
@@ -442,22 +443,37 @@ describe("handoff-note-dom", () => {
       }
     });
 
-    it("chip landing with delete provenance resolves interior probe to wire-break", () => {
-      const wire = "header \n\n\nmiddle\n\n\n\n\nlower";
-      const doc = wireToDoc(wire);
-      const interiorProbe = listEmbeddedBlankBandProbeWires(doc)[4]!;
-
+    it("substantive sole-char row end before band paints wire-break not blank-band anchor", () => {
+      const doc = wireToDoc("h\n\n\n");
+      const rowEnd = wireOffsetToDocPos(doc, 1);
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const point = resolveDomPointAtDocPos(root, doc, rowEnd);
+      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+        true
+      );
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
+    });
 
-      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, interiorProbe), {
-        chipBeforeBlankBand: true,
-      });
+    it("cleared content row end at interior probe resolves to wire-break", () => {
+      const wire = `header \n\n\nmiddle\n\n\nd\n\n\nlower`;
+      const doc = wireToDoc(wire);
+      const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
+      const chipped = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, dPos)),
+        "backspace"
+      )!;
+      const focusWire = docPosToWireOffset(chipped.doc, chipped.selection.focus);
+
+      renderHandoffNoteDoc(root, chipped.doc, { colorByAgentId: new Map() });
+
+      const point = resolveDomPointAtDocPos(root, chipped.doc, chipped.selection.focus);
       expect(point).not.toBeNull();
       expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
         true
       );
-      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
-      expect(docPosToWireOffset(doc, roundTrip)).toBe(interiorProbe);
+      const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(chipped.doc, roundTrip)).toBe(focusWire);
     });
 
     it("sandwiched blank probe still resolves to blank-band anchor without chip provenance", () => {
@@ -604,6 +620,31 @@ describe("handoff-note-dom", () => {
       expect(point?.offset).toBe("hello".length);
       const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
       expect(docPosToWireOffset(doc, roundTrip)).toBe(headerEnd);
+    });
+
+    it("glued postfix substantive chip paints off blank-band anchor at mention-end alias", () => {
+      const doc = wireToDoc(`note @${AGENT}T\n\n\n`);
+      const [probe] = listEmbeddedBlankBandProbeWires(doc);
+      const chipped = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probe!)),
+        "backspace"
+      )!;
+
+      renderHandoffNoteDoc(root, chipped.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const point = resolveDomPointAtDocPos(root, chipped.doc, chipped.selection.focus);
+      expect(point).not.toBeNull();
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
+      const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
+      expect(roundTrip).toEqual(chipped.selection.focus);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(
+          chipped.doc,
+          docPosToWireOffset(chipped.doc, roundTrip),
+          roundTrip
+        )
+      ).toBe(false);
     });
 
     it("postfix chip whitespace tail paints after spacer not mention-edge alias", () => {

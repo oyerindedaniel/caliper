@@ -10,6 +10,7 @@
  */
 import {
   docPosToWireOffset,
+  listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
   resolveDocVerticalArrowMove,
   wireOffsetToDocPos,
@@ -1103,6 +1104,30 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(listEmbeddedBlankBandProbeWires(host.editor.getDoc())).toEqual([prefix.length]);
     });
 
+    it("sole-char row first Shift+Enter lands on new blank in one press", () => {
+      host.editor.setDocFromWire("d", 1, { resetHistory: true });
+      insertLineBreak();
+      expect(host.editor.getWire()).toBe("d\n");
+      expect(host.editor.getCursor()).toBe(2);
+    });
+
+    it("second sole-char Shift+Enter advances through blank band probes", () => {
+      host.editor.setDocFromWire("d", 1, { resetHistory: true });
+      insertLineBreak();
+      insertLineBreak();
+      expect(host.editor.getWire()).toBe("d\n\n");
+      const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
+      expect(probes).toEqual([1, 2]);
+      expect(host.editor.getCursor()).toBe(probes[1]!);
+    });
+
+    it("empty doc first Shift+Enter lands on blank row", () => {
+      host.editor.setDocFromWire("", 0, { resetHistory: true });
+      insertLineBreak();
+      expect(host.editor.getWire()).toBe("\n");
+      expect(host.editor.getCursor()).toBe(1);
+    });
+
     it("two EOF breaks backspace on lower blank without typing collapses one row", () => {
       const prefix = "content";
       host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
@@ -1563,7 +1588,28 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       );
     });
 
-    it("keydown backspace after probe on sandwiched blank reaches header row end", () => {
+    it("keydown backspace on sandwiched probe between filled rows lands at upper row end", () => {
+      const suffixWire = "header \n\n\nmiddle\n\ntail";
+      const doc = wireToDoc(suffixWire);
+      const sandwichedProbe = listEmbeddedBlankBandGroups(doc).find((g) => g.probes.length === 1)!
+        .probes[0]!;
+
+      host.editor.setDocFromWire(suffixWire, sandwichedProbe, { resetHistory: true });
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe("header \n\n\nmiddle\ntail");
+      const resultWire = host.editor.getWire();
+      const upperRowEnd = resultWire.indexOf("middle") + "middle".length - 1;
+      expect(host.editor.getCursor()).toBe(upperRowEnd);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        upperRowEnd,
+        "sandwiched probe collapse lands at upper row end"
+      );
+    });
+
+    it("keydown backspace at first probe on sole-char sandwiched row chips header then collapses blanks", () => {
       const suffixWire = `h\n\n\ntail`;
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
@@ -1571,11 +1617,13 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       host.editor.setDocFromWire(suffixWire, probes[0]!, { resetHistory: true });
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(`h\n\ntail`);
-      expect(host.editor.getCursor()).toBe(probes[0]!);
+      expect(host.editor.getWire()).toBe(`\n\n\ntail`);
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(`h\ntail`);
+      expect(host.editor.getWire()).toBe(`\n\ntail`);
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe(`\ntail`);
       expect(host.editor.getCursor()).toBe(0);
     });
 

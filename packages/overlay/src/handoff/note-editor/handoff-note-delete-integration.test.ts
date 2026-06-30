@@ -19,6 +19,7 @@ import {
   dispatchSelectionChange,
   readDomWireCursor,
   setDomCaretAtTextStart,
+  setSelectionAtWire,
 } from "./handoff-note-test-helpers.js";
 
 const AGENT_A = "caliper-abc123";
@@ -117,7 +118,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
     });
   });
 
-  describe("prefix before mention — row clear and chipBeforeBlankBand", () => {
+  describe("prefix before mention — row clear and blank-band preservation", () => {
     function tier1Wire() {
       return `\n\n\nT @${AGENT_A}\n\n\nmiddle`;
     }
@@ -388,6 +389,27 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       );
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
       expect(point?.offset).toBeGreaterThan(0);
+    });
+  });
+
+  describe("selection delete — doc end ingress", () => {
+    function deleteSelectionViaBeforeInput(): void {
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "deleteContentBackward",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    }
+
+    it("range ending on last wire char clears to empty doc", () => {
+      const wire = "dh\n\n\n";
+      host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+      setSelectionAtWire(host.root, host.editor.getDoc(), 0, wire.length - 1);
+      dispatchSelectionChange(host.root);
+      deleteSelectionViaBeforeInput();
+      expect(host.editor.getWire()).toBe("");
     });
   });
 });

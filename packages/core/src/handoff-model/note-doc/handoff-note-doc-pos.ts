@@ -1,4 +1,5 @@
 import {
+  docLength,
   docToWire,
   offsetAtDocPosition,
   resolveDocPosition,
@@ -71,6 +72,34 @@ export function docEndPos(doc: HandoffNoteDoc): HandoffNoteDocPos {
   const lastIndex = doc.nodes.length - 1;
   const last = doc.nodes[lastIndex]!;
   return { nodeIndex: lastIndex, nodeOffset: nodeTokenLength(last) };
+}
+
+/**
+ * Select-all and native range ends often map to the last wire character (e.g. trailing `\n`
+ * probe) instead of doc end — extend so delete clears the full document.
+ */
+export function expandSelectionFocusToDocEndIfNeeded(
+  doc: HandoffNoteDoc,
+  anchor: HandoffNoteDocPos,
+  focus: HandoffNoteDocPos
+): HandoffNoteDocPos {
+  if (docPosEqual(anchor, focus)) {
+    return focus;
+  }
+  const anchorWire = docPosToWireOffset(doc, anchor);
+  const focusWire = docPosToWireOffset(doc, focus);
+  const len = docLength(doc);
+  if (anchorWire > 0 || focusWire >= len) {
+    return focus;
+  }
+  const end = docEndPos(doc);
+  if (docPosEqual(focus, end)) {
+    return focus;
+  }
+  if (focusWire + 1 === len) {
+    return end;
+  }
+  return focus;
 }
 
 export function docPosToWireOffset(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): number {

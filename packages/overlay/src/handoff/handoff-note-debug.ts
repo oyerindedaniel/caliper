@@ -100,7 +100,6 @@ export type CaretSnapshotOptions = {
   activeFocus?: HandoffNoteDocPos;
   root?: HTMLElement;
   direction?: "backspace" | "delete";
-  chipBeforeBlankBand?: boolean;
   /** Include full escaped wire (mutate diffs). Default false — use wireLen. */
   includeWire?: boolean;
   /** Full DOM selection + probe list + char context. Default false. */
@@ -120,9 +119,11 @@ export function buildCaretStateSnapshot(options: CaretSnapshotOptions): Record<s
       : undefined;
   const focusWire = activeWire ?? authorityWire ?? 0;
   const atProbe = isEmbeddedBlankBandProbeWire(options.doc, focusWire);
-  const atDeleteProbe = isEmbeddedBlankBandDeleteProbeWire(options.doc, focusWire, {
-    chipBeforeBlankBand: options.chipBeforeBlankBand,
-  });
+  const atDeleteProbe = isEmbeddedBlankBandDeleteProbeWire(
+    options.doc,
+    focusWire,
+    options.authorityFocus ?? options.activeFocus
+  );
   const probeIndex = atProbe ? probes.indexOf(focusWire) : -1;
   const verbose = options.verbose === true;
   const authorityDrift =
@@ -139,7 +140,6 @@ export function buildCaretStateSnapshot(options: CaretSnapshotOptions): Record<s
     focusWire,
     atProbe,
     atDeleteProbe,
-    chipBeforeBlankBand: options.chipBeforeBlankBand ?? false,
   };
 
   if (options.includeWire) {
