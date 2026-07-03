@@ -3,6 +3,7 @@ import {
   applyDocDelete,
   applyDocInsertText,
   collapsedSelection,
+  describeHandoffNoteCursorContext,
   docPosToWireOffset,
   docToWire,
   listEmbeddedBlankBandProbeWires,
@@ -19,13 +20,15 @@ import {
   readDocSelection,
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
-  resolveMeasuredVerticalArrowMove,
+  resolveLayoutVerticalArrowMove,
   resolveVerticalTargetLineIndex,
   setDocSelection,
 } from "./handoff-note-selection.js";
 import {
+  buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
   invalidateHandoffNoteLayoutCache,
+  setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
   type HandoffNoteLayoutRow,
 } from "./handoff-note-layout-map.js";
@@ -36,8 +39,10 @@ import {
   readDomWireSelection,
   readHandoffNoteLayoutRowIndexForTests,
   readHandoffNoteLayoutSamplesForTests,
+  resolveMeasuredVerticalArrowMoveForTests as resolveMeasuredVerticalArrowMove,
   setDomCaretAtTextEnd,
   setSelectionAtWire,
+  prepareVerticalColumnProbe,
   stubCaretProbeAtDocPos,
   stubHandoffNoteAnchorRectAtWire,
   stubHandoffNoteMentionLayoutCoords,
@@ -188,7 +193,7 @@ describe("handoff-note-selection", () => {
 
   it("full repair keeps mention interior when authority and live agree at same wire", () => {
     const agent = "caliper-85l0t4y9j";
-    const wire = `hdhdhd @${agent}\n\n\n`;
+    const wire = `header @${agent}\n\n\n`;
     const doc = wireToDoc(wire);
     const interiorWire = wire.indexOf("j");
     const mentionIdx = doc.nodes.findIndex((node) => node.type === "mention");
@@ -490,7 +495,7 @@ function buildMentionTailDoc(
 
 /**
  * Oracle: three mentions on one wire line at ~310px — two visual rows (soft wrap).
- * Constants ROW1_TOP / ROW2_TOP are measured Y bands from playground, not contract ordinals.
+ * Constants ROW1_TOP / ROW2_TOP are measured layout Y bands, not row ordinals.
  */
 describe("soft-wrap vertical navigation on a single wire line", () => {
   const AGENT = "caliper-0ik99dso0";
@@ -550,38 +555,75 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
   });
 
   describe("vertical — cross visual row on soft-wrapped wire line", () => {
-    it("preserves goal column on adjacent visual rows with measured samples", () => {
-      const doc = wireToDoc(TRIPLE_MENTION_WIRE);
+    it("measured-only interior up/down is no-op", () => {
+      const wire = "abcdef\nghijkl";
+      const doc = wireToDoc(wire);
+      const line2Start = wire.indexOf("\n") + 1;
+      const sourceWire = line2Start + 2;
+      const samples = [
+        { wire: 0, top: ROW1_TOP, left: 0 },
+        { wire: 3, top: ROW1_TOP, left: 30 },
+        { wire: 5, top: ROW1_TOP, left: 55 },
+        { wire: line2Start, top: ROW2_TOP, left: 10 },
+        { wire: sourceWire, top: ROW2_TOP, left: 40 },
+        { wire: line2Start + 5, top: ROW2_TOP, left: 70 },
+      ] as const;
+      const goalColumn = 40;
       const movedUp = resolveMeasuredVerticalArrowMove(
         doc,
-        wireOffsetToDocPos(doc, 57),
+        wireOffsetToDocPos(doc, sourceWire),
         "up",
-        [...ORACLE_SAMPLES],
-        600,
+        [...samples],
+        goalColumn,
         TEXT_LINE_HEIGHT
       );
 
-      expect(movedUp.handled).toBe(true);
-      expect(docPosToWireOffset(doc, movedUp.pos)).toBe(37);
+      expect(movedUp.handled).toBe(false);
+      expect(docPosToWireOffset(doc, movedUp.pos)).toBe(sourceWire);
 
       const movedDown = resolveMeasuredVerticalArrowMove(
         doc,
-        wireOffsetToDocPos(doc, 37),
+        wireOffsetToDocPos(doc, 3),
         "down",
-        [...ORACLE_SAMPLES],
-        600,
+        [...samples],
+        goalColumn,
         TEXT_LINE_HEIGHT
       );
 
-      expect(movedDown.handled).toBe(true);
-      expect(docPosToWireOffset(doc, movedDown.pos)).toBe(57);
+      expect(movedDown.handled).toBe(false);
+      expect(docPosToWireOffset(doc, movedDown.pos)).toBe(3);
     });
 
     it("wrapped-band start and doc start cross on TRIPLE_MENTION wire", () => {
       const { root, doc } = mountWrapEditor();
-      assertVerticalMove(root, doc, WRAP_ROW2_PILL_START, -1, 0, WRAP_ROW2_PILL_START - 1);
-      assertVerticalMove(root, doc, 0, 1, WRAP_ROW2_PILL_START);
-      root.remove();
+      setMeasuredSamplesCache(TRIPLE_MENTION_WIRE, WRAP_ROOT_WIDTH, [...ORACLE_SAMPLES]);
+      const restoreUpAnchor = stubHandoffNoteAnchorRectAtWire(root, doc, WRAP_ROW2_PILL_START, {
+        top: ROW2_TOP,
+        left: ROW_START_LEFT,
+      });
+      const restoreUpProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        ROW_START_LEFT,
+        ROW1_TOP,
+        wireOffsetToDocPos(doc, 0)
+      );
+      try {
+        assertVerticalMove(root, doc, WRAP_ROW2_PILL_START, -1, 0, WRAP_ROW2_PILL_START - 1);
+        restoreUpProbe();
+        const restoreDownProbe = stubCaretProbeAtDocPos(
+          root,
+          doc,
+          ROW_START_LEFT,
+          ROW2_TOP,
+          wireOffsetToDocPos(doc, WRAP_ROW2_PILL_START)
+        );
+        assertVerticalMove(root, doc, 0, 1, WRAP_ROW2_PILL_START);
+        restoreDownProbe();
+      } finally {
+        restoreUpAnchor();
+        root.remove();
+      }
     });
 
     it("wrapped-band left edge when tail sample shares continuation band", () => {
@@ -999,7 +1041,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(docPosToWireOffset(doc, moved.pos)).toBe(23);
     });
 
-    it("down from unsampled prefix interior lands at preserved column on wrapped row", () => {
+    it("measured-only: down from prefix interior is no-op", () => {
       const doc = wireToDoc(WIRE);
       const moved = resolveMeasuredVerticalArrowMove(
         doc,
@@ -1010,12 +1052,11 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         LINE_HEIGHT
       );
 
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(WRAPPED_INTERIOR_WIRE);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(PREFIX_MID_WIRE + 1);
+      expect(moved.handled).toBe(false);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(PREFIX_MID_WIRE);
     });
 
-    it("up from unsampled wrapped interior returns to prefix column", () => {
+    it("measured-only: up from wrapped interior is no-op", () => {
       const doc = wireToDoc(WIRE);
       const moved = resolveMeasuredVerticalArrowMove(
         doc,
@@ -1026,32 +1067,8 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         LINE_HEIGHT
       );
 
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(PREFIX_MID_WIRE);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
-    });
-
-    it("prefix interior and wrapped interior round-trip at goal column", () => {
-      const doc = wireToDoc(WIRE);
-      const down = resolveMeasuredVerticalArrowMove(
-        doc,
-        wireOffsetToDocPos(doc, PREFIX_MID_WIRE),
-        "down",
-        [...WRAP_SAMPLES],
-        PREFIX_GOAL_LEFT,
-        LINE_HEIGHT
-      );
-      expect(docPosToWireOffset(doc, down.pos)).toBe(WRAPPED_INTERIOR_WIRE);
-
-      const up = resolveMeasuredVerticalArrowMove(
-        doc,
-        down.pos,
-        "up",
-        [...WRAP_SAMPLES],
-        PREFIX_GOAL_LEFT,
-        LINE_HEIGHT
-      );
-      expect(docPosToWireOffset(doc, up.pos)).toBe(PREFIX_MID_WIRE);
+      expect(moved.handled).toBe(false);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(WRAPPED_INTERIOR_WIRE);
     });
   });
 
@@ -1071,7 +1088,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       { wire: WIRE.length - 1, top: ROW2_TOP, left: 180 },
     ] as const;
 
-    it("down from unsampled mid-line interior lands at preserved column on continuation row", () => {
+    it("measured-only: down from mid-line interior is no-op", () => {
       const doc = wireToDoc(WIRE);
       const moved = resolveMeasuredVerticalArrowMove(
         doc,
@@ -1082,12 +1099,11 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         LINE_HEIGHT
       );
 
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(CONTINUATION_WIRE);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(FROM_WIRE + 1);
+      expect(moved.handled).toBe(false);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(FROM_WIRE);
     });
 
-    it("up from unsampled continuation interior returns to mid-line column", () => {
+    it("measured-only: up from continuation interior is no-op", () => {
       const doc = wireToDoc(WIRE);
       const moved = resolveMeasuredVerticalArrowMove(
         doc,
@@ -1098,9 +1114,118 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         LINE_HEIGHT
       );
 
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(FROM_WIRE);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
+      expect(moved.handled).toBe(false);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(CONTINUATION_WIRE);
+    });
+  });
+
+  describe("vertical — pill half-split on DOM column landings", () => {
+    const AGENT = "caliper-aaaaaaa";
+    const ROW1_TOP = 100;
+    const ROW2_TOP = 136;
+
+    it("up into pill left half lands at pill start", () => {
+      const wire = `hi @${AGENT}\nwide content here`;
+      const doc = wireToDoc(wire);
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const mentionStart = docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: 0 });
+      const mentionEnd = docPosToWireOffset(doc, {
+        nodeIndex: 1,
+        nodeOffset: 1 + AGENT.length,
+      });
+      const lowerStart = wire.indexOf("\n") + 1;
+      const lowerMid = lowerStart + 5;
+      const goalColumn = 80;
+      const samples = [
+        { wire: 0, top: ROW1_TOP, left: 0 },
+        { wire: mentionStart, top: ROW1_TOP, left: 30 },
+        { wire: mentionEnd, top: ROW1_TOP, left: 150 },
+        { wire: lowerStart, top: ROW2_TOP, left: 0 },
+        { wire: lowerMid, top: ROW2_TOP, left: goalColumn },
+        { wire: wire.length, top: ROW2_TOP, left: 240 },
+      ];
+      setSelectionAtWire(root, doc, lowerMid);
+      const probe = prepareVerticalColumnProbe({
+        root,
+        doc,
+        wire,
+        fromWire: lowerMid,
+        goalColumn,
+        probeTargetWire: mentionStart,
+        samples,
+        rootWidth: 310,
+        mentionCoords: new Map([[1, { top: ROW1_TOP, left: 30 }]]),
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, lowerMid),
+          "up"
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(mentionStart);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(mentionEnd);
+      } finally {
+        probe.restore();
+        root.remove();
+      }
+    });
+
+    it("down into pill right half lands at pill end", () => {
+      const wire = `wide source\nhi @${AGENT}`;
+      const doc = wireToDoc(wire);
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const sourceMid = 4;
+      const lowerStart = wire.indexOf("\n") + 1;
+      const mentionStart = docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: 0 });
+      const mentionEnd = docPosToWireOffset(doc, {
+        nodeIndex: 1,
+        nodeOffset: 1 + AGENT.length,
+      });
+      const goalColumn = 100;
+      const samples = [
+        { wire: 0, top: ROW1_TOP, left: 0 },
+        { wire: sourceMid, top: ROW1_TOP, left: goalColumn },
+        { wire: lowerStart - 1, top: ROW1_TOP, left: 160 },
+        { wire: lowerStart, top: ROW2_TOP, left: 0 },
+        { wire: mentionStart, top: ROW2_TOP, left: 30 },
+        { wire: mentionEnd, top: ROW2_TOP, left: 150 },
+      ];
+      setSelectionAtWire(root, doc, sourceMid);
+      const probe = prepareVerticalColumnProbe({
+        root,
+        doc,
+        wire,
+        fromWire: sourceMid,
+        goalColumn,
+        probeTargetWire: mentionEnd,
+        samples,
+        rootWidth: 310,
+        mentionCoords: new Map([[1, { top: ROW2_TOP, left: 30 }]]),
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, sourceMid),
+          "down"
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(mentionEnd);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(mentionStart);
+      } finally {
+        probe.restore();
+        root.remove();
+      }
     });
   });
 
@@ -1197,6 +1322,898 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
+  describe("vertical — post-mention spacer at soft-wrap boundary", () => {
+    const AGENT = "caliper-nnz77a8nq";
+    const WIRE = `pre @${AGENT} x @${AGENT} line @${AGENT} @${AGENT} `;
+    const doc = wireToDoc(WIRE);
+    const ROW1_TOP = 141.1;
+    const ROW2_TOP = 159.3;
+    const LINE_HEIGHT = 18.197921752929688;
+    const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+    const secondPostStart = docPosToWireOffset(doc, { nodeIndex: 4, nodeOffset: 0 });
+    const secondTextStart = secondPostStart + 1;
+    const EOF_WIRE = WIRE.length;
+    const RIGHT_EDGE_COLUMN = 624.52;
+
+    const samples = [
+      { wire: 0, top: ROW1_TOP, left: 347.5 },
+      { wire: 4, top: ROW1_TOP, left: 374.73 },
+      {
+        wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 0 }),
+        top: ROW1_TOP,
+        left: 491.89,
+      },
+      { wire: secondMentionStart, top: ROW1_TOP, left: 507.67 },
+      { wire: secondPostStart, top: ROW2_TOP, left: 624.82 },
+      {
+        wire: docPosToWireOffset(doc, { nodeIndex: 5, nodeOffset: 0 }),
+        top: ROW2_TOP,
+        left: 382.09,
+      },
+      {
+        wire: docPosToWireOffset(doc, { nodeIndex: 5, nodeOffset: AGENT.length }),
+        top: ROW2_TOP,
+        left: 499.25,
+      },
+      {
+        wire: docPosToWireOffset(doc, { nodeIndex: 6, nodeOffset: 0 }),
+        top: ROW2_TOP,
+        left: 503.81,
+      },
+      {
+        wire: docPosToWireOffset(doc, { nodeIndex: 7, nodeOffset: AGENT.length }),
+        top: ROW2_TOP,
+        left: 620.97,
+      },
+      { wire: EOF_WIRE, top: ROW2_TOP, left: RIGHT_EDGE_COLUMN },
+      {
+        wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 0 }) + 1,
+        top: ROW1_TOP - 0.43,
+        left: 491.89,
+      },
+      { wire: secondTextStart, top: ROW1_TOP - 0.43, left: 624.82 },
+    ] as const;
+
+    it("up from lower row end lands at the upper row end, not the second pill start", () => {
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, EOF_WIRE),
+        "up",
+        [...samples],
+        RIGHT_EDGE_COLUMN,
+        LINE_HEIGHT
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(secondPostStart);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondMentionStart);
+    });
+
+    it("down from upper row end moves to lower row end, not row start", () => {
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, secondPostStart),
+        "down",
+        [...samples],
+        624.82,
+        LINE_HEIGHT
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(WIRE.length - 1);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondTextStart);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(EOF_WIRE);
+    });
+
+    it("measured-only up is no-op when segment text does not match", () => {
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, secondTextStart + 1),
+        "up",
+        [...samples],
+        382.09,
+        LINE_HEIGHT
+      );
+
+      expect(moved.handled).toBe(false);
+      expect(moved.branch).toBeUndefined();
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(secondTextStart + 1);
+    });
+
+    it("DOM probe lands matching prefix column on target row", () => {
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      setSelectionAtWire(root, doc, secondTextStart + 1);
+
+      const targetColumn = 491.89;
+      const restoreSourceAnchor = stubHandoffNoteAnchorRectAtWire(root, doc, secondTextStart + 1, {
+        top: ROW2_TOP,
+        left: targetColumn,
+      });
+      const targetPostMentionText = docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 1 });
+      const restoreTargetProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        targetColumn,
+        ROW1_TOP,
+        wireOffsetToDocPos(doc, targetPostMentionText)
+      );
+      setMeasuredSamplesCache(WIRE, root.clientWidth, [...samples]);
+
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, secondTextStart + 1),
+          "up"
+        );
+
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(targetPostMentionText);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(4);
+      } finally {
+        restoreTargetProbe();
+        restoreSourceAnchor();
+        root.remove();
+      }
+    });
+
+    it("DOM probe accepts landing when layout sample left drifts", () => {
+      const wrapRowWire = `pre @${AGENT} x @${AGENT} post @${AGENT} @${AGENT} `;
+      const wrapRowDoc = wireToDoc(wrapRowWire);
+      const prefixInterior = 2;
+      const tailStart = wrapRowWire.indexOf("post");
+      const tailInterior = tailStart + 2;
+      const goalColumn = 361.11;
+      const spacerWire = tailStart - 1;
+      const secondMentionStart = docPosToWireOffset(wrapRowDoc, { nodeIndex: 3, nodeOffset: 0 });
+      const wrapRowSamples = [
+        { wire: 0, top: ROW1_TOP, left: 347.5 },
+        { wire: 4, top: ROW1_TOP, left: 374.73 },
+        {
+          wire: docPosToWireOffset(wrapRowDoc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: ROW1_TOP,
+          left: 491.89,
+        },
+        { wire: secondMentionStart, top: ROW1_TOP, left: 507.67 },
+        { wire: spacerWire, top: ROW1_TOP, left: 624.82 },
+        { wire: wrapRowWire.length, top: ROW2_TOP, left: 377.81 },
+        { wire: tailStart, top: ROW2_TOP, left: 377.8125 },
+        { wire: tailInterior, top: ROW2_TOP, left: 394 },
+        {
+          wire: docPosToWireOffset(wrapRowDoc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: ROW1_TOP - 0.43,
+          left: 491.89,
+        },
+        { wire: tailStart, top: ROW1_TOP - 0.43, left: 624.82 },
+      ];
+
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, wrapRowDoc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      setSelectionAtWire(root, wrapRowDoc, prefixInterior);
+
+      const restoreSourceAnchor = stubHandoffNoteAnchorRectAtWire(
+        root,
+        wrapRowDoc,
+        prefixInterior,
+        {
+          top: ROW1_TOP,
+          left: goalColumn,
+        }
+      );
+      const restoreTargetAnchor = stubHandoffNoteAnchorRectAtWire(root, wrapRowDoc, tailInterior, {
+        top: ROW2_TOP,
+        left: goalColumn,
+      });
+      const restoreTargetProbe = stubCaretProbeAtDocPos(
+        root,
+        wrapRowDoc,
+        goalColumn,
+        ROW2_TOP,
+        wireOffsetToDocPos(wrapRowDoc, tailInterior)
+      );
+      setMeasuredSamplesCache(wrapRowWire, root.clientWidth, wrapRowSamples);
+
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          wrapRowDoc,
+          wireOffsetToDocPos(wrapRowDoc, prefixInterior),
+          "down"
+        );
+
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(wrapRowDoc, moved.pos)).toBe(tailInterior);
+        expect(moved.goalColumn).toBeCloseTo(goalColumn, 1);
+      } finally {
+        restoreTargetProbe();
+        restoreTargetAnchor();
+        restoreSourceAnchor();
+        root.remove();
+      }
+    });
+
+    it("rejects a DOM probe snapped away from the goal column before falling back", () => {
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const badProbeWire = secondTextStart + 1;
+      const goalColumn = 354.3072967529297;
+      const restoreProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        goalColumn,
+        ROW2_TOP,
+        wireOffsetToDocPos(doc, badProbeWire)
+      );
+      const restoreBadAnchor = stubHandoffNoteAnchorRectAtWire(root, doc, badProbeWire, {
+        top: ROW2_TOP,
+        left: 382.09,
+      });
+      setMeasuredSamplesCache(WIRE, root.clientWidth, [...samples]);
+      const layout = buildLayoutMapFromSamples([...samples], LINE_HEIGHT, doc);
+
+      try {
+        const moved = resolveLayoutVerticalArrowMove(
+          doc,
+          wireOffsetToDocPos(doc, 1),
+          "down",
+          layout,
+          goalColumn,
+          root
+        );
+
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).not.toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(secondTextStart);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(badProbeWire);
+      } finally {
+        restoreBadAnchor();
+        restoreProbe();
+        root.remove();
+      }
+    });
+  });
+
+  describe("vertical — wire newline cross sparse column fallback", () => {
+    const AGENT = "caliper-aaaaaaa";
+    const ROW0_TOP = 141.1;
+    const ROW1_TOP = 177.49;
+    const GOAL_COLUMN = 612;
+    const VISUAL_ROW_START = 347.5;
+
+    function wireNewlineWire() {
+      return `pre @${AGENT} x @${AGENT} post @${AGENT} @${AGENT} \nlower @${AGENT} `;
+    }
+
+    function wireNewlineSamples(wire: string) {
+      const doc = wireToDoc(wire);
+      const lowerLineStart = wire.indexOf("\n") + 1;
+      const row0EndBeforeBreak = lowerLineStart - 1;
+      const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      return [
+        { wire: 0, top: ROW0_TOP, left: VISUAL_ROW_START },
+        { wire: 4, top: ROW0_TOP, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: ROW0_TOP,
+          left: 491.89,
+        },
+        { wire: secondMentionStart, top: ROW0_TOP, left: 507.67 },
+        { wire: row0EndBeforeBreak, top: ROW0_TOP, left: 624.82 },
+        { wire: lowerLineStart, top: ROW1_TOP, left: VISUAL_ROW_START },
+        { wire: wire.length - 1, top: ROW1_TOP, left: GOAL_COLUMN },
+        { wire: wire.length, top: ROW1_TOP, left: GOAL_COLUMN },
+      ];
+    }
+
+    it("sparse layout path brackets to upper row end not mention interior", () => {
+      const wire = wireNewlineWire();
+      const doc = wireToDoc(wire);
+      const lowerEof = wire.length - 1;
+      const row0EndBeforeBreak = wire.indexOf("\n");
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      setMeasuredSamplesCache(wire, root.clientWidth, wireNewlineSamples(wire));
+      const layout = buildHandoffNoteLayoutMap(root, doc, wireOffsetToDocPos(doc, lowerEof));
+
+      try {
+        const moved = resolveLayoutVerticalArrowMove(
+          doc,
+          wireOffsetToDocPos(doc, lowerEof),
+          "up",
+          layout,
+          GOAL_COLUMN
+        );
+
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toMatch(/^sparse-row-end/);
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(row0EndBeforeBreak);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(62);
+      } finally {
+        root.remove();
+      }
+    });
+
+    it("Down wide upper row end lands lower EOF not mention interior", () => {
+      const wire = wireNewlineWire();
+      const doc = wireToDoc(wire);
+      const row0EndBeforeBreak = wire.indexOf("\n");
+      const lowerEof = wire.length - 1;
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, row0EndBeforeBreak),
+        "down",
+        wireNewlineSamples(wire),
+        GOAL_COLUMN,
+        18.2
+      );
+      expect(moved.handled).toBe(true);
+      expect(moved.branch).toMatch(/^sparse-row-end/);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerEof);
+      expect(
+        describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
+      ).not.toBe("mention-interior");
+    });
+  });
+
+  describe("vertical — same-wire soft-wrap pill half-split", () => {
+    const AGENT = "caliper-aaaaaaa";
+    const ROW0_TOP = 141.1;
+    const ROW1_TOP = 159.3;
+    const GOAL_WIDE = 612;
+
+    function softWrapTwoPillRowWire() {
+      return `pre @${AGENT} x @${AGENT} post @${AGENT} @${AGENT} `;
+    }
+
+    function softWrapTwoPillRowLandmarks(wire: string) {
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      const secondMentionEnd = docPosToWireOffset(doc, {
+        nodeIndex: 3,
+        nodeOffset: 1 + AGENT.length,
+      });
+      const firstMentionStart = docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: 0 });
+      return {
+        doc,
+        tailStart,
+        firstMentionStart,
+        secondMentionEnd,
+        samples: [
+          { wire: 0, top: ROW0_TOP, left: 347.5 },
+          { wire: 4, top: ROW0_TOP, left: 374.73 },
+          {
+            wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 1 }),
+            top: ROW0_TOP,
+            left: 491.89,
+          },
+          { wire: secondMentionStart, top: ROW0_TOP, left: 507.67 },
+          { wire: tailStart - 1, top: ROW0_TOP, left: 624.82 },
+          { wire: wire.length, top: ROW1_TOP, left: 377.81 },
+          { wire: tailStart, top: ROW1_TOP, left: 377.8125 },
+          { wire: firstMentionStart, top: ROW0_TOP, left: 360 },
+        ],
+      };
+    }
+
+    it("up from wrap mention-end uses pill half-split on prefix row", () => {
+      const wire = softWrapTwoPillRowWire();
+      const { doc, secondMentionEnd, tailStart, samples } = softWrapTwoPillRowLandmarks(wire);
+      const mentionEnd = wire.length - 1;
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      stubHandoffNoteMentionLayoutCoords(
+        root,
+        new Map([
+          [1, { top: ROW0_TOP, left: 360 }],
+          [3, { top: ROW0_TOP, left: 507.67 }],
+        ])
+      );
+      setMeasuredSamplesCache(wire, root.clientWidth, samples);
+      const layout = buildHandoffNoteLayoutMap(root, doc, wireOffsetToDocPos(doc, mentionEnd));
+
+      try {
+        const moved = resolveLayoutVerticalArrowMove(
+          doc,
+          wireOffsetToDocPos(doc, mentionEnd),
+          "up",
+          layout,
+          GOAL_WIDE,
+          root
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(secondMentionEnd);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(tailStart);
+      } finally {
+        root.remove();
+      }
+    });
+
+    it("down from prefix uses bracket or DOM column probe not pill snap override", () => {
+      const wire = softWrapTwoPillRowWire();
+      const { doc, samples } = softWrapTwoPillRowLandmarks(wire);
+      const moved = resolveMeasuredVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 2),
+        "down",
+        samples,
+        361.11,
+        18.2
+      );
+      expect(moved.handled).toBe(true);
+      expect(moved.branch).not.toBe("dom-pill-column-snap");
+      expect(
+        describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
+      ).not.toBe("mention-interior");
+    });
+  });
+
+  describe("vertical — blank-band goal authority", () => {
+    it("entering a blank row resets sticky goal to that blank row's measured start", () => {
+      const doc = wireToDoc("x\n\ntail");
+      const blankLeft = 12;
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 100,
+          minLeft: 80,
+          maxLeft: 120,
+          samples: [{ wire: 0, top: 100, left: 80 }],
+        },
+        {
+          kind: "blank",
+          top: 118,
+          minLeft: blankLeft,
+          maxLeft: blankLeft,
+          breakProbeWire: 1,
+          samples: [{ wire: 1, top: 118, left: blankLeft }],
+        },
+        {
+          kind: "content",
+          top: 136,
+          minLeft: 64,
+          maxLeft: 120,
+          samples: [{ wire: 3, top: 136, left: 64 }],
+        },
+      ];
+      const layout: HandoffNoteLayoutMap = {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: (wire) => {
+          if (wire === 1) return 1;
+          if (wire >= 3) return 2;
+          return 0;
+        },
+        coordsForWire: (wire) =>
+          rows.flatMap((row) => row.samples).find((sample) => sample.wire === wire) ?? null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+      };
+
+      const moved = resolveLayoutVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, 3),
+        "up",
+        layout,
+        64
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(moved.branch).toBe("blank-band-break-probe");
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(1);
+      expect(moved.goalColumn).toBe(blankLeft);
+      expect(moved.goalColumn).not.toBe(80);
+    });
+
+    it("up from blank above soft-wrap continuation lands on that row, not prefix wire 0", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `pre @${agent} x @${agent} post @${agent} @${agent} \n\ntail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const visualStart = 347.5;
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 141.1,
+          minLeft: visualStart,
+          maxLeft: 624.82,
+          samples: [
+            { wire: 0, top: 141.1, left: visualStart },
+            { wire: tailStart - 1, top: 141.1, left: 624.82 },
+          ],
+        },
+        {
+          kind: "content",
+          top: 159.3,
+          minLeft: 382.09,
+          maxLeft: 624.52,
+          samples: [{ wire: tailStart, top: 159.3, left: 382.09 }],
+        },
+        {
+          kind: "blank",
+          top: 177.06,
+          minLeft: visualStart,
+          maxLeft: visualStart,
+          breakProbeWire: probe,
+          samples: [{ wire: probe, top: 177.06, left: visualStart }],
+        },
+        {
+          kind: "content",
+          top: 195.26,
+          minLeft: 377.52,
+          maxLeft: 624.52,
+          samples: [{ wire: wire.length - 1, top: 195.26, left: 377.52 }],
+        },
+      ];
+      const layout: HandoffNoteLayoutMap = {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: (w) => {
+          if (w === probe) return 2;
+          if (w >= tailStart && w < probe) return 1;
+          if (w >= wire.length - 1) return 3;
+          return 0;
+        },
+        coordsForWire: (w) =>
+          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+      };
+
+      const moved = resolveLayoutVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, probe),
+        "up",
+        layout,
+        visualStart
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(moved.branch).toBe("blank-exit-visual-row-start");
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(tailStart);
+      expect(layout.rowIndexForWire(docPosToWireOffset(doc, moved.pos))).toBe(1);
+      expect(moved.goalColumn).toBe(visualStart);
+    });
+
+    it("up from blank above wire-newline row lands substantive text start when min-left sample is @", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `pre @${agent} x @${agent} \nline @${agent} @${agent} \n\nline`;
+      const doc = wireToDoc(wire);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const visualStart = 347.5;
+      const middleRowAtWire = wire.indexOf("@", wire.indexOf("\n") + 1);
+      const docLineStartWire = wire.indexOf("line", wire.indexOf("\n"));
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 141.1,
+          minLeft: visualStart,
+          maxLeft: 628.38,
+          samples: [
+            { wire: 0, top: 141.1, left: visualStart },
+            { wire: docLineStartWire - 1, top: 141.1, left: 628.38 },
+          ],
+        },
+        {
+          kind: "content",
+          top: 159.3,
+          minLeft: visualStart,
+          maxLeft: 624.52,
+          samples: [
+            { wire: docLineStartWire, top: 159.3, left: visualStart },
+            { wire: middleRowAtWire, top: 159.3, left: 382.09 },
+            { wire: middleRowAtWire + 18, top: 159.3, left: 499.25 },
+          ],
+        },
+        {
+          kind: "blank",
+          top: 177.06,
+          minLeft: visualStart,
+          maxLeft: visualStart,
+          breakProbeWire: probe,
+          samples: [{ wire: probe, top: 177.06, left: visualStart }],
+        },
+        {
+          kind: "content",
+          top: 195.26,
+          minLeft: 377.52,
+          maxLeft: 624.52,
+          samples: [{ wire: wire.length - 1, top: 195.26, left: 377.52 }],
+        },
+      ];
+      const layout: HandoffNoteLayoutMap = {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: (w) => {
+          if (w === probe) return 2;
+          if (w >= docLineStartWire && w < probe) return 1;
+          if (w >= wire.length - 4) return 3;
+          return 0;
+        },
+        coordsForWire: (w) =>
+          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+      };
+
+      const moved = resolveLayoutVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, probe),
+        "up",
+        layout,
+        visualStart
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(docLineStartWire);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(middleRowAtWire);
+      expect(describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind).toBe(
+        "text"
+      );
+      expect(moved.goalColumn).toBe(visualStart);
+    });
+
+    it("up from blank above wire-newline row keeps layout min-left when it is plain text", () => {
+      const wire = "a".repeat(100);
+      const doc = wireToDoc(wire);
+      const probe = 88;
+      const visualStart = 347.5;
+      const middleRowStartWire = 50;
+      const docLineStartWire = 45;
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 141.1,
+          minLeft: visualStart,
+          maxLeft: 628.38,
+          samples: [
+            { wire: 0, top: 141.1, left: visualStart },
+            { wire: docLineStartWire, top: 141.1, left: 380 },
+          ],
+        },
+        {
+          kind: "content",
+          top: 159.3,
+          minLeft: 382.09,
+          maxLeft: 624.52,
+          samples: [
+            { wire: middleRowStartWire, top: 159.3, left: 382.09 },
+            { wire: 68, top: 159.3, left: 499.25 },
+          ],
+        },
+        {
+          kind: "blank",
+          top: 177.06,
+          minLeft: visualStart,
+          maxLeft: visualStart,
+          breakProbeWire: probe,
+          samples: [{ wire: probe, top: 177.06, left: visualStart }],
+        },
+        {
+          kind: "content",
+          top: 195.26,
+          minLeft: 377.52,
+          maxLeft: 624.52,
+          samples: [{ wire: 94, top: 195.26, left: 377.52 }],
+        },
+      ];
+      const layout: HandoffNoteLayoutMap = {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: (w) => {
+          if (w === probe) return 2;
+          if (w >= middleRowStartWire && w < probe) return 1;
+          if (w >= 94) return 3;
+          return 0;
+        },
+        coordsForWire: (w) =>
+          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+      };
+
+      const moved = resolveLayoutVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, probe),
+        "up",
+        layout,
+        visualStart
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(middleRowStartWire);
+      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(docLineStartWire);
+      expect(layout.rowIndexForWire(docPosToWireOffset(doc, moved.pos))).toBe(1);
+      expect(moved.goalColumn).toBe(visualStart);
+    });
+
+    it("three-step up from lower through blank keeps blank-band visual start sticky", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `pre @${agent} x @${agent} post @${agent} @${agent} \n\ntail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const visualStart = 347.5;
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 141.1,
+          minLeft: visualStart,
+          maxLeft: 624.82,
+          samples: [
+            { wire: 0, top: 141.1, left: visualStart },
+            { wire: tailStart - 1, top: 141.1, left: 624.82 },
+          ],
+        },
+        {
+          kind: "content",
+          top: 159.3,
+          minLeft: 382.09,
+          maxLeft: 624.52,
+          samples: [{ wire: tailStart, top: 159.3, left: 382.09 }],
+        },
+        {
+          kind: "blank",
+          top: 177.06,
+          minLeft: visualStart,
+          maxLeft: visualStart,
+          breakProbeWire: probe,
+          samples: [{ wire: probe, top: 177.06, left: visualStart }],
+        },
+        {
+          kind: "content",
+          top: 195.26,
+          minLeft: 377.52,
+          maxLeft: 624.52,
+          samples: [{ wire: wire.length - 1, top: 195.26, left: 377.52 }],
+        },
+      ];
+      const layout: HandoffNoteLayoutMap = {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: (w) => {
+          if (w === probe) return 2;
+          if (w >= tailStart && w < probe) return 1;
+          if (w >= wire.length - 1) return 3;
+          return 0;
+        },
+        coordsForWire: (w) =>
+          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+      };
+
+      const lowerEof = wire.length - 1;
+      const toBlank = resolveLayoutVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, lowerEof),
+        "up",
+        layout,
+        377.52
+      );
+      expect(docPosToWireOffset(doc, toBlank.pos)).toBe(probe);
+
+      const toWrap = resolveLayoutVerticalArrowMove(
+        doc,
+        toBlank.pos,
+        "up",
+        layout,
+        toBlank.goalColumn ?? visualStart
+      );
+      expect(docPosToWireOffset(doc, toWrap.pos)).toBe(tailStart);
+      expect(toWrap.goalColumn).toBe(visualStart);
+
+      const toPrefix = resolveLayoutVerticalArrowMove(
+        doc,
+        toWrap.pos,
+        "up",
+        layout,
+        toWrap.goalColumn ?? visualStart
+      );
+      expect(docPosToWireOffset(doc, toPrefix.pos)).toBe(0);
+      expect(layout.rowIndexForWire(docPosToWireOffset(doc, toPrefix.pos))).toBe(0);
+    });
+
+    it("down from blank below soft-wrap lands lower content row visual start", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `pre @${agent} x @${agent} post @${agent} @${agent} \n\ntail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const lowerStart = wire.indexOf("tail");
+      const visualStart = 347.5;
+      const rows: HandoffNoteLayoutRow[] = [
+        {
+          kind: "content",
+          top: 141.1,
+          minLeft: visualStart,
+          maxLeft: 624.82,
+          samples: [
+            { wire: 0, top: 141.1, left: visualStart },
+            { wire: tailStart - 1, top: 141.1, left: 624.82 },
+          ],
+        },
+        {
+          kind: "content",
+          top: 159.3,
+          minLeft: 382.09,
+          maxLeft: 624.52,
+          samples: [{ wire: tailStart, top: 159.3, left: 382.09 }],
+        },
+        {
+          kind: "blank",
+          top: 177.06,
+          minLeft: visualStart,
+          maxLeft: visualStart,
+          breakProbeWire: probe,
+          samples: [{ wire: probe, top: 177.06, left: visualStart }],
+        },
+        {
+          kind: "content",
+          top: 195.26,
+          minLeft: 377.52,
+          maxLeft: 624.52,
+          samples: [{ wire: lowerStart, top: 195.26, left: 377.52 }],
+        },
+      ];
+      const layout: HandoffNoteLayoutMap = {
+        samples: rows.flatMap((row) => row.samples),
+        rows,
+        lineHeight: 18,
+        visualRowCount: rows.length,
+        rowIndexForWire: (w) => {
+          if (w === probe) return 2;
+          if (w >= lowerStart) return 3;
+          if (w >= tailStart && w < probe) return 1;
+          return 0;
+        },
+        coordsForWire: (w) =>
+          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+      };
+
+      const moved = resolveLayoutVerticalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, probe),
+        "down",
+        layout,
+        visualStart
+      );
+
+      expect(moved.handled).toBe(true);
+      expect(moved.branch).toBe("blank-exit-visual-row-start");
+      expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThanOrEqual(lowerStart);
+      expect(layout.rowIndexForWire(docPosToWireOffset(doc, moved.pos))).toBe(3);
+    });
+  });
+
   describe("vertical target line — down co-top inline blank skip", () => {
     const doc = wireToDoc("row\nbelow");
 
@@ -1209,7 +2226,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         rowIndexForWire: () => -1,
         coordsForWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-        resolveSegmentOffsetLanding: () => null,
       };
     }
 
@@ -1274,9 +2290,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     const agent = "caliper-aaaaaaa";
 
     it("down from row start lands soft-wrap continuation start before past-end", () => {
-      const wire = `dhd @${agent} d @${agent} dhd`;
+      const wire = `pre @${agent} x @${agent} seg`;
       const doc = wireToDoc(wire);
-      const tailStart = wire.lastIndexOf("dhd");
+      const tailStart = wire.lastIndexOf("seg");
       const moved = resolveMeasuredVerticalArrowMove(
         doc,
         wireOffsetToDocPos(doc, 0),

@@ -12,7 +12,6 @@
   resolveDocHorizontalArrowMove,
   resolveVerticalArrowMinWireLineStart,
   resolveVerticalArrowRowStartLanding,
-  resolveVerticalArrowVisualLanding,
   snapVerticalArrowLanding,
   wireOffsetToDocPos,
   type HandoffNoteDoc,
@@ -32,17 +31,18 @@ import {
   domPointToDocPos,
   getDocAnchorRect,
   probeDocPosAtVisualColumn,
+  resolveDomPillBoundaryPosForGoalColumn,
   resolveDomPointAtDocPos,
+  wireOffsetForPillHalfSplitColumn,
 } from "./handoff-note-dom-points.js";
 import {
   buildHandoffNoteLayoutMap,
-  buildLayoutMapFromSamples,
-  resolveWireAtColumnOnVisualRow,
   isAtLayoutRowStart,
+  isSameWireSoftWrapBandCrossing,
+  layoutRowTopTolerance,
   layoutVisualRowStartColumn,
   type HandoffNoteLayoutMap,
   type HandoffNoteLayoutRow,
-  type SegmentOffsetLanding,
 } from "./handoff-note-layout-map.js";
 import { type MeasuredWireOffset } from "./handoff-note-layout-map.js";
 
@@ -309,16 +309,6 @@ export function setDocSelection(
   });
 }
 
-function pickClosestOnLine(line: MeasuredWireOffset[], targetLeft: number): MeasuredWireOffset {
-  let best = line[0]!;
-  for (const sample of line) {
-    if (Math.abs(sample.left - targetLeft) < Math.abs(best.left - targetLeft)) {
-      best = sample;
-    }
-  }
-  return best;
-}
-
 function wireOffsetToRowStartDocPos(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos {
   let offset = 0;
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
@@ -353,6 +343,66 @@ function pickConcreteRowStartSample(
     }
   }
   return best;
+}
+
+function pickConcreteRowEndSample(
+  samples: MeasuredWireOffset[],
+  wireLength: number
+): MeasuredWireOffset {
+  let bestInterior: MeasuredWireOffset | null = null;
+  for (const sample of samples) {
+    if (sample.wire >= wireLength) {
+      continue;
+    }
+    if (
+      bestInterior === null ||
+      sample.left > bestInterior.left ||
+      (sample.left === bestInterior.left && sample.wire > bestInterior.wire)
+    ) {
+      bestInterior = sample;
+    }
+  }
+  if (bestInterior) {
+    return bestInterior;
+  }
+  let best = samples[0]!;
+  for (const sample of samples) {
+    if (sample.left > best.left) {
+      best = sample;
+    } else if (sample.left === best.left && sample.wire > best.wire) {
+      best = sample;
+    }
+  }
+  return best;
+}
+
+function sourceIsAtRowContentEnd(
+  fromWire: number,
+  goalColumn: number,
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  wireLength: number,
+  tolerance: number
+): boolean {
+  if (fromWire >= wireLength) {
+    return true;
+  }
+  if (!sourceRowSamples || sourceRowSamples.length === 0) {
+    return false;
+  }
+  const endSample = pickConcreteRowEndSample(sourceRowSamples, wireLength);
+  if (Math.abs(goalColumn - endSample.left) > tolerance) {
+    return false;
+  }
+  if (fromWire >= endSample.wire) {
+    return true;
+  }
+  let maxInteriorWire = -1;
+  for (const sample of sourceRowSamples) {
+    if (sample.wire < wireLength) {
+      maxInteriorWire = Math.max(maxInteriorWire, sample.wire);
+    }
+  }
+  return fromWire >= maxInteriorWire;
 }
 
 function resolveVisualRowStartLanding(
@@ -417,25 +467,6 @@ function targetRowTextPosForWire(
   return pos;
 }
 
-function pickTargetRowTextSamplePos(
-  doc: HandoffNoteDoc,
-  targetLine: MeasuredWireOffset[],
-  goalColumn: number,
-  rowStart?: VisualRowStartContext
-): HandoffNoteDocPos | null {
-  let best: { sample: MeasuredWireOffset; pos: HandoffNoteDocPos } | null = null;
-  for (const sample of targetLine) {
-    const pos = targetRowTextPosForWire(doc, sample.wire, rowStart);
-    if (!pos) {
-      continue;
-    }
-    if (!best || Math.abs(sample.left - goalColumn) < Math.abs(best.sample.left - goalColumn)) {
-      best = { sample, pos };
-    }
-  }
-  return best?.pos ?? null;
-}
-
 function landedOutsideTargetRow(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
@@ -447,10 +478,49 @@ function landedOutsideTargetRow(
   );
 }
 
-function isMentionAtomStart(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): boolean {
-  const node = doc.nodes[pos.nodeIndex];
-  return node?.type === "mention" && pos.nodeOffset === 0;
+function snapVerticalColumnLandingWire(
+  doc: HandoffNoteDoc,
+  wire: number,
+  direction: HandoffNoteVerticalArrowDirection
+): number {
+  const context = describeHandoffNoteCursorContext(doc, wire);
+  if (context.kind === "mention-interior") {
+    return direction === "up" ? context.start : context.end;
+  }
+  return wire;
 }
+
+/** Past-end bleed carries no wire sample; bracket on unsampled interior wires snaps to nearest layout sample. */
+function snapPastEndUnsampledBracketToLayoutSample(
+  targetLine: MeasuredWireOffset[],
+  bracketWire: number,
+  goalColumn: number,
+  fromWire: number,
+  docWireLength: number
+): number {
+  if (fromWire < docWireLength) {
+    return bracketWire;
+  }
+  const sampleWires = new Set(targetLine.map((sample) => sample.wire));
+  if (sampleWires.has(bracketWire)) {
+    return bracketWire;
+  }
+  let bestSample = targetLine[0]!;
+  let bestDistance = Math.abs(bestSample.left - goalColumn);
+  for (const sample of targetLine) {
+    const distance = Math.abs(sample.left - goalColumn);
+    if (distance < bestDistance) {
+      bestSample = sample;
+      bestDistance = distance;
+    }
+  }
+  return bestSample.wire;
+}
+
+type VerticalLanding = {
+  pos: HandoffNoteDocPos;
+  branch: string;
+};
 
 type VisualRowStartContext = {
   root: HTMLElement;
@@ -461,209 +531,579 @@ type VisualRowStartContext = {
   goalColumnTolerance: number;
 };
 
-function pickVerticalLandingOnLine(
+function probeTargetRowAtColumn(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  column: number,
+  rowStart?: VisualRowStartContext
+): VerticalLanding | null {
+  if (!rowStart) {
+    return null;
+  }
+
+  const rowBandTolerance = Math.max(2, rowStart.goalColumnTolerance * 4);
+  const pillPos = resolveDomPillBoundaryPosForGoalColumn(
+    rowStart.root,
+    doc,
+    column,
+    rowStart.targetRowTop,
+    rowBandTolerance,
+    rowStart.goalColumnTolerance
+  );
+  if (pillPos) {
+    const pillLanding = snapVerticalArrowLanding(doc, pillPos, direction);
+    const pillWire = docPosToWireOffset(doc, pillLanding);
+    const pillRowIndex = rowStart.rowIndexForWire(pillWire);
+    if (pillRowIndex === rowStart.targetLineIndex) {
+      logVerArrow("resolve.domColumnProbe", {
+        direction,
+        fromWire: docPosToWireOffset(doc, focus),
+        probeColumn: column,
+        rowTop: rowStart.targetRowTop,
+        resolvedWire: pillWire,
+        probeRowIndex: pillRowIndex,
+        targetLineIndex: rowStart.targetLineIndex,
+        accepted: true,
+        branch: "dom-pill-column-snap",
+      });
+      return {
+        pos: normalizeDocPos(doc, pillLanding, { from: focus }),
+        branch: "dom-pill-column-snap",
+      };
+    }
+  }
+
+  const probed = probeDocPosAtVisualColumn(rowStart.root, doc, rowStart.targetRowTop, column);
+  if (!probed) {
+    logVerArrow("resolve.domColumnProbe", {
+      direction,
+      fromWire: docPosToWireOffset(doc, focus),
+      probeColumn: column,
+      rowTop: rowStart.targetRowTop,
+      branch: "probe-miss",
+    });
+    return null;
+  }
+
+  const landing = snapVerticalArrowLanding(doc, probed, direction);
+  const resolvedWire = docPosToWireOffset(doc, landing);
+  const probeRowIndex = rowStart.rowIndexForWire(resolvedWire);
+  if (probeRowIndex !== rowStart.targetLineIndex) {
+    logVerArrow("resolve.domColumnProbe", {
+      direction,
+      fromWire: docPosToWireOffset(doc, focus),
+      probeColumn: column,
+      rowTop: rowStart.targetRowTop,
+      resolvedWire,
+      probeRowIndex,
+      targetLineIndex: rowStart.targetLineIndex,
+      accepted: false,
+      branch: "probe-wrong-row",
+    });
+    return null;
+  }
+
+  const probeCoord = rowStart.coordsForWire(resolvedWire);
+  const anchorRect = getDocAnchorRect(rowStart.root, doc, landing);
+  const hasCredibleAnchor = anchorRect !== null && (anchorRect.height > 0 || anchorRect.width > 0);
+  const probeLeft = hasCredibleAnchor ? anchorRect!.left : null;
+  if (
+    hasCredibleAnchor &&
+    probeLeft !== null &&
+    Math.abs(probeLeft - column) > rowStart.goalColumnTolerance
+  ) {
+    logVerArrow("resolve.domColumnProbe", {
+      direction,
+      fromWire: docPosToWireOffset(doc, focus),
+      probeColumn: column,
+      rowTop: rowStart.targetRowTop,
+      resolvedWire,
+      probeRowIndex,
+      targetLineIndex: rowStart.targetLineIndex,
+      probeLeft,
+      layoutSampleLeft: probeCoord?.left ?? null,
+      accepted: false,
+      branch: "probe-column-drift",
+    });
+    return null;
+  }
+
+  logVerArrow("resolve.domColumnProbe", {
+    direction,
+    fromWire: docPosToWireOffset(doc, focus),
+    probeColumn: column,
+    rowTop: rowStart.targetRowTop,
+    resolvedWire,
+    probeRowIndex,
+    targetLineIndex: rowStart.targetLineIndex,
+    probeLeft: probeLeft ?? probeCoord?.left ?? null,
+    accepted: true,
+    branch: "dom-column-probe",
+  });
+  return {
+    pos: normalizeDocPos(doc, landing, { from: focus }),
+    branch: "dom-column-probe",
+  };
+}
+
+type VerticalContentLandingMode =
+  | { kind: "blank-exit-row-start" }
+  | { kind: "row-edge-to-row-edge"; edgeColumn: number }
+  | { kind: "column-at-goal"; goalColumn: number };
+
+function rowSampleColumnExtent(samples: MeasuredWireOffset[]): {
+  minLeft: number;
+  maxLeft: number;
+} {
+  let minLeft = Infinity;
+  let maxLeft = -Infinity;
+  for (const sample of samples) {
+    minLeft = Math.min(minLeft, sample.left);
+    maxLeft = Math.max(maxLeft, sample.left);
+  }
+  return { minLeft, maxLeft };
+}
+
+function clampGoalColumnToRowExtent(
+  goalColumn: number,
+  minLeft: number,
+  maxLeft: number,
+  tolerance: number
+): number {
+  if (goalColumn < minLeft - tolerance) {
+    return minLeft;
+  }
+  if (goalColumn > maxLeft + tolerance) {
+    return maxLeft;
+  }
+  return goalColumn;
+}
+
+type MentionColumnSpan = {
+  startWire: number;
+  endWire: number;
+  startLeft: number;
+  endLeft: number;
+};
+
+function mentionColumnSpansFromTargetLine(
+  doc: HandoffNoteDoc,
+  targetLine: MeasuredWireOffset[]
+): MentionColumnSpan[] {
+  const spans: MentionColumnSpan[] = [];
+  for (const sample of targetLine) {
+    const context = describeHandoffNoteCursorContext(doc, sample.wire);
+    if (context.kind !== "mention-boundary" || context.edge !== "start") {
+      continue;
+    }
+    const endSample = targetLine.find((candidate) => candidate.wire === context.end);
+    if (!endSample) {
+      continue;
+    }
+    spans.push({
+      startWire: context.start,
+      endWire: context.end,
+      startLeft: sample.left,
+      endLeft: endSample.left,
+    });
+  }
+  return spans;
+}
+
+/** Pill half-split on sparse layout samples when goal column is inside a pill span. */
+function resolveMentionAtomicityWireForGoal(
+  doc: HandoffNoteDoc,
+  targetLine: MeasuredWireOffset[],
+  goalColumn: number,
+  tolerance: number
+): number | null {
+  for (const span of mentionColumnSpansFromTargetLine(doc, targetLine)) {
+    const wire = wireOffsetForPillHalfSplitColumn(
+      goalColumn,
+      span.startLeft,
+      span.endLeft,
+      span.startWire,
+      span.endWire,
+      tolerance
+    );
+    if (wire !== null) {
+      return wire;
+    }
+  }
+  return null;
+}
+
+function acceptColumnLanding(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  landingWire: number,
+  targetLine: MeasuredWireOffset[],
+  effectiveGoalColumn: number,
+  rowStart: VisualRowStartContext | undefined,
+  branch: string
+): VerticalLanding | null {
+  const tolerance = rowStart?.goalColumnTolerance ?? 2;
+  const bracketWire = landingWire;
+  const atomicWire = resolveMentionAtomicityWireForGoal(
+    doc,
+    targetLine,
+    effectiveGoalColumn,
+    tolerance
+  );
+  const resolvedWire = atomicWire ?? snapVerticalColumnLandingWire(doc, landingWire, direction);
+  const mentionSnapApplied = resolvedWire !== bracketWire;
+  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, resolvedWire), { from: focus });
+  targetPos = snapVerticalArrowLanding(doc, targetPos, direction);
+  if (landedOutsideTargetRow(doc, targetPos, rowStart)) {
+    const rowContained = targetRowTextPosForWire(doc, resolvedWire, rowStart);
+    if (!rowContained) {
+      return null;
+    }
+    targetPos = rowContained;
+  }
+  const suffix = mentionSnapApplied ? "-mention-snap" : "";
+  return { pos: targetPos, branch: `${branch}${suffix}` };
+}
+
+/** Soft-wrap continuation row start is structural geometry, not a user row-edge for row-start landing. */
+function isWrapContinuationStructuralRowEdge(
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  rowIndex: number,
+  wire: number,
+  goalColumn: number
+): boolean {
+  if (rowIndex <= 0) {
+    return false;
+  }
+  const row = layout.rows[rowIndex];
+  if (!row || row.kind !== "content") {
+    return false;
+  }
+  if (!isAtLayoutRowStart(layout, wire, goalColumn)) {
+    return false;
+  }
+  return isSameWireSoftWrapBandCrossing(doc, rowIndex, rowIndex - 1, layout.rows);
+}
+
+export function classifyVerticalContentLandingMode(
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  fromWire: number,
+  goalColumn: number,
+  currentLineIndex: number,
+  targetLineIndex: number,
+  leavingBlankForContent: boolean
+): VerticalContentLandingMode {
+  if (leavingBlankForContent) {
+    return { kind: "blank-exit-row-start" };
+  }
+  const atRowEdge = isAtLayoutRowStart(layout, fromWire, goalColumn);
+  const structuralWrapEdge = isWrapContinuationStructuralRowEdge(
+    doc,
+    layout,
+    currentLineIndex,
+    fromWire,
+    goalColumn
+  );
+  if (atRowEdge && !structuralWrapEdge) {
+    return { kind: "row-edge-to-row-edge", edgeColumn: goalColumn };
+  }
+  return {
+    kind: "column-at-goal",
+    goalColumn,
+  };
+}
+
+/** Blank-band exit: leftmost layout sample on the target row (layout owns row-start samples). */
+function resolveBlankExitContentRowStart(
+  doc: HandoffNoteDoc,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetLine: MeasuredWireOffset[]
+): { offset: number; branch: string } | null {
+  if (targetLine.length === 0) {
+    return null;
+  }
+  const startSample = pickConcreteRowStartSample(targetLine, docToWire(doc).length);
+  if (startSample) {
+    const fromSample = resolveVerticalArrowRowStartLanding(
+      doc,
+      direction,
+      [startSample],
+      startSample.left
+    );
+    if (fromSample) {
+      return fromSample;
+    }
+  }
+  return resolveVerticalArrowMinWireLineStart(doc, direction, targetLine);
+}
+
+/** Painted left edge of a content row — min `left` among layout samples, not min-wire sample X. */
+function contentRowPaintedVisualStartColumn(row: HandoffNoteLayoutRow): number {
+  let minLeft = row.samples[0]?.left ?? 0;
+  for (const sample of row.samples) {
+    if (sample.left < minLeft) {
+      minLeft = sample.left;
+    }
+  }
+  return minLeft;
+}
+
+/** Blank-band exit lands at the target content row's painted visual start — not a prefix row above it. */
+function resolveBlankExitEdgeColumn(
+  layout: HandoffNoteLayoutMap,
+  targetLineIndex: number,
+  effectiveGoalColumn: number
+): number {
+  const targetRow = layout.rows[targetLineIndex];
+  if (targetRow?.kind === "content" && targetRow.samples.length > 0) {
+    return contentRowPaintedVisualStartColumn(targetRow);
+  }
+  return effectiveGoalColumn;
+}
+
+function resolveBlankExitVisualRowStart(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetLine: MeasuredWireOffset[]
+): VerticalLanding | null {
+  const wireLineLanding = resolveBlankExitContentRowStart(doc, direction, targetLine);
+  if (!wireLineLanding) {
+    return null;
+  }
+  return {
+    pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, wireLineLanding.offset), { from: focus }),
+    branch: "blank-exit-visual-row-start",
+  };
+}
+
+/** Sparse fallback when DOM column probe misses — row start/end and past-end only, not interior columns. */
+function resolveSparseEdgeColumnAtGoal(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
   targetLine: MeasuredWireOffset[],
   goalColumn: number,
-  liveColumn: number,
-  useRowStartLanding: boolean,
-  leavingBlankForContent: boolean,
-  sourceRowSamples?: MeasuredWireOffset[],
-  rowStart?: VisualRowStartContext,
-  segmentLanding?: SegmentOffsetLanding | null
-): { pos: HandoffNoteDocPos; branch: string } {
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  rowStart: VisualRowStartContext | undefined
+): VerticalLanding | null {
+  if (targetLine.length === 0) {
+    return null;
+  }
+  const tolerance = rowStart?.goalColumnTolerance ?? 2;
+  const wireLength = docToWire(doc).length;
+  const { minLeft, maxLeft } = rowSampleColumnExtent(targetLine);
+  const effectiveGoal = clampGoalColumnToRowExtent(goalColumn, minLeft, maxLeft, tolerance);
   const fromWire = docPosToWireOffset(doc, focus);
-  const fromMentionStart = isMentionAtomStart(doc, focus);
-  const edgeColumn = liveColumn;
-  if (useRowStartLanding && targetLine.length > 0) {
-    if (rowStart) {
-      const probeColumn = edgeColumn;
-      const probed = probeDocPosAtVisualColumn(
-        rowStart.root,
-        doc,
-        rowStart.targetRowTop,
-        probeColumn
-      );
-      if (probed) {
-        const landing = snapVerticalArrowLanding(doc, probed, direction);
-        const resolvedWire = docPosToWireOffset(doc, landing);
-        const probeRowIndex = rowStart.rowIndexForWire(resolvedWire);
-        const probeCoord = rowStart.coordsForWire(resolvedWire);
-        const columnMatches =
-          probeCoord !== null &&
-          Math.abs(probeCoord.left - edgeColumn) <= rowStart.goalColumnTolerance;
-        if (probeRowIndex === rowStart.targetLineIndex && columnMatches) {
-          logVerArrow("resolve.rowStartProbe", {
-            direction,
-            fromWire: docPosToWireOffset(doc, focus),
-            goalColumn,
-            probeColumn,
-            rowTop: rowStart.targetRowTop,
-            resolvedWire,
-            probeRowIndex,
-            targetLineIndex: rowStart.targetLineIndex,
-            probeLeft: probeCoord.left,
-            accepted: true,
-            branch: "dom-row-start-probe",
-          });
-          return {
-            pos: normalizeDocPos(doc, landing, { from: focus }),
-            branch: "dom-row-start-probe",
-          };
-        }
-        logVerArrow("resolve.rowStartProbe", {
-          direction,
-          fromWire: docPosToWireOffset(doc, focus),
-          goalColumn,
-          probeColumn,
-          rowTop: rowStart.targetRowTop,
-          resolvedWire,
-          probeRowIndex,
-          targetLineIndex: rowStart.targetLineIndex,
-          probeLeft: probeCoord?.left ?? null,
-          columnMatches,
-          accepted: false,
-          branch: "probe-wrong-row",
-        });
-      } else {
-        logVerArrow("resolve.rowStartProbe", {
-          direction,
-          fromWire: docPosToWireOffset(doc, focus),
-          goalColumn,
-          probeColumn,
-          rowTop: rowStart.targetRowTop,
-          branch: "probe-miss",
-        });
-      }
-    }
-
-    const sourceAtVisualStart = sourceIsAtConcreteVisualStart(
-      doc,
-      fromWire,
-      edgeColumn,
-      sourceRowSamples
-    );
-    const rowStartLanding = leavingBlankForContent
-      ? resolveVerticalArrowMinWireLineStart(doc, direction, targetLine)
-      : null;
-    if (rowStartLanding) {
-      const pos = normalizeDocPos(doc, wireOffsetToDocPos(doc, rowStartLanding.offset), {
-        from: focus,
-      });
-      logVerArrow("resolve.rowStartProbe", {
-        direction,
-        fromWire: docPosToWireOffset(doc, focus),
-        goalColumn,
-        resolvedWire: docPosToWireOffset(doc, pos),
-        branch: rowStartLanding.branch,
-      });
-      return { pos, branch: rowStartLanding.branch };
-    }
-    const visualStartLanding = sourceAtVisualStart
-      ? resolveVisualRowStartLanding(
-          doc,
-          direction,
-          targetLine,
-          edgeColumn,
-          rowStart?.goalColumnTolerance ?? 2
-        )
-      : null;
-    if (visualStartLanding) {
-      logVerArrow("resolve.rowStartProbe", {
-        direction,
-        fromWire: docPosToWireOffset(doc, focus),
-        goalColumn,
-        resolvedWire: docPosToWireOffset(doc, visualStartLanding),
-        branch: "visual-row-start",
-      });
-      return { pos: visualStartLanding, branch: "visual-row-start" };
-    }
-    const fallbackRowStartLanding = resolveVerticalArrowRowStartLanding(
-      doc,
-      direction,
-      targetLine,
-      edgeColumn
-    );
-    if (fallbackRowStartLanding) {
-      const pos = normalizeDocPos(doc, wireOffsetToDocPos(doc, fallbackRowStartLanding.offset), {
-        from: focus,
-      });
-      logVerArrow("resolve.rowStartProbe", {
-        direction,
-        fromWire: docPosToWireOffset(doc, focus),
-        goalColumn,
-        resolvedWire: docPosToWireOffset(doc, pos),
-        branch: fallbackRowStartLanding.branch,
-      });
-      return { pos, branch: fallbackRowStartLanding.branch };
-    }
-  }
-
-  if (fromMentionStart && (direction === "up" || useRowStartLanding)) {
-    const landing = resolveVerticalArrowVisualLanding(doc, direction, targetLine, edgeColumn, {
-      fromMentionStart,
-    });
-    if (landing === null) {
-      const picked = pickClosestOnLine(targetLine, goalColumn);
-      return {
-        pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, picked.wire), { from: focus }),
-        branch: "dom-column",
-      };
-    }
-    const targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, landing.offset), {
-      from: focus,
-    });
-    return { pos: targetPos, branch: landing.branch };
-  }
-
-  if (segmentLanding) {
-    const offset = fromWire - segmentLanding.sourceStartWire;
-    const landingWire = Math.max(
-      segmentLanding.targetStartWire,
-      Math.min(segmentLanding.targetStartWire + offset, segmentLanding.targetEndWire)
-    );
-    let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, landingWire), { from: focus });
-    const snapped = snapVerticalArrowLanding(doc, targetPos, direction);
-    if (landedOutsideTargetRow(doc, snapped, rowStart)) {
-      const rowContained =
-        targetRowTextPosForWire(doc, landingWire, rowStart) ??
-        pickTargetRowTextSamplePos(doc, targetLine, goalColumn, rowStart);
-      if (rowContained) {
-        return { pos: rowContained, branch: "segment-offset-target-row" };
-      }
-    }
-    if (!docPosEqual(targetPos, snapped)) {
-      return { pos: snapped, branch: "segment-offset-snap" };
-    }
-    return { pos: targetPos, branch: "segment-offset" };
-  }
-
-  const bracketWire = resolveWireAtColumnOnVisualRow(
-    targetLine,
+  const sourceAtRowEnd = sourceIsAtRowContentEnd(
+    fromWire,
     goalColumn,
-    docPosToWireOffset(doc, focus),
-    sourceRowSamples
+    sourceRowSamples,
+    wireLength,
+    tolerance
   );
-  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, bracketWire), { from: focus });
-  const snapped = snapVerticalArrowLanding(doc, targetPos, direction);
-  if (landedOutsideTargetRow(doc, snapped, rowStart)) {
-    const rowContained =
-      targetRowTextPosForWire(doc, bracketWire, rowStart) ??
-      pickTargetRowTextSamplePos(doc, targetLine, goalColumn, rowStart);
-    if (rowContained) {
-      return { pos: rowContained, branch: "dom-column-bracket-target-row" };
+
+  const attempts: Array<{ wire: number; branch: string }> = [];
+
+  if (effectiveGoal <= minLeft + tolerance) {
+    const startSample = pickConcreteRowStartSample(targetLine, wireLength);
+    if (startSample) {
+      attempts.push({
+        wire: startSample.wire,
+        branch: "sparse-row-start",
+      });
     }
   }
-  if (!docPosEqual(targetPos, snapped)) {
-    return { pos: snapped, branch: "dom-column-bracket-snap" };
+
+  if (sourceAtRowEnd || fromWire >= wireLength || effectiveGoal >= maxLeft - tolerance) {
+    const endWire = snapPastEndUnsampledBracketToLayoutSample(
+      targetLine,
+      pickConcreteRowEndSample(targetLine, wireLength).wire,
+      effectiveGoal,
+      fromWire,
+      wireLength
+    );
+    attempts.push({ wire: endWire, branch: "sparse-row-end" });
   }
-  return { pos: targetPos, branch: "dom-column-bracket" };
+
+  for (const attempt of attempts) {
+    const landed = acceptColumnLanding(
+      doc,
+      focus,
+      direction,
+      attempt.wire,
+      targetLine,
+      effectiveGoal,
+      rowStart,
+      attempt.branch
+    );
+    if (landed) {
+      return landed;
+    }
+  }
+  return null;
 }
 
-function layoutRowTopTolerance(layout: HandoffNoteLayoutMap): number {
-  return Math.max(2, layout.lineHeight * 0.25);
+function resolveRowEdgeToRowEdgeLanding(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetLine: MeasuredWireOffset[],
+  edgeColumn: number,
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  rowStart?: VisualRowStartContext
+): VerticalLanding | null {
+  const fromWire = docPosToWireOffset(doc, focus);
+  const domRowStart = probeTargetRowAtColumn(doc, focus, direction, edgeColumn, rowStart);
+  if (domRowStart) {
+    return { ...domRowStart, branch: "dom-row-start-probe" };
+  }
+
+  const sourceAtVisualStart = sourceIsAtConcreteVisualStart(
+    doc,
+    fromWire,
+    edgeColumn,
+    sourceRowSamples
+  );
+  const visualStartLanding = sourceAtVisualStart
+    ? resolveVisualRowStartLanding(
+        doc,
+        direction,
+        targetLine,
+        edgeColumn,
+        rowStart?.goalColumnTolerance ?? 2
+      )
+    : null;
+  if (visualStartLanding) {
+    return { pos: visualStartLanding, branch: "visual-row-start" };
+  }
+
+  const fallbackRowStartLanding = resolveVerticalArrowRowStartLanding(
+    doc,
+    direction,
+    targetLine,
+    edgeColumn
+  );
+  if (fallbackRowStartLanding) {
+    return {
+      pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, fallbackRowStartLanding.offset), {
+        from: focus,
+      }),
+      branch: fallbackRowStartLanding.branch,
+    };
+  }
+  return null;
+}
+
+function resolveColumnAtGoalLanding(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetLine: MeasuredWireOffset[],
+  goalColumn: number,
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  rowStart: VisualRowStartContext | undefined
+): VerticalLanding | null {
+  const domLanding = probeTargetRowAtColumn(doc, focus, direction, goalColumn, rowStart);
+  if (domLanding) {
+    return domLanding;
+  }
+
+  return resolveSparseEdgeColumnAtGoal(
+    doc,
+    focus,
+    direction,
+    targetLine,
+    goalColumn,
+    sourceRowSamples,
+    rowStart
+  );
+}
+
+function resolveVerticalContentLanding(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetLine: MeasuredWireOffset[],
+  mode: VerticalContentLandingMode,
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  rowStart: VisualRowStartContext | undefined
+): VerticalLanding {
+  if (mode.kind === "blank-exit-row-start") {
+    return { pos: focus, branch: "blank-exit-miss" };
+  }
+
+  if (mode.kind === "row-edge-to-row-edge") {
+    const landed = resolveRowEdgeToRowEdgeLanding(
+      doc,
+      focus,
+      direction,
+      targetLine,
+      mode.edgeColumn,
+      sourceRowSamples,
+      rowStart
+    );
+    if (landed) {
+      return landed;
+    }
+    return { pos: focus, branch: "row-edge-miss" };
+  }
+
+  const landed = resolveColumnAtGoalLanding(
+    doc,
+    focus,
+    direction,
+    targetLine,
+    mode.goalColumn,
+    sourceRowSamples,
+    rowStart
+  );
+  if (landed) {
+    return landed;
+  }
+  return { pos: focus, branch: "dom-column-reject" };
+}
+
+function pickVerticalLandingOnLine(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  targetLine: MeasuredWireOffset[],
+  mode: VerticalContentLandingMode,
+  sourceRowSamples?: MeasuredWireOffset[],
+  rowStart?: VisualRowStartContext
+): VerticalLanding {
+  const landed = resolveVerticalContentLanding(
+    doc,
+    focus,
+    direction,
+    targetLine,
+    mode,
+    sourceRowSamples,
+    rowStart
+  );
+  if (mode.kind === "blank-exit-row-start" && landed.branch === "blank-exit-visual-row-start") {
+    logVerArrow("resolve.rowStartProbe", {
+      direction,
+      fromWire: docPosToWireOffset(doc, focus),
+      goalColumn: null,
+      resolvedWire: docPosToWireOffset(doc, landed.pos),
+      branch: landed.branch,
+    });
+  } else if (mode.kind === "row-edge-to-row-edge") {
+    logVerArrow("resolve.rowStartProbe", {
+      direction,
+      fromWire: docPosToWireOffset(doc, focus),
+      goalColumn: mode.edgeColumn,
+      resolvedWire: docPosToWireOffset(doc, landed.pos),
+      branch: landed.branch,
+    });
+  }
+  return landed;
 }
 
 function isInlineBlankRowAdjacentToContent(
@@ -705,7 +1145,7 @@ export function resolveVerticalTargetLineIndex(
     return targetLineIndex;
   }
 
-  const tolerance = layoutRowTopTolerance(layout);
+  const tolerance = layoutRowTopTolerance(layout.lineHeight);
 
   if (direction === "down" && currentRow.kind !== "blank") {
     const inlineBlank = layout.rows[targetLineIndex];
@@ -753,22 +1193,13 @@ export function resolveVerticalTargetLineIndex(
   return targetLineIndex;
 }
 
-/** Visual start column for a blank row — align with nearest content row in the band. */
+/** Visual start column for a blank row — measured blank-band geometry, not neighbor content X. */
 function blankBandVisualStartColumn(layout: HandoffNoteLayoutMap, blankLineIndex: number): number {
-  for (let index = blankLineIndex - 1; index >= 0; index--) {
-    const row = layout.rows[index];
-    if (row?.kind === "content") {
-      return layoutVisualRowStartColumn(row);
-    }
-  }
-  for (let index = blankLineIndex + 1; index < layout.rows.length; index++) {
-    const row = layout.rows[index];
-    if (row?.kind === "content") {
-      return layoutVisualRowStartColumn(row);
-    }
-  }
   const blankRow = layout.rows[blankLineIndex];
-  return blankRow ? layoutVisualRowStartColumn(blankRow) : 0;
+  if (blankRow?.kind === "blank") {
+    return layoutVisualRowStartColumn(blankRow);
+  }
+  return 0;
 }
 
 type LayoutVerticalMove = {
@@ -800,7 +1231,7 @@ function resolveBlankBandVerticalLanding(
   };
 }
 
-function resolveLayoutVerticalArrowMove(
+export function resolveLayoutVerticalArrowMove(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
@@ -841,24 +1272,26 @@ function resolveLayoutVerticalArrowMove(
 
   const targetRow = layout.rows[targetLineIndex]!;
   const currentRowKind = currentRow?.kind ?? null;
-  const liveColumn = layout.coordsForWire(fromWire)?.left ?? effectiveGoalColumn;
-  const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
-  const atRowEdge = isAtLayoutRowStart(layout, fromWire, effectiveGoalColumn);
+  const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
   const leavingBlankForContent = currentRowKind === "blank" && targetRow.kind === "content";
-  const useRowStartLanding = atRowEdge || leavingBlankForContent;
-  const targetIsBlank = targetRow.kind === "blank";
-  const useRowStartLandingOnTarget = useRowStartLanding && !targetIsBlank;
-  const landingEdgeColumn = useRowStartLanding ? effectiveGoalColumn : liveColumn;
+  const landingMode = classifyVerticalContentLandingMode(
+    doc,
+    layout,
+    fromWire,
+    effectiveGoalColumn,
+    currentLineIndex,
+    targetLineIndex,
+    leavingBlankForContent
+  );
+  const useRowStartLandingOnTarget = landingMode.kind !== "column-at-goal";
   logVerArrow("resolve.layout", {
     direction,
     fromWire,
     goalColumn,
     effectiveGoalColumn,
-    liveColumn,
-    landingEdgeColumn,
+    landingMode: landingMode.kind,
     currentLineIndex,
     targetLineIndex,
-    atRowEdge,
     leavingBlankForContent,
     useRowStartLanding: useRowStartLandingOnTarget,
     currentRowKind,
@@ -892,15 +1325,33 @@ function resolveLayoutVerticalArrowMove(
     return blankMove;
   }
 
+  if (leavingBlankForContent) {
+    const edgeColumn = resolveBlankExitEdgeColumn(layout, targetLineIndex, effectiveGoalColumn);
+    const blankExit = resolveBlankExitVisualRowStart(doc, focus, direction, targetRow.samples);
+    if (blankExit && !docPosEqual(blankExit.pos, focus)) {
+      logVerArrow("resolve.rowStartProbe", {
+        direction,
+        fromWire,
+        goalColumn: edgeColumn,
+        resolvedWire: docPosToWireOffset(doc, blankExit.pos),
+        branch: blankExit.branch,
+      });
+      return {
+        pos: blankExit.pos,
+        handled: true,
+        branch: blankExit.branch,
+        goalColumn: effectiveGoalColumn,
+      };
+    }
+    return { pos: focus, handled: false };
+  }
+
   const { pos: targetPos, branch } = pickVerticalLandingOnLine(
     doc,
     focus,
     direction,
     targetRow.samples,
-    effectiveGoalColumn,
-    landingEdgeColumn,
-    useRowStartLandingOnTarget,
-    leavingBlankForContent,
+    landingMode,
     currentLineIndex >= 0 ? layout.rows[currentLineIndex]!.samples : undefined,
     root
       ? {
@@ -911,8 +1362,7 @@ function resolveLayoutVerticalArrowMove(
           coordsForWire: layout.coordsForWire.bind(layout),
           goalColumnTolerance: edgeTolerance,
         }
-      : undefined,
-    layout.resolveSegmentOffsetLanding(fromWire, currentLineIndex, targetLineIndex)
+      : undefined
   );
 
   if (docPosEqual(targetPos, focus)) {
@@ -937,21 +1387,6 @@ function resolveLayoutVerticalArrowMove(
     branch,
     goalColumn: preserveGoalColumn ? effectiveGoalColumn : (landedColumn ?? effectiveGoalColumn),
   };
-}
-
-export function resolveMeasuredVerticalArrowMove(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos,
-  direction: HandoffNoteVerticalArrowDirection,
-  measured: MeasuredWireOffset[],
-  currentLeft: number,
-  lineHeight: number
-): { pos: HandoffNoteDocPos; handled: boolean; branch?: string } {
-  if (measured.length < 2) {
-    return { pos: focus, handled: false };
-  }
-  const layout = buildLayoutMapFromSamples(measured, lineHeight, doc);
-  return resolveLayoutVerticalArrowMove(doc, focus, direction, layout, currentLeft);
 }
 
 function layoutVerticalMoveRejected(
@@ -992,12 +1427,14 @@ export function resolveDomVerticalArrowMove(
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
   options?: { stickyGoalColumn?: number | null }
-): { pos: HandoffNoteDocPos; handled: boolean; goalColumn?: number } {
+): { pos: HandoffNoteDocPos; handled: boolean; goalColumn?: number; branch?: string } {
   const fromWire = docPosToWireOffset(doc, focus);
   const layout = buildHandoffNoteLayoutMap(root, doc, focus);
   const focusCoord = layout.coordsForWire(fromWire);
   const anchorRect = getDocAnchorRect(root, doc, focus);
-  const measuredGoal = focusCoord?.left ?? anchorRect?.left ?? 0;
+  const anchorGoal =
+    anchorRect && (anchorRect.height > 0 || anchorRect.width > 0) ? anchorRect.left : undefined;
+  const measuredGoal = anchorGoal ?? focusCoord?.left ?? 0;
   const goalColumn = options?.stickyGoalColumn ?? measuredGoal;
   const layoutOwesMove = !layoutVerticalMoveRejected(layout, fromWire, direction);
 
@@ -1029,7 +1466,12 @@ export function resolveDomVerticalArrowMove(
         goalColumnOut: landingGoal,
         branchGate: "visual-row",
       });
-      return { pos: layoutMove.pos, handled: true, goalColumn: landingGoal };
+      return {
+        pos: layoutMove.pos,
+        handled: true,
+        goalColumn: landingGoal,
+        branch: layoutMove.branch,
+      };
     }
   }
 
@@ -1055,7 +1497,12 @@ export function resolveDomVerticalArrowMove(
       handled: bleedMove.handled,
       horizontal: bleedDirection,
     });
-    return { pos: bleedMove.pos, handled: bleedMove.handled, goalColumn: landingGoal };
+    return {
+      pos: bleedMove.pos,
+      handled: bleedMove.handled,
+      goalColumn: landingGoal,
+      branch: "boundary-bleed",
+    };
   }
 
   logVerArrow("resolve.unhandled", {

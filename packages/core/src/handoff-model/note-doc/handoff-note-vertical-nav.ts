@@ -281,7 +281,9 @@ export function resolveVerticalArrowRowStartLanding(
 
   let best = targetSamples[0]!;
   for (const sample of targetSamples) {
-    if (Math.abs(sample.left - goalColumn) < Math.abs(best.left - goalColumn)) {
+    const distance = Math.abs(sample.left - goalColumn);
+    const bestDistance = Math.abs(best.left - goalColumn);
+    if (distance < bestDistance || (distance === bestDistance && sample.wire < best.wire)) {
       best = sample;
     }
   }
@@ -315,36 +317,5 @@ export function resolveVerticalArrowMinWireLineStart(
     landing === substantiveStart
       ? "visual-line-start-minWire"
       : "visual-line-start-mentionInterior";
-  return { offset: landing, branch };
-}
-
-/** DOM/measured landing on a target visual band (X-match + mention snap). */
-export function resolveVerticalArrowVisualLanding(
-  doc: HandoffNoteDoc,
-  direction: HandoffNoteVerticalArrowDirection,
-  targetSamples: { wire: number; left: number }[],
-  currentLeft: number,
-  options: {
-    fromMentionStart: boolean;
-  }
-): VerticalNavWireMove | null {
-  if (targetSamples.length === 0) {
-    return null;
-  }
-
-  const lineStartWire = Math.min(...targetSamples.map((sample) => sample.wire));
-  if (options.fromMentionStart) {
-    return { offset: lineStartWire, branch: "target-row-start" };
-  }
-
-  let best = targetSamples[0]!;
-  for (const sample of targetSamples) {
-    if (Math.abs(sample.left - currentLeft) < Math.abs(best.left - currentLeft)) {
-      best = sample;
-    }
-  }
-
-  const landing = snapMentionInterior(doc, best.wire, direction);
-  const branch = landing === best.wire ? "dom-column" : "dom-mentionInterior";
   return { offset: landing, branch };
 }

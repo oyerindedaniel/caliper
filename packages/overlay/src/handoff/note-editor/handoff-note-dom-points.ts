@@ -17,11 +17,13 @@ import {
   buildRenderedNodeIndexMap,
   countWireTextDomChildren,
   docWireEndsWithNewline,
+  HANDOFF_MENTION_ATTR,
   isHandoffBlankAnchorElement,
   isHandoffLinePadElement,
   isHandoffMentionElement,
   isHandoffWireBreakElement,
   mentionWireLength,
+  readMentionNodeIndex,
   wireOffsetAtTextBreak,
 } from "./handoff-note-dom.js";
 
@@ -32,6 +34,15 @@ function isEditorNode(root: HTMLElement, node: Node): boolean {
 /** `<br>` and collapsed ranges often report 0×0 while still carrying a paint position. */
 export function hasPositionedDomRect(rect: DOMRect): boolean {
   return Number.isFinite(rect.top) && Number.isFinite(rect.left);
+}
+
+export function isFiniteMeasuredLayoutCoord(coord: { top: number; left: number }): boolean {
+  return Number.isFinite(coord.top) && Number.isFinite(coord.left);
+}
+
+/** Reject collapsed root fallbacks that poison layout acquire caches. */
+export function isUsableMeasuredLayoutCoord(coord: { top: number; left: number }): boolean {
+  return isFiniteMeasuredLayoutCoord(coord) && !(coord.top === 0 && coord.left === 0);
 }
 
 export function domRectAnchorMidY(rect: DOMRect): number {
@@ -786,6 +797,66 @@ export function getDocAnchorRect(
   return root.getBoundingClientRect();
 }
 
+/**
+ * Pill atomicity by painted column: goal strictly inside pill bbox → left half start, right half end.
+ * Same rule for vertical up and down.
+ */
+export function wireOffsetForPillHalfSplitColumn(
+  goalColumn: number,
+  pillLeft: number,
+  pillRight: number,
+  startWire: number,
+  endWire: number,
+  tolerance = 0
+): number | null {
+  if (goalColumn <= pillLeft + tolerance || goalColumn >= pillRight - tolerance) {
+    return null;
+  }
+  const mid = (pillLeft + pillRight) / 2;
+  return goalColumn < mid ? startWire : endWire;
+}
+
+/** DOM-painted pills on a visual row band — half-split landing before caret probe. */
+export function resolveDomPillBoundaryPosForGoalColumn(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  goalColumn: number,
+  rowTop: number,
+  rowBandTolerance: number,
+  goalColumnTolerance: number
+): HandoffNoteDocPos | null {
+  const pills = root.querySelectorAll<HTMLSpanElement>(`span[${HANDOFF_MENTION_ATTR}]`);
+  for (const pill of pills) {
+    const rect = pill.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    if (Math.abs(midY - rowTop) > rowBandTolerance) {
+      continue;
+    }
+    const nodeIndex = readMentionNodeIndex(pill);
+    if (nodeIndex === null) {
+      continue;
+    }
+    const agentId = pill.getAttribute("data-agent-id") ?? "";
+    const startWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
+    const endWire = docPosToWireOffset(doc, {
+      nodeIndex,
+      nodeOffset: mentionWireLength(agentId),
+    });
+    const landingWire = wireOffsetForPillHalfSplitColumn(
+      goalColumn,
+      rect.left,
+      rect.right,
+      startWire,
+      endWire,
+      goalColumnTolerance
+    );
+    if (landingWire !== null) {
+      return wireOffsetToDocPos(doc, landingWire);
+    }
+  }
+  return null;
+}
+
 /** Map a viewport point inside the editor to a doc caret (contract: visual row/column probe). */
 export function probeDocPosAtVisualColumn(
   root: HTMLElement,
@@ -819,6 +890,96 @@ export function probeDocPosAtVisualColumn(
   }
 
   return null;
+}
+
+function probeColumnsForLayoutRect(rect: DOMRect): number[] {
+  const insetLeft = rect.left + Math.min(2, Math.max(0, rect.width / 2));
+  const mid = rect.left + rect.width / 2;
+  return insetLeft === mid ? [insetLeft] : [insetLeft, mid];
+}
+
+function textRangeExclusiveEndOffset(node: Text, pointOffset: number): number {
+  return Math.min(pointOffset + 1, node.length);
+}
+
+/** DOM-measured samples from each painted fragment of a substantive embedded-newline wire run. */
+export function appendMeasuredSamplesFromWireRange(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  startWire: number,
+  endWireExclusive: number,
+  measured: { wire: number; top: number; left: number }[],
+  seen: Set<number>
+): number {
+  if (startWire >= endWireExclusive) {
+    return 0;
+  }
+
+  const startPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, startWire));
+  const endPoint = resolveDomPointAtDocPos(
+    root,
+    doc,
+    wireOffsetToDocPos(doc, endWireExclusive - 1)
+  );
+  if (!startPoint || !endPoint) {
+    return 0;
+  }
+
+  const range = root.ownerDocument.createRange();
+  try {
+    range.setStart(startPoint.node, startPoint.offset);
+    if (endPoint.node.nodeType === Node.TEXT_NODE) {
+      range.setEnd(
+        endPoint.node,
+        textRangeExclusiveEndOffset(endPoint.node as Text, endPoint.offset)
+      );
+    } else {
+      range.setEnd(endPoint.node, endPoint.offset);
+    }
+  } catch {
+    return 0;
+  }
+
+  const rects = typeof range.getClientRects === "function" ? [...range.getClientRects()] : [];
+  let added = 0;
+
+  for (const rect of rects) {
+    if (rect.width <= 0 && rect.height <= 0) {
+      continue;
+    }
+    const midY = rect.top + rect.height / 2;
+    for (const probeX of probeColumnsForLayoutRect(rect)) {
+      const probed =
+        probeDocPosAtVisualColumn(root, doc, midY, probeX) ??
+        probeDocPosAtVisualColumn(root, doc, rect.top, probeX);
+      if (!probed) {
+        continue;
+      }
+      const wire = docPosToWireOffset(doc, probed);
+      if (isEmbeddedBlankBandProbeWire(doc, wire)) {
+        continue;
+      }
+      const sample = { wire, top: midY, left: rect.left };
+      if (!isUsableMeasuredLayoutCoord(sample)) {
+        continue;
+      }
+      const existingIndex = measured.findIndex((entry) => entry.wire === wire);
+      if (existingIndex >= 0) {
+        measured[existingIndex] = sample;
+        seen.add(wire);
+        added++;
+        continue;
+      }
+      if (seen.has(wire)) {
+        continue;
+      }
+      seen.add(wire);
+      measured.push(sample);
+      added++;
+    }
+  }
+
+  return added;
 }
 
 /** Append layout samples at each rendered text line (soft-wrap fragments). */
@@ -863,8 +1024,12 @@ export function appendSoftWrapLineSamples(
       if (seen.has(wire) || isEmbeddedBlankBandProbeWire(doc, wire)) {
         continue;
       }
+      const sample = { wire, top: midY, left: rect.left };
+      if (!isUsableMeasuredLayoutCoord(sample)) {
+        continue;
+      }
       seen.add(wire);
-      measured.push({ wire, top: midY, left: rect.left });
+      measured.push(sample);
     }
   }
 }

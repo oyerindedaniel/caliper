@@ -278,13 +278,17 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
   direction: HandoffNoteEdit,
   focus: HandoffNoteDocPos
 ): EmbeddedBlankBandDeleteMove | null {
-  const directChipWire =
-    direction === "backspace"
-      ? embeddedBlankBandBackspaceRowChipCharWire(doc, focusWire, focus)
-      : focusWire;
-  const directChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, directChipWire);
-  if (directChip) {
-    return directChip;
+  if (direction === "delete") {
+    const directChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
+    if (directChip) {
+      return directChip;
+    }
+  } else {
+    const directChipWire = embeddedBlankBandBackspaceRowChipCharWire(doc, focusWire, focus);
+    const directChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, directChipWire);
+    if (directChip) {
+      return directChip;
+    }
   }
 
   if (direction !== "backspace" || !isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, focus)) {

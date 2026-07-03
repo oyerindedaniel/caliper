@@ -6,7 +6,6 @@ import {
   resolveVerticalArrowCrossLineMove,
   resolveVerticalArrowRowStartLanding,
   resolveVerticalArrowMinWireLineStart,
-  resolveVerticalArrowVisualLanding,
   resolveVerticalArrowWireMove,
 } from "./handoff-note-vertical-nav.js";
 
@@ -245,47 +244,6 @@ describe("resolveVerticalArrowMinWireLineStart", () => {
     const landing = resolveVerticalArrowMinWireLineStart(doc, "down", samples);
     expect(landing?.offset).toBe(tailRowStart);
     expect(landing?.branch).toBe("visual-line-start-minWire");
-  });
-});
-
-describe("resolveVerticalArrowVisualLanding", () => {
-  const agentA = "caliper-aaaaaaa";
-  const agentB = "caliper-bbbbbbb";
-
-  it("dom landing matches horizontal X at goal column", () => {
-    const wire = `summary @${agentA} @${agentB} wrap @${agentA} `;
-    const doc = wireToDoc(wire);
-    const line2Mention = wire.indexOf("@", 1);
-    const wrapStart = wire.indexOf("wrap");
-    const samples = [
-      { wire: line2Mention, left: 0 },
-      { wire: wrapStart, left: 120 },
-    ];
-
-    const down = resolveVerticalArrowVisualLanding(doc, "down", samples, 120, {
-      fromMentionStart: false,
-    });
-    expect(down).toEqual({ offset: wrapStart, branch: "dom-column" });
-
-    const up = resolveVerticalArrowVisualLanding(doc, "up", samples, 120, {
-      fromMentionStart: false,
-    });
-    expect(up).toEqual({ offset: wrapStart, branch: "dom-column" });
-  });
-
-  it("dom landing snaps to pill start when X-match falls inside a mention on up", () => {
-    const wire = `summary @${agentA} tail`;
-    const doc = wireToDoc(wire);
-    const mentionStart = wire.indexOf("@");
-    const samples = [
-      { wire: mentionStart, left: 0 },
-      { wire: mentionStart + 4, left: 40 },
-    ];
-
-    const up = resolveVerticalArrowVisualLanding(doc, "up", samples, 40, {
-      fromMentionStart: false,
-    });
-    expect(up).toEqual({ offset: mentionStart, branch: "dom-mentionInterior" });
   });
 });
 

@@ -156,7 +156,7 @@ describe("HandoffNoteDocPos", () => {
 
   it("normalizeDocPos with matching from hint preserves mention interior", () => {
     const agent = "caliper-85l0t4y9j";
-    const wire = `hdhdhd @${agent}\n\n\n`;
+    const wire = `header @${agent}\n\n\n`;
     const doc = wireToDoc(wire);
     const interiorWire = wire.indexOf("j");
     const pos = wireOffsetToDocPos(doc, interiorWire);

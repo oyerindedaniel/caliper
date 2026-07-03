@@ -12,14 +12,19 @@ import {
   buildLayoutMapFromSamples,
   getCachedMeasuredSamples,
   invalidateHandoffNoteLayoutCache,
+  isSameWireSoftWrapBandCrossing,
+  layoutRowTopTolerance,
   readHandoffNoteLayoutCacheKey,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
+  type HandoffNoteLayoutRow,
 } from "./handoff-note-layout-map.js";
 import { resolveDomVerticalArrowMove } from "./handoff-note-selection.js";
 import {
   setSelectionAtWire,
+  refreshHandoffNoteEditorLayoutGeometry,
   stubHandoffNoteMentionLayoutCoords,
+  stubEmbeddedNewlineSegmentAcquire,
   stubHandoffNoteAnchorRectAtWire,
 } from "./handoff-note-test-helpers.js";
 
@@ -86,6 +91,11 @@ describe("handoff-note-layout-map", () => {
       surface.style.width = "160px";
       document.body.appendChild(surface);
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      refreshHandoffNoteEditorLayoutGeometry(surface, doc, docToWire(doc), {
+        mentionCoords: new Map(),
+        baseTop: 100,
+        stride: 18,
+      });
       setSelectionAtWire(surface, doc, 0);
 
       const focus = wireOffsetToDocPos(doc, 0);
@@ -214,7 +224,7 @@ describe("handoff-note-layout-map", () => {
     });
 
     it("produces identical row tops on consecutive layout builds with a warm cache", () => {
-      const wire = `dh @${AGENT} d @${AGENT} \n\ndh @${AGENT} `;
+      const wire = `he @${AGENT} x @${AGENT} \n\nhe @${AGENT} `;
       const doc = wireToDoc(wire);
       const surface = document.createElement("div");
       surface.style.width = "480px";
@@ -359,6 +369,33 @@ describe("handoff-note-layout-map", () => {
       surface.remove();
     });
 
+    it("brackets embedded content-to-content break wire on the lower line row", () => {
+      const wire = `he @${AGENT} x @${AGENT} \nseg`;
+      const doc = wireToDoc(wire);
+      const breakWire = wire.indexOf("\n");
+      const lowerLineStart = breakWire + 1;
+      const row0Top = 141.1;
+      const surface = mountSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      stubHandoffNoteMentionLayoutCoords(
+        surface,
+        new Map([
+          [1, { top: row0Top, left: 359.58 }],
+          [3, { top: row0Top, left: 492.52 }],
+        ])
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      const layout = buildHandoffNoteLayoutMap(
+        surface,
+        doc,
+        wireOffsetToDocPos(doc, lowerLineStart)
+      );
+      const lowerRow = layout.rowIndexForWire(lowerLineStart);
+      expect(layout.rowIndexForWire(breakWire)).toBe(lowerRow);
+      surface.remove();
+    });
+
     it("adds layout sample at content-to-content embedded newline inside text node", () => {
       const wire = `header @${AGENT} \n\n\nmiddle line\nlower`;
       const doc = wireToDoc(wire);
@@ -446,7 +483,7 @@ describe("handoff-note-layout-map", () => {
     });
 
     it("assigns fully soft-wrapped post-mention tail interior to continuation row", () => {
-      const wire = `dh @${AGENT} d @${AGENT} tail`;
+      const wire = `he @${AGENT} x @${AGENT} tail`;
       const doc = wireToDoc(wire);
       const tailStart = wire.indexOf("tail");
       const tailInterior = tailStart + 2;
@@ -480,8 +517,194 @@ describe("handoff-note-layout-map", () => {
       surface.remove();
     });
 
+    it("dom acquire samples embedded-newline line interiors on the painted band", () => {
+      const wire = `pre @${AGENT} @${AGENT} \nline \n\n\n line @${AGENT}`;
+      const doc = wireToDoc(wire);
+      const lineStartWire = wire.indexOf("line");
+      const lineEndWire = wire.indexOf("\n", lineStartWire);
+      const interiorWire = lineStartWire + 2;
+      const row0Top = 141.1;
+      const row1Top = 159.3;
+      const row4Top = 214.0;
+      const segmentLeft = 347.5;
+      const segmentWidth = 48;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      stubHandoffNoteMentionLayoutCoords(
+        surface,
+        new Map([
+          [1, { top: row0Top, left: 382.09 }],
+          [3, { top: row4Top, left: 382.09 }],
+        ])
+      );
+      const restoreAcquire = stubEmbeddedNewlineSegmentAcquire(surface, doc, {
+        startWire: lineStartWire,
+        endWireExclusive: lineEndWire,
+        rects: [{ top: row1Top - 9, left: segmentLeft, width: segmentWidth, height: 18 }],
+        probeHits: [
+          {
+            column: segmentLeft + 2,
+            rowTop: row1Top,
+            pos: wireOffsetToDocPos(doc, lineStartWire),
+          },
+          {
+            column: segmentLeft + segmentWidth / 2,
+            rowTop: row1Top,
+            pos: wireOffsetToDocPos(doc, interiorWire),
+          },
+        ],
+      });
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, interiorWire)
+        );
+        const cached = getCachedMeasuredSamples(docToWire(doc), surface.clientWidth);
+        expect(cached?.find((sample) => sample.wire === lineStartWire)?.top).toBe(row1Top);
+        expect(cached?.find((sample) => sample.wire === interiorWire)?.top).toBe(row1Top);
+
+        const embeddedRow = layout.rowIndexForWire(lineStartWire);
+        expect(layout.rowIndexForWire(interiorWire)).toBe(embeddedRow);
+        expect(layout.rows[embeddedRow]?.top).toBeCloseTo(row1Top, 0);
+        expect(layout.rowIndexForWire(0)).toBeLessThan(embeddedRow);
+      } finally {
+        restoreAcquire();
+        surface.remove();
+      }
+    });
+
+    it("promotes substantive wire-newline row start when acquire cache omits line-start text", () => {
+      const wire = `pre @${AGENT} x @${AGENT} \nline @${AGENT} @${AGENT} \n\ntail`;
+      const doc = wireToDoc(wire);
+      const lineStartWire = wire.indexOf("line", wire.indexOf("\n"));
+      const firstMentionOnLine = wire.indexOf("@", lineStartWire);
+      const row0Top = 141.1;
+      const row1Top = 159.3;
+      const visualStart = 347.5;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const restoreLineStart = stubHandoffNoteAnchorRectAtWire(surface, doc, lineStartWire, {
+        top: row1Top,
+        left: visualStart,
+      });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: visualStart },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: row0Top,
+          left: 491.89,
+        },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 507.67,
+        },
+        { wire: lineStartWire - 1, top: row0Top, left: 628.38 },
+        { wire: firstMentionOnLine, top: row1Top, left: 382.09 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 5, nodeOffset: 0 }),
+          top: row1Top,
+          left: 499.25,
+        },
+        { wire: wire.length - 1, top: 195.26, left: 377.52 },
+      ]);
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, wire.length - 1)
+        );
+        expect(layout.rowIndexForWire(lineStartWire)).toBe(1);
+        expect(layout.rowIndexForWire(firstMentionOnLine)).toBe(1);
+        expect(layout.coordsForWire(lineStartWire)?.left).toBe(visualStart);
+      } finally {
+        restoreLineStart();
+        surface.remove();
+      }
+    });
+
+    it("keeps leading post-mention spacer on pill row when the substantive tail wraps", () => {
+      const wire = `pre @${AGENT} x @${AGENT} line @${AGENT} @${AGENT} `;
+      const doc = wireToDoc(wire);
+      const secondPostStart = docPosToWireOffset(doc, { nodeIndex: 4, nodeOffset: 0 });
+      const secondTextStart = secondPostStart + 1;
+      const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      const row0Top = 141.1;
+      const row1Top = 159.3;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: AGENT.length }),
+          top: row0Top,
+          left: 491.89,
+        },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 507.67,
+        },
+        { wire: secondPostStart, top: row1Top, left: 624.82 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 5, nodeOffset: 0 }),
+          top: row1Top,
+          left: 382.09,
+        },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 5, nodeOffset: AGENT.length }),
+          top: row1Top,
+          left: 499.25,
+        },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 6, nodeOffset: 0 }),
+          top: row1Top,
+          left: 503.81,
+        },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 7, nodeOffset: AGENT.length }),
+          top: row1Top,
+          left: 620.97,
+        },
+        { wire: wire.length, top: row1Top, left: 624.52 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 0 }),
+          top: row0Top - 0.43,
+          left: 491.89,
+        },
+        { wire: secondTextStart, top: row0Top - 0.43, left: 624.82 },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, wire.length));
+
+      expect(layout.rowIndexForWire(secondMentionStart)).toBe(0);
+      expect(layout.rowIndexForWire(secondPostStart)).toBe(0);
+      expect(layout.rowIndexForWire(secondTextStart)).toBe(1);
+      expect(layout.coordsForWire(secondTextStart)?.left).toBeCloseTo(382.09, 1);
+      surface.remove();
+    });
+
     it("coords for soft-wrap tail interior use wrap-row column not row-0 tail column", () => {
-      const wire = `dh @${AGENT} d @${AGENT} tail`;
+      const wire = `he @${AGENT} x @${AGENT} tail`;
       const doc = wireToDoc(wire);
       const tailStart = wire.indexOf("tail");
       const tailInterior = tailStart + 2;
@@ -520,7 +743,7 @@ describe("handoff-note-layout-map", () => {
 
     it("coords for embedded substantive lower wire line bracket within lower segment only", () => {
       const agent = "caliper-aaaaaaa";
-      const wire = `dh @${agent} d @${agent} \ndhd`;
+      const wire = `he @${agent} x @${agent} \nseg`;
       const doc = wireToDoc(wire);
       const lowerLineStart = wire.indexOf("\n") + 1;
       const lowerInterior = lowerLineStart + 1;
@@ -561,7 +784,7 @@ describe("handoff-note-layout-map", () => {
     });
 
     it("shorter-row sticky preserves goal when landing on wrap continuation row", () => {
-      const wire = `dh @${AGENT} d @${AGENT} tail`;
+      const wire = `he @${AGENT} x @${AGENT} tail`;
       const doc = wireToDoc(wire);
       const tailStart = wire.indexOf("tail");
       const tailPastEnd = wire.length;
@@ -592,7 +815,7 @@ describe("handoff-note-layout-map", () => {
       );
       const wrapRow = layout.rows[1]!;
       const wrapRowMax = Math.max(...wrapRow.samples.map((sample) => sample.left));
-      const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+      const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
       expect(
         layout.shouldPreserveGoalColumnOnShorterRowLanding({
           fromRowIndex: 0,
@@ -600,6 +823,48 @@ describe("handoff-note-layout-map", () => {
           targetRow: wrapRow,
           effectiveGoalColumn: wideGoal,
           landedColumn: wrapRowMax,
+          edgeTolerance,
+          useRowStartLandingOnTarget: false,
+        })
+      ).toBe(true);
+      surface.remove();
+    });
+
+    it("shorter-row sticky preserves pre-clamp goal on Down into wrap continuation row", () => {
+      const wire = `pre @${AGENT} x @${AGENT} post @${AGENT} @${AGENT} `;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const row0Top = 141.1;
+      const row1Top = 159.3;
+      const prefixGoal = 361.11;
+      const wrapRowStartColumn = 377.8125;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 507.67,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 624.82 },
+        { wire: wire.length, top: row1Top, left: wrapRowStartColumn },
+        { wire: tailStart, top: row1Top, left: wrapRowStartColumn },
+      ]);
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 2));
+      const wrapRow = layout.rows[1]!;
+      const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          fromRowIndex: 0,
+          targetRowIndex: 1,
+          targetRow: wrapRow,
+          effectiveGoalColumn: prefixGoal,
+          landedColumn: wrapRowStartColumn,
           edgeTolerance,
           useRowStartLandingOnTarget: false,
         })
@@ -639,7 +904,7 @@ describe("handoff-note-layout-map", () => {
       );
       const prefixRow = layout.rows[0]!;
       const prefixMax = Math.max(...prefixRow.samples.map((sample) => sample.left));
-      const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+      const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
       expect(
         layout.shouldPreserveGoalColumnOnShorterRowLanding({
           fromRowIndex: 1,
@@ -673,7 +938,7 @@ describe("handoff-note-layout-map", () => {
         doc
       );
       const upperRow = layout.rows[0]!;
-      const edgeTolerance = Math.max(2, layout.lineHeight * 0.25);
+      const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
       expect(
         layout.shouldPreserveGoalColumnOnShorterRowLanding({
           fromRowIndex: 1,
@@ -686,73 +951,63 @@ describe("handoff-note-layout-map", () => {
         })
       ).toBe(true);
     });
+  });
 
-    it("segment offset landing maps sparse lower row interior to prefix offset above", () => {
-      const agent = AGENT;
-      const wire = `dhd @${agent} d @${agent} dhd`;
+  describe("isSameWireSoftWrapBandCrossing", () => {
+    const AGENT = "caliper-aaaaaaa";
+    const ROW1 = 100;
+    const ROW2 = 118;
+
+    function contentRow(
+      top: number,
+      samples: { wire: number; left: number }[]
+    ): HandoffNoteLayoutRow {
+      const mapped = samples.map((s) => ({ ...s, top }));
+      const lefts = mapped.map((sample) => sample.left);
+      return {
+        kind: "content",
+        top,
+        samples: mapped,
+        minLeft: Math.min(...lefts),
+        maxLeft: Math.max(...lefts),
+      };
+    }
+
+    it("returns false when upper row max sample sits on wire newline", () => {
+      const wire = `hi @${AGENT}\nwide content here`;
       const doc = wireToDoc(wire);
-      const tailStart = wire.indexOf("dhd", 1);
-      const tailInterior = tailStart + 1;
-      const row0Top = 141.1;
-      const row1Top = 158.86;
-      const surface = document.createElement("div");
-      surface.style.width = "310px";
-      document.body.appendChild(surface);
-      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
-      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
-        { wire: 0, top: row0Top, left: 340 },
-        { wire: 4, top: row0Top, left: 367.23 },
-        {
-          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
-          top: row0Top,
-          left: 484.39,
-        },
-        { wire: tailStart - 1, top: row0Top, left: 617.32 },
-        { wire: wire.length, top: row1Top, left: 362.67 },
-        { wire: tailStart, top: 140.67, left: 617.32 },
-      ]);
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
-      const landing = layout.resolveSegmentOffsetLanding(tailInterior, 1, 0);
-      expect(landing).not.toBeNull();
-      expect(landing!.sourceStartWire).toBe(tailStart);
-      expect(landing!.targetStartWire).toBe(0);
-      expect(tailInterior - landing!.sourceStartWire).toBe(1);
-      expect(landing!.targetStartWire + (tailInterior - landing!.sourceStartWire)).toBe(1);
-      surface.remove();
+      const mentionEnd = docPosToWireOffset(doc, {
+        nodeIndex: 1,
+        nodeOffset: 1 + AGENT.length,
+      });
+      const lowerStart = wire.indexOf("\n") + 1;
+      const rows = [
+        contentRow(ROW1, [
+          { wire: 0, left: 0 },
+          { wire: mentionEnd, left: 150 },
+        ]),
+        contentRow(ROW2, [{ wire: lowerStart, left: 0 }]),
+      ];
+      expect(isSameWireSoftWrapBandCrossing(doc, 1, 0, rows)).toBe(false);
+      expect(isSameWireSoftWrapBandCrossing(doc, 0, 1, rows)).toBe(false);
     });
 
-    it("segment offset landing maps prefix offset down to sparse lower line", () => {
-      const agent = AGENT;
-      const wire = `dhd @${agent} d @${agent} \ndhd`;
+    it("returns true for adjacent visual rows on one wire line without embedded newline", () => {
+      const wire = `header @${AGENT} tail`;
       const doc = wireToDoc(wire);
-      const lowerLineStart = wire.indexOf("\n") + 1;
-      const lowerInterior = lowerLineStart + 1;
-      const row0Top = 141.1;
-      const row1Top = 158.86;
-      const surface = document.createElement("div");
-      surface.style.width = "310px";
-      document.body.appendChild(surface);
-      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
-      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
-        { wire: 0, top: row0Top, left: 340 },
-        { wire: 4, top: row0Top, left: 367.23 },
-        {
-          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
-          top: row0Top,
-          left: 484.39,
-        },
-        { wire: lowerLineStart - 1, top: row0Top, left: 617.32 },
-        { wire: wire.length, top: row1Top, left: 362.67 },
-      ]);
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 1));
-      const landing = layout.resolveSegmentOffsetLanding(1, 0, 1);
-      expect(landing).not.toBeNull();
-      expect(landing!.sourceStartWire).toBe(0);
-      expect(landing!.targetStartWire).toBe(lowerLineStart);
-      expect(landing!.targetStartWire + (1 - landing!.sourceStartWire)).toBe(lowerInterior);
-      surface.remove();
+      const mentionStart = docPosToWireOffset(doc, { nodeIndex: 1, nodeOffset: 0 });
+      const postMention = mentionStart + 1 + AGENT.length + 1;
+      const rows = [
+        contentRow(ROW1, [
+          { wire: 0, left: 0 },
+          { wire: mentionStart, left: 30 },
+        ]),
+        contentRow(ROW2, [
+          { wire: postMention, left: 80 },
+          { wire: wire.length, left: 200 },
+        ]),
+      ];
+      expect(isSameWireSoftWrapBandCrossing(doc, 1, 0, rows)).toBe(true);
     });
   });
 });

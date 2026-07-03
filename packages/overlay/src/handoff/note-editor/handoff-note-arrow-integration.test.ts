@@ -12,6 +12,7 @@ import {
   docPosToWireOffset,
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
+  isEmbeddedBlankBandProbeWire,
   resolveDocVerticalArrowMove,
   wireOffsetToDocPos,
   wireToDoc,
@@ -32,6 +33,11 @@ import {
   setDomCaretAtTextStart,
   setSelectionAtWire,
   stubHandoffNoteMentionLayoutCoords,
+  refreshHandoffNoteEditorLayoutGeometry,
+  prepareVerticalColumnProbe,
+  stubCaretProbeAtDocPos,
+  stubHandoffNoteAnchorRectAtWire,
+  readHandoffNoteLayoutRowIndexForTests,
 } from "./handoff-note-test-helpers.js";
 
 const AGENT_A = "caliper-aaaaaaa";
@@ -470,8 +476,20 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const prefixMentionAt = shiftEnterPairWire.indexOf("@");
     const lowerMentionEnd = shiftEnterPairWire.length - 1;
 
+    function stubShiftEnterPairMentionRows(): void {
+      stubHandoffNoteMentionLayoutCoords(
+        host.root,
+        new Map([
+          [1, { top: 118, left: 40 }],
+          [3, { top: 118, left: 200 }],
+          [5, { top: 280, left: 80 }],
+        ])
+      );
+    }
+
     it("up from blank wire line at column 0 with editor parity", () => {
       host.editor.setDocFromWire(shiftEnterPairWire, blankLineStart, { resetHistory: true });
+      stubShiftEnterPairMentionRows();
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(0);
       expect(host.editor.getCursor()).not.toBe(prefixMentionAt);
@@ -524,7 +542,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     const column = gapMid;
     const wire = `${row1}\n${" ".repeat(column)}mark`;
 
-    it("inter-pill gap and aligned row below round-trip with editor parity", () => {
+    it("inter-pill gap round-trip via DOM probe", () => {
       const row1Top = VISUAL_ROW_TOP.r1;
       const row2Top = VISUAL_ROW_TOP.r2;
       const belowGap = row1.length + 1 + column;
@@ -541,18 +559,53 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: belowGap, top: row2Top, left: 120 },
         { wire: wire.length - 1, top: row2Top, left: 160 },
       ];
+      const goalColumn = 120;
+      const mentionCoords = new Map([
+        [1, { top: row1Top, left: 40, width: 70 }],
+        [3, { top: row1Top, left: 200 }],
+      ]);
       host.editor.setDocFromWire(wire, gapMid, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, layoutSamples);
-      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(belowGap);
-      expectCaretParity(host.editor, host.root, belowGap, "down from inter-pill gap");
+      const editorWire = host.editor.getWire();
+      const doc = host.editor.getDoc();
+      const downProbe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc,
+        wire: editorWire,
+        fromWire: gapMid,
+        goalColumn,
+        probeTargetWire: belowGap,
+        samples: layoutSamples,
+        mentionCoords,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(belowGap);
+        expectCaretParity(host.editor, host.root, belowGap, "down from inter-pill gap");
+      } finally {
+        downProbe.restore();
+      }
 
       host.editor.setDocFromWire(wire, belowGap, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, layoutSamples);
-      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(gapMid);
-      expect(host.editor.getCursor()).not.toBe(row1.indexOf("@"));
-      expectCaretParity(host.editor, host.root, gapMid, "up to inter-pill gap");
+      const upProbe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: belowGap,
+        goalColumn,
+        probeTargetWire: gapMid,
+        samples: layoutSamples,
+        mentionCoords,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(gapMid);
+        expect(host.editor.getCursor()).not.toBe(row1.indexOf("@"));
+        expectCaretParity(host.editor, host.root, gapMid, "up to inter-pill gap");
+      } finally {
+        upProbe.restore();
+      }
     });
   });
 
@@ -999,6 +1052,52 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).toBe(probes[1]! + 2);
     });
 
+    it("filled blank row round-trips vertical navigation after typing", () => {
+      const mentionCoords = new Map([
+        [1, { top: 150, left: 80 }],
+        [3, { top: 280, left: 0 }],
+      ]);
+      const layoutOptions = { mentionCoords, baseTop: 150, stride: 36 };
+      const wireBefore = `header @${AGENT_COMPOSITE} \n\n\ntail @${AGENT_COMPOSITE} `;
+      const docBefore = wireToDoc(wireBefore);
+      const probesBefore = listEmbeddedBlankBandProbeWires(docBefore);
+
+      host.editor.setDocFromWire(wireBefore, wireBefore.length, { resetHistory: true });
+      stubHandoffNoteMentionLayoutCoords(host.root, mentionCoords);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, probesBefore[1]!, "eof to lower blank");
+
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: "x",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+
+      const wireAfter = host.editor.getWire();
+      const typedWire = wireAfter.indexOf("x");
+      expect(typedWire).toBeGreaterThanOrEqual(0);
+      expect(wireAfter).toBe(`header @${AGENT_COMPOSITE} \n\nx\ntail @${AGENT_COMPOSITE} `);
+      expect(isEmbeddedBlankBandProbeWire(host.editor.getDoc(), typedWire)).toBe(false);
+
+      refreshHandoffNoteEditorLayoutGeometry(
+        host.root,
+        host.editor.getDoc(),
+        wireAfter,
+        layoutOptions
+      );
+
+      const tailStart = wireAfter.indexOf("tail");
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, tailStart, "down to tail after fill");
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expectCaretParity(host.editor, host.root, typedWire, "up back to filled row");
+    });
+
     it("typing on upper blank after arrow up through lower blank inserts on that row", () => {
       const doc = wireToDoc(wire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
@@ -1368,7 +1467,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
 
     it("delete at visual start on sole-char row before blank band keeps caret before char", () => {
-      const wire = `dh\n\n\n`;
+      const wire = `he\n\n\n`;
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
       const firstText = host.root.childNodes[0];
       expect(firstText?.nodeType).toBe(Node.TEXT_NODE);
@@ -1377,7 +1476,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).toBe(0);
 
       expect(pressDelete()).toBe(true);
-      expect(host.editor.getWire()).toBe(`h\n\n\n`);
+      expect(host.editor.getWire()).toBe(`e\n\n\n`);
       expectCaretParity(host.editor, host.root, 0, "sole-char row visual start after delete");
     });
   });
@@ -1574,11 +1673,14 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
 
     it("keydown backspace on two-char row before blank band lands after remaining char", () => {
-      const suffixWire = `dh\n\n`;
+      const suffixWire = `he\n\n`;
+      const doc = wireToDoc(suffixWire);
       host.editor.setDocFromWire(suffixWire, 1, { resetHistory: true });
+      setSelectionAtWire(host.root, doc, 1);
+      dispatchSelectionChange(host.root);
 
       expect(pressBackspace()).toBe(true);
-      expect(host.editor.getWire()).toBe(`d\n\n`);
+      expect(host.editor.getWire()).toBe(`e\n\n`);
       expect(host.editor.getCursor()).toBe(1);
       expectCaretParity(
         host.editor,
@@ -1855,16 +1957,46 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       { wire: 47, top: row2Top, left: 483 },
     ];
 
-    it("prefix interior and wrapped interior round-trip with editor parity", () => {
+    it("prefix and wrapped interior round-trip via DOM probe", () => {
+      const goalColumn = 362;
       host.editor.setDocFromWire(wire, prefixMidWire, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, layoutSamples);
-      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(wrappedInteriorWire);
-      expectCaretParity(host.editor, host.root, wrappedInteriorWire);
+      const downProbe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: prefixMidWire,
+        goalColumn,
+        probeTargetWire: wrappedInteriorWire,
+        samples: layoutSamples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(wrappedInteriorWire);
+        expectCaretParity(host.editor, host.root, wrappedInteriorWire);
+      } finally {
+        downProbe.restore();
+      }
 
-      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(prefixMidWire);
-      expectCaretParity(host.editor, host.root, prefixMidWire);
+      host.editor.setDocFromWire(wire, wrappedInteriorWire, { resetHistory: true });
+      const preservedColumn = 368.5;
+      const upProbe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: wrappedInteriorWire,
+        goalColumn: preservedColumn,
+        probeTargetWire: prefixMidWire,
+        samples: layoutSamples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(prefixMidWire);
+        expectCaretParity(host.editor, host.root, prefixMidWire);
+      } finally {
+        upProbe.restore();
+      }
     });
   });
 
@@ -2091,7 +2223,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
   describe("vertical — full soft-wrapped post-mention tail", () => {
     const agent = AGENT_A;
-    const wire = `dh @${agent} d @${agent} tail`;
+    const wire = `he @${agent} x @${agent} tail`;
     const doc = wireToDoc(wire);
     const tailStart = wire.indexOf("tail");
     const tailInterior = tailStart + 2;
@@ -2121,7 +2253,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
     });
 
-    it("up from wrapped tail interior uses vertical layout not horizontal bleed", () => {
+    it("up from wrap tail uses vertical layout not horizontal bleed", () => {
       host.editor.setDocFromWire(wire, tailInterior, { resetHistory: true });
       setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
 
@@ -2131,22 +2263,37 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(host.editor, host.root, host.editor.getCursor(), "up from wrap interior");
     });
 
-    it("up from wrapped tail interior preserves wrap fragment column on row above", () => {
+    it("DOM probe preserves wrap-tail column on row above", () => {
       const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      const goalColumn = 394;
+      const targetWire = 3;
       host.editor.setDocFromWire(wire, tailInterior, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
-
-      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expect(host.editor.getCursor()).toBeLessThan(secondMentionStart);
-      expect(host.editor.getCursor()).not.toBe(row0EndAfterSpacer);
-      expectCaretParity(host.editor, host.root, host.editor.getCursor(), "wrap column up");
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: tailInterior,
+        goalColumn,
+        probeTargetWire: targetWire,
+        samples: compactWrapSamples(),
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBeLessThan(secondMentionStart);
+        expect(host.editor.getCursor()).not.toBe(row0EndAfterSpacer);
+        expectCaretParity(host.editor, host.root, host.editor.getCursor(), "wrap column up");
+      } finally {
+        probe.restore();
+      }
     });
 
-    it("up from wrapped tail interior preserves intra-segment offset on doc prefix", () => {
-      const wrapWire = `dh @${agent} d @${agent} dhd`;
+    it("DOM probe preserves column when prefix text mismatches", () => {
+      const wrapWire = `he @${agent} x @${agent} seg`;
       const wrapDoc = wireToDoc(wrapWire);
-      const tailStart = wrapWire.lastIndexOf("dhd");
+      const tailStart = wrapWire.lastIndexOf("seg");
       const tailInterior = tailStart + 1;
+      const goalColumn = 362.67;
       const wrapSamples = [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
@@ -2160,18 +2307,112 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: tailStart, top: 140.67, left: 617.32 },
       ];
       host.editor.setDocFromWire(wrapWire, tailInterior, { resetHistory: true });
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
-
-      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(1);
-      expectCaretParity(host.editor, host.root, 1, "wrap segment offset up");
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: tailInterior,
+        goalColumn,
+        probeTargetWire: 3,
+        samples: wrapSamples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(3);
+        expectCaretParity(host.editor, host.root, 3, "wrap column up after prefix mismatch");
+      } finally {
+        probe.restore();
+      }
     });
 
-    it("down from matching doc prefix preserves intra-segment offset on wrapped tail", () => {
-      const wrapWire = `dh @${agent} d @${agent} dhd`;
+    it("prefix round-trip when tail text mismatches upper prefix", () => {
+      const wrapWire = `pre @${agent} x @${agent} post @${agent} @${agent} `;
       const wrapDoc = wireToDoc(wrapWire);
-      const tailStart = wrapWire.lastIndexOf("dhd");
+      const prefixInterior = 2;
+      const tailStart = wrapWire.indexOf("post");
+      const tailInterior = tailStart + 2;
+      const goalColumn = 361.11;
+      const spacerWire = tailStart - 1;
+      const secondMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 });
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: row0Top,
+          left: 491.89,
+        },
+        { wire: secondMentionStart, top: row0Top, left: 507.67 },
+        { wire: spacerWire, top: row0Top, left: 624.82 },
+        { wire: wrapWire.length, top: row1Top, left: 377.81 },
+        { wire: tailStart, top: row1Top, left: 377.8125 },
+        { wire: tailInterior, top: row1Top, left: 394 },
+        {
+          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: row0Top - 0.43,
+          left: 491.89,
+        },
+        { wire: tailStart, top: row0Top - 0.43, left: 624.82 },
+      ];
+
+      host.editor.setDocFromWire(wrapWire, prefixInterior, { resetHistory: true });
+
+      const restoreSourceAnchor = stubHandoffNoteAnchorRectAtWire(
+        host.root,
+        wrapDoc,
+        prefixInterior,
+        { top: row0Top, left: goalColumn }
+      );
+      const restoreTailAnchor = stubHandoffNoteAnchorRectAtWire(host.root, wrapDoc, tailInterior, {
+        top: row1Top,
+        left: goalColumn,
+      });
+      const restoreDownProbe = stubCaretProbeAtDocPos(
+        host.root,
+        wrapDoc,
+        goalColumn,
+        row1Top,
+        wireOffsetToDocPos(wrapDoc, tailInterior)
+      );
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      try {
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(tailInterior);
+
+        restoreDownProbe();
+        const restoreUpProbe = stubCaretProbeAtDocPos(
+          host.root,
+          wrapDoc,
+          goalColumn,
+          row0Top,
+          wireOffsetToDocPos(wrapDoc, prefixInterior)
+        );
+        setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(prefixInterior);
+        expectCaretParity(
+          host.editor,
+          host.root,
+          prefixInterior,
+          "prefix mismatch wrap round-trip"
+        );
+
+        restoreUpProbe();
+      } finally {
+        restoreTailAnchor();
+        restoreSourceAnchor();
+      }
+    });
+
+    it("DOM probe preserves wrap-tail interior column on descent from prefix", () => {
+      const wrapWire = `he @${agent} x @${agent} seg`;
+      const wrapDoc = wireToDoc(wrapWire);
+      const tailStart = wrapWire.lastIndexOf("seg");
       const tailInterior = tailStart + 1;
+      const goalColumn = 346.52666666666664;
       const wrapSamples = [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
@@ -2185,11 +2426,23 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: tailStart, top: 140.67, left: 617.32 },
       ];
       host.editor.setDocFromWire(wrapWire, 1, { resetHistory: true });
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
-
-      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(tailInterior);
-      expectCaretParity(host.editor, host.root, tailInterior, "wrap segment offset down");
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: 1,
+        goalColumn,
+        probeTargetWire: tailInterior,
+        samples: wrapSamples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(tailInterior);
+        expectCaretParity(host.editor, host.root, tailInterior, "wrap column down from prefix");
+      } finally {
+        probe.restore();
+      }
     });
 
     it("down from row 0 head lands on wrapped tail without horizontal bleed", () => {
@@ -2203,9 +2456,9 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
 
     it("top bleed then down lands wrap continuation start", () => {
-      const wrapWire = `dhd @${agent} d @${agent} dhd`;
+      const wrapWire = `pre @${agent} x @${agent} seg`;
       const wrapDoc = wireToDoc(wrapWire);
-      const wrapTailStart = wrapWire.lastIndexOf("dhd");
+      const wrapTailStart = wrapWire.lastIndexOf("seg");
       const wrapTailPastEnd = wrapWire.length;
       const wrapSamples = [
         { wire: 0, top: row0Top, left: 347.5 },
@@ -2230,16 +2483,16 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(host.editor, host.root, wrapTailStart, "down after top bleed");
     });
 
-    it("bottom bleed then up preserves current column on upper row", () => {
-      const wrapWire = `dhd @${agent} d @${agent} dhd`;
-      const wrapDoc = wireToDoc(wrapWire);
-      const wrapTailStart = wrapWire.lastIndexOf("dhd");
+    it("bottom bleed then up preserves column via DOM probe", () => {
+      const wrapWire = `pre @${agent} x @${agent} seg`;
+      const wrapTailStart = wrapWire.lastIndexOf("seg");
       const wrapTailPastEnd = wrapWire.length;
+      const goalColumn = 370.17;
       const wrapSamples = [
         { wire: 0, top: row0Top, left: 347.5 },
         { wire: 4, top: row0Top, left: 374.73 },
         {
-          wire: docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 }),
+          wire: docPosToWireOffset(wireToDoc(wrapWire), { nodeIndex: 3, nodeOffset: 0 }),
           top: row0Top,
           left: 507.67,
         },
@@ -2254,12 +2507,26 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       }
 
-      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expectCaretParity(host.editor, host.root, 4, "up after bottom bleed");
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: host.editor.getCursor(),
+        goalColumn,
+        probeTargetWire: 4,
+        samples: wrapSamples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expectCaretParity(host.editor, host.root, 4, "up after bottom bleed");
+      } finally {
+        probe.restore();
+      }
     });
 
     it("up from lower row keeps authority on upper row before top bleed", () => {
-      const wrapWire = `dhd @${agent} d @${agent} tail @${agent} `;
+      const wrapWire = `pre @${agent} x @${agent} tail @${agent} `;
       const wrapDoc = wireToDoc(wrapWire);
       const firstMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 1, nodeOffset: 0 });
       const firstPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 2, nodeOffset: 0 });
@@ -2289,6 +2556,55 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).toBeLessThan(upperLanding);
     });
 
+    it("up from lower row end lands on upper row end after the wrapped spacer", () => {
+      const wrapWire = `pre @${agent} x @${agent} line @${agent} @${agent} `;
+      const wrapDoc = wireToDoc(wrapWire);
+      const firstMentionEnd = docPosToWireOffset(wrapDoc, {
+        nodeIndex: 1,
+        nodeOffset: agent.length,
+      });
+      const firstPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 2, nodeOffset: 0 });
+      const secondMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 3, nodeOffset: 0 });
+      const secondPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 4, nodeOffset: 0 });
+      const secondTextStart = secondPostStart + 1;
+      const thirdMentionStart = docPosToWireOffset(wrapDoc, { nodeIndex: 5, nodeOffset: 0 });
+      const thirdMentionEnd = docPosToWireOffset(wrapDoc, {
+        nodeIndex: 5,
+        nodeOffset: agent.length,
+      });
+      const thirdPostStart = docPosToWireOffset(wrapDoc, { nodeIndex: 6, nodeOffset: 0 });
+      const fourthMentionEnd = docPosToWireOffset(wrapDoc, {
+        nodeIndex: 7,
+        nodeOffset: agent.length,
+      });
+      const wrapSamples = [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        { wire: firstMentionEnd, top: row0Top, left: 491.89 },
+        { wire: secondMentionStart, top: row0Top, left: 507.67 },
+        { wire: secondPostStart, top: row1Top, left: 624.82 },
+        { wire: thirdMentionStart, top: row1Top, left: 382.09 },
+        { wire: thirdMentionEnd, top: row1Top, left: 499.25 },
+        { wire: thirdPostStart, top: row1Top, left: 503.81 },
+        { wire: fourthMentionEnd, top: row1Top, left: 620.97 },
+        { wire: wrapWire.length, top: row1Top, left: 624.52 },
+        { wire: firstPostStart, top: row0Top - 0.43, left: 491.89 },
+        { wire: secondTextStart, top: row0Top - 0.43, left: 624.82 },
+      ];
+      host.editor.setDocFromWire(wrapWire, wrapWire.length, { resetHistory: true });
+      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).not.toBe(secondTextStart);
+      expect(host.editor.getCursor()).toBe(secondPostStart);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        host.editor.getCursor(),
+        "up lands at upper row end after wrapped spacer"
+      );
+    });
+
     it("down from row 0 end after spacer and up round-trip without horizontal bleed", () => {
       host.editor.setDocFromWire(wire, row0EndAfterSpacer, { resetHistory: true });
       setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
@@ -2312,6 +2628,107 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).not.toBe(tailInterior - 1);
       expect(host.editor.getCursor()).toBeLessThan(tailStart);
       expectCaretParity(host.editor, host.root, host.editor.getCursor(), "left then up");
+    });
+  });
+
+  describe("vertical — blank band exit to soft-wrap continuation row", () => {
+    const agent = AGENT_A;
+    const row0Top = 141.1;
+    const row1Top = 159.3;
+    const row2Top = 177.49;
+    const row3Top = 195.89;
+    const row4Top = 214.29;
+    const visualRowStart = 347.5;
+
+    function softWrapBlankBandWire() {
+      return `pre @${agent} x @${agent} post @${agent} @${agent} \n\n\nlower @${agent} `;
+    }
+
+    function softWrapBlankBandSamples(wire: string) {
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const lowerStart = wire.indexOf("lower");
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const [upperBlank, lowerBlank] = probes;
+      const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      return [
+        { wire: 0, top: row0Top, left: visualRowStart },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: row0Top,
+          left: 491.89,
+        },
+        { wire: secondMentionStart, top: row0Top, left: 507.67 },
+        { wire: tailStart - 1, top: row0Top, left: 624.82 },
+        { wire: tailStart, top: row1Top, left: 377.8125 },
+        { wire: upperBlank!, top: row2Top, left: visualRowStart },
+        { wire: lowerBlank!, top: row3Top, left: visualRowStart },
+        { wire: lowerStart, top: row4Top, left: visualRowStart },
+        { wire: wire.length, top: row4Top, left: 624.82 },
+      ];
+    }
+
+    beforeEach(() => {
+      host.root.style.width = "310px";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
+    });
+
+    it("up from upper blank probe lands wrap continuation row visual start (one row per press)", () => {
+      const wire = softWrapBlankBandWire();
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const upperBlankProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      host.editor.setDocFromWire(wire, upperBlankProbe, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, softWrapBlankBandSamples(wire));
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(tailStart);
+      expect(host.editor.getCursor()).not.toBe(0);
+      expectCaretParity(host.editor, host.root, tailStart, "blank exit to wrap row visual start");
+    });
+
+    it("two-step up from upper blank visits wrap row then prefix row", () => {
+      const wire = softWrapBlankBandWire();
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const upperBlankProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      host.editor.setDocFromWire(wire, upperBlankProbe, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, softWrapBlankBandSamples(wire));
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(tailStart);
+      expect(
+        readHandoffNoteLayoutRowIndexForTests(
+          host.root,
+          host.editor.getDoc(),
+          host.editor.getCursor()
+        )
+      ).toBe(1);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(
+        readHandoffNoteLayoutRowIndexForTests(
+          host.root,
+          host.editor.getDoc(),
+          host.editor.getCursor()
+        )
+      ).toBe(0);
+      expect(host.editor.getCursor()).toBe(0);
+      expectCaretParity(host.editor, host.root, 0, "wrap row to prefix visual start");
+    });
+
+    it("down from wrap continuation enters upper blank probe", () => {
+      const wire = softWrapBlankBandWire();
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const upperBlankProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      host.editor.setDocFromWire(wire, tailStart, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, softWrapBlankBandSamples(wire));
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(upperBlankProbe);
+      expectCaretParity(host.editor, host.root, upperBlankProbe, "wrap continuation to blank");
     });
   });
 
@@ -2346,9 +2763,71 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
   });
 
-  describe("vertical — shift-enter lower line intra-segment offset", () => {
+  describe("vertical — wire newline cross wide column sparse fallback", () => {
     const agent = AGENT_A;
-    const wire = `dhd @${agent} d @${agent} \ndhd`;
+    const row0Top = 141.1;
+    const row1Top = 177.49;
+    const goalColumn = 612;
+    const visualRowStart = 347.5;
+
+    function wireNewlineWideColumnWire() {
+      return `pre @${agent} x @${agent} post @${agent} @${agent} \nlower @${agent} `;
+    }
+
+    function wireNewlineWideColumnSamples(wire: string) {
+      const doc = wireToDoc(wire);
+      const lowerLineStart = wire.indexOf("\n") + 1;
+      const row0EndBeforeBreak = lowerLineStart - 1;
+      const secondMentionStart = docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 });
+      return [
+        { wire: 0, top: row0Top, left: visualRowStart },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 1 }),
+          top: row0Top,
+          left: 491.89,
+        },
+        { wire: secondMentionStart, top: row0Top, left: 507.67 },
+        { wire: row0EndBeforeBreak, top: row0Top, left: 624.82 },
+        { wire: lowerLineStart, top: row1Top, left: visualRowStart },
+        { wire: wire.length - 1, top: row1Top, left: goalColumn },
+        { wire: wire.length, top: row1Top, left: goalColumn },
+      ];
+    }
+
+    beforeEach(() => {
+      host.root.style.width = "310px";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
+    });
+
+    it("up from lower eof wide goal lands upper row end not mention interior when probe misses", () => {
+      const wire = wireNewlineWideColumnWire();
+      const doc = wireToDoc(wire);
+      const lowerEof = wire.length - 1;
+      const row0EndBeforeBreak = wire.indexOf("\n");
+      host.editor.setDocFromWire(wire, lowerEof, { resetHistory: true });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, wireNewlineWideColumnSamples(wire));
+      stubHandoffNoteAnchorRectAtWire(host.root, doc, lowerEof, {
+        top: row1Top,
+        left: goalColumn,
+      });
+      setMeasuredSamplesCache(wire, host.root.clientWidth, wireNewlineWideColumnSamples(wire));
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(row0EndBeforeBreak);
+      expect(host.editor.getCursor()).not.toBe(62);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        row0EndBeforeBreak,
+        "wire newline up sparse fallback"
+      );
+    });
+  });
+
+  describe("vertical — shift-enter lower line DOM column probe", () => {
+    const agent = AGENT_A;
+    const wire = `pre @${agent} x @${agent} \nseg`;
     const doc = wireToDoc(wire);
     const lowerLineStart = wire.indexOf("\n") + 1;
     const lowerInterior = lowerLineStart + 1;
@@ -2374,28 +2853,54 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
     });
 
-    it("up from lower line interior preserves character offset in doc prefix", () => {
+    it("DOM probe preserves column up from shift-enter lower interior", () => {
+      const goalColumn = 362.67;
       host.editor.setDocFromWire(wire, lowerInterior, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, shiftEnterLowerSamples());
-
-      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(1);
-      expectCaretParity(host.editor, host.root, 1, "shift-enter segment offset up");
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: lowerInterior,
+        goalColumn,
+        probeTargetWire: 1,
+        samples: shiftEnterLowerSamples(),
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(1);
+        expectCaretParity(host.editor, host.root, 1, "shift-enter column up");
+      } finally {
+        probe.restore();
+      }
     });
 
-    it("down from matching doc prefix preserves character offset in lower line", () => {
+    it("DOM probe preserves column down from upper prefix to lower interior", () => {
+      const goalColumn = 346.8075;
       host.editor.setDocFromWire(wire, 1, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, shiftEnterLowerSamples());
-
-      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expect(host.editor.getCursor()).toBe(lowerInterior);
-      expectCaretParity(host.editor, host.root, lowerInterior, "shift-enter segment offset down");
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: 1,
+        goalColumn,
+        probeTargetWire: lowerInterior,
+        samples: shiftEnterLowerSamples(),
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+        expect(host.editor.getCursor()).toBe(lowerInterior);
+        expectCaretParity(host.editor, host.root, lowerInterior, "shift-enter column down");
+      } finally {
+        probe.restore();
+      }
     });
   });
 
   describe("vertical — embedded substantive lower wire line column", () => {
     const agent = AGENT_A;
-    const wire = `dh @${agent} d @${agent} \ndhd`;
+    const wire = `he @${agent} x @${agent} \nseg`;
     const doc = wireToDoc(wire);
     const lowerLineStart = wire.indexOf("\n") + 1;
     const lowerInterior = lowerLineStart + 1;
@@ -2424,19 +2929,106 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
     });
 
-    it("up from lower line interior preserves line-start column not mention band", () => {
+    it("DOM probe preserves column on embedded lower line, not mention band", () => {
+      const goalColumn = 370.02;
+      const targetWire = 3;
       host.editor.setDocFromWire(wire, lowerInterior, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, lowerLineSamples());
+      const probe = prepareVerticalColumnProbe({
+        root: host.root,
+        doc: host.editor.getDoc(),
+        wire: host.editor.getWire(),
+        fromWire: lowerInterior,
+        goalColumn,
+        probeTargetWire: targetWire,
+        samples: lowerLineSamples(),
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+        expect(host.editor.getCursor()).toBeLessThan(secondMentionStart);
+        expect(host.editor.getCursor()).not.toBe(row0EndAfterSpacer);
+        expectCaretParity(
+          host.editor,
+          host.root,
+          host.editor.getCursor(),
+          "embedded lower column up"
+        );
+      } finally {
+        probe.restore();
+      }
+    });
+  });
+
+  describe("vertical — interchanged embedded blank band groups", () => {
+    const agent = AGENT_A;
+
+    function complexMultiBandWire() {
+      return `header @${agent} \n\n\nmiddle\n\n\ntail @${agent} suffix`;
+    }
+
+    function complexMultiBandLandmarks(wire: string) {
+      const doc = wireToDoc(wire);
+      const groups = listEmbeddedBlankBandGroups(doc);
+      const middleStart = wire.indexOf("middle");
+      const suffixEnd = wire.length - 1;
+      return {
+        doc,
+        groups,
+        middleStart,
+        suffixEnd,
+        lowerBandProbes: groups[1]!.probes,
+        upperBandProbes: groups[0]!.probes,
+      };
+    }
+
+    it("splits two blank band groups on mention composite wire", () => {
+      const { groups } = complexMultiBandLandmarks(complexMultiBandWire());
+      expect(groups.length).toBe(2);
+      expect(groups[0]!.probes.length).toBeGreaterThanOrEqual(2);
+      expect(groups[1]!.probes.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("up from suffix tail steps through lower band then middle row", () => {
+      const wire = complexMultiBandWire();
+      const { doc, middleStart, suffixEnd, lowerBandProbes, upperBandProbes } =
+        complexMultiBandLandmarks(wire);
+      host.editor.setDocFromWire(wire, suffixEnd, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expect(host.editor.getCursor()).toBeLessThan(secondMentionStart);
-      expect(host.editor.getCursor()).not.toBe(row0EndAfterSpacer);
-      expectCaretParity(
-        host.editor,
-        host.root,
-        host.editor.getCursor(),
-        "embedded lower column up"
-      );
+      expect(host.editor.getCursor()).toBe(lowerBandProbes.at(-1)!);
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(lowerBandProbes.at(-2)!);
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(middleStart);
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(upperBandProbes.at(-1)!);
+      expect(listEmbeddedBlankBandProbeWires(doc).includes(host.editor.getCursor())).toBe(true);
+    });
+
+    it("up from lower band first probe lands middle row not upper band", () => {
+      const wire = complexMultiBandWire();
+      const { middleStart, lowerBandProbes } = complexMultiBandLandmarks(wire);
+      host.editor.setDocFromWire(wire, lowerBandProbes[0]!, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(middleStart);
+      expectCaretParity(host.editor, host.root, middleStart, "lower band exit to middle");
+    });
+
+    it("down from header enters upper band first probe then round-trips", () => {
+      const wire = complexMultiBandWire();
+      const { upperBandProbes } = complexMultiBandLandmarks(wire);
+      const upperFirstProbe = upperBandProbes[0]!;
+      host.editor.setDocFromWire(wire, 0, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, wire);
+
+      expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(upperFirstProbe);
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(0);
+      expectCaretParity(host.editor, host.root, 0, "upper blank round-trip to header");
     });
   });
 

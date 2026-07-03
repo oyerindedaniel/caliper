@@ -404,7 +404,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
     }
 
     it("range ending on last wire char clears to empty doc", () => {
-      const wire = "dh\n\n\n";
+      const wire = "he\n\n\n";
       host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
       setSelectionAtWire(host.root, host.editor.getDoc(), 0, wire.length - 1);
       dispatchSelectionChange(host.root);

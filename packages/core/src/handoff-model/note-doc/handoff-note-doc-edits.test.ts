@@ -1407,7 +1407,7 @@ describe("applyDocDelete", () => {
   }
 
   it("range delete from doc start through last wire char clears to empty doc", () => {
-    const doc = wireToDoc("dh\n\n\n");
+    const doc = wireToDoc("he\n\n\n");
     const anchor = wireOffsetToDocPos(doc, 0);
     const shortFocus = wireOffsetToDocPos(doc, docToWire(doc).length - 1);
     const result = applyDocDelete(

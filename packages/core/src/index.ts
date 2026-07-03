@@ -149,7 +149,6 @@ export {
   resolveVerticalArrowCrossLineMove,
   resolveVerticalArrowRowStartLanding,
   resolveVerticalArrowMinWireLineStart,
-  resolveVerticalArrowVisualLanding,
   type VerticalNavLineSpan,
   type VerticalNavWireMove,
 } from "./handoff-model/note-doc/handoff-note-vertical-nav.js";
