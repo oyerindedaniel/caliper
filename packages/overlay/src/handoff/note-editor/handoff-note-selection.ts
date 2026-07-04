@@ -410,7 +410,8 @@ function resolveVisualRowStartLanding(
   direction: HandoffNoteVerticalArrowDirection,
   targetLine: MeasuredWireOffset[],
   edgeColumn: number,
-  edgeTolerance: number
+  edgeTolerance: number,
+  wire: string
 ): HandoffNoteDocPos | null {
   if (targetLine.length === 0) {
     return null;
@@ -424,7 +425,6 @@ function resolveVisualRowStartLanding(
   if (edgeColumn > rowStartColumn + edgeTolerance) {
     return null;
   }
-  const wire = docToWire(doc);
   const startSample = pickConcreteRowStartSample(targetLine, wire.length);
   const landingWire =
     startSample?.wire ?? wire.lastIndexOf("\n", Math.max(0, targetLine[0]!.wire - 1)) + 1;
@@ -439,13 +439,13 @@ function sourceIsAtConcreteVisualStart(
   doc: HandoffNoteDoc,
   fromWire: number,
   edgeColumn: number,
-  sourceRowSamples?: MeasuredWireOffset[]
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  wireLength: number
 ): boolean {
   if (!sourceRowSamples || sourceRowSamples.length === 0) {
     return true;
   }
-  const wire = docToWire(doc);
-  const startSample = pickConcreteRowStartSample(sourceRowSamples, wire.length);
+  const startSample = pickConcreteRowStartSample(sourceRowSamples, wireLength);
   if (startSample === null) {
     return false;
   }
@@ -821,12 +821,13 @@ export function classifyVerticalContentLandingMode(
 function resolveBlankExitContentRowStart(
   doc: HandoffNoteDoc,
   direction: HandoffNoteVerticalArrowDirection,
-  targetLine: MeasuredWireOffset[]
+  targetLine: MeasuredWireOffset[],
+  wireLength: number
 ): { offset: number; branch: string } | null {
   if (targetLine.length === 0) {
     return null;
   }
-  const startSample = pickConcreteRowStartSample(targetLine, docToWire(doc).length);
+  const startSample = pickConcreteRowStartSample(targetLine, wireLength);
   if (startSample) {
     const fromSample = resolveVerticalArrowRowStartLanding(
       doc,
@@ -869,9 +870,10 @@ function resolveBlankExitVisualRowStart(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
-  targetLine: MeasuredWireOffset[]
+  targetLine: MeasuredWireOffset[],
+  wireLength: number
 ): VerticalLanding | null {
-  const wireLineLanding = resolveBlankExitContentRowStart(doc, direction, targetLine);
+  const wireLineLanding = resolveBlankExitContentRowStart(doc, direction, targetLine, wireLength);
   if (!wireLineLanding) {
     return null;
   }
@@ -889,13 +891,13 @@ function resolveSparseEdgeColumnAtGoal(
   targetLine: MeasuredWireOffset[],
   goalColumn: number,
   sourceRowSamples: MeasuredWireOffset[] | undefined,
-  rowStart: VisualRowStartContext | undefined
+  rowStart: VisualRowStartContext | undefined,
+  wireLength: number
 ): VerticalLanding | null {
   if (targetLine.length === 0) {
     return null;
   }
   const tolerance = rowStart?.goalColumnTolerance ?? 2;
-  const wireLength = docToWire(doc).length;
   const { minLeft, maxLeft } = rowSampleColumnExtent(targetLine);
   const effectiveGoal = clampGoalColumnToRowExtent(goalColumn, minLeft, maxLeft, tolerance);
   const fromWire = docPosToWireOffset(doc, focus);
@@ -955,7 +957,8 @@ function resolveRowEdgeToRowEdgeLanding(
   targetLine: MeasuredWireOffset[],
   edgeColumn: number,
   sourceRowSamples: MeasuredWireOffset[] | undefined,
-  rowStart?: VisualRowStartContext
+  rowStart: VisualRowStartContext | undefined,
+  wire: string
 ): VerticalLanding | null {
   const fromWire = docPosToWireOffset(doc, focus);
   const domRowStart = probeTargetRowAtColumn(doc, focus, direction, edgeColumn, rowStart);
@@ -967,7 +970,8 @@ function resolveRowEdgeToRowEdgeLanding(
     doc,
     fromWire,
     edgeColumn,
-    sourceRowSamples
+    sourceRowSamples,
+    wire.length
   );
   const visualStartLanding = sourceAtVisualStart
     ? resolveVisualRowStartLanding(
@@ -975,7 +979,8 @@ function resolveRowEdgeToRowEdgeLanding(
         direction,
         targetLine,
         edgeColumn,
-        rowStart?.goalColumnTolerance ?? 2
+        rowStart?.goalColumnTolerance ?? 2,
+        wire
       )
     : null;
   if (visualStartLanding) {
@@ -1006,7 +1011,8 @@ function resolveColumnAtGoalLanding(
   targetLine: MeasuredWireOffset[],
   goalColumn: number,
   sourceRowSamples: MeasuredWireOffset[] | undefined,
-  rowStart: VisualRowStartContext | undefined
+  rowStart: VisualRowStartContext | undefined,
+  wireLength: number
 ): VerticalLanding | null {
   const domLanding = probeTargetRowAtColumn(doc, focus, direction, goalColumn, rowStart);
   if (domLanding) {
@@ -1020,7 +1026,8 @@ function resolveColumnAtGoalLanding(
     targetLine,
     goalColumn,
     sourceRowSamples,
-    rowStart
+    rowStart,
+    wireLength
   );
 }
 
@@ -1031,7 +1038,8 @@ function resolveVerticalContentLanding(
   targetLine: MeasuredWireOffset[],
   mode: VerticalContentLandingMode,
   sourceRowSamples: MeasuredWireOffset[] | undefined,
-  rowStart: VisualRowStartContext | undefined
+  rowStart: VisualRowStartContext | undefined,
+  wire: string
 ): VerticalLanding {
   if (mode.kind === "blank-exit-row-start") {
     return { pos: focus, branch: "blank-exit-miss" };
@@ -1045,7 +1053,8 @@ function resolveVerticalContentLanding(
       targetLine,
       mode.edgeColumn,
       sourceRowSamples,
-      rowStart
+      rowStart,
+      wire
     );
     if (landed) {
       return landed;
@@ -1060,7 +1069,8 @@ function resolveVerticalContentLanding(
     targetLine,
     mode.goalColumn,
     sourceRowSamples,
-    rowStart
+    rowStart,
+    wire.length
   );
   if (landed) {
     return landed;
@@ -1074,8 +1084,9 @@ function pickVerticalLandingOnLine(
   direction: HandoffNoteVerticalArrowDirection,
   targetLine: MeasuredWireOffset[],
   mode: VerticalContentLandingMode,
-  sourceRowSamples?: MeasuredWireOffset[],
-  rowStart?: VisualRowStartContext
+  sourceRowSamples: MeasuredWireOffset[] | undefined,
+  rowStart: VisualRowStartContext | undefined,
+  wire: string
 ): VerticalLanding {
   const landed = resolveVerticalContentLanding(
     doc,
@@ -1084,7 +1095,8 @@ function pickVerticalLandingOnLine(
     targetLine,
     mode,
     sourceRowSamples,
-    rowStart
+    rowStart,
+    wire
   );
   if (mode.kind === "blank-exit-row-start" && landed.branch === "blank-exit-visual-row-start") {
     logVerArrow("resolve.rowStartProbe", {
@@ -1237,7 +1249,8 @@ export function resolveLayoutVerticalArrowMove(
   direction: HandoffNoteVerticalArrowDirection,
   layout: HandoffNoteLayoutMap,
   goalColumn: number,
-  root?: HTMLElement
+  root?: HTMLElement,
+  wire = docToWire(doc)
 ): LayoutVerticalMove {
   const fromWire = docPosToWireOffset(doc, focus);
   if (layout.visualRowCount < 2) {
@@ -1327,7 +1340,13 @@ export function resolveLayoutVerticalArrowMove(
 
   if (leavingBlankForContent) {
     const edgeColumn = resolveBlankExitEdgeColumn(layout, targetLineIndex, effectiveGoalColumn);
-    const blankExit = resolveBlankExitVisualRowStart(doc, focus, direction, targetRow.samples);
+    const blankExit = resolveBlankExitVisualRowStart(
+      doc,
+      focus,
+      direction,
+      targetRow.samples,
+      wire.length
+    );
     if (blankExit && !docPosEqual(blankExit.pos, focus)) {
       logVerArrow("resolve.rowStartProbe", {
         direction,
@@ -1362,7 +1381,8 @@ export function resolveLayoutVerticalArrowMove(
           coordsForWire: layout.coordsForWire.bind(layout),
           goalColumnTolerance: edgeTolerance,
         }
-      : undefined
+      : undefined,
+    wire
   );
 
   if (docPosEqual(targetPos, focus)) {
@@ -1428,8 +1448,9 @@ export function resolveDomVerticalArrowMove(
   direction: HandoffNoteVerticalArrowDirection,
   options?: { stickyGoalColumn?: number | null }
 ): { pos: HandoffNoteDocPos; handled: boolean; goalColumn?: number; branch?: string } {
+  const wire = docToWire(doc);
   const fromWire = docPosToWireOffset(doc, focus);
-  const layout = buildHandoffNoteLayoutMap(root, doc, focus);
+  const layout = buildHandoffNoteLayoutMap(root, doc, focus, { wire });
   const focusCoord = layout.coordsForWire(fromWire);
   const anchorRect = getDocAnchorRect(root, doc, focus);
   const anchorGoal =
@@ -1452,7 +1473,8 @@ export function resolveDomVerticalArrowMove(
       direction,
       layout,
       goalColumn,
-      root
+      root,
+      wire
     );
     if (layoutMove.handled) {
       const toWire = docPosToWireOffset(doc, layoutMove.pos);
