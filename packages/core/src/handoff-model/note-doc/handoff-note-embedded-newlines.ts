@@ -76,10 +76,7 @@ function lineStartBeforeWire(wire: string, endWire: number): number {
   return endWire <= 0 ? 0 : wire.lastIndexOf("\n", endWire - 1) + 1;
 }
 
-function lineSegmentEndingAt(
-  wire: string,
-  endWire: number
-): { start: number; segment: string } {
+function lineSegmentEndingAt(wire: string, endWire: number): { start: number; segment: string } {
   const start = lineStartBeforeWire(wire, endWire);
   return { start, segment: wire.slice(start, endWire) };
 }
