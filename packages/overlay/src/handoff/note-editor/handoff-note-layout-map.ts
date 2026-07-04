@@ -371,7 +371,6 @@ function cloneMeasuredSamples(samples: MeasuredWireOffset[]): MeasuredWireOffset
   return samples.map((sample) => ({ ...sample }));
 }
 
-/** Wire string + node start offsets — built once per layout pass, reused across line scans. */
 type LayoutWireIndex = {
   wire: string;
   nodeStartWires: number[];
@@ -400,7 +399,6 @@ function nodeWireEnd(doc: HandoffNoteDoc, wireIndex: LayoutWireIndex, nodeIndex:
   return start + (node.type === "text" ? node.text.length : 1 + node.agentId.length);
 }
 
-/** Monotonic wire→doc-pos using nodeStartWires; hint advances with sorted wire queries. */
 function resolveWireAtOffset(
   doc: HandoffNoteDoc,
   wireIndex: LayoutWireIndex,
