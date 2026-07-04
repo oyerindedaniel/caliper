@@ -72,14 +72,41 @@ function isBlankBandSegment(segment: string): boolean {
   return segment.length === 0 || /^\s*$/.test(segment);
 }
 
+function lineStartBeforeWire(wire: string, endWire: number): number {
+  return endWire <= 0 ? 0 : wire.lastIndexOf("\n", endWire - 1) + 1;
+}
+
+function lineSegmentEndingAt(
+  wire: string,
+  endWire: number
+): { start: number; segment: string } {
+  const start = lineStartBeforeWire(wire, endWire);
+  return { start, segment: wire.slice(start, endWire) };
+}
+
+function lineSegmentAtLineStart(wire: string, start: number): string {
+  const lineEnd = wire.indexOf("\n", start);
+  return wire.slice(start, lineEnd === -1 ? wire.length : lineEnd);
+}
+
+function isSubstantiveSegment(segment: string): boolean {
+  return segment.length > 0 && /\S/.test(segment);
+}
+
+function embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(
+  wire: string,
+  probeWire: number
+): boolean {
+  const { segment } = lineSegmentEndingAt(wire, probeWire);
+  return segment.length === 1 && isSubstantiveSegment(segment);
+}
+
 /** True when substantive content sits on the row immediately above `probeWire`. */
 export function embeddedBlankBandHasSubstantiveRowAbove(wire: string, probeWire: number): boolean {
   if (probeWire <= 0) {
     return false;
   }
-  const lineStart = wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  return segment.length > 0 && /\S/.test(segment);
+  return isSubstantiveSegment(lineSegmentEndingAt(wire, probeWire).segment);
 }
 
 /** True when the blank band has a filled content row above its first probe (header row). */
@@ -99,9 +126,7 @@ export function embeddedBlankBandSubstantiveContentStartWire(doc: HandoffNoteDoc
   const wire = docToWire(doc);
   const lineStarts = wireLineStartOffsets(wire);
   for (const start of lineStarts) {
-    const lineEnd = wire.indexOf("\n", start);
-    const segment = wire.slice(start, lineEnd === -1 ? wire.length : lineEnd);
-    if (segment.length > 0 && /\S/.test(segment)) {
+    if (isSubstantiveSegment(lineSegmentAtLineStart(wire, start))) {
       return start;
     }
   }
@@ -126,7 +151,7 @@ export function listEmbeddedBlankBandGroups(doc: HandoffNoteDoc): EmbeddedBlankB
     }
     const prevProbe = current[current.length - 1]!;
     const between = wire.slice(prevProbe + 1, probe);
-    if (between.length > 0 && /\S/.test(between)) {
+    if (isSubstantiveSegment(between)) {
       groups.push({ probes: current });
       current = [probe];
     } else {
@@ -161,9 +186,8 @@ export function embeddedBlankBandContentRowEndBeforeProbe(
   probeWire: number
 ): number {
   const wire = docToWire(doc);
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  if (segment.length === 0 || !/\S/.test(segment)) {
+  const { start: lineStart, segment } = lineSegmentEndingAt(wire, probeWire);
+  if (!isSubstantiveSegment(segment)) {
     return lineStart;
   }
   const physicalEnd = probeWire - 1;
@@ -171,8 +195,6 @@ export function embeddedBlankBandContentRowEndBeforeProbe(
   if (context.kind === "mention-interior") {
     return context.end;
   }
-  // Sole substantive char: probeWire - 1 is visual start (before the char); content row end
-  // for backspace nibbling is after that char (probeWire). Multi-char rows keep physicalEnd.
   if (segment.length === 1) {
     return probeWire;
   }
@@ -182,7 +204,7 @@ export function embeddedBlankBandContentRowEndBeforeProbe(
 /**
  * Caret landing after chipping the last character before a probe.
  * Whitespace-only chips use semantic row end; substantive chips that leave mention
- * abutting the probe land via docPosAfterContentRowChipBeforeProbe (mention-node-end alias).
+ * abutting the probe land via docPosAfterPartialContentRowChipBeforeProbe (mention-node-end alias).
  */
 function embeddedBlankBandChipEndBeforeProbe(
   doc: HandoffNoteDoc,
@@ -211,24 +233,27 @@ function embeddedBlankBandSubstantiveChipLeavesMentionAbuttingProbe(
   doc: HandoffNoteDoc,
   charWire: number
 ): boolean {
+  const probeWire = charWire + 1;
   const wire = docToWire(doc);
-  if (charWire < 0 || charWire + 1 >= wire.length || wire[charWire] === "\n") {
+  if (charWire < 0 || probeWire >= wire.length || wire[charWire] === "\n") {
+    return false;
+  }
+  if (!isEmbeddedBlankBandProbeWire(doc, probeWire)) {
     return false;
   }
   if (/^\s$/.test(wire[charWire]!)) {
     return false;
   }
-  const nextDoc = spliceDocWireRange(doc, charWire, charWire + 1, "");
-  const probeWire = charWire;
-  if (!embeddedBlankBandSubstantiveContentAbutsProbe(nextDoc, probeWire)) {
-    return false;
-  }
-  const physicalEnd = probeWire - 1;
+  const physicalEnd = charWire - 1;
   if (physicalEnd < 0) {
     return false;
   }
-  const ctx = describeHandoffNoteCursorContext(nextDoc, physicalEnd);
-  return ctx.kind === "mention-interior" || (ctx.kind === "mention-boundary" && ctx.edge === "end");
+  const ctx = describeHandoffNoteCursorContext(doc, physicalEnd);
+  if (ctx.kind !== "mention-interior" && !(ctx.kind === "mention-boundary" && ctx.edge === "end")) {
+    return false;
+  }
+  const { segment } = lineSegmentEndingAt(wire, probeWire);
+  return segment.length >= 2 && isSubstantiveSegment(segment.slice(0, -1));
 }
 
 /** Doc pos authority at a probe wire — mention-end or content-row-end, not probe infrastructure paint. */
@@ -246,9 +271,7 @@ function caretRestsOnEmbeddedBlankBandProbeAlias(
     return focusWire === probeWire;
   }
   const wire = docToWire(doc);
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  if (segment.length === 1 && /\S/.test(segment)) {
+  if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(wire, probeWire)) {
     // Sole-char row: content row end shares probeWire with blank infrastructure — alias is text-tail doc pos.
     if (focusWire !== probeWire) {
       return false;
@@ -282,16 +305,15 @@ function caretAtContentRowEndBeforeProbe(
     return false;
   }
   const wire = docToWire(doc);
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  if (segment.length === 0 || !/\S/.test(segment)) {
+  const { start: lineStart, segment } = lineSegmentEndingAt(wire, probeWire);
+  if (!isSubstantiveSegment(segment)) {
     return false;
   }
   const focusWire = docPosToWireOffset(doc, focus);
   if (describeHandoffNoteCursorContext(doc, focusWire).kind === "mention-interior") {
     return false;
   }
-  if (segment.length === 1) {
+  if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(wire, probeWire)) {
     if (caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, probeWire)) {
       return true;
     }
@@ -468,9 +490,7 @@ export function resolveEmbeddedBlankBandEofLineBreakCaretWire(
   }
   const lastProbe = lastGroup.probes[lastGroup.probes.length - 1]!;
   if (embeddedBlankBandSubstantiveContentAbutsProbe(doc, lastProbe)) {
-    const lineStart = lastProbe <= 0 ? 0 : wire.lastIndexOf("\n", lastProbe - 1) + 1;
-    const segment = wire.slice(lineStart, lastProbe);
-    if (segment.length === 1 && /\S/.test(segment)) {
+    if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(wire, lastProbe)) {
       return resolvedWire;
     }
   }
@@ -492,7 +512,7 @@ function embeddedBlankBandHasSubstantiveRowBelowGroup(
   }
   const lineEnd = wire.indexOf("\n", start);
   const segment = wire.slice(start, lineEnd === -1 ? wire.length : lineEnd);
-  return segment.length > 0 && /\S/.test(segment);
+  return isSubstantiveSegment(segment);
 }
 
 /** Row segment above probe has no substantive text (content row cleared). */
@@ -500,17 +520,18 @@ export function embeddedBlankBandRowAboveProbeIsEmpty(
   doc: HandoffNoteDoc,
   probeWire: number
 ): boolean {
-  const wire = docToWire(doc);
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  return segment.length === 0 || !/\S/.test(segment);
+  return !isSubstantiveSegment(lineSegmentEndingAt(docToWire(doc), probeWire).segment);
 }
 
 /**
- * Last probe in a multi-probe band with substantive tail — empty row above is still
- * blank-band delete infrastructure, not a cleared substantive content row.
+ * Last probe in a multi-probe band with empty row above — still blank-band delete
+ * infrastructure when `requireSubstantiveBelow` matches band tail shape.
  */
-function isBlankBandInteriorTailProbe(doc: HandoffNoteDoc, probeWire: number): boolean {
+function isBlankBandEmptyRowTailProbe(
+  doc: HandoffNoteDoc,
+  probeWire: number,
+  requireSubstantiveBelow: boolean
+): boolean {
   const context = embeddedBlankBandProbeContext(doc, probeWire);
   if (!context) {
     return false;
@@ -522,26 +543,8 @@ function isBlankBandInteriorTailProbe(doc: HandoffNoteDoc, probeWire: number): b
   if (!embeddedBlankBandRowAboveProbeIsEmpty(doc, probeWire)) {
     return false;
   }
-  return embeddedBlankBandHasSubstantiveRowBelowGroup(docToWire(doc), group);
-}
-
-/**
- * Last probe in an EOF-only trailing band (no substantive row below) — still delete
- * infrastructure when navigating via Shift+Enter, not cleared content row end.
- */
-function isBlankBandEofTailProbe(doc: HandoffNoteDoc, probeWire: number): boolean {
-  const context = embeddedBlankBandProbeContext(doc, probeWire);
-  if (!context) {
-    return false;
-  }
-  const { indexInGroup, group } = context;
-  if (indexInGroup <= 0 || indexInGroup !== group.probes.length - 1) {
-    return false;
-  }
-  if (!embeddedBlankBandRowAboveProbeIsEmpty(doc, probeWire)) {
-    return false;
-  }
-  return !embeddedBlankBandHasSubstantiveRowBelowGroup(docToWire(doc), group);
+  const hasBelow = embeddedBlankBandHasSubstantiveRowBelowGroup(docToWire(doc), group);
+  return requireSubstantiveBelow ? hasBelow : !hasBelow;
 }
 
 /** Caret rests on cleared content-row end gate before probe — structural, not a prior-key flag. */
@@ -556,12 +559,14 @@ export function handoffNoteCaretAtClearedContentRowEndBeforeProbe(
   if (!embeddedBlankBandRowAboveProbeIsEmpty(doc, probeWire)) {
     return false;
   }
-  if (isBlankBandInteriorTailProbe(doc, probeWire) || isBlankBandEofTailProbe(doc, probeWire)) {
+  if (
+    isBlankBandEmptyRowTailProbe(doc, probeWire, true) ||
+    isBlankBandEmptyRowTailProbe(doc, probeWire, false)
+  ) {
     return false;
   }
   const focusWire = docPosToWireOffset(doc, focus);
-  const wire = docToWire(doc);
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const lineStart = lineSegmentEndingAt(docToWire(doc), probeWire).start;
   const semanticEnd = embeddedBlankBandContentRowEndBeforeProbe(doc, probeWire);
   return (
     focusWire === lineStart ||
@@ -706,6 +711,26 @@ function embeddedBlankBandProbeRange(
   };
 }
 
+function collapseBlankBandAdjacentProbeLanding(
+  deletedProbeWire: number,
+  context: EmbeddedBlankBandProbeContext,
+  direction: "backspace" | "delete"
+): number | null {
+  const { indexInGroup, group } = context;
+  if (direction === "backspace" && indexInGroup > 0) {
+    const targetProbe = group.probes[indexInGroup - 1]!;
+    return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
+  }
+  if (direction === "delete" && indexInGroup < group.probes.length - 1) {
+    const targetProbe = group.probes[indexInGroup + 1]!;
+    return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
+  }
+  if (direction === "delete" && indexInGroup > 0) {
+    return group.probes[indexInGroup - 1]!;
+  }
+  return null;
+}
+
 function collapseBlankBandBackspaceLanding(
   nextDoc: HandoffNoteDoc,
   deletedProbeWire: number,
@@ -714,11 +739,11 @@ function collapseBlankBandBackspaceLanding(
 ): number {
   const nextWire = docToWire(nextDoc);
   const priorWire = docToWire(priorDoc);
-  const { indexInGroup, group } = context;
+  const { group } = context;
 
-  if (indexInGroup > 0) {
-    const targetProbe = group.probes[indexInGroup - 1]!;
-    return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
+  const adjacent = collapseBlankBandAdjacentProbeLanding(deletedProbeWire, context, "backspace");
+  if (adjacent !== null) {
+    return adjacent;
   }
 
   const range = embeddedBlankBandProbeRange(nextWire, group);
@@ -733,14 +758,8 @@ function collapseBlankBandBackspaceLanding(
     embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire) &&
     embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)
   ) {
-    if (indexInGroup > 0) {
-      return group.probes[indexInGroup - 1]!;
-    }
-    const lineStart =
-      deletedProbeWire <= 0 ? 0 : priorWire.lastIndexOf("\n", deletedProbeWire - 1) + 1;
-    const segment = priorWire.slice(lineStart, deletedProbeWire);
-    if (segment.length === 1 && /\S/.test(segment)) {
-      return lineStart;
+    if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(priorWire, deletedProbeWire)) {
+      return lineSegmentEndingAt(priorWire, deletedProbeWire).start;
     }
     return embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
   }
@@ -753,25 +772,15 @@ function collapseBlankBandDeleteLanding(
   deletedProbeWire: number,
   context: EmbeddedBlankBandProbeContext
 ): number {
-  const nextWire = docToWire(nextDoc);
-  const { indexInGroup, group } = context;
-
-  if (indexInGroup < group.probes.length - 1) {
-    const targetProbe = group.probes[indexInGroup + 1]!;
-    return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
+  const adjacent = collapseBlankBandAdjacentProbeLanding(deletedProbeWire, context, "delete");
+  if (adjacent !== null) {
+    return adjacent;
   }
-
-  if (indexInGroup > 0) {
-    return group.probes[indexInGroup - 1]!;
-  }
-
-  return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+  return substantiveRowStartBelowProbe(docToWire(nextDoc), deletedProbeWire);
 }
 
 function isSubstantiveLineStart(wire: string, start: number): boolean {
-  const lineEnd = wire.indexOf("\n", start);
-  const segment = wire.slice(start, lineEnd === -1 ? wire.length : lineEnd);
-  return segment.length > 0 && /\S/.test(segment);
+  return isSubstantiveSegment(lineSegmentAtLineStart(wire, start));
 }
 
 /** Visual row anchors: line starts plus one probe wire per empty visual row. */
@@ -803,15 +812,15 @@ export function listVisualRowAnchorWires(doc: HandoffNoteDoc): number[] {
 /** Blank probe on the same paint band as content above — storage `\n` before the next substantive row. */
 export function isInlineSuffixBlankProbeWire(doc: HandoffNoteDoc, probeWire: number): boolean {
   const wire = docToWire(doc);
-  const lineStart = wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const lineStart = lineStartBeforeWire(wire, probeWire);
   const beforeBreak = wire.slice(lineStart, probeWire);
-  if (beforeBreak.length === 0 || /^\s*$/.test(beforeBreak)) {
+  if (!isSubstantiveSegment(beforeBreak)) {
     return false;
   }
   const afterBreak = wire.slice(probeWire + 1);
   const nextNewline = afterBreak.indexOf("\n");
   const nextSegment = nextNewline === -1 ? afterBreak : afterBreak.slice(0, nextNewline);
-  return nextSegment.length > 0 && /\S/.test(nextSegment);
+  return isSubstantiveSegment(nextSegment);
 }
 
 /** Wire offsets where the caret rests on an embedded `\n` blank band. */
@@ -861,38 +870,39 @@ export function embeddedBlankBandSubstantiveContentAbutsProbe(
   if (ch === undefined || /\s/.test(ch)) {
     return false;
   }
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  return segment.length > 0 && /\S/.test(segment);
+  const { segment } = lineSegmentEndingAt(wire, probeWire);
+  return isSubstantiveSegment(segment);
 }
 
 /**
- * Doc position for the caret after a content-row chip immediately before a probe.
- * Wire offset alone is ambiguous on sole-char sandwiched rows: probe wire and char wire
- * share an index but encode different caret authority. Landing must pick the doc pos that
- * matches backspace nibbling intent, not the probe-infrastructure paint at the same wire.
+ * Doc position after a partial content-row chip (row still has substantive text).
  */
-export function docPosAfterContentRowChipBeforeProbe(
+export function docPosAfterPartialContentRowChipBeforeProbe(
   doc: HandoffNoteDoc,
-  probeWire: number,
-  rowEmptied: boolean
+  probeWire: number
 ): HandoffNoteDocPos {
-  if (!rowEmptied) {
-    const wire = docToWire(doc);
-    const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-    const segment = wire.slice(lineStart, probeWire);
-    if (segment.length === 1 && /\S/.test(segment)) {
-      const charWire = probeWire - 1;
-      const charContext = describeHandoffNoteCursorContext(doc, charWire);
-      if (charContext.kind === "mention-interior" || charContext.kind === "mention-boundary") {
-        const mentionLanding = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probeWire);
-        if (mentionLanding) {
-          return mentionLanding;
-        }
+  const wire = docToWire(doc);
+  if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(wire, probeWire)) {
+    const charWire = probeWire - 1;
+    const charContext = describeHandoffNoteCursorContext(doc, charWire);
+    if (charContext.kind === "mention-interior" || charContext.kind === "mention-boundary") {
+      const mentionLanding = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probeWire);
+      if (mentionLanding) {
+        return mentionLanding;
       }
-      return wireOffsetToDocPos(doc, embeddedBlankBandContentRowEndBeforeProbe(doc, probeWire));
     }
+    return wireOffsetToDocPos(doc, embeddedBlankBandContentRowEndBeforeProbe(doc, probeWire));
   }
+  return docPosAfterEmptiedContentRowChipBeforeProbe(doc, probeWire);
+}
+
+/**
+ * Doc position after a content-row chip that cleared the row above the probe.
+ */
+export function docPosAfterEmptiedContentRowChipBeforeProbe(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): HandoffNoteDocPos {
   const mentionLanding = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, probeWire);
   if (mentionLanding) {
     return mentionLanding;
@@ -972,9 +982,8 @@ export function rowHasSubstantivePrefixBeforeMention(
   mentionStartWire: number
 ): boolean {
   const wire = docToWire(doc);
-  const lineStart = mentionStartWire <= 0 ? 0 : wire.lastIndexOf("\n", mentionStartWire - 1) + 1;
-  const prefix = wire.slice(lineStart, mentionStartWire);
-  return prefix.length > 0 && /\S/.test(prefix);
+  const prefix = lineSegmentEndingAt(wire, mentionStartWire).segment;
+  return isSubstantiveSegment(prefix);
 }
 
 /**
@@ -1010,7 +1019,7 @@ export function docAfterForwardMentionRemoveAbsorbAdjacentSpacer(
   const lineEndIdx = wire.indexOf("\n", mentionStartWire);
   const lineEnd = lineEndIdx === -1 ? wire.length : lineEndIdx;
   const afterSpace = wire.slice(mentionStartWire + 1, lineEnd);
-  if (afterSpace.length > 0 && /\S/.test(afterSpace)) {
+  if (isSubstantiveSegment(afterSpace)) {
     return { doc, caretWire: mentionStartWire };
   }
   return {
@@ -1032,9 +1041,9 @@ export function embeddedBlankBandMentionOnlyContentRowAbove(
   if (rowEndContext.kind !== "mention-interior" && rowEndContext.kind !== "mention-boundary") {
     return false;
   }
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const lineStart = lineSegmentEndingAt(wire, probeWire).start;
   const prefix = wire.slice(lineStart, rowEndContext.start);
-  return !/\S/.test(prefix);
+  return !isSubstantiveSegment(prefix);
 }
 
 /** Typing at a blank-band probe wire rests on the `\n`; insert after it, not before. */
@@ -1082,7 +1091,7 @@ export function embeddedTextLedLowerRowSpanAfterBlankBand(
     }
     const lineEnd = text.indexOf("\n", wire + 1);
     const segment = text.slice(wire + 1, lineEnd === -1 ? text.length : lineEnd);
-    if (segment.length === 0 || !/\S/.test(segment) || segment[0] === "@") {
+    if (!isSubstantiveSegment(segment) || segment[0] === "@") {
       continue;
     }
     return {
@@ -1208,13 +1217,13 @@ export function resolveMentionDeleteRowClearChip(
   nextDoc: HandoffNoteDoc
 ): { caretWire: number } | null {
   const priorWire = docToWire(priorDoc);
-  const lineStart = focusWire <= 0 ? 0 : priorWire.lastIndexOf("\n", focusWire - 1) + 1;
+  const { start: lineStart } = lineSegmentEndingAt(priorWire, focusWire);
   const lineEndIdx = priorWire.indexOf("\n", lineStart);
   if (lineEndIdx === -1) {
     return null;
   }
   const lineSegment = priorWire.slice(lineStart, lineEndIdx);
-  if (!/\S/.test(lineSegment)) {
+  if (!isSubstantiveSegment(lineSegment)) {
     return null;
   }
 
@@ -1222,7 +1231,7 @@ export function resolveMentionDeleteRowClearChip(
   const nextLineEndIdx = nextWire.indexOf("\n", lineStart);
   const nextLineEnd = nextLineEndIdx === -1 ? nextWire.length : nextLineEndIdx;
   const nextSegment = nextWire.slice(lineStart, nextLineEnd);
-  if (nextSegment.length > 0 && /\S/.test(nextSegment)) {
+  if (isSubstantiveSegment(nextSegment)) {
     return null;
   }
 
@@ -1367,15 +1376,15 @@ export function resolveEmbeddedBlankBandLineStartCollapse(
   if (focusWire < 0 || focusWire >= wire.length || wire[focusWire] !== "\n") {
     return null;
   }
-  const lineStart = focusWire <= 0 ? 0 : wire.lastIndexOf("\n", focusWire - 1) + 1;
+  const lineStart = lineSegmentEndingAt(wire, focusWire).start;
   const segmentAbove = wire.slice(lineStart, focusWire);
-  if (segmentAbove.length > 0 && /\S/.test(segmentAbove)) {
+  if (isSubstantiveSegment(segmentAbove)) {
     return null;
   }
   const afterBreak = wire.slice(focusWire + 1);
   const nextLineEnd = afterBreak.indexOf("\n");
   const nextSegment = nextLineEnd === -1 ? afterBreak : afterBreak.slice(0, nextLineEnd);
-  if (nextSegment.length === 0 || !/\S/.test(nextSegment)) {
+  if (!isSubstantiveSegment(nextSegment)) {
     return null;
   }
 
@@ -1394,15 +1403,15 @@ function substantiveLineBreakAt(doc: HandoffNoteDoc, wire: string, breakWire: nu
   if (isEmbeddedBlankBandProbeWire(doc, breakWire)) {
     return false;
   }
-  const lineStart = breakWire <= 0 ? 0 : wire.lastIndexOf("\n", breakWire - 1) + 1;
+  const lineStart = lineSegmentEndingAt(wire, breakWire).start;
   const segmentAbove = wire.slice(lineStart, breakWire);
-  if (segmentAbove.length === 0 || !/\S/.test(segmentAbove)) {
+  if (!isSubstantiveSegment(segmentAbove)) {
     return false;
   }
   const afterBreak = wire.slice(breakWire + 1);
   const nextLineEnd = afterBreak.indexOf("\n");
   const segmentBelow = nextLineEnd === -1 ? afterBreak : afterBreak.slice(0, nextLineEnd);
-  return segmentBelow.length > 0 && /\S/.test(segmentBelow);
+  return isSubstantiveSegment(segmentBelow);
 }
 
 /**

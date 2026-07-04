@@ -16,7 +16,8 @@ import {
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import {
-  docPosAfterContentRowChipBeforeProbe,
+  docPosAfterPartialContentRowChipBeforeProbe,
+  docPosAfterEmptiedContentRowChipBeforeProbe,
   docAfterForwardMentionRemoveAbsorbAdjacentSpacer,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
   docPosAtMentionStartTextAlias,
@@ -346,11 +347,7 @@ function blankBandSelectionFocus(
 ): HandoffNoteDocPos {
   if (move && blankBandDeleteBranchUsesContentRowEndLanding(move.branch)) {
     const probeWire = probeWireAfterRowChip(doc, caretWire);
-    return docPosAfterContentRowChipBeforeProbe(
-      doc,
-      probeWire,
-      rowSegmentBeforeProbeIsEmpty(doc, probeWire)
-    );
+    return docPosAfterPartialContentRowChipBeforeProbe(doc, probeWire);
   }
   const collapseLanding = move && blankBandDeleteBranchUsesProbeInfrastructureLanding(move.branch);
   if (
@@ -379,7 +376,7 @@ function blankBandSelectionFocus(
     isEmbeddedBlankBandProbeWire(doc, caretWire) &&
     embeddedBlankBandRowAboveProbeIsEmpty(doc, caretWire)
   ) {
-    return docPosAfterContentRowChipBeforeProbe(doc, caretWire, true);
+    return docPosAfterEmptiedContentRowChipBeforeProbe(doc, caretWire);
   }
   return wireOffsetToDocPos(doc, caretWire);
 }
@@ -444,13 +441,6 @@ function mentionRemoveIntentResult(
     selection: collapsedSelection(normalizeDocPos(doc, wireOffsetToDocPos(doc, caretWire))),
     mentionRemoved: true,
   };
-}
-
-function rowSegmentBeforeProbeIsEmpty(doc: HandoffNoteDoc, probeWire: number): boolean {
-  const wire = docToWire(doc);
-  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
-  const segment = wire.slice(lineStart, probeWire);
-  return segment.length === 0 || !/\S/.test(segment);
 }
 
 function mentionNodeAbutsBlankBandProbe(
