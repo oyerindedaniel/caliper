@@ -16,7 +16,7 @@ export function traceLineBreakCaretBoundary(branch: string, fields: Record<strin
   console.log(JSON.stringify({ event: "lineBreak.caret", branch, ...fields }));
 }
 
-export type LineBreakCaretRun = {
+type LineBreakCaretRun = {
   textStartWire: number;
   suffixStartWire: number;
   beforeMention: boolean;
@@ -47,31 +47,6 @@ function resolveLineBreakSuffixStartInNode(
     return text.indexOf("\n");
   }
   return text.length;
-}
-
-function hasSubstantiveContentAfterSuffix(text: string, suffixStartInNode: number): boolean {
-  return /\S/.test(text.slice(suffixStartInNode));
-}
-
-/** Whitespace-only spacer before a `\n` run in a mention-adjacent text node. */
-export function isWhitespaceOnlyLineBreakSpacer(text: string): boolean {
-  if (/^\s+$/.test(text)) {
-    return true;
-  }
-  const suffixStart = lineBreakSuffixStartInText(text);
-  if (suffixStart < text.length) {
-    if (hasSubstantiveContentAfterSuffix(text, suffixStart)) {
-      return false;
-    }
-    const content = text.slice(0, suffixStart);
-    return content.length > 0 && /^\s+$/.test(content);
-  }
-  const leadingSuffixStart = text.indexOf("\n");
-  if (leadingSuffixStart <= 0) {
-    return false;
-  }
-  const content = text.slice(0, leadingSuffixStart);
-  return content.length > 0 && /^\s+$/.test(content);
 }
 
 /** Caret context for Shift+Enter in mention-adjacent text nodes with inline `\n` runs. */

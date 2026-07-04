@@ -1,6 +1,5 @@
 import {
   describeHandoffNoteCursorContext,
-  docLength,
   docToWire,
   type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
@@ -57,6 +56,45 @@ function snapMentionInterior(
   return offset;
 }
 
+function landWithMentionSnap(
+  doc: HandoffNoteDoc,
+  candidate: number,
+  direction: HandoffNoteVerticalArrowDirection,
+  columnBranch: string,
+  mentionInteriorBranch: string
+): VerticalNavWireMove {
+  const landing = snapMentionInterior(doc, candidate, direction);
+  return {
+    offset: landing,
+    branch: landing === candidate ? columnBranch : mentionInteriorBranch,
+  };
+}
+
+type MentionBoundaryContext = Extract<
+  ReturnType<typeof describeHandoffNoteCursorContext>,
+  { kind: "mention-boundary" }
+>;
+
+function mentionBoundaryBleedOffset(
+  context: MentionBoundaryContext,
+  direction: "left" | "right",
+  wireLength: number
+): number | null {
+  if (direction === "left" && context.edge === "end") {
+    return context.start;
+  }
+  if (direction === "right" && context.edge === "start") {
+    return context.end;
+  }
+  if (direction === "left" && context.edge === "start" && context.start > 0) {
+    return context.start - 1;
+  }
+  if (direction === "right" && context.edge === "end" && context.end < wireLength) {
+    return context.end + 1;
+  }
+  return null;
+}
+
 /** Clash-style bleed: at vertical extreme, step horizontally (left/up, right/down). */
 export function resolveHorizontalBleedWireMove(
   doc: HandoffNoteDoc,
@@ -75,17 +113,9 @@ export function resolveHorizontalBleedWireMove(
   }
 
   if (context.kind === "mention-boundary") {
-    if (direction === "left" && context.edge === "end") {
-      return { offset: context.start, branch: "boundary-bleed-left" };
-    }
-    if (direction === "right" && context.edge === "start") {
-      return { offset: context.end, branch: "boundary-bleed-right" };
-    }
-    if (direction === "left" && context.edge === "start" && context.start > 0) {
-      return { offset: context.start - 1, branch: "boundary-bleed-left" };
-    }
-    if (direction === "right" && context.edge === "end" && context.end < docLength(doc)) {
-      return { offset: context.end + 1, branch: "boundary-bleed-right" };
+    const next = mentionBoundaryBleedOffset(context, direction, wire.length);
+    if (next !== null) {
+      return { offset: next, branch: `boundary-bleed-${direction}` };
     }
   }
 
@@ -105,35 +135,53 @@ export function resolveHorizontalBleedWireMove(
   return { offset: next, branch: `boundary-bleed-${direction}` };
 }
 
+/** Largest anchor index with `anchors[index] <= offset`. */
+function visualRowAnchorIndexForOffset(anchors: readonly number[], offset: number): number {
+  let lo = 0;
+  let hi = anchors.length - 1;
+  let index = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (anchors[mid]! <= offset) {
+      index = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return index;
+}
+
 function visualRowIndexForOffset(doc: HandoffNoteDoc, offset: number): number {
   const wire = docToWire(doc);
   const anchors = listVisualRowAnchorWires(doc);
   const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
-
-  for (let index = anchors.length - 1; index >= 0; index--) {
-    const anchor = anchors[index]!;
-    if (offset < anchor) {
-      continue;
-    }
-    const nextAnchor = anchors[index + 1];
-    if (nextAnchor === undefined) {
-      return index;
-    }
-    if (
-      probes.has(anchor) &&
-      offset > anchor &&
-      offset < nextAnchor &&
-      wire[offset] === "\n" &&
-      nextAnchor === offset + 1 &&
-      !probes.has(nextAnchor)
-    ) {
-      return index + 1;
-    }
-    if (offset >= anchor && offset < nextAnchor) {
-      return index;
-    }
+  if (anchors.length === 0) {
+    return 0;
   }
-  return 0;
+
+  const index = visualRowAnchorIndexForOffset(anchors, offset);
+  const anchor = anchors[index]!;
+  const nextAnchor = anchors[index + 1];
+  if (nextAnchor === undefined) {
+    return index;
+  }
+  // Caret on the storage `\n` immediately before substantive content below a probe row
+  // belongs to the lower visual row, not the blank-band anchor row above it.
+  if (
+    probes.has(anchor) &&
+    offset > anchor &&
+    offset < nextAnchor &&
+    wire[offset] === "\n" &&
+    nextAnchor === offset + 1 &&
+    !probes.has(nextAnchor)
+  ) {
+    return index + 1;
+  }
+  if (offset >= anchor && offset < nextAnchor) {
+    return index;
+  }
+  return index;
 }
 
 function visualRowSpanEnd(wire: string, anchor: number, nextAnchor: number | undefined): number {
@@ -206,41 +254,13 @@ export function resolveVerticalArrowCrossLineMove(
   current: VerticalNavLineSpan,
   target: VerticalNavLineSpan
 ): VerticalNavWireMove | null {
-  const currentLineStart = current.start;
-  const currentLineEnd = current.end;
-  const targetLineStart = target.start;
-  const targetLineEnd = target.end;
-  let targetOffset: number;
-  let branch: string;
-
-  if (direction === "up" && isEmptyWireLine(wire, currentLineStart, currentLineEnd)) {
-    targetOffset = preserveColumnOnTargetLine(
-      doc,
-      direction,
-      column,
-      targetLineStart,
-      targetLineEnd
-    );
-    branch = "empty-line-up";
-  } else if (direction === "down" && isEmptyWireLine(wire, targetLineStart, targetLineEnd)) {
-    targetOffset = preserveColumnOnTargetLine(
-      doc,
-      direction,
-      column,
-      targetLineStart,
-      targetLineEnd
-    );
-    branch = "empty-target-column";
-  } else {
-    targetOffset = preserveColumnOnTargetLine(
-      doc,
-      direction,
-      column,
-      targetLineStart,
-      targetLineEnd
-    );
-    branch = "cross-line-column";
-  }
+  const targetOffset = preserveColumnOnTargetLine(doc, direction, column, target.start, target.end);
+  const branch =
+    direction === "up" && isEmptyWireLine(wire, current.start, current.end)
+      ? "empty-line-up"
+      : direction === "down" && isEmptyWireLine(wire, target.start, target.end)
+        ? "empty-target-column"
+        : "cross-line-column";
 
   if (targetOffset === offset) {
     return null;
@@ -286,10 +306,13 @@ export function resolveVerticalArrowRowStartLanding(
     }
   }
 
-  const landing = snapMentionInterior(doc, best.wire, direction);
-  const branch =
-    landing === best.wire ? "visual-row-start-column" : "visual-row-start-mentionInterior";
-  return { offset: landing, branch };
+  return landWithMentionSnap(
+    doc,
+    best.wire,
+    direction,
+    "visual-row-start-column",
+    "visual-row-start-mentionInterior"
+  );
 }
 
 /** Leftmost wire on a visual band — blank-band exit to content row visual line start. */
@@ -310,10 +333,11 @@ export function resolveVerticalArrowMinWireLineStart(
     substantiveStart++;
   }
 
-  const landing = snapMentionInterior(doc, substantiveStart, direction);
-  const branch =
-    landing === substantiveStart
-      ? "visual-line-start-minWire"
-      : "visual-line-start-mentionInterior";
-  return { offset: landing, branch };
+  return landWithMentionSnap(
+    doc,
+    substantiveStart,
+    direction,
+    "visual-line-start-minWire",
+    "visual-line-start-mentionInterior"
+  );
 }

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { listEmbeddedBlankBandProbeWires } from "./handoff-note-embedded-newlines.js";
 import { wireToDoc } from "./handoff-note-doc.js";
 import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 import {
+  resolveEmbeddedBlankBandVerticalMove,
   resolveHorizontalBleedWireMove,
   resolveVerticalArrowCrossLineMove,
   resolveVerticalArrowRowStartLanding,
@@ -244,6 +246,19 @@ describe("resolveVerticalArrowMinWireLineStart", () => {
     const landing = resolveVerticalArrowMinWireLineStart(doc, "down", samples);
     expect(landing?.offset).toBe(tailRowStart);
     expect(landing?.branch).toBe("visual-line-start-minWire");
+  });
+});
+
+describe("resolveEmbeddedBlankBandVerticalMove", () => {
+  it("treats caret on storage newline before substantive row as lower visual row", () => {
+    const wire = "header\n\ntail";
+    const doc = wireToDoc(wire);
+    const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+    const bridgingNewline = probe + 1;
+    expect(wire[bridgingNewline]).toBe("\n");
+
+    const up = resolveEmbeddedBlankBandVerticalMove(doc, bridgingNewline, "up", 0);
+    expect(up).toEqual({ offset: probe, branch: "blank-band-probe-row" });
   });
 });
 
