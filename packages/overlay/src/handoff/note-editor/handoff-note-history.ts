@@ -37,6 +37,7 @@ function snapshotsEqual(a: HandoffNoteHistorySnapshot, b: HandoffNoteHistorySnap
 export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
   const maxDepth = options?.maxDepth ?? DEFAULT_MAX_DEPTH;
   let undoStack: HandoffNoteUndoEntry[] = [];
+  /** Snapshots only — no `recordedAt`; typing coalesce reads `undoStack`, not redo targets. */
   let redoStack: HandoffNoteHistorySnapshot[] = [];
   let composing = false;
   let restoring = false;
@@ -102,7 +103,10 @@ export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
     redoStack = [];
   };
 
-  const stripRecordedAt = (snapshot: HandoffNoteHistorySnapshot): HandoffNoteHistorySnapshot => ({
+  /** Clone for restore; drops undo-only fields such as `recordedAt`. */
+  const cloneHistorySnapshot = (
+    snapshot: HandoffNoteHistorySnapshot | HandoffNoteUndoEntry
+  ): HandoffNoteHistorySnapshot => ({
     doc: cloneDoc(snapshot.doc),
     selection: cloneSelection(snapshot.selection),
   });
@@ -118,7 +122,7 @@ export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
         selection: cloneSelection(current.selection),
       });
     }
-    return stripRecordedAt(previous);
+    return cloneHistorySnapshot(previous);
   };
 
   const redo = (current: HandoffNoteHistorySnapshot): HandoffNoteHistorySnapshot | null => {
@@ -133,7 +137,7 @@ export function createHandoffNoteHistory(options?: { maxDepth?: number }) {
         recordedAt: Date.now(),
       });
     }
-    return stripRecordedAt(next);
+    return cloneHistorySnapshot(next);
   };
 
   const runRestore = <T>(run: () => T): T => {

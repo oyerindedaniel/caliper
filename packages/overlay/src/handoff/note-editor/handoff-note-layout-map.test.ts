@@ -951,6 +951,90 @@ describe("handoff-note-layout-map", () => {
         })
       ).toBe(true);
     });
+
+    it("row-start landing blocks sticky preserve on Down into wrap continuation", () => {
+      const wire = `pre @${AGENT} x @${AGENT} post @${AGENT} @${AGENT} `;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const row0Top = 141.1;
+      const row1Top = 159.3;
+      const prefixGoal = 361.11;
+      const wrapRowStartColumn = 377.8125;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 347.5 },
+        { wire: 4, top: row0Top, left: 374.73 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 507.67,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 624.82 },
+        { wire: wire.length, top: row1Top, left: wrapRowStartColumn },
+        { wire: tailStart, top: row1Top, left: wrapRowStartColumn },
+      ]);
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 2));
+      const wrapRow = layout.rows[1]!;
+      const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
+      const stickyInput = {
+        fromRowIndex: 0,
+        targetRowIndex: 1,
+        targetRow: wrapRow,
+        effectiveGoalColumn: prefixGoal,
+        landedColumn: wrapRowStartColumn,
+        edgeTolerance,
+      };
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          ...stickyInput,
+          useRowStartLandingOnTarget: false,
+        })
+      ).toBe(true);
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          ...stickyInput,
+          useRowStartLandingOnTarget: true,
+        })
+      ).toBe(false);
+      surface.remove();
+    });
+
+    it("row-start landing still preserves sticky goal on Up into shorter row", () => {
+      const wire = "hi\nmuch longer lower line";
+      const doc = wireToDoc(wire);
+      const upperEnd = wire.indexOf("\n") - 1;
+      const lowerPastEnd = wire.length;
+      const row0Top = 100;
+      const row1Top = 118;
+      const upperMaxLeft = 95;
+      const lowerWideLeft = 440;
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: row0Top, left: 40 },
+          { wire: upperEnd, top: row0Top, left: upperMaxLeft },
+          { wire: lowerPastEnd, top: row1Top, left: lowerWideLeft },
+        ],
+        18,
+        doc
+      );
+      const upperRow = layout.rows[0]!;
+      const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
+      expect(
+        layout.shouldPreserveGoalColumnOnShorterRowLanding({
+          fromRowIndex: 1,
+          targetRowIndex: 0,
+          targetRow: upperRow,
+          effectiveGoalColumn: lowerWideLeft,
+          landedColumn: upperMaxLeft,
+          edgeTolerance,
+          useRowStartLandingOnTarget: true,
+        })
+      ).toBe(true);
+    });
   });
 
   describe("isSameWireSoftWrapBandCrossing", () => {

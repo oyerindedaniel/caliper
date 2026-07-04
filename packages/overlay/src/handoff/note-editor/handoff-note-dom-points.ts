@@ -240,7 +240,6 @@ function resolveTextDomPointAtOffset(
     docEndsWithNewline: boolean;
     isLastRenderedNode: boolean;
     wireBase: number;
-    blankProbeWires: ReadonlySet<number>;
     focusDocPos: HandoffNoteDocPos;
   }
 ): { node: Node; offset: number } {
@@ -667,7 +666,6 @@ export function resolveDomPointAtDocPos(
       docEndsWithNewline: docWireEndsWithNewline(doc),
       isLastRenderedNode: isLastRenderedDocNode(doc, normalized.nodeIndex),
       wireBase: docPosToWireOffset(doc, { nodeIndex: normalized.nodeIndex, nodeOffset: 0 }),
-      blankProbeWires: new Set(listEmbeddedBlankBandProbeWires(doc)),
       focusDocPos: normalized,
     });
   }

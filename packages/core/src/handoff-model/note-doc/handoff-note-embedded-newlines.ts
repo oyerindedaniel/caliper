@@ -280,7 +280,10 @@ function caretRestsOnEmbeddedBlankBandProbeAlias(
   return focusWire === semanticEnd && focusWire !== probeWire;
 }
 
-function spacerBeforeProbeRowChipWire(doc: HandoffNoteDoc, focusWire: number): boolean {
+export function embeddedBlankBandSpacerBeforeProbeRowChip(
+  doc: HandoffNoteDoc,
+  focusWire: number
+): boolean {
   const wire = docToWire(doc);
   const ch = wire[focusWire];
   return (
@@ -347,7 +350,7 @@ function resolveBackspaceRowChipAtContentRowEnd(
   focusWire: number,
   focus: HandoffNoteDocPos
 ): EmbeddedBlankBandDeleteMove | null {
-  if (spacerBeforeProbeRowChipWire(doc, focusWire)) {
+  if (embeddedBlankBandSpacerBeforeProbeRowChip(doc, focusWire)) {
     return resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
   }
   const wire = docToWire(doc);
@@ -395,7 +398,7 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
     }
     if (
       caretAtContentRowEndBeforeProbe(doc, focus, focusWire + 1) ||
-      spacerBeforeProbeRowChipWire(doc, focusWire)
+      embeddedBlankBandSpacerBeforeProbeRowChip(doc, focusWire)
     ) {
       const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
       if (rowChip) {
@@ -1205,8 +1208,7 @@ export function resolveEmbeddedBlankBandDelete(
 
 /**
  * Mention delete that clears substantive content on a row above a sandwiched
- * blank band — arms chipBeforeBlankBand and lands on cleared-row visual start
- * (band groups may merge on wire).
+ * blank band — lands on cleared-row visual start (band groups may merge on wire).
  */
 export function resolveMentionDeleteRowClearChip(
   priorDoc: HandoffNoteDoc,

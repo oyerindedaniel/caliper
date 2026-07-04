@@ -100,21 +100,9 @@ export function countWireTextDomChildren(text: string, options?: WireTextDomOpti
   if (!text.includes("\n")) {
     return text ? 1 : 0;
   }
-  const wireBase = options?.wireBase ?? 0;
-  const probeWires = options?.blankProbeWires;
   let count = 0;
-  const parts = text.split("\n");
-  for (let index = 0; index < parts.length; index++) {
-    if (parts[index]) {
-      count++;
-    }
-    if (index < parts.length - 1) {
-      count++;
-      const breakWire = wireOffsetAtTextBreak(text, wireBase, index);
-      if (probeWires?.has(breakWire)) {
-        count++;
-      }
-    }
+  for (const _slot of iterWireTextDomSlots(text, 0, options)) {
+    count++;
   }
   return count;
 }
@@ -130,7 +118,7 @@ export type WireTextDomSlot = {
   breakWire?: number;
 };
 
-/** Each rendered DOM child inside one wire-split text node — mirrors `countWireTextDomChildren`. */
+/** Each rendered DOM child inside one wire-split text node — canonical split/break/probe sequence. */
 export function* iterWireTextDomSlots(
   text: string,
   startDomIdx: number,
@@ -236,21 +224,16 @@ export function appendWireTextToDom(
     }
     return;
   }
-  const wireBase = options?.wireBase ?? 0;
-  const probeWires = options?.blankProbeWires;
-  const parts = text.split("\n");
-  for (let index = 0; index < parts.length; index++) {
-    const part = parts[index]!;
-    if (part) {
-      parent.appendChild(document.createTextNode(part));
+  for (const slot of iterWireTextDomSlots(text, 0, options)) {
+    if (slot.kind === "text") {
+      parent.appendChild(document.createTextNode(slot.part));
+      continue;
     }
-    if (index < parts.length - 1) {
+    if (slot.kind === "break") {
       parent.appendChild(createWireBreakElement());
-      const breakWire = wireOffsetAtTextBreak(text, wireBase, index);
-      if (probeWires?.has(breakWire)) {
-        parent.appendChild(createBlankAnchorElement());
-      }
+      continue;
     }
+    parent.appendChild(createBlankAnchorElement());
   }
 }
 
@@ -258,6 +241,16 @@ function appendDocLinePadIfNeeded(root: HTMLElement, doc: HandoffNoteDoc): void 
   if (docWireEndsWithNewline(doc)) {
     root.appendChild(createLinePadElement());
   }
+}
+
+function lastNonEmptyTextNodeIndex(doc: HandoffNoteDoc): number {
+  for (let index = doc.nodes.length - 1; index >= 0; index--) {
+    const node = doc.nodes[index]!;
+    if (node.type === "text" && node.text) {
+      return index;
+    }
+  }
+  return doc.nodes.length - 1;
 }
 
 /** childIndex → doc.nodes index (skips empty text nodes, matching render). */
@@ -283,28 +276,16 @@ export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
       wireCursor += text.length;
       continue;
     }
-    const parts = text.split("\n");
-    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-      const part = parts[partIndex]!;
-      if (part) {
-        map.push(nodeIndex);
-      }
-      if (partIndex < parts.length - 1) {
-        map.push(nodeIndex);
-        const breakWire = wireOffsetAtTextBreak(text, wireCursor, partIndex);
-        if (probeWires.has(breakWire)) {
-          map.push(nodeIndex);
-        }
-      }
+    for (const _slot of iterWireTextDomSlots(text, 0, {
+      wireBase: wireCursor,
+      blankProbeWires: probeWires,
+    })) {
+      map.push(nodeIndex);
     }
     wireCursor += text.length;
   }
   if (docWireEndsWithNewline(doc)) {
-    const lastTextIndex = [...doc.nodes]
-      .map((node, index) => ({ node, index }))
-      .reverse()
-      .find(({ node }) => node.type === "text" && node.text)?.index;
-    map.push(lastTextIndex ?? doc.nodes.length - 1);
+    map.push(lastNonEmptyTextNodeIndex(doc));
   }
   return map;
 }
@@ -453,6 +434,32 @@ export function tryPatchDocDom(
   return true;
 }
 
+function rebuildDocDomWithPresentation(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions
+): void {
+  fullRebuildDocDom(root, doc, options);
+  updateMentionPresentation(root, options);
+}
+
+function patchOrRebuildDocDom(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions,
+  previousDoc: HandoffNoteDoc | undefined
+): RenderOutcome {
+  if (
+    previousDoc &&
+    !docGainedWireNewline(previousDoc, doc) &&
+    tryPatchDocDom(root, previousDoc, doc, options)
+  ) {
+    return { domReplaced: false, docChanged: true };
+  }
+  rebuildDocDomWithPresentation(root, doc, options);
+  return { domReplaced: true, docChanged: true };
+}
+
 export function renderHandoffNoteDoc(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -469,46 +476,28 @@ export function renderHandoffNoteDoc(
       !hasStrayDomElements(root) &&
       (expectedCount > 0 || root.childNodes.length === 0);
 
-    if (
-      domReady &&
-      previousDoc &&
-      !docGainedWireNewline(previousDoc, doc) &&
-      tryPatchDocDom(root, previousDoc, doc, options)
-    ) {
-      return { domReplaced: false, docChanged: true };
+    if (domReady && previousDoc) {
+      return patchOrRebuildDocDom(root, doc, options, previousDoc);
     }
 
-    fullRebuildDocDom(root, doc, options);
-    updateMentionPresentation(root, options);
+    rebuildDocDomWithPresentation(root, doc, options);
     return { domReplaced: true, docChanged: true };
   }
 
   const wireBefore = parseHandoffNoteDom(root);
   const wireAfter = docToWire(doc);
-  const domNodeCount = handoffNoteDomSnapshot(root).length;
-  const structureMismatch = domNodeCount !== renderedDomChildCount(doc);
-  const hasStrayElements = hasStrayDomElements(root);
+  const structureMismatch = handoffNoteDomSnapshot(root).length !== renderedDomChildCount(doc);
   if (
     wireBefore === wireAfter &&
     root.childNodes.length > 0 &&
     !structureMismatch &&
-    !hasStrayElements
+    !hasStrayDomElements(root)
   ) {
     updateMentionPresentation(root, options);
     return { domReplaced: false, docChanged: false };
   }
 
-  if (
-    previousDoc &&
-    !docGainedWireNewline(previousDoc, doc) &&
-    tryPatchDocDom(root, previousDoc, doc, options)
-  ) {
-    return { domReplaced: false, docChanged: true };
-  }
-
-  fullRebuildDocDom(root, doc, options);
-  updateMentionPresentation(root, options);
-  return { domReplaced: true, docChanged: true };
+  return patchOrRebuildDocDom(root, doc, options, previousDoc);
 }
 
 /** Update pill colors and highlight state without rebuilding DOM or touching selection. */

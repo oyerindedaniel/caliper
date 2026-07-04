@@ -93,7 +93,7 @@ Editor-owned (`beforeInput` → `applyDocDelete` → `resolveHandoffNoteDeleteIn
 
 Logged on delete moves; drives `blankBandSelectionFocus` landing buckets:
 
-- **`row-chip-before-probe`** — remove trailing row text immediately before a blank-band probe (`caretAtContentRowEndBeforeProbe` authority).
+- **`row-chip-before-probe`** — remove trailing row text immediately before a blank-band probe (embedded-newlines row-chip gate: caret at content-row end before probe, sole-char probe alias, or spacer-before-probe).
 - **`step-to-content-row-end`** — prefix-only band head: first backspace on delete-probe steps to content row end above; wire unchanged.
 - **`backspace-collapse-blank`** — backspace on blank-band delete infrastructure removes one blank-row `\n`.
 - **`delete-collapse-blank-mid-band`** / **`delete-collapse-blank-at-edge`** — delete on blank-band infrastructure; mid-band lands on next probe below, band edge lands on lower substantive **visual start**.
@@ -102,7 +102,7 @@ Logged on delete moves; drives `blankBandSelectionFocus` landing buckets:
 
 ### Row-chip authority (doc position)
 
-Row chip runs only when `caretAtContentRowEndBeforeProbe` (or sole-char probe alias / spacer-before-probe) — not on interior nibbles. **≤2-char same text-node rows:** interior backspace nibble (char behind caret). **3+ chars** at segment tail, or **mention-row postfix** in a separate text node: row chip. Caret on multi-char blank-band probe infrastructure without alias: collapse, not chip.
+Row chip runs only when the embedded-newlines row-chip gate matches (content-row end before probe, sole-char probe alias, or `embeddedBlankBandSpacerBeforeProbeRowChip`) — not on interior nibbles. **≤2-char same text-node rows:** interior backspace nibble (char behind caret). **3+ chars** at segment tail, or **mention-row postfix** in a separate text node: row chip. Caret on multi-char blank-band probe infrastructure without alias: collapse, not chip.
 
 ### Directional nibbling (Backspace vs Delete)
 

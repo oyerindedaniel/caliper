@@ -166,6 +166,7 @@ export {
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
+  embeddedBlankBandSpacerBeforeProbeRowChip,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,

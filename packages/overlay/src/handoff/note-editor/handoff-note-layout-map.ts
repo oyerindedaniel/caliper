@@ -232,7 +232,7 @@ function substantiveLineStartFromTrailingMention(
 }
 
 /** Pill bbox for mentions; Range anchor for text. Text before a mention uses that pill's row. */
-export function measureWireCoord(
+function measureWireCoord(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   wire: number
@@ -376,6 +376,7 @@ type LayoutWireIndex = {
   nodeStartWires: number[];
 };
 
+/** Mutated by `resolveWireAtOffset`; monotonic wire queries amortize best — correctness holds out of order. */
 type LayoutWireScanHint = {
   nodeIndex: number;
 };
@@ -677,63 +678,72 @@ function contentSamplesForBlankLadder(
   return measured.filter((sample) => !probes.has(sample.wire));
 }
 
+type BlankProbeBandBounds = {
+  floor: number | null;
+  ceiling: number | null;
+};
+
 /** Blank-band probes must not sort above earlier content on the same wire line. */
-function contentBandTopBeforeBlankProbe(
+function blankProbeBandBounds(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   probeWire: number,
   wire: string
-): number | null {
+): BlankProbeBandBounds {
   const lineStart = wire.lastIndexOf("\n", probeWire - 1) + 1;
   let lineMaxTop = -Infinity;
   let priorMaxTop = -Infinity;
+  let minTopBelow = Infinity;
   for (const sample of measured) {
     if (isEmbeddedBlankBandProbeWire(doc, sample.wire)) {
       continue;
     }
     if (sample.wire < probeWire) {
       priorMaxTop = Math.max(priorMaxTop, sample.top);
-    }
-    if (sample.wire >= lineStart && sample.wire < probeWire) {
-      lineMaxTop = Math.max(lineMaxTop, sample.top);
-    }
-  }
-  if (Number.isFinite(lineMaxTop)) {
-    return lineMaxTop;
-  }
-  return Number.isFinite(priorMaxTop) ? priorMaxTop : null;
-}
-
-function contentBandTopBelowBlankProbe(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  probeWire: number
-): number | null {
-  let minTop = Infinity;
-  for (const sample of measured) {
-    if (isEmbeddedBlankBandProbeWire(doc, sample.wire)) {
+      if (sample.wire >= lineStart) {
+        lineMaxTop = Math.max(lineMaxTop, sample.top);
+      }
       continue;
     }
     if (sample.wire > probeWire) {
-      minTop = Math.min(minTop, sample.top);
+      minTopBelow = Math.min(minTopBelow, sample.top);
     }
   }
-  return Number.isFinite(minTop) ? minTop : null;
+  const floor = Number.isFinite(lineMaxTop)
+    ? lineMaxTop
+    : Number.isFinite(priorMaxTop)
+      ? priorMaxTop
+      : null;
+  const ceiling = Number.isFinite(minTopBelow) ? minTopBelow : null;
+  return { floor, ceiling };
+}
+
+function buildBlankProbeBandBoundsMap(
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[],
+  probes: readonly number[],
+  wire: string
+): Map<number, BlankProbeBandBounds> {
+  const boundsByProbe = new Map<number, BlankProbeBandBounds>();
+  for (const probeWire of probes) {
+    boundsByProbe.set(probeWire, blankProbeBandBounds(doc, measured, probeWire, wire));
+  }
+  return boundsByProbe;
 }
 
 function blankProbesInSameBand(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  probes: number[],
+  probes: readonly number[],
   probeWire: number,
-  wire: string
+  boundsByProbe: ReadonlyMap<number, BlankProbeBandBounds>
 ): number[] {
-  const floor = contentBandTopBeforeBlankProbe(doc, measured, probeWire, wire);
-  const ceiling = contentBandTopBelowBlankProbe(doc, measured, probeWire);
+  const target = boundsByProbe.get(probeWire);
+  if (!target) {
+    return [probeWire];
+  }
   return probes.filter((candidate) => {
+    const bounds = boundsByProbe.get(candidate);
     return (
-      contentBandTopBeforeBlankProbe(doc, measured, candidate, wire) === floor &&
-      contentBandTopBelowBlankProbe(doc, measured, candidate) === ceiling
+      bounds !== undefined && bounds.floor === target.floor && bounds.ceiling === target.ceiling
     );
   });
 }
@@ -752,20 +762,16 @@ type BlankBandPlacementKind =
  */
 function placeBlankProbeOnContentLadder(
   doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
   probeWire: number,
   lineHeight: number,
-  probes: number[],
-  wire: string
+  bounds: BlankProbeBandBounds,
+  bandProbes: readonly number[]
 ): { top: number; kind: BlankBandPlacementKind } {
   if (isInlineSuffixBlankProbeWire(doc, probeWire)) {
-    const floor = contentBandTopBeforeBlankProbe(doc, measured, probeWire, wire);
-    return { top: floor ?? 0, kind: "inline" };
+    return { top: bounds.floor ?? 0, kind: "inline" };
   }
 
-  const floor = contentBandTopBeforeBlankProbe(doc, measured, probeWire, wire);
-  const ceiling = contentBandTopBelowBlankProbe(doc, measured, probeWire);
-  const bandProbes = blankProbesInSameBand(doc, measured, probes, probeWire, wire);
+  const { floor, ceiling } = bounds;
   const indexInBand = Math.max(0, bandProbes.indexOf(probeWire));
   const slotCount = bandProbes.length + 1;
 
@@ -826,19 +832,18 @@ function buildSemanticBlankLayoutRows(
   const rows: HandoffNoteLayoutRow[] = [];
   /** Frozen for the whole pass — infer mutations and blank upserts must not shift brackets mid-loop. */
   const ladderBasis = contentSamplesForBlankLadder(doc, measured);
+  const boundsByProbe = buildBlankProbeBandBoundsMap(doc, ladderBasis, probes, wire);
 
   for (const probeWire of probes) {
     const wireBreakCoord = root ? measureWireBreakCoord(root, doc, probeWire) : null;
-    const floor = contentBandTopBeforeBlankProbe(doc, ladderBasis, probeWire, wire);
-    const ceiling = contentBandTopBelowBlankProbe(doc, ladderBasis, probeWire);
-    const bandProbes = blankProbesInSameBand(doc, ladderBasis, probes, probeWire, wire);
+    const bounds = boundsByProbe.get(probeWire)!;
+    const bandProbes = blankProbesInSameBand(probes, probeWire, boundsByProbe);
     const ladderPlacement = placeBlankProbeOnContentLadder(
       doc,
-      ladderBasis,
       probeWire,
       lineHeight,
-      probes,
-      wire
+      bounds,
+      bandProbes
     );
     const wireBreakTop =
       wireBreakCoord !== null && isUsableMeasuredLayoutCoord(wireBreakCoord)
@@ -866,8 +871,8 @@ function buildSemanticBlankLayoutRows(
       chosen: placementKind,
       inlineSuffix: isInlineSuffixBlankProbeWire(doc, probeWire),
       ladder: {
-        floor: floor === null ? null : Math.round(floor * 100) / 100,
-        ceiling: ceiling === null ? null : Math.round(ceiling * 100) / 100,
+        floor: bounds.floor === null ? null : Math.round(bounds.floor * 100) / 100,
+        ceiling: bounds.ceiling === null ? null : Math.round(bounds.ceiling * 100) / 100,
         bandProbes,
         indexInBand: bandProbes.indexOf(probeWire),
         contentSampleCount: ladderBasis.length,
@@ -907,7 +912,7 @@ function sortLayoutRowsByVisualTop(rows: HandoffNoteLayoutRow[]): HandoffNoteLay
   });
 }
 
-export function isSparseColumnRow(row: HandoffNoteLayoutRow): boolean {
+function isSparseColumnRow(row: HandoffNoteLayoutRow): boolean {
   if (row.samples.length <= 1) {
     return true;
   }
@@ -971,13 +976,7 @@ function buildDocOrderedLayoutMap(
       return resolveCoordFromBracketingSamples(wireOffset, measured, { doc, wrapSpans });
     },
     shouldPreserveGoalColumnOnShorterRowLanding(input) {
-      return evaluateShorterRowStickyGoalPreservation(
-        doc,
-        rows,
-        wrapSpans,
-        resolvedLineHeight,
-        input
-      );
+      return evaluateShorterRowStickyGoalPreservation(rows, wrapSpans, resolvedLineHeight, input);
     },
   };
 }
@@ -1207,12 +1206,12 @@ function isPostMentionWrapContinuationRowIndex(
 
 /** Adjacent content rows on the same wire line split by soft wrap only (no embedded `\n` between bands). */
 export function isSameWireSoftWrapBandCrossing(
-  doc: HandoffNoteDoc | undefined,
+  doc: HandoffNoteDoc,
   fromRowIndex: number,
   targetRowIndex: number,
   rows: HandoffNoteLayoutRow[]
 ): boolean {
-  if (doc === undefined || Math.abs(fromRowIndex - targetRowIndex) !== 1) {
+  if (Math.abs(fromRowIndex - targetRowIndex) !== 1) {
     return false;
   }
   const upperIndex = Math.min(fromRowIndex, targetRowIndex);
@@ -1245,7 +1244,6 @@ export function isSameWireSoftWrapBandCrossing(
 }
 
 function evaluateShorterRowStickyGoalPreservation(
-  doc: HandoffNoteDoc | undefined,
   rows: HandoffNoteLayoutRow[],
   wrapSpans: Map<number, PostMentionSoftWrapSpan>,
   lineHeight: number,
@@ -1260,6 +1258,8 @@ function evaluateShorterRowStickyGoalPreservation(
     edgeTolerance,
     useRowStartLandingOnTarget,
   } = input;
+  // Row-start landing (row-edge / blank-exit): Down keeps the target row's painted start;
+  // re-sticking a wide pre-clamp goal would defeat that. Up into a shorter row may still preserve.
   if (useRowStartLandingOnTarget && targetRowIndex > fromRowIndex) {
     return false;
   }
@@ -1841,13 +1841,7 @@ function buildMapFromMeasured(
       return resolveCoordFromBracketingSamples(wireOffset, measured);
     },
     shouldPreserveGoalColumnOnShorterRowLanding(input) {
-      return evaluateShorterRowStickyGoalPreservation(
-        undefined,
-        rows,
-        new Map(),
-        resolvedLineHeight,
-        input
-      );
+      return evaluateShorterRowStickyGoalPreservation(rows, new Map(), resolvedLineHeight, input);
     },
   };
 }

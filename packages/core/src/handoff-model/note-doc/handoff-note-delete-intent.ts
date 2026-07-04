@@ -25,6 +25,7 @@ import {
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandRowAboveProbeIsEmpty,
   embeddedBlankBandSubstantiveContentAbutsProbe,
+  embeddedBlankBandSpacerBeforeProbeRowChip,
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
@@ -95,17 +96,6 @@ export function handoffNoteIsMentionEndProbeAliasWire(
   );
 }
 
-function handoffNoteSpacerBeforeProbeRowChip(doc: HandoffNoteDoc, focusWire: number): boolean {
-  const wire = docToWire(doc);
-  const ch = wire[focusWire];
-  return (
-    ch !== undefined &&
-    /\s/.test(ch) &&
-    focusWire + 1 < wire.length &&
-    isEmbeddedBlankBandProbeWire(doc, focusWire + 1)
-  );
-}
-
 function isInterMentionGap(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boolean {
   const node = doc.nodes[focus.nodeIndex];
   if (node?.type !== "text") {
@@ -120,7 +110,7 @@ function isInterMentionGap(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boole
     return false;
   }
   const focusWire = docPosToWireOffset(doc, focus);
-  return !handoffNoteSpacerBeforeProbeRowChip(doc, focusWire);
+  return !embeddedBlankBandSpacerBeforeProbeRowChip(doc, focusWire);
 }
 
 function spliceSelection(
@@ -532,7 +522,7 @@ function resolveBoundaryDeleteIntent(
   focus: HandoffNoteDocPos
 ): HandoffNoteDeleteIntent | null {
   if (direction === "backspace" && handoffNoteCaretOnMentionNodeEnd(doc, focus)) {
-    if (handoffNoteSpacerBeforeProbeRowChip(doc, focusWire)) {
+    if (embeddedBlankBandSpacerBeforeProbeRowChip(doc, focusWire)) {
       return null;
     }
     if (isInterMentionGap(doc, focus) && focus.nodeOffset === 0) {

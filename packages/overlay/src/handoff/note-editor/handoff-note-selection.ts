@@ -43,8 +43,8 @@ import {
   layoutVisualRowStartColumn,
   type HandoffNoteLayoutMap,
   type HandoffNoteLayoutRow,
+  type MeasuredWireOffset,
 } from "./handoff-note-layout-map.js";
-import { type MeasuredWireOffset } from "./handoff-note-layout-map.js";
 
 function readRawWireFocus(root: HTMLElement, doc: HandoffNoteDoc): number {
   const selection = root.ownerDocument.getSelection();
@@ -63,7 +63,7 @@ function authorityIsMentionNodeEnd(doc: HandoffNoteDoc, pos: HandoffNoteDocPos):
 }
 
 /** Same wire: editor authority on mention node end, DOM painted text-node probe alias. */
-export function liveIsProbeAliasOverMentionEndAuthority(
+function liveIsProbeAliasOverMentionEndAuthority(
   doc: HandoffNoteDoc,
   live: HandoffNoteDocPos,
   from: HandoffNoteDocPos
@@ -788,13 +788,12 @@ function isWrapContinuationStructuralRowEdge(
   return isSameWireSoftWrapBandCrossing(doc, rowIndex, rowIndex - 1, layout.rows);
 }
 
-export function classifyVerticalContentLandingMode(
+function classifyVerticalContentLandingMode(
   doc: HandoffNoteDoc,
   layout: HandoffNoteLayoutMap,
   fromWire: number,
   goalColumn: number,
   currentLineIndex: number,
-  targetLineIndex: number,
   leavingBlankForContent: boolean
 ): VerticalContentLandingMode {
   if (leavingBlankForContent) {
@@ -842,30 +841,7 @@ function resolveBlankExitContentRowStart(
   return resolveVerticalArrowMinWireLineStart(doc, direction, targetLine);
 }
 
-/** Painted left edge of a content row — min `left` among layout samples, not min-wire sample X. */
-function contentRowPaintedVisualStartColumn(row: HandoffNoteLayoutRow): number {
-  let minLeft = row.samples[0]?.left ?? 0;
-  for (const sample of row.samples) {
-    if (sample.left < minLeft) {
-      minLeft = sample.left;
-    }
-  }
-  return minLeft;
-}
-
 /** Blank-band exit lands at the target content row's painted visual start — not a prefix row above it. */
-function resolveBlankExitEdgeColumn(
-  layout: HandoffNoteLayoutMap,
-  targetLineIndex: number,
-  effectiveGoalColumn: number
-): number {
-  const targetRow = layout.rows[targetLineIndex];
-  if (targetRow?.kind === "content" && targetRow.samples.length > 0) {
-    return contentRowPaintedVisualStartColumn(targetRow);
-  }
-  return effectiveGoalColumn;
-}
-
 function resolveBlankExitVisualRowStart(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
@@ -1293,7 +1269,6 @@ export function resolveLayoutVerticalArrowMove(
     fromWire,
     effectiveGoalColumn,
     currentLineIndex,
-    targetLineIndex,
     leavingBlankForContent
   );
   const useRowStartLandingOnTarget = landingMode.kind !== "column-at-goal";
@@ -1339,7 +1314,6 @@ export function resolveLayoutVerticalArrowMove(
   }
 
   if (leavingBlankForContent) {
-    const edgeColumn = resolveBlankExitEdgeColumn(layout, targetLineIndex, effectiveGoalColumn);
     const blankExit = resolveBlankExitVisualRowStart(
       doc,
       focus,
@@ -1351,7 +1325,7 @@ export function resolveLayoutVerticalArrowMove(
       logVerArrow("resolve.rowStartProbe", {
         direction,
         fromWire,
-        goalColumn: edgeColumn,
+        goalColumn: effectiveGoalColumn,
         resolvedWire: docPosToWireOffset(doc, blankExit.pos),
         branch: blankExit.branch,
       });
