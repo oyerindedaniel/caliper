@@ -28,11 +28,14 @@ import {
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
+  blankBandDeleteBranchUsesContentRowEndLanding,
+  blankBandDeleteBranchUsesProbeInfrastructureLanding,
   resolveBackspaceFromEmptyContentRowEnd,
   resolveDeleteFromEmptyContentRowEnd,
   resolveContentRowDeleteBeforeEmbeddedBlankBand,
   resolveEmbeddedBlankBandDelete,
   resolveEmbeddedBlankBandLineStartCollapse,
+  resolveSubstantiveLineBreakJoin,
   resolveMentionDeleteRowClearChip,
   rowHasSubstantivePrefixBeforeMention,
   mentionStartGluedToPrefixInWire,
@@ -341,7 +344,7 @@ function blankBandSelectionFocus(
   caretWire: number,
   move?: Pick<EmbeddedBlankBandDeleteMove, "branch" | "probeInfrastructureLanding">
 ): HandoffNoteDocPos {
-  if (move?.branch === "backspace-content-above") {
+  if (move && blankBandDeleteBranchUsesContentRowEndLanding(move.branch)) {
     const probeWire = probeWireAfterRowChip(doc, caretWire);
     return docPosAfterContentRowChipBeforeProbe(
       doc,
@@ -349,12 +352,7 @@ function blankBandSelectionFocus(
       rowSegmentBeforeProbeIsEmpty(doc, probeWire)
     );
   }
-  const collapseLanding =
-    move?.branch === "backspace-blank-above" ||
-    move?.branch === "backspace-collapse-empty-above" ||
-    move?.branch === "delete-blank-below" ||
-    move?.branch === "delete-lower-row" ||
-    move?.branch === "backspace-line-start-collapse";
+  const collapseLanding = move && blankBandDeleteBranchUsesProbeInfrastructureLanding(move.branch);
   if (
     collapseLanding &&
     move?.probeInfrastructureLanding !== false &&
@@ -667,6 +665,11 @@ export function resolveHandoffNoteDeleteIntent(
   const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(doc, focusWire);
   if (lineStartCollapse && (direction === "backspace" || direction === "delete")) {
     return { kind: "result", result: blankBandMoveToResult(doc, lineStartCollapse) };
+  }
+
+  const lineBreakJoin = resolveSubstantiveLineBreakJoin(doc, focusWire, direction);
+  if (lineBreakJoin) {
+    return { kind: "result", result: blankBandMoveToResult(doc, lineBreakJoin) };
   }
 
   const gapResult = applyInterMentionGapDelete(doc, selection, direction);

@@ -13,8 +13,6 @@ import {
   type HandoffNoteVerticalArrowDirection,
 } from "./handoff-note-wire-lines.js";
 
-export type { HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
-
 export type VerticalNavLineSpan = {
   start: number;
   end: number;

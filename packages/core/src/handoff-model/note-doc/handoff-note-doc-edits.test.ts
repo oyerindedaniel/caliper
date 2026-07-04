@@ -375,7 +375,7 @@ describe("embedded blank-band delete contract", () => {
       );
     });
 
-    it("prefix-only band: two-char chip to sole char lands after char not on blank probe", () => {
+    it("prefix-only band: interior backspace nibble removes char at caret not row chip", () => {
       const doc = wireToDoc(`xy\n\n\n`);
       const result = applyDocDelete(
         doc,
@@ -383,9 +383,8 @@ describe("embedded blank-band delete contract", () => {
         "backspace"
       )!;
 
-      expect(docToWire(result.doc)).toBe(`x\n\n\n`);
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(1);
-      expect(result.selection.focus.nodeOffset).toBe(1);
+      expect(docToWire(result.doc)).toBe(`y\n\n\n`);
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
       expectOffDeleteProbeInfrastructure(
         result.doc,
         docPosToWireOffset(result.doc, result.selection.focus),
@@ -617,7 +616,7 @@ describe("embedded blank-band delete contract", () => {
       let state = collapsedSelection(wireOffsetToDocPos(doc, 1));
 
       const mid = applyDocDelete(doc, state, "backspace")!;
-      expect(docToWire(mid.doc)).toBe(`h\n\n\ntail`);
+      expect(docToWire(mid.doc)).toBe(`d\n\n\ntail`);
       expectOffDeleteProbeInfrastructure(
         mid.doc,
         docPosToWireOffset(mid.doc, mid.selection.focus),

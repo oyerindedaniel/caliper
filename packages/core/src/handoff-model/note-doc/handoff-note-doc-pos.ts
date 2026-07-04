@@ -11,10 +11,12 @@ import {
   resolveEmbeddedBlankBandVerticalMove,
   resolveHorizontalBleedWireMove,
   resolveVerticalArrowWireMove,
-  type HandoffNoteVerticalArrowDirection,
   type VerticalNavLineSpan,
 } from "./handoff-note-vertical-nav.js";
-import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
+import {
+  resolveWireLineColumn,
+  type HandoffNoteVerticalArrowDirection,
+} from "./handoff-note-wire-lines.js";
 
 export type HandoffNoteDocPos = {
   nodeIndex: number;

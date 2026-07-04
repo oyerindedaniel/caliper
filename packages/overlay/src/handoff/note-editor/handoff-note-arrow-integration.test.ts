@@ -1672,7 +1672,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(host.editor, host.root, 0, "d chip to empty row end");
     });
 
-    it("keydown backspace on two-char row before blank band lands after remaining char", () => {
+    it("keydown backspace on two-char row before blank band nibbles at caret not row chip", () => {
       const suffixWire = `he\n\n`;
       const doc = wireToDoc(suffixWire);
       host.editor.setDocFromWire(suffixWire, 1, { resetHistory: true });
@@ -1681,12 +1681,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`e\n\n`);
-      expect(host.editor.getCursor()).toBe(1);
+      expect(host.editor.getCursor()).toBe(0);
       expectCaretParity(
         host.editor,
         host.root,
-        1,
-        "two-char chip leaves caret after remaining sole char"
+        0,
+        "two-char interior backspace nibble removes char before caret"
       );
     });
 

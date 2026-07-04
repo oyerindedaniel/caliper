@@ -1,8 +1,6 @@
 import { sanitizeMentionPasteWire } from "./handoff-note-paste.js";
-import {
-  resolveHorizontalBleedWireMove,
-  type HandoffNoteVerticalArrowDirection,
-} from "./handoff-note-vertical-nav.js";
+import { resolveHorizontalBleedWireMove } from "./handoff-note-vertical-nav.js";
+import { type HandoffNoteVerticalArrowDirection } from "./handoff-note-wire-lines.js";
 
 export type HandoffNoteTextNode = {
   type: "text";

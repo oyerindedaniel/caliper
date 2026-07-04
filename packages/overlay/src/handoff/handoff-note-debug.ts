@@ -57,10 +57,10 @@ function predictBlankBandDeleteBranch(
       if (rowEnd < 0) {
         return null;
       }
-      return { branch: "backspace-content-above", predictedCaretWire: rowEnd };
+      return { branch: "step-to-content-row-end", predictedCaretWire: rowEnd };
     }
     return {
-      branch: "backspace-blank-above",
+      branch: "backspace-collapse-blank",
       predictedCaretWire: probes[probeIndex - 1]!,
     };
   }
@@ -68,9 +68,12 @@ function predictBlankBandDeleteBranch(
     return null;
   }
   if (probeIndex < probes.length - 1) {
-    return { branch: "delete-blank-below", predictedCaretWire: probes[probeIndex + 1]! };
+    return {
+      branch: "delete-collapse-blank-mid-band",
+      predictedCaretWire: probes[probeIndex + 1]!,
+    };
   }
-  return { branch: "delete-lower-row", predictedCaretWire: focusWire };
+  return { branch: "delete-collapse-blank-at-edge", predictedCaretWire: focusWire };
 }
 
 function snapshotDocPos(

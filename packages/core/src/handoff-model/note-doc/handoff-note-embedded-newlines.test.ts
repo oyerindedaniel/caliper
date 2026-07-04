@@ -23,6 +23,7 @@ import {
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
+  resolveSubstantiveLineBreakJoin,
 } from "./handoff-note-embedded-newlines.js";
 
 describe("embedded blank band probes", () => {
@@ -319,6 +320,37 @@ describe("embedded blank band probes", () => {
       const doc = wireToDoc(`header @${agent} \n\n\n`);
       const mentionAt = docToWire(doc).indexOf("@");
       expect(mentionStartGluedToPrefixInWire(doc, mentionAt)).toBe(false);
+    });
+  });
+
+  describe("substantive line-break join", () => {
+    it("delete on break wire merges populated rows", () => {
+      const doc = wireToDoc("upper\nx");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, "upper".length)),
+        "delete"
+      )!;
+
+      expect(docToWire(result.doc)).toBe("upperx");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe("upper".length);
+    });
+
+    it("backspace at lower row visual start merges populated rows", () => {
+      const doc = wireToDoc("upper\nx");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, "upper\n".length)),
+        "backspace"
+      )!;
+
+      expect(docToWire(result.doc)).toBe("upperx");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe("upper".length);
+    });
+
+    it("does not treat blank-band break as substantive join", () => {
+      const doc = wireToDoc("upper\n\nx");
+      expect(resolveSubstantiveLineBreakJoin(doc, "upper\n".length + 1, "backspace")).toBeNull();
     });
   });
 });

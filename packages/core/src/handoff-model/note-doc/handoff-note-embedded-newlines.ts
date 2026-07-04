@@ -13,12 +13,33 @@ import {
 } from "./handoff-note-doc.js";
 
 export type EmbeddedBlankBandDeleteBranch =
-  | "backspace-content-above"
-  | "backspace-blank-above"
-  | "backspace-collapse-empty-above"
+  | "row-chip-before-probe"
+  | "step-to-content-row-end"
+  | "backspace-collapse-blank"
   | "backspace-line-start-collapse"
-  | "delete-blank-below"
-  | "delete-lower-row";
+  | "backspace-line-break-join"
+  | "delete-collapse-blank-mid-band"
+  | "delete-collapse-blank-at-edge"
+  | "delete-line-break-join";
+
+/** Caret lands on content row end / mention alias — not raw probe infrastructure. */
+export function blankBandDeleteBranchUsesContentRowEndLanding(
+  branch: EmbeddedBlankBandDeleteBranch
+): boolean {
+  return branch === "row-chip-before-probe" || branch === "step-to-content-row-end";
+}
+
+/** Caret may rest on blank-band probe infrastructure after collapse. */
+export function blankBandDeleteBranchUsesProbeInfrastructureLanding(
+  branch: EmbeddedBlankBandDeleteBranch
+): boolean {
+  return (
+    branch === "backspace-collapse-blank" ||
+    branch === "delete-collapse-blank-mid-band" ||
+    branch === "delete-collapse-blank-at-edge" ||
+    branch === "backspace-line-start-collapse"
+  );
+}
 
 export type EmbeddedBlankBandDeleteMove = {
   doc: HandoffNoteDoc;
@@ -239,32 +260,102 @@ function caretRestsOnEmbeddedBlankBandProbeAlias(
   return focusWire === semanticEnd && focusWire !== probeWire;
 }
 
-/**
- * Populated sole-char content row end at a probe aliases the probe wire to text-tail doc pos.
- * Backspace row-chips via the char wire immediately before the probe, not probe infrastructure.
- */
-function embeddedBlankBandBackspaceRowChipCharWire(
+function spacerBeforeProbeRowChipWire(doc: HandoffNoteDoc, focusWire: number): boolean {
+  const wire = docToWire(doc);
+  const ch = wire[focusWire];
+  return (
+    ch !== undefined &&
+    ch !== "\n" &&
+    /^\s$/.test(ch) &&
+    focusWire + 1 < wire.length &&
+    isEmbeddedBlankBandProbeWire(doc, focusWire + 1)
+  );
+}
+
+/** Doc-pos authority: caret at content-row end immediately before a blank-band probe. */
+function caretAtContentRowEndBeforeProbe(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  probeWire: number
+): boolean {
+  if (!isEmbeddedBlankBandProbeWire(doc, probeWire)) {
+    return false;
+  }
+  const wire = docToWire(doc);
+  const lineStart = probeWire <= 0 ? 0 : wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const segment = wire.slice(lineStart, probeWire);
+  if (segment.length === 0 || !/\S/.test(segment)) {
+    return false;
+  }
+  const focusWire = docPosToWireOffset(doc, focus);
+  if (describeHandoffNoteCursorContext(doc, focusWire).kind === "mention-interior") {
+    return false;
+  }
+  if (segment.length === 1) {
+    if (caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, probeWire)) {
+      return true;
+    }
+    return focusWire === probeWire - 1 || focusWire === probeWire;
+  }
+  if (focusWire === probeWire && !caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, probeWire)) {
+    return false;
+  }
+  const lineStartPos = wireOffsetToDocPos(doc, lineStart);
+  if (focusWire === probeWire - 1) {
+    const node = doc.nodes[focus.nodeIndex];
+    if (node?.type === "text" && focus.nodeIndex !== lineStartPos.nodeIndex) {
+      return true;
+    }
+    if (node?.type === "text" && focus.nodeIndex === lineStartPos.nodeIndex) {
+      if (segment.length <= 2) {
+        return false;
+      }
+      return focus.nodeOffset >= lineStartPos.nodeOffset + segment.length - 1;
+    }
+  }
+  const node = doc.nodes[focus.nodeIndex];
+  if (node?.type === "text" && focus.nodeIndex === lineStartPos.nodeIndex) {
+    return focus.nodeOffset >= lineStartPos.nodeOffset + segment.length;
+  }
+  if (node?.type === "mention" && focusWire === probeWire) {
+    return focus.nodeOffset >= 1 + node.agentId.length;
+  }
+  return false;
+}
+
+function resolveBackspaceRowChipAtContentRowEnd(
   doc: HandoffNoteDoc,
   focusWire: number,
   focus: HandoffNoteDocPos
-): number {
-  if (focusWire <= 0 || !isEmbeddedBlankBandProbeWire(doc, focusWire)) {
-    return focusWire;
-  }
-  if (!caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, focusWire)) {
-    return focusWire;
-  }
-  const node = doc.nodes[focus.nodeIndex];
-  if (node?.type !== "text") {
-    return focusWire;
+): EmbeddedBlankBandDeleteMove | null {
+  if (spacerBeforeProbeRowChipWire(doc, focusWire)) {
+    return resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
   }
   const wire = docToWire(doc);
-  const lineStart = focusWire <= 0 ? 0 : wire.lastIndexOf("\n", focusWire - 1) + 1;
-  const segment = wire.slice(lineStart, focusWire);
-  if (segment.length === 1 && /\S/.test(segment)) {
-    return focusWire - 1;
+  if (isEmbeddedBlankBandProbeWire(doc, focusWire)) {
+    if (
+      caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, focusWire) ||
+      caretAtContentRowEndBeforeProbe(doc, focus, focusWire)
+    ) {
+      const charWire = focusWire - 1;
+      if (charWire >= 0 && wire[charWire] !== "\n") {
+        return resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
+      }
+    }
+    return null;
   }
-  return focusWire;
+  if (focusWire + 1 < wire.length && isEmbeddedBlankBandProbeWire(doc, focusWire + 1)) {
+    const probeWire = focusWire + 1;
+    if (!caretAtContentRowEndBeforeProbe(doc, focus, probeWire)) {
+      return null;
+    }
+    const charWire = probeWire - 1;
+    if (charWire < 0 || wire[charWire] === "\n") {
+      return null;
+    }
+    return resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
+  }
+  return null;
 }
 
 /**
@@ -278,16 +369,27 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
   direction: HandoffNoteEdit,
   focus: HandoffNoteDocPos
 ): EmbeddedBlankBandDeleteMove | null {
+  const wire = docToWire(doc);
   if (direction === "delete") {
-    const directChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
-    if (directChip) {
-      return directChip;
+    if (focusWire + 1 >= wire.length) {
+      return null;
     }
-  } else {
-    const directChipWire = embeddedBlankBandBackspaceRowChipCharWire(doc, focusWire, focus);
-    const directChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, directChipWire);
-    if (directChip) {
-      return directChip;
+    if (
+      caretAtContentRowEndBeforeProbe(doc, focus, focusWire + 1) ||
+      spacerBeforeProbeRowChipWire(doc, focusWire)
+    ) {
+      const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
+      if (rowChip) {
+        return rowChip;
+      }
+    }
+    return null;
+  }
+
+  if (focusWire + 1 < wire.length && isEmbeddedBlankBandProbeWire(doc, focusWire + 1)) {
+    const rowChip = resolveBackspaceRowChipAtContentRowEnd(doc, focusWire, focus);
+    if (rowChip) {
+      return rowChip;
     }
   }
 
@@ -306,7 +408,6 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
     return null;
   }
 
-  const wire = docToWire(doc);
   const charWire = focusWire - 1;
   const deletedChar = wire[charWire];
   if (
@@ -341,7 +442,7 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
   return {
     doc,
     caretWire: landing,
-    branch: "backspace-content-above",
+    branch: "step-to-content-row-end",
   };
 }
 
@@ -1057,7 +1158,7 @@ export function resolveEmbeddedBlankBandDelete(
     return {
       doc: nextDoc,
       caretWire: collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc),
-      branch: indexInGroup === 0 ? "backspace-collapse-empty-above" : "backspace-blank-above",
+      branch: "backspace-collapse-blank",
     };
   }
 
@@ -1070,7 +1171,7 @@ export function resolveEmbeddedBlankBandDelete(
     return {
       doc: nextDoc,
       caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
-      branch: "delete-blank-below",
+      branch: "delete-collapse-blank-mid-band",
     };
   }
 
@@ -1085,14 +1186,14 @@ export function resolveEmbeddedBlankBandDelete(
         focusWire,
         context.group
       ),
-      branch: "delete-lower-row",
+      branch: "delete-collapse-blank-at-edge",
     };
   }
 
   return {
     doc: nextDoc,
     caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
-    branch: "delete-lower-row",
+    branch: "delete-collapse-blank-at-edge",
   };
 }
 
@@ -1170,7 +1271,7 @@ function resolveRowChipBeforeEmbeddedBlankProbe(
   return {
     doc: nextDoc,
     caretWire,
-    branch: "backspace-content-above",
+    branch: "row-chip-before-probe",
   };
 }
 
@@ -1208,14 +1309,14 @@ export function resolveDeleteFromEmptyContentRowEnd(
     return {
       doc: nextDoc,
       caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
-      branch: "delete-blank-below",
+      branch: "delete-collapse-blank-mid-band",
     };
   }
 
   return {
     doc: nextDoc,
     caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
-    branch: "delete-lower-row",
+    branch: "delete-collapse-blank-at-edge",
   };
 }
 
@@ -1247,7 +1348,7 @@ export function resolveBackspaceFromEmptyContentRowEnd(
   return {
     doc: nextDoc,
     caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
-    branch: "backspace-collapse-empty-above",
+    branch: "backspace-collapse-blank",
   };
 }
 
@@ -1283,5 +1384,58 @@ export function resolveEmbeddedBlankBandLineStartCollapse(
     doc: nextDoc,
     caretWire: embeddedBlankBandSubstantiveContentStartWire(nextDoc),
     branch: "backspace-line-start-collapse",
+  };
+}
+
+function substantiveLineBreakAt(doc: HandoffNoteDoc, wire: string, breakWire: number): boolean {
+  if (breakWire < 0 || breakWire >= wire.length || wire[breakWire] !== "\n") {
+    return false;
+  }
+  if (isEmbeddedBlankBandProbeWire(doc, breakWire)) {
+    return false;
+  }
+  const lineStart = breakWire <= 0 ? 0 : wire.lastIndexOf("\n", breakWire - 1) + 1;
+  const segmentAbove = wire.slice(lineStart, breakWire);
+  if (segmentAbove.length === 0 || !/\S/.test(segmentAbove)) {
+    return false;
+  }
+  const afterBreak = wire.slice(breakWire + 1);
+  const nextLineEnd = afterBreak.indexOf("\n");
+  const segmentBelow = nextLineEnd === -1 ? afterBreak : afterBreak.slice(0, nextLineEnd);
+  return segmentBelow.length > 0 && /\S/.test(segmentBelow);
+}
+
+/**
+ * Merge two populated rows separated by a single substantive `\n` (normal line break, not blank-band).
+ * Backspace at lower-row visual start; delete on the break wire.
+ */
+export function resolveSubstantiveLineBreakJoin(
+  doc: HandoffNoteDoc,
+  focusWire: number,
+  direction: HandoffNoteEdit
+): EmbeddedBlankBandDeleteMove | null {
+  const wire = docToWire(doc);
+  let breakWire: number;
+  if (direction === "backspace") {
+    if (focusWire <= 0 || wire[focusWire - 1] !== "\n") {
+      return null;
+    }
+    breakWire = focusWire - 1;
+  } else {
+    if (focusWire < 0 || focusWire >= wire.length || wire[focusWire] !== "\n") {
+      return null;
+    }
+    breakWire = focusWire;
+  }
+  if (!substantiveLineBreakAt(doc, wire, breakWire)) {
+    return null;
+  }
+  const nextDoc = spliceDocWireRange(doc, breakWire, breakWire + 1, "");
+  const branch: EmbeddedBlankBandDeleteBranch =
+    direction === "backspace" ? "backspace-line-break-join" : "delete-line-break-join";
+  return {
+    doc: nextDoc,
+    caretWire: breakWire,
+    branch,
   };
 }
