@@ -119,6 +119,51 @@ export function countWireTextDomChildren(text: string, options?: WireTextDomOpti
   return count;
 }
 
+export type WireTextDomSlotKind = "text" | "break" | "blank-anchor";
+
+export type WireTextDomSlot = {
+  kind: WireTextDomSlotKind;
+  domIdx: number;
+  nodeOffset: number;
+  partIndex: number;
+  part: string;
+  breakWire?: number;
+};
+
+/** Each rendered DOM child inside one wire-split text node — mirrors `countWireTextDomChildren`. */
+export function* iterWireTextDomSlots(
+  text: string,
+  startDomIdx: number,
+  options?: WireTextDomOptions
+): Generator<WireTextDomSlot> {
+  if (!text.includes("\n")) {
+    return;
+  }
+  const wireBase = options?.wireBase ?? 0;
+  const probeWires = options?.blankProbeWires;
+  const parts = text.split("\n");
+  let domIdx = startDomIdx;
+  let nodeOffset = 0;
+  for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+    const part = parts[partIndex]!;
+    if (part) {
+      yield { kind: "text", domIdx, nodeOffset, partIndex, part };
+      domIdx++;
+      nodeOffset += part.length;
+    }
+    if (partIndex < parts.length - 1) {
+      const breakWire = wireOffsetAtTextBreak(text, wireBase, partIndex);
+      yield { kind: "break", domIdx, nodeOffset, partIndex, part, breakWire };
+      domIdx++;
+      nodeOffset += 1;
+      if (probeWires?.has(breakWire)) {
+        yield { kind: "blank-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
+        domIdx++;
+      }
+    }
+  }
+}
+
 /** Rendered DOM child count including wire breaks, blank-band anchors, and optional EOF line-pad. */
 export function renderedDomChildCount(doc: HandoffNoteDoc): number {
   const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));

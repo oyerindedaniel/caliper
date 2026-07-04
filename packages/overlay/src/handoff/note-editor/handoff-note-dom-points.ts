@@ -22,6 +22,7 @@ import {
   isHandoffLinePadElement,
   isHandoffMentionElement,
   isHandoffWireBreakElement,
+  iterWireTextDomSlots,
   mentionWireLength,
   readMentionNodeIndex,
   wireOffsetAtTextBreak,
@@ -169,20 +170,19 @@ function domPointAfterWireBreak(
   if (
     isHandoffBlankAnchorElement(anchor) &&
     options?.doc !== undefined &&
-    options.breakWire !== undefined &&
-    embeddedBlankBandAtEmptyContentRowEnd(options.doc, options.breakWire, options.focusDocPos)
+    options.breakWire !== undefined
   ) {
-    return { node: br, offset: 0 };
-  }
-  if (
-    isHandoffBlankAnchorElement(anchor) &&
-    options?.doc !== undefined &&
-    options.breakWire !== undefined &&
-    options.focusDocPos !== undefined &&
-    isEmbeddedBlankBandProbeWire(options.doc, options.breakWire) &&
-    !isEmbeddedBlankBandDeleteProbeWire(options.doc, options.breakWire, options.focusDocPos)
-  ) {
-    return { node: br, offset: 0 };
+    const doc = options.doc;
+    const breakWire = options.breakWire;
+    const focusDocPos = options.focusDocPos;
+    const emptyRowEnd = embeddedBlankBandAtEmptyContentRowEnd(doc, breakWire, focusDocPos);
+    const nonDeleteProbe =
+      focusDocPos !== undefined &&
+      isEmbeddedBlankBandProbeWire(doc, breakWire) &&
+      !isEmbeddedBlankBandDeleteProbeWire(doc, breakWire, focusDocPos);
+    if (emptyRowEnd || nonDeleteProbe) {
+      return { node: br, offset: 0 };
+    }
   }
   if (isHandoffBlankAnchorElement(anchor)) {
     const text = anchor.firstChild;
@@ -216,6 +216,18 @@ function advancePastWireBreakDom(root: HTMLElement, childIdx: number): number {
     next++;
   }
   return next;
+}
+
+function domPointAtTextNodeWireBreak(
+  root: HTMLElement,
+  childIdx: number,
+  text: string,
+  wireBase: number,
+  partIndex: number,
+  doc: HandoffNoteDoc,
+  focusDocPos: HandoffNoteDocPos
+): { node: Node; offset: number } {
+  return domPointAfterTextWireBreak(root, childIdx, text, wireBase, partIndex, doc, focusDocPos);
 }
 
 function resolveTextDomPointAtOffset(
@@ -259,22 +271,14 @@ function resolveTextDomPointAtOffset(
           };
         }
       }
-      if (remaining === part.length && partIndex < parts.length - 1) {
-        if (part) {
+      const atWireBreak =
+        (remaining === part.length && partIndex < parts.length - 1) ||
+        (part === "" && remaining === 0);
+      if (atWireBreak) {
+        if (remaining === part.length && part) {
           childIdx++;
         }
-        return domPointAfterTextWireBreak(
-          root,
-          childIdx,
-          text,
-          options.wireBase,
-          partIndex,
-          options.doc,
-          options.focusDocPos
-        );
-      }
-      if (part === "" && remaining === 0) {
-        return domPointAfterTextWireBreak(
+        return domPointAtTextNodeWireBreak(
           root,
           childIdx,
           text,
@@ -300,7 +304,7 @@ function resolveTextDomPointAtOffset(
 
     if (partIndex < parts.length - 1) {
       if (remaining === 0) {
-        return domPointAfterTextWireBreak(
+        return domPointAtTextNodeWireBreak(
           root,
           childIdx,
           text,
@@ -367,6 +371,23 @@ function docPosAtProbeAliasWhenSubstantiveAbuts(
   return docPosAtEmbeddedBlankBandProbeAliasLanding(doc, breakWire);
 }
 
+function docPosAtMentionEndProbeAlias(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  mentionDom: HTMLSpanElement
+): HandoffNoteDocPos | null {
+  const mentionIdx = domNodeToDocIndex(root, doc, mentionDom);
+  if (mentionIdx === null) {
+    return null;
+  }
+  const agentId = mentionDom.getAttribute("data-agent-id") ?? "";
+  const mentionEndWire = docPosToWireOffset(doc, {
+    nodeIndex: mentionIdx,
+    nodeOffset: mentionWireLength(agentId),
+  });
+  return docPosAtProbeAliasWhenSubstantiveAbuts(doc, mentionEndWire);
+}
+
 function docPosFromRootDomChildIndex(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -385,17 +406,9 @@ function docPosFromRootDomChildIndex(
       nextDom &&
       isHandoffBlankAnchorElement(nextDom)
     ) {
-      const mentionIdx = domNodeToDocIndex(root, doc, prevDom);
-      const agentId = prevDom.getAttribute("data-agent-id") ?? "";
-      if (mentionIdx !== null) {
-        const mentionEndWire = docPosToWireOffset(doc, {
-          nodeIndex: mentionIdx,
-          nodeOffset: mentionWireLength(agentId),
-        });
-        const alias = docPosAtProbeAliasWhenSubstantiveAbuts(doc, mentionEndWire);
-        if (alias) {
-          return alias;
-        }
+      const alias = docPosAtMentionEndProbeAlias(root, doc, prevDom);
+      if (alias) {
+        return alias;
       }
     }
   }
@@ -408,17 +421,9 @@ function docPosFromRootDomChildIndex(
       mentionDom &&
       isHandoffMentionElement(mentionDom)
     ) {
-      const mentionIdx = domNodeToDocIndex(root, doc, mentionDom);
-      const agentId = mentionDom.getAttribute("data-agent-id") ?? "";
-      if (mentionIdx !== null) {
-        const mentionEndWire = docPosToWireOffset(doc, {
-          nodeIndex: mentionIdx,
-          nodeOffset: mentionWireLength(agentId),
-        });
-        const alias = docPosAtProbeAliasWhenSubstantiveAbuts(doc, mentionEndWire);
-        if (alias) {
-          return alias;
-        }
+      const alias = docPosAtMentionEndProbeAlias(root, doc, mentionDom);
+      if (alias) {
+        return alias;
       }
     }
     return (
@@ -431,7 +436,6 @@ function docPosFromRootDomChildIndex(
   const docEndsWithNewline = wire.endsWith("\n");
   const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
   let domIdx = 0;
-  let wireOffset = 0;
 
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
     const node = doc.nodes[nodeIndex]!;
@@ -451,49 +455,26 @@ function docPosFromRootDomChildIndex(
         return { nodeIndex, nodeOffset: 0 };
       }
       domIdx++;
-      wireOffset += mentionWireLength(node.agentId);
       continue;
     }
 
     const text = node.text;
     const nodeWireBase = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
+    const wireTextOptions = { wireBase: nodeWireBase, blankProbeWires: probeWires };
     if (!text.includes("\n")) {
       if (domIdx === targetChildIndex) {
         return { nodeIndex, nodeOffset: 0 };
       }
       domIdx++;
-      wireOffset += text.length;
       continue;
     }
 
-    const parts = text.split("\n");
-    let nodeOffset = 0;
-    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-      const part = parts[partIndex]!;
-      if (part) {
-        if (domIdx === targetChildIndex) {
-          return { nodeIndex, nodeOffset };
-        }
-        domIdx++;
-        nodeOffset += part.length;
-        wireOffset += part.length;
-      }
-      if (partIndex < parts.length - 1) {
-        if (domIdx === targetChildIndex) {
-          return { nodeIndex, nodeOffset };
-        }
-        domIdx++;
-        nodeOffset += 1;
-        wireOffset += 1;
-        const breakWire = wireOffsetAtTextBreak(text, nodeWireBase, partIndex);
-        if (probeWires.has(breakWire)) {
-          if (domIdx === targetChildIndex) {
-            return { nodeIndex, nodeOffset };
-          }
-          domIdx++;
-        }
+    for (const slot of iterWireTextDomSlots(text, domIdx, wireTextOptions)) {
+      if (slot.domIdx === targetChildIndex) {
+        return { nodeIndex, nodeOffset: slot.nodeOffset };
       }
     }
+    domIdx += countWireTextDomChildren(text, wireTextOptions);
   }
 
   if (docEndsWithNewline && domIdx === targetChildIndex) {
@@ -571,40 +552,30 @@ export function domPointToDocPos(
     }
 
     const domStart = docPosToRenderedDomChildIndex(doc, nodeIndex);
-    let childIdx = domStart;
-    let nodeOffset = 0;
-    const parts = node.text.split("\n");
-    const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
     const wireBase = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
-    for (let partIndex = 0; partIndex < parts.length; partIndex++) {
-      const part = parts[partIndex]!;
-      const textChild = root.childNodes[childIdx];
-      if (textChild === container) {
-        return {
-          nodeIndex,
-          nodeOffset: docOffsetFromContentTextNodeDomPoint(
-            nodeOffset,
-            offset,
-            part,
-            partIndex,
-            parts.length
-          ),
-        };
+    const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+    const wireTextOptions = { wireBase, blankProbeWires: probeWires };
+    const partCount = node.text.split("\n").length;
+    for (const slot of iterWireTextDomSlots(node.text, domStart, wireTextOptions)) {
+      if (slot.kind === "text") {
+        const textChild = root.childNodes[slot.domIdx];
+        if (textChild === container) {
+          return {
+            nodeIndex,
+            nodeOffset: docOffsetFromContentTextNodeDomPoint(
+              slot.nodeOffset,
+              offset,
+              slot.part,
+              slot.partIndex,
+              partCount
+            ),
+          };
+        }
       }
-      if (part) {
-        nodeOffset += part.length;
-        childIdx++;
-      }
-      if (partIndex < parts.length - 1) {
-        childIdx++;
-        nodeOffset += 1;
-        const breakWire = wireOffsetAtTextBreak(node.text, wireBase, partIndex);
-        if (probeWires.has(breakWire)) {
-          const anchorChild = root.childNodes[childIdx];
-          if (isHandoffBlankAnchorElement(anchorChild) && anchorChild.contains(container)) {
-            return { nodeIndex, nodeOffset };
-          }
-          childIdx++;
+      if (slot.kind === "blank-anchor") {
+        const anchorChild = root.childNodes[slot.domIdx];
+        if (isHandoffBlankAnchorElement(anchorChild) && anchorChild.contains(container)) {
+          return { nodeIndex, nodeOffset: slot.nodeOffset };
         }
       }
     }
