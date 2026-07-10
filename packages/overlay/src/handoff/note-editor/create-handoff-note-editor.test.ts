@@ -12,7 +12,11 @@ import { handoffNoteSelectionSnapshot } from "../handoff-note-debug.js";
 import { readMentionNodeIndex } from "./handoff-note-dom.js";
 import {
   dispatchSelectionChange,
+  mountMultiMentionSoftWrapFixture,
+  mountThreeRowMentionSoftWrapFixture,
+  applyThreeRowSpacerBrowserParityLayoutStubs,
   readDomWireCursor,
+  reapplyMultiMentionSoftWrapStubs,
   selectionAtWire,
   setSelectionAtWire,
   strandSelectionInMentionPill,
@@ -556,7 +560,7 @@ describe("createHandoffNoteEditor", () => {
       })
     );
 
-    expect(host.editor.getWire()).toBe(`ab @${agentA} \n\nd@${agentB} tail`);
+    expect(host.editor.getWire()).toBe(`ab @${agentA} \n\nd @${agentB} tail`);
     expect(host.editor.getSelectionState().focus.nodeIndex).toBe(caretBefore.nodeIndex);
     expect(host.editor.getDoc().nodes[host.editor.getSelectionState().focus.nodeIndex]?.type).toBe(
       "text"
@@ -788,6 +792,82 @@ describe("createHandoffNoteEditor", () => {
 
       expect(host.editor.getCursor()).toBe(firstProbe);
       expect(host.editor.getCursor()).not.toBe(headerEnd);
+    });
+
+    it("selectionchange keeps continuation wire after row-0 soft-wrap click", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      host.editor.setRoot(fx.root);
+      host.editor.setDocFromWire(fx.wire, fx.wire.length, { resetHistory: true });
+      reapplyMultiMentionSoftWrapStubs(fx);
+
+      fx.root.dispatchEvent(
+        new MouseEvent("mousedown", {
+          clientX: 630,
+          clientY: fx.row0Top,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      setSelectionAtWire(fx.root, fx.doc, fx.continuationWire, fx.continuationWire);
+      dispatchSelectionChange(fx.root);
+
+      expect(host.editor.getCursor()).toBe(fx.continuationWire);
+      expect(host.editor.getCursor()).not.toBe(fx.secondPostStart);
+
+      setSelectionAtWire(fx.root, fx.doc, fx.continuationWire, fx.continuationWire);
+      dispatchSelectionChange(fx.root);
+
+      expect(host.editor.getCursor()).toBe(fx.continuationWire);
+      expect(host.editor.getCursor()).not.toBe(fx.secondPostStart);
+
+      fx.root.remove();
+    });
+
+    it("row-1 postfix alias click keeps spacer tail through first insert", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos = {
+        nodeIndex: fx.postfixSpacerNode,
+        nodeOffset: spacer.text.length,
+      };
+
+      host.editor.setRoot(fx.root);
+      host.editor.setDocFromWire(fx.wire, fx.interiorWire, { resetHistory: true });
+
+      fx.root.dispatchEvent(
+        new MouseEvent("mousedown", {
+          clientX: 546,
+          clientY: fx.row1Top,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      setSelectionAtWire(fx.root, fx.doc, fx.fourthMentionStart, fx.fourthMentionStart);
+      dispatchSelectionChange(fx.root);
+
+      expect(host.editor.getSelectionState().focus).toEqual(tailPos);
+      expect(host.editor.getCursor()).toBe(fx.fourthMentionStart);
+
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: "d",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+
+      expect(host.editor.getWire()).not.toMatch(/d@caliper/);
+      expect(host.editor.getWire()).toContain(" d @");
+      expect(host.editor.getCursor()).toBe(fx.fourthMentionStart + 1);
+
+      fx.root.remove();
     });
 
     describe("probe-alias after whitespace chip — click from blank band then backspace", () => {

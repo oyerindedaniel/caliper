@@ -1,6 +1,7 @@
 import {
   collapsedSelection,
   docPosToWireOffset,
+  docToWire,
   listEmbeddedBlankBandProbeWires,
   normalizeDocPos,
   wireOffsetToDocPos,
@@ -15,8 +16,17 @@ import {
   resolveLayoutVerticalArrowMove,
   setDocSelection,
 } from "./handoff-note-selection.js";
-import { getDocAnchorRect, resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
-import { isHandoffBlankAnchorElement, isHandoffWireBreakElement } from "./handoff-note-dom.js";
+import {
+  getDocAnchorRect,
+  resolveDomPointAtDocPos,
+  docPosToRenderedDomChildIndex,
+} from "./handoff-note-dom-points.js";
+import {
+  isHandoffBlankAnchorElement,
+  isHandoffWireBreakElement,
+  iterWireTextDomSlots,
+  renderHandoffNoteDoc,
+} from "./handoff-note-dom.js";
 import {
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
@@ -26,6 +36,16 @@ import {
   type MeasuredWireOffset,
 } from "./handoff-note-layout-map.js";
 import { readMentionNodeIndex } from "./handoff-note-dom.js";
+
+/** Layout sample with optional painted width for row content-extent tests. */
+export function layoutMeasuredSample(
+  wire: number,
+  top: number,
+  left: number,
+  width = 0
+): MeasuredWireOffset {
+  return width > 0 ? { wire, top, left, right: left + width } : { wire, top, left };
+}
 
 type StubLayoutCoord = {
   top: number;
@@ -95,6 +115,48 @@ export function strandSelectionInMentionPill(root: HTMLElement, pillTextOffset =
   const range = root.ownerDocument.createRange();
   range.setStart(pillText, pillTextOffset);
   range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/** Test-only: place native DOM selection at a doc position without authority normalize on write. */
+export function setBrowserDomSelectionAtDocPos(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): void {
+  const point = resolveDomPointAtDocPos(root, doc, pos);
+  if (!point) {
+    throw new Error("setBrowserDomSelectionAtDocPos: could not resolve DOM point");
+  }
+  const selection = root.ownerDocument.getSelection();
+  if (!selection) {
+    throw new Error("expected document selection");
+  }
+  const range = root.ownerDocument.createRange();
+  range.setStart(point.node, point.offset);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+/** Test-only: place native DOM selection at a doc position without wire round-trip. */
+export function setSelectionAtDocPos(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): void {
+  const point = resolveDomPointAtDocPos(root, doc, pos);
+  if (!point) {
+    throw new Error(`setSelectionAtDocPos: no paint for ${JSON.stringify(pos)}`);
+  }
+  const range = root.ownerDocument.createRange();
+  range.setStart(point.node, point.offset);
+  range.collapse(true);
+  const selection = root.ownerDocument.getSelection();
+  if (!selection) {
+    throw new Error("setSelectionAtDocPos: no selection");
+  }
   selection.removeAllRanges();
   selection.addRange(range);
 }
@@ -450,10 +512,30 @@ export function stubHandoffNoteAnchorRectAtWire(
   wire: number,
   rect: StubLayoutCoord
 ): () => void {
-  const pos = wireOffsetToDocPos(doc, wire);
-  const point = resolveDomPointAtDocPos(root, doc, pos);
+  return stubHandoffNoteAnchorRectAtDomPoint(
+    root,
+    resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, wire)),
+    rect
+  );
+}
+
+/** Test-only: stub collapsed-range anchor geometry at a doc position (jsdom layout). */
+export function stubHandoffNoteAnchorRectAtDocPos(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  rect: StubLayoutCoord
+): () => void {
+  return stubHandoffNoteAnchorRectAtDomPoint(root, resolveDomPointAtDocPos(root, doc, pos), rect);
+}
+
+function stubHandoffNoteAnchorRectAtDomPoint(
+  root: HTMLElement,
+  point: { node: Node; offset: number } | null,
+  rect: StubLayoutCoord
+): () => void {
   if (!point) {
-    throw new Error("stubHandoffNoteAnchorRectAtWire: could not resolve DOM point");
+    throw new Error("stubHandoffNoteAnchorRectAtDomPoint: could not resolve DOM point");
   }
   const height = rect.height ?? 18;
   const width = rect.width ?? 4;
@@ -492,44 +574,197 @@ export function stubHandoffNoteAnchorRectAtWire(
   };
 }
 
+function stubRectForCoord(coord: StubLayoutCoord): DOMRect {
+  const height = coord.height ?? 18;
+  const width = coord.width ?? 4;
+  const midY = coord.top;
+  return {
+    top: midY - height / 2,
+    left: coord.left,
+    right: coord.left + width,
+    bottom: midY + height / 2,
+    width,
+    height,
+    x: coord.left,
+    y: midY - height / 2,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+/** Line-fragment rects from getClientRects: `top` is the painted box top, not midY. */
+function stubLineFragmentRect(coord: StubLayoutCoord): DOMRect {
+  const height = coord.height ?? 18;
+  const width = coord.width ?? 80;
+  const top = coord.top;
+  return {
+    top,
+    left: coord.left,
+    right: coord.left + width,
+    bottom: top + height,
+    width,
+    height,
+    x: coord.left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
+/** Test-only: stub collapsed anchor midY/left for any offset inside a text node. */
+export function stubTextNodeOffsetAnchorRects(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  resolveRect: (nodeOffset: number, textLength: number) => StubLayoutCoord | null
+): () => void {
+  return stubTextNodeLineRects(root, doc, nodeIndex, [], { resolveOffsetRect: resolveRect });
+}
+
 /** Test-only: stub getClientRects on a text node for soft-wrap line fragments. */
 export function stubTextNodeLineRects(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   nodeIndex: number,
-  rects: StubLayoutCoord[]
-): () => void {
-  const point = resolveDomPointAtDocPos(root, doc, { nodeIndex, nodeOffset: 0 });
-  if (!point || point.node.nodeType !== Node.TEXT_NODE) {
-    throw new Error("stubTextNodeLineRects: expected text node");
+  rects: StubLayoutCoord[],
+  options?: {
+    resolveOffsetRect?: (nodeOffset: number, textLength: number) => StubLayoutCoord | null;
   }
-  const textNode = point.node as Text;
+): () => void {
+  const docTextNode = doc.nodes[nodeIndex];
+  if (docTextNode?.type !== "text") {
+    throw new Error("stubTextNodeLineRects: expected text doc node");
+  }
+  const docTextLength = docTextNode.text.length;
+  type PaintedTextSlot = { textNode: Text; docOffsetBase: number };
+  const textSlots: PaintedTextSlot[] = [];
+  if (!docTextNode.text.includes("\n")) {
+    const point = resolveDomPointAtDocPos(root, doc, { nodeIndex, nodeOffset: 0 });
+    if (point?.node.nodeType === Node.TEXT_NODE) {
+      textSlots.push({ textNode: point.node as Text, docOffsetBase: 0 });
+    }
+  } else {
+    const renderedStart = docPosToRenderedDomChildIndex(doc, nodeIndex);
+    const wireBase = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
+    const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+    for (const slot of iterWireTextDomSlots(docTextNode.text, renderedStart, {
+      wireBase,
+      blankProbeWires: probeWires,
+    })) {
+      if (slot.kind !== "text") {
+        continue;
+      }
+      const domNode = root.childNodes[slot.domIdx];
+      if (domNode?.nodeType === Node.TEXT_NODE) {
+        textSlots.push({ textNode: domNode as Text, docOffsetBase: slot.nodeOffset });
+      }
+    }
+  }
+  if (textSlots.length === 0) {
+    throw new Error("stubTextNodeLineRects: expected rendered text node");
+  }
   const docApi = root.ownerDocument;
   const priorCreateRange = docApi.createRange.bind(docApi);
 
   docApi.createRange = () => {
     const range = priorCreateRange();
+    let rangeStart: number | null = null;
+    let rangeEnd: number | null = null;
+    let activeSlot: PaintedTextSlot | null = null;
+
+    const slotFor = (node: Node): PaintedTextSlot | undefined =>
+      textSlots.find((entry) => entry.textNode === node);
+
+    const docOffsetFor = (slot: PaintedTextSlot, domOffset: number): number =>
+      slot.docOffsetBase + domOffset;
+
+    const attachFragmentRectsForSpan = () => {
+      if (
+        activeSlot === null ||
+        rangeStart === null ||
+        rangeEnd === null ||
+        rangeEnd <= rangeStart ||
+        rects.length === 0
+      ) {
+        return;
+      }
+      let spanRects = rects;
+      if (options?.resolveOffsetRect) {
+        const tops = new Set<number>();
+        const startCoord = options.resolveOffsetRect(
+          docOffsetFor(activeSlot, rangeStart),
+          docTextLength
+        );
+        const endCoord = options.resolveOffsetRect(
+          docOffsetFor(activeSlot, rangeEnd - 1),
+          docTextLength
+        );
+        if (startCoord) {
+          tops.add(startCoord.top);
+        }
+        if (endCoord) {
+          tops.add(endCoord.top);
+        }
+        for (let domOffset = rangeStart; domOffset < rangeEnd; domOffset++) {
+          const coord = options.resolveOffsetRect(
+            docOffsetFor(activeSlot, domOffset),
+            docTextLength
+          );
+          if (coord) {
+            tops.add(coord.top);
+          }
+        }
+        const matched = rects.filter((rect) => {
+          const midY = rect.top + (rect.height ?? 18) / 2;
+          return [...tops].some((top) => Math.abs(midY - top) <= 1);
+        });
+        if (matched.length > 0) {
+          spanRects = matched;
+        }
+      }
+      range.getClientRects = () =>
+        spanRects.map((rect) => stubLineFragmentRect(rect)) as unknown as DOMRectList;
+    };
+
     const priorSelect = range.selectNodeContents.bind(range);
     range.selectNodeContents = (node: Node) => {
       priorSelect(node);
-      if (node === textNode) {
+      const slot = slotFor(node);
+      if (slot && rects.length > 0) {
         range.getClientRects = () =>
-          rects.map(
-            (rect) =>
-              ({
-                top: rect.top,
-                left: rect.left,
-                right: rect.left + (rect.width ?? 80),
-                bottom: rect.top + (rect.height ?? 18),
-                width: rect.width ?? 80,
-                height: rect.height ?? 18,
-                x: rect.left,
-                y: rect.top,
-                toJSON: () => ({}),
-              }) as DOMRect
-          ) as unknown as DOMRectList;
+          rects.map((rect) => stubLineFragmentRect(rect)) as unknown as DOMRectList;
       }
       return range;
+    };
+    const priorSetStart = range.setStart.bind(range);
+    const priorSetEnd = range.setEnd.bind(range);
+    range.setStart = (node: Node, offset: number) => {
+      priorSetStart(node, offset);
+      const slot = slotFor(node);
+      if (slot) {
+        activeSlot = slot;
+        rangeStart = offset;
+        if (options?.resolveOffsetRect) {
+          const coord = options.resolveOffsetRect(docOffsetFor(slot, offset), docTextLength);
+          if (coord) {
+            const stubRect = stubRectForCoord(coord);
+            range.getClientRects = () => [stubRect] as unknown as DOMRectList;
+            range.getBoundingClientRect = () => stubRect;
+          }
+        }
+        attachFragmentRectsForSpan();
+      }
+      return undefined;
+    };
+    range.setEnd = (node: Node, offset: number) => {
+      priorSetEnd(node, offset);
+      const slot = slotFor(node);
+      if (slot) {
+        if (activeSlot === null) {
+          activeSlot = slot;
+        }
+        rangeEnd = offset;
+        attachFragmentRectsForSpan();
+      }
+      return undefined;
     };
     return range;
   };
@@ -840,4 +1075,327 @@ export function prepareVerticalColumnProbe(fixture: VerticalColumnProbeFixture):
     sourceRowTop,
     targetRowTop,
   };
+}
+
+export const MULTI_MENTION_SOFT_WRAP_AGENT = "caliper-wrapagent01";
+const MULTI_MENTION_SOFT_WRAP_ROW0 = 141.1;
+const MULTI_MENTION_SOFT_WRAP_ROW1 = 159.3;
+const MULTI_MENTION_SOFT_WRAP_ROW2 = 177.49;
+const MULTI_MENTION_SOFT_WRAP_ROOT_W = 310;
+/** 3-char prefix — same length as session `ddm`. */
+const MULTI_MENTION_SOFT_WRAP_PREFIX = "pre";
+/** 8-char mid chunk — same length as session `danidhhd`. */
+const MULTI_MENTION_SOFT_WRAP_MID = "wraptext";
+
+export function buildMultiMentionSoftWrapWire(): string {
+  return `${MULTI_MENTION_SOFT_WRAP_PREFIX} @${MULTI_MENTION_SOFT_WRAP_AGENT} d @${MULTI_MENTION_SOFT_WRAP_AGENT} ${MULTI_MENTION_SOFT_WRAP_MID} @${MULTI_MENTION_SOFT_WRAP_AGENT} @${MULTI_MENTION_SOFT_WRAP_AGENT} `;
+}
+
+function listMentionNodeIndices(doc: HandoffNoteDoc): number[] {
+  const mentionNodes: number[] = [];
+  for (let i = 0; i < doc.nodes.length; i++) {
+    if (doc.nodes[i]?.type === "mention") {
+      mentionNodes.push(i);
+    }
+  }
+  return mentionNodes;
+}
+
+function buildThreeRowMentionSoftWrapSamples(
+  doc: HandoffNoteDoc,
+  wire: string,
+  mentionNodes: number[],
+  agent: string
+) {
+  const fourthMentionStart = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[3]!,
+    nodeOffset: 0,
+  });
+  const wrapRowStartWire = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[1]! + 1,
+    nodeOffset: 1,
+  });
+  const interiorWire = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[1]! + 1,
+    nodeOffset: 4,
+  });
+  return [
+    { wire: 0, top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 349.5 },
+    { wire: 4, top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 378.57 },
+    {
+      wire: docPosToWireOffset(doc, {
+        nodeIndex: mentionNodes[0]!,
+        nodeOffset: 1 + agent.length,
+      }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW0,
+      left: 495.73,
+    },
+    {
+      wire: docPosToWireOffset(doc, { nodeIndex: mentionNodes[0]!, nodeOffset: 0 }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW0,
+      left: 495.73,
+    },
+    {
+      wire: docPosToWireOffset(doc, {
+        nodeIndex: mentionNodes[1]!,
+        nodeOffset: 1 + agent.length,
+      }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW0,
+      left: 511.51,
+    },
+    {
+      wire:
+        docPosToWireOffset(doc, {
+          nodeIndex: mentionNodes[1]!,
+          nodeOffset: 1 + agent.length,
+        }) + 1,
+      top: MULTI_MENTION_SOFT_WRAP_ROW1,
+      left: 628.67,
+    },
+    {
+      wire: docPosToWireOffset(doc, { nodeIndex: mentionNodes[2]!, nodeOffset: 0 }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW1,
+      left: 406.86,
+    },
+    {
+      wire: docPosToWireOffset(doc, {
+        nodeIndex: mentionNodes[2]!,
+        nodeOffset: 1 + agent.length,
+      }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW1,
+      left: 524.02,
+    },
+    { wire: fourthMentionStart, top: MULTI_MENTION_SOFT_WRAP_ROW2, left: 348.5 },
+    { wire: wire.length, top: MULTI_MENTION_SOFT_WRAP_ROW2, left: 469.21 },
+    { wire: wrapRowStartWire, top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 355.15 },
+    { wire: interiorWire, top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 379.09 },
+  ];
+}
+
+/** Four-mention soft-wrap fixture with three visual rows (row-1 click ingress family). */
+export function mountThreeRowMentionSoftWrapFixture() {
+  const wire = buildMultiMentionSoftWrapWire();
+  const doc = wireToDoc(wire);
+  const root = document.createElement("div");
+  root.style.width = `${MULTI_MENTION_SOFT_WRAP_ROOT_W}px`;
+  root.contentEditable = "true";
+  document.body.appendChild(root);
+  renderHandoffNoteDoc(root, doc, {
+    colorByAgentId: new Map([[MULTI_MENTION_SOFT_WRAP_AGENT, "#06f"]]),
+  });
+  Object.defineProperty(root, "clientWidth", {
+    configurable: true,
+    value: MULTI_MENTION_SOFT_WRAP_ROOT_W,
+  });
+
+  const mentionNodes = listMentionNodeIndices(doc);
+  stubHandoffNoteMentionLayoutCoords(
+    root,
+    new Map(
+      mentionNodes.map((nodeIndex, i) => [
+        nodeIndex,
+        {
+          top:
+            i < 2
+              ? MULTI_MENTION_SOFT_WRAP_ROW0
+              : i === 2
+                ? MULTI_MENTION_SOFT_WRAP_ROW1
+                : MULTI_MENTION_SOFT_WRAP_ROW2,
+          left: 500 + i * 8,
+        },
+      ])
+    )
+  );
+
+  const fourthMentionStart = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[3]!,
+    nodeOffset: 0,
+  });
+  const wrapRowStartWire = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[1]! + 1,
+    nodeOffset: 1,
+  });
+  const interiorWire = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[1]! + 1,
+    nodeOffset: 4,
+  });
+  const middleTextNode = mentionNodes[1]! + 1;
+  const samples = buildThreeRowMentionSoftWrapSamples(
+    doc,
+    wire,
+    mentionNodes,
+    MULTI_MENTION_SOFT_WRAP_AGENT
+  );
+  setMeasuredSamplesCache(wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, samples);
+  stubTextNodeLineRects(root, doc, middleTextNode, [
+    { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520, width: 100 },
+    { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380, width: 200 },
+  ]);
+
+  const postfixSpacerNode = mentionNodes[2]! + 1;
+
+  return {
+    root,
+    doc,
+    wire,
+    agent: MULTI_MENTION_SOFT_WRAP_AGENT,
+    mentionNodes,
+    middleTextNode,
+    postfixSpacerNode,
+    fourthMentionStart,
+    wrapRowStartWire,
+    interiorWire,
+    row0Top: MULTI_MENTION_SOFT_WRAP_ROW0,
+    row1Top: MULTI_MENTION_SOFT_WRAP_ROW1,
+    row2Top: MULTI_MENTION_SOFT_WRAP_ROW2,
+    rootWidth: MULTI_MENTION_SOFT_WRAP_ROOT_W,
+  };
+}
+
+/** Spacer between third and fourth mention: interior on row 1, alias wire on row 2. */
+export function applyThreeRowSpacerBrowserParityLayoutStubs(
+  fx: Pick<
+    ReturnType<typeof mountThreeRowMentionSoftWrapFixture>,
+    "root" | "doc" | "postfixSpacerNode" | "row1Top"
+  >
+): void {
+  stubTextNodeLineRects(fx.root, fx.doc, fx.postfixSpacerNode, [
+    { top: fx.row1Top, left: 520, width: 30 },
+  ]);
+  const postfixSpacer = fx.doc.nodes[fx.postfixSpacerNode];
+  if (postfixSpacer?.type === "text") {
+    stubHandoffNoteAnchorRectAtDocPos(
+      fx.root,
+      fx.doc,
+      { nodeIndex: fx.postfixSpacerNode, nodeOffset: postfixSpacer.text.length },
+      { top: fx.row1Top, left: 537, width: 30 }
+    );
+  }
+}
+
+export function mountMultiMentionSoftWrapFixture() {
+  const wire = buildMultiMentionSoftWrapWire();
+  const doc = wireToDoc(wire);
+  const root = document.createElement("div");
+  root.style.width = `${MULTI_MENTION_SOFT_WRAP_ROOT_W}px`;
+  root.contentEditable = "true";
+  document.body.appendChild(root);
+  renderHandoffNoteDoc(root, doc, {
+    colorByAgentId: new Map([[MULTI_MENTION_SOFT_WRAP_AGENT, "#06f"]]),
+  });
+  Object.defineProperty(root, "clientWidth", {
+    configurable: true,
+    value: MULTI_MENTION_SOFT_WRAP_ROOT_W,
+  });
+
+  const mentionNodes = listMentionNodeIndices(doc);
+
+  const pillCoords = new Map<number, { top: number; left: number }>();
+  mentionNodes.forEach((nodeIndex, i) => {
+    pillCoords.set(nodeIndex, {
+      top: i < 2 ? MULTI_MENTION_SOFT_WRAP_ROW0 : MULTI_MENTION_SOFT_WRAP_ROW1,
+      left: 500 + i * 8,
+    });
+  });
+  stubHandoffNoteMentionLayoutCoords(root, pillCoords);
+
+  const secondMentionEnd = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[1]!,
+    nodeOffset: 1 + MULTI_MENTION_SOFT_WRAP_AGENT.length,
+  });
+  const secondPostStart = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodes[1]! + 1,
+    nodeOffset: 0,
+  });
+  const continuationTextPos = { nodeIndex: mentionNodes[1]! + 1, nodeOffset: 1 };
+  const continuationWire = docPosToWireOffset(doc, continuationTextPos);
+  const row0ClickPos = wireOffsetToDocPos(doc, 4);
+
+  const samples = [
+    { wire: 0, top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 347.5 },
+    { wire: 4, top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 374.73 },
+    {
+      wire: docPosToWireOffset(doc, { nodeIndex: mentionNodes[0]!, nodeOffset: 0 }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW0,
+      left: 491.89,
+    },
+    {
+      wire: docPosToWireOffset(doc, { nodeIndex: mentionNodes[1]!, nodeOffset: 0 }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW0,
+      left: 507.67,
+    },
+    { wire: secondPostStart, top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 624.82 },
+    {
+      wire: docPosToWireOffset(doc, { nodeIndex: mentionNodes[2]!, nodeOffset: 0 }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW1,
+      left: 382.09,
+    },
+    {
+      wire: docPosToWireOffset(doc, { nodeIndex: mentionNodes[3]!, nodeOffset: 0 }),
+      top: MULTI_MENTION_SOFT_WRAP_ROW1,
+      left: 503.81,
+    },
+    { wire: wire.length, top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 624.52 },
+    {
+      wire: secondMentionEnd,
+      top: MULTI_MENTION_SOFT_WRAP_ROW0 - 0.43,
+      left: 624.82,
+      right: 627.33,
+    },
+    {
+      wire: continuationWire,
+      top: MULTI_MENTION_SOFT_WRAP_ROW0 - 0.43,
+      left: 624.82,
+      right: 627.33,
+    },
+  ];
+  setMeasuredSamplesCache(wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, samples);
+
+  const sandwichSpacerNode = mentionNodes[0]! + 1;
+  const middleTextNode = mentionNodes[1]! + 1;
+  stubTextNodeLineRects(root, doc, middleTextNode, [
+    { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520, width: 100 },
+    { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380, width: 200 },
+  ]);
+  stubTextNodeLineRects(root, doc, sandwichSpacerNode, [
+    { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 500, width: 30 },
+  ]);
+
+  return {
+    root,
+    doc,
+    wire,
+    secondPostStart,
+    continuationTextPos,
+    continuationWire,
+    row0ClickPos,
+    sandwichSpacerNode,
+    middleTextNode,
+    samples,
+    row0Top: MULTI_MENTION_SOFT_WRAP_ROW0,
+    row1Top: MULTI_MENTION_SOFT_WRAP_ROW1,
+    rootWidth: MULTI_MENTION_SOFT_WRAP_ROOT_W,
+    agent: MULTI_MENTION_SOFT_WRAP_AGENT,
+  };
+}
+
+export function reapplyMultiMentionSoftWrapStubs(
+  fx: Pick<
+    ReturnType<typeof mountMultiMentionSoftWrapFixture>,
+    "root" | "doc" | "wire" | "middleTextNode" | "sandwichSpacerNode" | "samples"
+  >
+): void {
+  setMeasuredSamplesCache(fx.wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, fx.samples);
+  stubTextNodeLineRects(fx.root, fx.doc, fx.middleTextNode, [
+    { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520, width: 100 },
+    { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380, width: 200 },
+  ]);
+  stubTextNodeLineRects(fx.root, fx.doc, fx.sandwichSpacerNode, [
+    { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 500, width: 30 },
+  ]);
+  stubTextNodeOffsetAnchorRects(fx.root, fx.doc, fx.middleTextNode, (offset) =>
+    offset <= 0
+      ? { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520 }
+      : { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380 }
+  );
 }

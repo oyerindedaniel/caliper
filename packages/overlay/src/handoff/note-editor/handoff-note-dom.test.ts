@@ -13,6 +13,7 @@ import {
 } from "@caliper/core";
 import {
   docOffsetFromContentTextNodeDomPoint,
+  docPosAtContentWire,
   domOffsetForContentRowEndInSplitText,
   domPointToDocPos,
   isContentTextNodeDomTailBeforeBreak,
@@ -34,7 +35,13 @@ import {
   getHandoffNoteEditorTabStops,
 } from "./handoff-note-dom.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
-import { readDomWireCursor, setSelectionAtWire } from "./handoff-note-test-helpers.js";
+import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
+import {
+  readDomWireCursor,
+  mountMultiMentionSoftWrapFixture,
+  setSelectionAtWire,
+  dispatchSelectionChange,
+} from "./handoff-note-test-helpers.js";
 
 function createEditorRoot(): HTMLDivElement {
   const root = document.createElement("div");
@@ -568,6 +575,35 @@ describe("handoff-note-dom", () => {
       expect(describeHandoffNoteCursorContext(doc, mentionEndWire).kind).toBe("mention-boundary");
     });
 
+    it("soft-wrap postfix alias and continuation paint distinct DOM offsets", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      try {
+        const posAlias = docPosAtContentWire(fx.doc, fx.secondPostStart);
+        const posCont = docPosAtContentWire(fx.doc, fx.continuationWire);
+        const paintAlias = resolveDomPointAtDocPos(fx.root, fx.doc, posAlias, { from: posAlias })!;
+        const paintCont = resolveDomPointAtDocPos(fx.root, fx.doc, posCont, { from: posCont })!;
+
+        expect(paintAlias.offset).toBe(0);
+        expect(paintCont.offset).toBe(1);
+        expect(paintAlias.node.nodeType).toBe(Node.TEXT_NODE);
+        expect(paintAlias.node).toBe(paintCont.node);
+        expect(
+          docPosToWireOffset(
+            fx.doc,
+            domPointToDocPos(fx.root, fx.doc, paintAlias.node, paintAlias.offset)
+          )
+        ).toBe(fx.secondPostStart);
+        expect(
+          docPosToWireOffset(
+            fx.doc,
+            domPointToDocPos(fx.root, fx.doc, paintCont.node, paintCont.offset)
+          )
+        ).toBe(fx.continuationWire);
+      } finally {
+        fx.root.remove();
+      }
+    });
+
     it("mention-start boundary paints caret outside pill", () => {
       const wire = `header @${AGENT} tail`;
       const doc = wireToDoc(wire);
@@ -664,6 +700,25 @@ describe("handoff-note-dom", () => {
       expect(describeHandoffNoteCursorContext(chipped, rowEnd).kind).toBe("mention-boundary");
     });
 
+    it("plain leading whitespace paints at matching doc offset", () => {
+      const doc = wireToDoc(" hello");
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const pos0 = wireOffsetToDocPos(doc, 0);
+      const point = resolveDomPointAtDocPos(root, doc, pos0);
+      expect(point?.offset).toBe(0);
+      expect(describeHandoffNoteCursorContext(doc, 0).kind).toBe("text");
+
+      const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
+      expect(docPosToWireOffset(doc, roundTrip)).toBe(0);
+
+      const point1 = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 1))!;
+      expect(point1.offset).toBe(1);
+      expect(docPosToWireOffset(doc, domPointToDocPos(root, doc, point1.node, point1.offset))).toBe(
+        1
+      );
+    });
+
     it("sandwiched row mention gate paints text tail not pill start after spacer forward delete", () => {
       const wire = `header @${AGENT} row\n\n @${AGENT} \nlower`;
       const doc = wireToDoc(wire);
@@ -695,6 +750,160 @@ describe("handoff-note-dom", () => {
       expect(describeHandoffNoteCursorContext(cleared.doc, spaceWire).kind).toBe(
         "mention-boundary"
       );
+    });
+  });
+
+  describe("mention sandwich alias collision paint", () => {
+    const SANDWICH_AGENT = "caliper-sandwich01";
+
+    function sandwichWire(): string {
+      return `pre @${SANDWICH_AGENT} @${SANDWICH_AGENT} tail`;
+    }
+
+    function sandwichDoc() {
+      return wireToDoc(sandwichWire());
+    }
+
+    function sandwichAliasAndContinuationWires(doc: ReturnType<typeof wireToDoc>) {
+      const spacerIndex = 2;
+      const aliasWire = docPosToWireOffset(doc, { nodeIndex: spacerIndex, nodeOffset: 0 });
+      const continuationWire = docPosToWireOffset(doc, { nodeIndex: spacerIndex, nodeOffset: 1 });
+      return { spacerIndex, aliasWire, continuationWire };
+    }
+
+    function mountSandwichEditor() {
+      const root = document.createElement("div");
+      root.style.width = "480px";
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 480 });
+      const colorByAgentId = new Map([[SANDWICH_AGENT, "#06f"]]);
+      const editor = createHandoffNoteEditor({
+        getColorByAgentId: () => colorByAgentId,
+        onWireChange: () => {},
+      });
+      editor.setRoot(root);
+      return { root, editor, colorByAgentId };
+    }
+
+    function pressArrow(
+      editor: HandoffNoteEditor,
+      key: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown"
+    ) {
+      return editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
+      );
+    }
+
+    function pressBackspace(editor: HandoffNoteEditor) {
+      return editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+      );
+    }
+
+    function insertText(root: HTMLDivElement, editor: HandoffNoteEditor, data: string) {
+      editor.handleBeforeInput(
+        new InputEvent("beforeInput", {
+          inputType: "insertText",
+          data,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      dispatchSelectionChange(root);
+    }
+
+    it("renders sandwiched mentions without extra scaffold", () => {
+      const doc = sandwichDoc();
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[SANDWICH_AGENT, "#06f"]]) });
+      expect(root.querySelector("[data-handoff-mention]")).not.toBeNull();
+      expect(root.childNodes.length).toBe(renderedDomChildCount(doc));
+      expect(parseHandoffNoteDom(root)).toBe(sandwichWire());
+    });
+
+    it("paints spacer offset 0 in text and continuation wire at gap before pill", () => {
+      const doc = sandwichDoc();
+      const { aliasWire, continuationWire, spacerIndex } = sandwichAliasAndContinuationWires(doc);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[SANDWICH_AGENT, "#06f"]]) });
+
+      const paintAlias = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, aliasWire))!;
+      const paintCont = resolveDomPointAtDocPos(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, continuationWire)
+      )!;
+      const paintTail = resolveDomPointAtDocPos(root, doc, {
+        nodeIndex: spacerIndex,
+        nodeOffset: 1,
+      })!;
+      const paintMentionStart = resolveDomPointAtDocPos(root, doc, {
+        nodeIndex: spacerIndex + 1,
+        nodeOffset: 0,
+      })!;
+
+      expect(paintAlias.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(paintAlias.offset).toBe(0);
+      expect(paintCont).toEqual(paintTail);
+      expect(paintCont).toEqual(paintMentionStart);
+      expect(paintCont.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(paintCont.offset).toBe(1);
+    });
+
+    it("reads spacer offset 0 and 1 back to wires 23 and 24", () => {
+      const doc = sandwichDoc();
+      const { aliasWire, continuationWire } = sandwichAliasAndContinuationWires(doc);
+      expect(aliasWire).toBe(23);
+      expect(continuationWire).toBe(24);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[SANDWICH_AGENT, "#06f"]]) });
+
+      const paintAlias = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, aliasWire))!;
+      const paintCont = resolveDomPointAtDocPos(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, continuationWire)
+      )!;
+
+      expect(
+        docPosToWireOffset(doc, domPointToDocPos(root, doc, paintAlias.node, paintAlias.offset))
+      ).toBe(aliasWire);
+      expect(
+        docPosToWireOffset(doc, domPointToDocPos(root, doc, paintCont.node, paintCont.offset))
+      ).toBe(continuationWire);
+    });
+
+    it("integration: click, type, backspace, and arrows through sandwich spacer", () => {
+      const host = mountSandwichEditor();
+      try {
+        const wire = sandwichWire();
+        const doc = sandwichDoc();
+        const { aliasWire, continuationWire } = sandwichAliasAndContinuationWires(doc);
+        host.editor.setDocFromWire(wire, aliasWire, { resetHistory: true });
+        expect(host.editor.getCursor()).toBe(aliasWire);
+        const aliasPaint = resolveDomPointAtDocPos(
+          host.root,
+          host.editor.getDoc(),
+          wireOffsetToDocPos(host.editor.getDoc(), aliasWire)
+        )!;
+        expect(aliasPaint.node.nodeType).toBe(Node.TEXT_NODE);
+        expect(aliasPaint.offset).toBe(0);
+
+        insertText(host.root, host.editor, "X");
+        expect(host.editor.getWire()).toBe(`pre @${SANDWICH_AGENT} X@${SANDWICH_AGENT} tail`);
+        expect(host.editor.getCursor()).toBe(aliasWire + 2);
+
+        pressBackspace(host.editor);
+        dispatchSelectionChange(host.root);
+        expect(host.editor.getWire()).toBe(wire);
+        expect(host.editor.getCursor()).toBe(continuationWire);
+
+        host.editor.setDocFromWire(wire, continuationWire, { resetHistory: true });
+        expect(pressArrow(host.editor, "ArrowLeft")).toBe(true);
+        expect(host.editor.getCursor()).toBe(aliasWire);
+        expect(pressArrow(host.editor, "ArrowRight")).toBe(true);
+        expect(host.editor.getCursor()).toBe(continuationWire);
+      } finally {
+        invalidateHandoffNoteLayoutCache();
+        host.root.remove();
+      }
     });
   });
 

@@ -130,7 +130,7 @@ export {
   resolveDocHorizontalArrowMove,
   resolveDocVerticalArrowMove,
   isInterMentionAtomStart,
-  snapVerticalArrowLanding,
+  snapInterMentionAtomLanding,
   docSelectionToWire,
   selectionsEqual,
   wireOffsetToCollapsedSelection,

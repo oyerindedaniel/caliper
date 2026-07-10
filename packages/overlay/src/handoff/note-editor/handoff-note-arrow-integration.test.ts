@@ -2027,10 +2027,10 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       setMeasuredSamplesCache(wire, host.root.clientWidth, layoutSamples);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
-      expectCaretParity(host.editor, host.root, firstMentionStart, "up to upper row");
+      expectCaretParity(host.editor, host.root, postMentionStart, "up to upper row tail");
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
-      expectCaretParity(host.editor, host.root, gapMidWire, "down restores lower row column");
+      expectCaretParity(host.editor, host.root, secondMentionEnd, "down restores lower row end");
     });
   });
 
@@ -2597,6 +2597,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).not.toBe(secondTextStart);
       expect(host.editor.getCursor()).toBe(secondPostStart);
+      expect(wrapDoc.nodes[host.editor.getSelectionState().focus.nodeIndex]?.type).toBe("text");
       expectCaretParity(
         host.editor,
         host.root,

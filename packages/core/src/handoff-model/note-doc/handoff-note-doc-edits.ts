@@ -186,6 +186,18 @@ export function applyDocInsertText(
     );
   }
 
+  if (boundary.kind === "mention-boundary" && boundary.edge === "end") {
+    const postMention = insertAfterMentionEndInFollowingText(
+      doc,
+      insertFocus,
+      focusWire,
+      replacement
+    );
+    if (postMention) {
+      return postMention;
+    }
+  }
+
   const nextNode = doc.nodes[focus.nodeIndex + 1];
   if (
     boundary.kind === "mention-boundary" &&
@@ -218,6 +230,70 @@ export function applyDocInsertText(
   return spliceDocSelection(doc, insertFocus, insertFocus, replacement);
 }
 
+function resolveFollowingTextIdxAfterMentionEnd(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos
+): number | null {
+  const node = doc.nodes[focus.nodeIndex];
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "mention") {
+    const tokenLength = 1 + node.agentId.length;
+    if (focus.nodeOffset < tokenLength) {
+      return null;
+    }
+    const textIdx = focus.nodeIndex + 1;
+    return doc.nodes[textIdx]?.type === "text" ? textIdx : null;
+  }
+
+  if (node.type === "text" && doc.nodes[focus.nodeIndex - 1]?.type === "mention") {
+    return focus.nodeIndex;
+  }
+
+  return null;
+}
+
+function insertAfterMentionEndInFollowingText(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  focusWire: number,
+  replacement: string
+): HandoffDocEditResult | null {
+  const boundary = describeHandoffNoteCursorContext(doc, focusWire);
+  if (boundary.kind !== "mention-boundary" || boundary.edge !== "end") {
+    return null;
+  }
+
+  const textIdx = resolveFollowingTextIdxAfterMentionEnd(doc, focus);
+  if (textIdx === null) {
+    return null;
+  }
+
+  const textNode = doc.nodes[textIdx];
+  if (textNode?.type !== "text") {
+    return null;
+  }
+
+  const insertOffset = 1;
+  const nextText =
+    textNode.text.slice(0, insertOffset) + replacement + textNode.text.slice(insertOffset);
+  const next: HandoffNoteDoc = {
+    nodes: doc.nodes.map((node, index) =>
+      index === textIdx ? { type: "text", text: nextText } : node
+    ),
+  };
+  const nextFocus = {
+    nodeIndex: textIdx,
+    nodeOffset: insertOffset + replacement.length,
+  };
+  return {
+    doc: next,
+    selection: collapsedSelection(normalizeDocPos(next, nextFocus)),
+  };
+}
+
 function appendInPreMentionText(
   doc: HandoffNoteDoc,
   mentionNodeIndex: number,
@@ -229,6 +305,7 @@ function appendInPreMentionText(
     return null;
   }
   const nextText = textNode.text + replacement;
+  const focusOffset = nextText.length;
   const next: HandoffNoteDoc = {
     nodes: doc.nodes.map((node, index) =>
       index === textIdx ? { type: "text", text: nextText } : node
@@ -237,7 +314,7 @@ function appendInPreMentionText(
   return {
     doc: next,
     selection: collapsedSelection(
-      normalizeDocPos(next, { nodeIndex: textIdx, nodeOffset: nextText.length })
+      normalizeDocPos(next, { nodeIndex: textIdx, nodeOffset: focusOffset })
     ),
   };
 }

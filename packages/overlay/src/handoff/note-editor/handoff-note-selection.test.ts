@@ -19,6 +19,7 @@ import {
   readDocCursor,
   readDocSelection,
   repairDocSelectionIfNeeded,
+  resolveClickIngressSelection,
   resolveDomVerticalArrowMove,
   resolveLayoutVerticalArrowMove,
   resolveVerticalTargetLineIndex,
@@ -28,6 +29,10 @@ import {
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
   invalidateHandoffNoteLayoutCache,
+  layoutContentRowEndSample,
+  layoutContentRowEndWire,
+  layoutContentRowStickyColumn,
+  layoutContentRowContentExtentRight,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
   type HandoffNoteLayoutRow,
@@ -41,13 +46,25 @@ import {
   readHandoffNoteLayoutSamplesForTests,
   resolveMeasuredVerticalArrowMoveForTests as resolveMeasuredVerticalArrowMove,
   setDomCaretAtTextEnd,
+  setSelectionAtDocPos,
   setSelectionAtWire,
   prepareVerticalColumnProbe,
+  mountMultiMentionSoftWrapFixture,
+  mountThreeRowMentionSoftWrapFixture,
+  MULTI_MENTION_SOFT_WRAP_AGENT,
+  applyThreeRowSpacerBrowserParityLayoutStubs,
   stubCaretProbeAtDocPos,
+  stubCaretProbeHits,
   stubHandoffNoteAnchorRectAtWire,
   stubHandoffNoteMentionLayoutCoords,
   stubTextNodeLineRects,
 } from "./handoff-note-test-helpers.js";
+import { domPointInMentionPill } from "../handoff-note-debug.js";
+import {
+  docPosAtContentWire,
+  domPointToDocPos,
+  resolveDomPointAtDocPos,
+} from "./handoff-note-dom-points.js";
 
 const NOTE = "Hi @caliper-abc123 there";
 const MENTION_START = "Hi ".length;
@@ -1038,7 +1055,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       );
 
       expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(23);
+      // Wire 23 sample is a stale post-start alias on row 2; prefix interior wire 24 on row 1
+      // makes continuation authority wire 28 (left-column wrap start), not 23.
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(28);
     });
 
     it("measured-only: down from prefix interior is no-op", () => {
@@ -1267,7 +1286,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       );
     });
 
-    it("up from second mention end lands on upper visual row at preserved column", () => {
+    it("up from second mention end lands on upper row tail at clamped column", () => {
       const moved = resolveMeasuredVerticalArrowMove(
         doc,
         wireOffsetToDocPos(doc, secondMentionEnd),
@@ -1278,7 +1297,8 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       );
 
       expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(firstMentionStart);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(postMentionStart);
+      expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
       expect(
         buildLayoutMapFromSamples([...layoutSamples], LINE_HEIGHT, doc).rowIndexForWire(
           docPosToWireOffset(doc, moved.pos)
@@ -1295,7 +1315,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         GOAL_COLUMN,
         LINE_HEIGHT
       );
-      expect(docPosToWireOffset(doc, up.pos)).toBe(firstMentionStart);
+      expect(docPosToWireOffset(doc, up.pos)).toBe(postMentionStart);
 
       const down = resolveMeasuredVerticalArrowMove(
         doc,
@@ -1308,7 +1328,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
 
       expect(down.handled).toBe(true);
       expect(docPosToWireOffset(doc, down.pos)).toBe(secondMentionEnd);
-      expect(docPosToWireOffset(doc, down.pos)).not.toBe(postMentionStart);
 
       const downAgain = resolveMeasuredVerticalArrowMove(
         doc,
@@ -1387,6 +1406,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(moved.handled).toBe(true);
       expect(docPosToWireOffset(doc, moved.pos)).toBe(secondPostStart);
       expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondMentionStart);
+      expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
     });
 
     it("down from upper row end moves to lower row end, not row start", () => {
@@ -1418,6 +1438,45 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(moved.handled).toBe(false);
       expect(moved.branch).toBeUndefined();
       expect(docPosToWireOffset(doc, moved.pos)).toBe(secondTextStart + 1);
+    });
+
+    it("DOM probe up from lower row interior lands row-0 tail with text-node authority", () => {
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+
+      const fromWire = secondTextStart + 1;
+      const { restore } = prepareVerticalColumnProbe({
+        root,
+        doc,
+        wire: WIRE,
+        fromWire,
+        goalColumn: RIGHT_EDGE_COLUMN,
+        probeTargetWire: secondPostStart,
+        samples: [...samples],
+        rootWidth: 310,
+        expectMinVisualRows: 2,
+      });
+      setSelectionAtWire(root, doc, fromWire);
+
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, fromWire),
+          "up"
+        );
+
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(secondPostStart);
+        expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
+      } finally {
+        restore();
+        root.remove();
+      }
     });
 
     it("DOM probe lands matching prefix column on target row", () => {
@@ -1584,6 +1643,497 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         restoreProbe();
         root.remove();
       }
+    });
+  });
+
+  describe("click ingress — soft-wrap row restore", () => {
+    it("post-mention spacer wire aliases mention-boundary end at same offset", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      expect(describeHandoffNoteCursorContext(fx.doc, fx.secondPostStart)).toEqual(
+        expect.objectContaining({ kind: "mention-boundary", edge: "end" })
+      );
+      expect(describeHandoffNoteCursorContext(fx.doc, fx.continuationWire).kind).toBe("text");
+      fx.root.remove();
+    });
+
+    it("nativeSelection on row-0 alias wire uses text-node authority not mention node", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      const mentionNodes = fx.doc.nodes
+        .map((node, i) => (node.type === "mention" ? i : -1))
+        .filter((i) => i >= 0);
+      const secondMentionIdx = mentionNodes[1]!;
+      const liveMentionEnd = {
+        nodeIndex: secondMentionIdx,
+        nodeOffset: 1 + fx.agent.length,
+      };
+      const restoreAnchor = stubHandoffNoteAnchorRectAtWire(fx.root, fx.doc, fx.secondPostStart, {
+        top: fx.row0Top,
+        left: 624,
+      });
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, liveMentionEnd, undefined, {
+        clientX: 630,
+        clientY: fx.row0Top,
+      });
+      restoreAnchor();
+
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.secondPostStart);
+      expect(fx.doc.nodes[resolved.focus.nodeIndex]?.type).toBe("text");
+      expect(fx.doc.nodes[resolved.focus.nodeIndex]?.type).not.toBe("mention");
+
+      fx.root.remove();
+    });
+
+    it("row-0 sticky click keeps stale live when viewport probe aliases continuation", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      const priorFocus = wireOffsetToDocPos(fx.doc, fx.wire.length);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, priorFocus);
+      const row0EndWire = layoutContentRowEndWire(layout, fx.doc, 0)!;
+      const authorityPos = docPosAtContentWire(fx.doc, row0EndWire);
+      const clickX = layoutContentRowStickyColumn(layout, fx.doc, 0)!;
+      const restoreProbe = stubCaretProbeHits(fx.root, fx.doc, [
+        { column: clickX, rowTop: fx.row0Top, pos: authorityPos },
+      ]);
+      setSelectionAtWire(fx.root, fx.doc, fx.continuationWire, fx.continuationWire);
+
+      const repaired = repairDocSelectionIfNeeded(fx.root, fx.doc, priorFocus, {
+        mode: "strand-only",
+        click: { clientX: clickX, clientY: fx.row0Top },
+      });
+
+      expect(docPosToWireOffset(fx.doc, repaired)).toBe(fx.continuationWire);
+      expect(docPosToWireOffset(fx.doc, repaired)).not.toBe(row0EndWire);
+
+      restoreProbe();
+      fx.root.remove();
+    });
+
+    it("row-0 far-right click accepts soft-wrap continuation live via row agreement", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const row0EndWire = layoutContentRowEndWire(layout, fx.doc, 0)!;
+      expect(row0EndWire).toBe(fx.secondPostStart);
+      expect(docToWire(fx.doc)[row0EndWire]).toBe(" ");
+      expect(layout.rowIndexForWire(fx.continuationWire)).not.toBe(0);
+
+      const livePos = wireOffsetToDocPos(fx.doc, fx.continuationWire);
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: 630,
+        clientY: fx.row0Top,
+      });
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.continuationWire);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).not.toBe(fx.secondPostStart);
+
+      setSelectionAtWire(fx.root, fx.doc, fx.continuationWire, fx.continuationWire);
+      const repaired = repairDocSelectionIfNeeded(
+        fx.root,
+        fx.doc,
+        wireOffsetToDocPos(fx.doc, fx.wire.length),
+        {
+          mode: "strand-only",
+          click: { clientX: 630, clientY: fx.row0Top },
+        }
+      );
+
+      expect(docPosToWireOffset(fx.doc, repaired)).toBe(fx.continuationWire);
+
+      fx.root.remove();
+    });
+
+    it("live session case A — row-0 click at 629 keeps continuation wire", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const extentRight = layoutContentRowContentExtentRight(layout, fx.doc, 0)!;
+      expect(extentRight).toBeGreaterThan(624);
+      expect(extentRight).toBeLessThan(629);
+      expect(629).toBeGreaterThan(extentRight);
+      const livePos = fx.continuationTextPos;
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: 629,
+        clientY: 141,
+      });
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.continuationWire);
+
+      fx.root.remove();
+    });
+
+    it("live session case A — row-0 click past sticky keeps continuation wire 44", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const sticky = layoutContentRowStickyColumn(layout, fx.doc, 0)!;
+      expect(sticky).toBeGreaterThan(620);
+      const livePos = fx.continuationTextPos;
+      expect(docPosToWireOffset(fx.doc, livePos)).toBe(fx.continuationWire);
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: 633,
+        clientY: 139,
+      });
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.continuationWire);
+
+      fx.root.remove();
+    });
+
+    it("row-1 click accepts postfix spacer alias live at text-tail", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos: HandoffNoteDocPos = {
+        nodeIndex: fx.postfixSpacerNode,
+        nodeOffset: spacer.text.length,
+      };
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const row1EndWire = layoutContentRowEndWire(layout, fx.doc, 1)!;
+      expect(docPosToWireOffset(fx.doc, tailPos)).toBe(fx.fourthMentionStart);
+      expect(row1EndWire).not.toBe(fx.fourthMentionStart);
+      expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(2);
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, tailPos, undefined, {
+        clientX: 537,
+        clientY: fx.row1Top,
+      });
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(resolved.focus).toEqual(tailPos);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.fourthMentionStart);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).not.toBe(row1EndWire);
+
+      fx.root.remove();
+    });
+
+    it("postfix spacer row-1 click repair keeps text-tail authority", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos: HandoffNoteDocPos = {
+        nodeIndex: fx.postfixSpacerNode,
+        nodeOffset: spacer.text.length,
+      };
+      setSelectionAtDocPos(fx.root, fx.doc, tailPos);
+      const live = readDocSelection(fx.root, fx.doc);
+      expect(docPosToWireOffset(fx.doc, live.focus)).toBe(fx.fourthMentionStart);
+
+      const repaired = repairDocSelectionIfNeeded(
+        fx.root,
+        fx.doc,
+        wireOffsetToDocPos(fx.doc, fx.wire.length),
+        {
+          mode: "strand-only",
+          click: { clientX: 537, clientY: fx.row1Top },
+        }
+      );
+      expect(repaired).toEqual(tailPos);
+      expect(docPosToWireOffset(fx.doc, repaired)).toBe(fx.fourthMentionStart);
+
+      fx.root.remove();
+    });
+
+    it("live session case B — row-1 click past sticky keeps postfix alias wire", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos: HandoffNoteDocPos = {
+        nodeIndex: fx.postfixSpacerNode,
+        nodeOffset: spacer.text.length,
+      };
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const sticky = layoutContentRowStickyColumn(layout, fx.doc, 1)!;
+      expect(sticky).toBeGreaterThan(520);
+      expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(2);
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, tailPos, undefined, {
+        clientX: 546,
+        clientY: 164,
+      });
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.fourthMentionStart);
+
+      fx.root.remove();
+    });
+
+    it("nativeSelection on postfix alias keeps spacer text-tail doc pos", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos: HandoffNoteDocPos = {
+        nodeIndex: fx.postfixSpacerNode,
+        nodeOffset: spacer.text.length,
+      };
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const row1EndSample = layoutContentRowEndSample(layout, fx.doc, 1)!;
+      const restore = stubCaretProbeHits(fx.root, fx.doc, [
+        {
+          column: 546,
+          rowTop: row1EndSample.top,
+          pos: tailPos,
+        },
+      ]);
+
+      const resolved = resolveClickIngressSelection(
+        fx.root,
+        fx.doc,
+        wireOffsetToDocPos(fx.doc, fx.fourthMentionStart),
+        undefined,
+        { clientX: 546, clientY: fx.row1Top }
+      );
+      restore();
+
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(resolved.focus).toEqual(tailPos);
+      expect(fx.doc.nodes[resolved.focus.nodeIndex]?.type).toBe("text");
+
+      fx.root.remove();
+    });
+
+    it("row-1 click after mention accepts wrap-row live via row agreement", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const row1EndWire = layoutContentRowEndWire(layout, fx.doc, 1)!;
+      const row1Continuation = layout.continuationAfterRowEndWire(row1EndWire);
+      expect(row1Continuation).not.toBeNull();
+      expect(describeHandoffNoteCursorContext(fx.doc, row1Continuation!).kind).toBe(
+        "mention-boundary"
+      );
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: 542,
+        clientY: 164,
+      });
+
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.fourthMentionStart);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).not.toBe(row1EndWire);
+      expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(2);
+
+      fx.root.remove();
+    });
+
+    it("row-1 far-right click accepts lower-row live via row agreement", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const row1EndWire = layoutContentRowEndWire(layout, fx.doc, 1)!;
+      const row1Continuation = layout.continuationAfterRowEndWire(row1EndWire)!;
+      expect(describeHandoffNoteCursorContext(fx.doc, row1Continuation).kind).toBe(
+        "mention-boundary"
+      );
+      expect(layout.rowIndexForWire(row1Continuation)).not.toBe(1);
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: 542,
+        clientY: 164,
+      });
+
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.fourthMentionStart);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).not.toBe(row1EndWire);
+
+      fx.root.remove();
+    });
+
+    it("row-1 sticky click keeps stale live when viewport misses", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const sticky = layoutContentRowStickyColumn(layout, fx.doc, 1)!;
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: sticky,
+        clientY: 164,
+      });
+
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.fourthMentionStart);
+
+      fx.root.remove();
+    });
+
+    it("row-1 sticky viewport probe restores row-end authority wire", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const row1EndWire = layoutContentRowEndWire(layout, fx.doc, 1)!;
+      const sticky = layoutContentRowStickyColumn(layout, fx.doc, 1)!;
+      const authorityPos = docPosAtContentWire(fx.doc, row1EndWire);
+      const rowEndPaintPoint = resolveDomPointAtDocPos(fx.root, fx.doc, authorityPos)!;
+      const restoreProbe = stubCaretProbeHits(fx.root, fx.doc, [
+        { column: sticky, rowTop: 164, pos: authorityPos },
+      ]);
+
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
+        clientX: sticky,
+        clientY: 164,
+      });
+      expect(resolved.resolution).toBe("viewportCaretHit");
+      setDocSelection(fx.root, fx.doc, collapsedSelection(resolved.focus), {
+        source: "test.viewportSticky",
+      });
+
+      const range = fx.root.ownerDocument.getSelection()!.getRangeAt(0);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(row1EndWire);
+      expect(range.startContainer).toBe(rowEndPaintPoint.node);
+      expect(range.startOffset).toBe(rowEndPaintPoint.offset);
+
+      restoreProbe();
+      fx.root.remove();
+    });
+
+    it("row-0 sticky click with live at row-end paints outside mention pill", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const row0EndWire = layoutContentRowEndWire(layout, fx.doc, 0)!;
+      expect(row0EndWire).toBe(fx.secondPostStart);
+      expect(docToWire(fx.doc)[row0EndWire]).toBe(" ");
+      expect(describeHandoffNoteCursorContext(fx.doc, row0EndWire)).toEqual(
+        expect.objectContaining({ kind: "mention-boundary", edge: "end" })
+      );
+
+      const authorityPos = docPosAtContentWire(fx.doc, row0EndWire);
+      expect(fx.doc.nodes[authorityPos.nodeIndex]?.type).toBe("text");
+      expect(authorityPos.nodeIndex).toBe(fx.middleTextNode);
+
+      const authorityPaint = resolveDomPointAtDocPos(fx.root, fx.doc, authorityPos, {
+        from: authorityPos,
+      })!;
+      expect(authorityPaint.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(domPointInMentionPill(fx.root, authorityPaint.node)).toBe(false);
+
+      const clickX = layoutContentRowStickyColumn(layout, fx.doc, 0)!;
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, authorityPos, undefined, {
+        clientX: clickX,
+        clientY: fx.row0Top,
+      });
+      expect(resolved.resolution).toBe("nativeSelection");
+      setDocSelection(fx.root, fx.doc, collapsedSelection(resolved.focus), {
+        source: "test.stickyRowEndLive",
+      });
+
+      const range = fx.root.ownerDocument.getSelection()!.getRangeAt(0);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(row0EndWire);
+      expect(range.startContainer).toBe(authorityPaint.node);
+      expect(range.startOffset).toBe(authorityPaint.offset);
+      expect(domPointInMentionPill(fx.root, range.startContainer)).toBe(false);
+
+      fx.root.remove();
+    });
+
+    it("row-1 mid-column click lands interior not wrap-row-start when live is lower row", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const layout = buildHandoffNoteLayoutMap(
+        fx.root,
+        fx.doc,
+        wireOffsetToDocPos(fx.doc, fx.fourthMentionStart)
+      );
+      const row1EndSample = layoutContentRowEndSample(layout, fx.doc, 1)!;
+      const restore = stubCaretProbeHits(fx.root, fx.doc, [
+        {
+          column: row1EndSample.left,
+          rowTop: row1EndSample.top,
+          pos: wireOffsetToDocPos(fx.doc, fx.wrapRowStartWire),
+        },
+        {
+          column: 544,
+          rowTop: row1EndSample.top,
+          pos: wireOffsetToDocPos(fx.doc, fx.interiorWire),
+        },
+      ]);
+
+      const resolved = resolveClickIngressSelection(
+        fx.root,
+        fx.doc,
+        wireOffsetToDocPos(fx.doc, fx.fourthMentionStart),
+        undefined,
+        { clientX: 544, clientY: 164 }
+      );
+      restore();
+
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.interiorWire);
+      expect(docPosToWireOffset(fx.doc, resolved.focus)).not.toBe(fx.wrapRowStartWire);
+      fx.root.remove();
+    });
+
+    it("long plain-text soft wrap keeps continuation live when click is past row sticky", () => {
+      const agent = MULTI_MENTION_SOFT_WRAP_AGENT;
+      const longTail = "x".repeat(40);
+      const wire = `pre @${agent} ${longTail}`;
+      const doc = wireToDoc(wire);
+      const root = document.createElement("div");
+      root.style.width = "200px";
+      root.contentEditable = "true";
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[agent, "#06f"]]),
+      });
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 200 });
+
+      const mentionNode = doc.nodes.findIndex((node) => node.type === "mention");
+      const postMentionNode = mentionNode + 1;
+      const postStart = docPosToWireOffset(doc, { nodeIndex: postMentionNode, nodeOffset: 0 });
+      const continuationWire = postStart + 1;
+      const ROW0 = 100;
+      const ROW1 = 118;
+      stubHandoffNoteMentionLayoutCoords(root, new Map([[mentionNode, { top: ROW0, left: 80 }]]));
+      stubTextNodeLineRects(root, doc, postMentionNode, [
+        { top: ROW0, left: 120, width: 60 },
+        { top: ROW1, left: 40, width: 160 },
+      ]);
+
+      const samples = [
+        { wire: 0, top: ROW0, left: 10 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: mentionNode, nodeOffset: 0 }),
+          top: ROW0,
+          left: 80,
+        },
+        { wire: postStart, top: ROW0, left: 170 },
+        { wire: continuationWire, top: ROW1, left: 45 },
+        { wire: docToWire(doc).length, top: ROW1, left: 180 },
+      ];
+      setMeasuredSamplesCache(wire, 200, samples);
+
+      const layout = buildHandoffNoteLayoutMap(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, continuationWire)
+      );
+      const row0End = layoutContentRowEndWire(layout, doc, 0)!;
+      expect(layout.continuationAfterRowEndWire(row0End)).toBe(continuationWire);
+
+      const resolved = resolveClickIngressSelection(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, continuationWire),
+        undefined,
+        { clientX: 175, clientY: ROW0 }
+      );
+
+      expect(resolved.resolution).toBe("nativeSelection");
+      expect(docPosToWireOffset(doc, resolved.focus)).toBe(continuationWire);
+      expect(docPosToWireOffset(doc, resolved.focus)).not.toBe(row0End);
+      root.remove();
     });
   });
 
@@ -1809,6 +2359,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
         coordsForWire: (wire) =>
           rows.flatMap((row) => row.samples).find((sample) => sample.wire === wire) ?? null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
 
@@ -1881,6 +2432,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
         coordsForWire: (w) =>
           rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
 
@@ -1958,6 +2510,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
         coordsForWire: (w) =>
           rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
 
@@ -2035,6 +2588,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
         coordsForWire: (w) =>
           rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
 
@@ -2107,6 +2661,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
         coordsForWire: (w) =>
           rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
 
@@ -2196,6 +2751,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
         coordsForWire: (w) =>
           rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
 
@@ -2225,6 +2781,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         visualRowCount: rows.length,
         rowIndexForWire: () => -1,
         coordsForWire: () => null,
+        continuationAfterRowEndWire: () => null,
         shouldPreserveGoalColumnOnShorterRowLanding: () => false,
       };
     }

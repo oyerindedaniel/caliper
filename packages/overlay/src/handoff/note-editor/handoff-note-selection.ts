@@ -12,7 +12,7 @@
   resolveDocHorizontalArrowMove,
   resolveVerticalArrowMinWireLineStart,
   resolveVerticalArrowRowStartLanding,
-  snapVerticalArrowLanding,
+  snapInterMentionAtomLanding,
   wireOffsetToDocPos,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
@@ -29,14 +29,20 @@ import {
 } from "../handoff-note-debug.js";
 import {
   domPointToDocPos,
+  docPosAtContentWire,
   getDocAnchorRect,
   probeDocPosAtVisualColumn,
+  probeViewportCaretHit,
   resolveDomPillBoundaryPosForGoalColumn,
   resolveDomPointAtDocPos,
   wireOffsetForPillHalfSplitColumn,
 } from "./handoff-note-dom-points.js";
 import {
   buildHandoffNoteLayoutMap,
+  closestLayoutRowIndexForTop,
+  layoutContentRowEndWire,
+  layoutContentRowContentExtentRight,
+  layoutRowEndWireFromSamples,
   isAtLayoutRowStart,
   isSameWireSoftWrapBandCrossing,
   layoutRowTopTolerance,
@@ -86,6 +92,59 @@ function liveIsProbeAliasOverMentionEndAuthority(
   return semanticContext.kind === "mention-boundary" && semanticContext.edge === "end";
 }
 
+/** Authority on mention-start; live DOM reads interior on that same pill. */
+function liveIsMentionInteriorWhenAuthorityIsMentionStart(
+  doc: HandoffNoteDoc,
+  live: HandoffNoteDocPos,
+  from: HandoffNoteDocPos
+): boolean {
+  const fromWire = docPosToWireOffset(doc, from);
+  const liveWire = docPosToWireOffset(doc, live);
+  const fromContext = describeHandoffNoteCursorContext(doc, fromWire);
+  if (fromContext.kind !== "mention-boundary" || fromContext.edge !== "start") {
+    return false;
+  }
+  const liveContext = describeHandoffNoteCursorContext(doc, liveWire);
+  return (
+    liveContext.kind === "mention-interior" && liveWire > fromWire && liveWire < fromContext.end
+  );
+}
+
+/** DOM painted mention-start while editor authority is interior on the same pill. */
+function liveIsMentionStartPaintAliasOverInteriorAuthority(
+  doc: HandoffNoteDoc,
+  live: HandoffNoteDocPos,
+  from: HandoffNoteDocPos
+): boolean {
+  const fromWire = docPosToWireOffset(doc, from);
+  const liveWire = docPosToWireOffset(doc, live);
+  if (liveWire >= fromWire) {
+    return false;
+  }
+  const fromContext = describeHandoffNoteCursorContext(doc, fromWire);
+  if (fromContext.kind !== "mention-interior") {
+    return false;
+  }
+  const liveContext = describeHandoffNoteCursorContext(doc, liveWire);
+  return (
+    liveContext.kind === "mention-boundary" &&
+    liveContext.edge === "start" &&
+    liveContext.start === fromContext.start
+  );
+}
+
+/** Strand-only echo repair: editor authority wins over known same-wire DOM alias paints. */
+function strandOnlyShouldRestoreAuthorityOverDomAlias(
+  doc: HandoffNoteDoc,
+  live: HandoffNoteDocPos,
+  from: HandoffNoteDocPos
+): boolean {
+  return (
+    liveIsProbeAliasOverMentionEndAuthority(doc, live, from) ||
+    liveIsMentionStartPaintAliasOverInteriorAuthority(doc, live, from)
+  );
+}
+
 function shouldRestoreAuthorityOverDom(
   doc: HandoffNoteDoc,
   live: HandoffNoteDocPos,
@@ -108,15 +167,8 @@ function shouldRestoreAuthorityOverDom(
     }
   }
 
-  if (fromContext.kind === "mention-boundary" && fromContext.edge === "start") {
-    const liveContext = describeHandoffNoteCursorContext(doc, liveWire);
-    if (
-      liveContext.kind === "mention-interior" &&
-      liveWire > fromWire &&
-      liveWire < fromContext.end
-    ) {
-      return true;
-    }
+  if (liveIsMentionInteriorWhenAuthorityIsMentionStart(doc, live, from)) {
+    return true;
   }
 
   if (liveWire >= fromWire) {
@@ -144,14 +196,21 @@ export function describeSyncRepairBranch(
   resolvedFocus: HandoffNoteDocPos
 ): { probeAliasEligible: boolean; repairBranch: string } {
   const probeAliasEligible = liveIsProbeAliasOverMentionEndAuthority(doc, liveFocus, priorFocus);
+  const mentionStartAliasEligible = liveIsMentionStartPaintAliasOverInteriorAuthority(
+    doc,
+    liveFocus,
+    priorFocus
+  );
   if (
     docPosEqualNormalized(doc, resolvedFocus, priorFocus) &&
     !docPosEqualNormalized(doc, liveFocus, priorFocus)
   ) {
-    return {
-      probeAliasEligible,
-      repairBranch: probeAliasEligible ? "probeAliasRestore" : "restoreAuthority",
-    };
+    const repairBranch = probeAliasEligible
+      ? "probeAliasRestore"
+      : mentionStartAliasEligible
+        ? "mentionStartAliasRestore"
+        : "restoreAuthority";
+    return { probeAliasEligible, repairBranch };
   }
   if (!docPosEqualNormalized(doc, resolvedFocus, liveFocus)) {
     return { probeAliasEligible, repairBranch: "normalized" };
@@ -180,11 +239,231 @@ export function readDocCursor(root: HTMLElement, doc: HandoffNoteDoc): HandoffNo
   return readDocSelection(root, doc).focus;
 }
 
+export type HandoffNoteClickIngress = {
+  clientX: number;
+  clientY: number;
+};
+
+export type HandoffNoteClickIngressResolution = "nativeSelection" | "viewportCaretHit";
+
+export type HandoffNoteClickIngressResult = {
+  focus: HandoffNoteDocPos;
+  resolution: HandoffNoteClickIngressResolution;
+};
+
+/** Strict click gate: does (clientX, clientY) hit the painted anchor for this doc pos? */
+function clickMatchesDocPosPaintAnchor(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  pos: HandoffNoteDocPos,
+  click: HandoffNoteClickIngress
+): boolean {
+  const anchor = getDocAnchorRect(root, doc, pos);
+  if (!anchor || (anchor.height <= 0 && anchor.width <= 0)) {
+    return false;
+  }
+  const bandTol = layoutRowTopTolerance(layout.lineHeight);
+  const anchorMidY = anchor.top + anchor.height / 2;
+  if (Math.abs(anchorMidY - click.clientY) > bandTol) {
+    return false;
+  }
+  return click.clientX >= anchor.left && click.clientX <= anchor.right;
+}
+
+function isClickPastLayoutRowContentExtent(
+  layout: HandoffNoteLayoutMap,
+  doc: HandoffNoteDoc,
+  clickRowIndex: number,
+  click: HandoffNoteClickIngress
+): boolean {
+  const contentExtentRight = layoutContentRowContentExtentRight(layout, doc, clickRowIndex);
+  return contentExtentRight !== null && click.clientX > contentExtentRight;
+}
+
+/** Viewport row-end alias must not displace stale wrap continuation live on the row below the click. */
+function viewportAliasesStaleWrapContinuation(
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  live: HandoffNoteDocPos,
+  viewportPos: HandoffNoteDocPos,
+  clickRowIndex: number
+): boolean {
+  const liveWire = docPosToWireOffset(doc, live);
+  if (layout.rowIndexForWire(liveWire) === clickRowIndex) {
+    return false;
+  }
+  const viewportWire = docPosToWireOffset(doc, viewportPos);
+  const rowEndWire = layoutContentRowEndWire(layout, doc, clickRowIndex);
+  if (rowEndWire === null) {
+    return false;
+  }
+  const continuationWire = layout.continuationAfterRowEndWire(rowEndWire);
+  if (continuationWire === null || liveWire !== continuationWire) {
+    return false;
+  }
+  if (describeHandoffNoteCursorContext(doc, liveWire).kind !== "text") {
+    return false;
+  }
+  return viewportWire === rowEndWire;
+}
+
+/**
+ * Plain soft-wrap continuation: live is the promoted continuation after the clicked
+ * row's content end while the click landed on the row above, past that row's content extent.
+ */
+function isWrapContinuationStartClickInRowAbove(
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  pos: HandoffNoteDocPos,
+  click: HandoffNoteClickIngress,
+  clickRowIndex: number
+): boolean {
+  const wire = docPosToWireOffset(doc, pos);
+  const liveRowIndex = layout.rowIndexForWire(wire);
+  if (liveRowIndex !== clickRowIndex + 1) {
+    return false;
+  }
+  const rowEndWire = layoutContentRowEndWire(layout, doc, clickRowIndex);
+  if (rowEndWire === null) {
+    return false;
+  }
+  const continuationWire = layout.continuationAfterRowEndWire(rowEndWire);
+  if (continuationWire === null || wire !== continuationWire) {
+    return false;
+  }
+  return isClickPastLayoutRowContentExtent(layout, doc, clickRowIndex, click);
+}
+
+function isClickPosStrictlyRepresentable(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  pos: HandoffNoteDocPos,
+  click: HandoffNoteClickIngress
+): boolean {
+  const wire = docPosToWireOffset(doc, pos);
+  const context = describeHandoffNoteCursorContext(doc, wire);
+  if (context.kind === "mention-interior") {
+    return false;
+  }
+  if (clickMatchesDocPosPaintAnchor(root, doc, layout, pos, click)) {
+    return true;
+  }
+  const clickRowIndex = closestLayoutRowIndexForTop(layout, click.clientY);
+  if (clickRowIndex < 0) {
+    return true;
+  }
+  return layout.rowIndexForWire(wire) === clickRowIndex;
+}
+
+function isClickLiveRepresentable(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  pos: HandoffNoteDocPos,
+  click: HandoffNoteClickIngress
+): boolean {
+  const clickRowIndex = closestLayoutRowIndexForTop(layout, click.clientY);
+  if (isClickPosStrictlyRepresentable(root, doc, layout, pos, click)) {
+    return true;
+  }
+  if (clickRowIndex < 0) {
+    return false;
+  }
+  return isWrapContinuationStartClickInRowAbove(doc, layout, pos, click, clickRowIndex);
+}
+
+/** Wire-level landing authority at alias seams (post-mention spacer, row tail). */
+function landingDocPosAtContentWire(
+  doc: HandoffNoteDoc,
+  wire: number,
+  direction?: HandoffNoteVerticalArrowDirection
+): HandoffNoteDocPos {
+  let pos = docPosAtContentWire(doc, wire);
+  if (direction !== undefined) {
+    pos = snapInterMentionAtomLanding(doc, pos, direction);
+  }
+  return pos;
+}
+
+export function resolveClickIngressSelection(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  live: HandoffNoteDocPos,
+  from: HandoffNoteDocPos | undefined,
+  click: HandoffNoteClickIngress
+): HandoffNoteClickIngressResult {
+  const layout = buildHandoffNoteLayoutMap(root, doc, live);
+  const clickRowIndex = closestLayoutRowIndexForTop(layout, click.clientY);
+  const fromOpt = from ? { from } : undefined;
+  const liveWire = docPosToWireOffset(doc, live);
+  const liveAnchor = getDocAnchorRect(root, doc, live);
+  const liveAnchorMidY =
+    liveAnchor && (liveAnchor.height > 0 || liveAnchor.width > 0)
+      ? liveAnchor.top + liveAnchor.height / 2
+      : null;
+
+  if (isClickPosStrictlyRepresentable(root, doc, layout, live, click)) {
+    logCaretBoundaryTrace("click.ingress", {
+      branch: "nativeSelection",
+      liveWire,
+      clickRowIndex,
+      liveAnchorMidY,
+      clickX: click.clientX,
+      clickY: click.clientY,
+    });
+    return {
+      focus: docPosAtContentWire(doc, liveWire),
+      resolution: "nativeSelection",
+    };
+  }
+
+  const viewport = probeViewportCaretHit(root, doc, click.clientX, click.clientY, fromOpt);
+  if (
+    viewport.pos &&
+    isClickLiveRepresentable(root, doc, layout, viewport.pos, click) &&
+    !viewportAliasesStaleWrapContinuation(doc, layout, live, viewport.pos, clickRowIndex)
+  ) {
+    const focus = normalizeDocPos(doc, viewport.pos);
+    const resolvedWire = docPosToWireOffset(doc, focus);
+    logCaretBoundaryTrace("click.ingress", {
+      branch: "viewportCaretHit",
+      liveWire,
+      resolvedWire,
+      clickRowIndex,
+      liveAnchorMidY,
+      clickX: click.clientX,
+      clickY: click.clientY,
+    });
+    return {
+      focus,
+      resolution: "viewportCaretHit",
+    };
+  }
+
+  logCaretBoundaryTrace("click.ingress", {
+    branch: "nativeSelection-fallback",
+    liveWire,
+    clickRowIndex,
+    liveAnchorMidY,
+    clickX: click.clientX,
+    clickY: click.clientY,
+  });
+  return {
+    focus: docPosAtContentWire(doc, liveWire),
+    resolution: "nativeSelection",
+  };
+}
+
 export function repairDocSelectionIfNeeded(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   from?: HandoffNoteDocPos,
-  options?: { mode?: "full" | "strand-only" }
+  options?: {
+    mode?: "full" | "strand-only";
+    click?: HandoffNoteClickIngress;
+  }
 ): HandoffNoteDocPos {
   const live = readDocSelection(root, doc);
   if (!docPosEqualNormalized(doc, live.anchor, live.focus)) {
@@ -212,17 +491,44 @@ export function repairDocSelectionIfNeeded(
   }
 
   if (options?.mode === "strand-only") {
-    if (from !== undefined && liveIsProbeAliasOverMentionEndAuthority(doc, live.focus, from)) {
-      logCaretBoundaryTrace("repair", {
-        branch: "restoreAuthority.probeAlias",
+    if (options?.click) {
+      const resolved = resolveClickIngressSelection(root, doc, live.focus, from, options.click);
+      const liveWire = docPosToWireOffset(doc, live.focus);
+      const resolvedWire = docPosToWireOffset(doc, resolved.focus);
+      const willPaint = !docPosEqualNormalized(doc, resolved.focus, live.focus);
+      logCaretBoundaryTrace("repair.click", {
+        resolution: resolved.resolution,
+        liveWire,
+        resolvedWire,
+        fromWire: from !== undefined ? docPosToWireOffset(doc, from) : null,
+        willPaint,
+      });
+      if (willPaint) {
+        setDocSelection(root, doc, collapsedSelection(resolved.focus), {
+          source: `repair.click.${resolved.resolution}`,
+        });
+      }
+      return resolved.focus;
+    }
+    if (from !== undefined && strandOnlyShouldRestoreAuthorityOverDomAlias(doc, live.focus, from)) {
+      logCaretBoundaryTrace("repair.strandAlias", {
+        probeAlias: liveIsProbeAliasOverMentionEndAuthority(doc, live.focus, from),
+        interiorAlias: liveIsMentionStartPaintAliasOverInteriorAuthority(doc, live.focus, from),
         liveWire: docPosToWireOffset(doc, live.focus),
         fromWire: docPosToWireOffset(doc, from),
-        resolvedWire: docPosToWireOffset(doc, from),
       });
       setDocSelection(root, doc, collapsedSelection(from), { from, source: "repair.authority" });
       return from;
     }
-    return normalizeDocPos(doc, live.focus, { from });
+    const normalized = normalizeDocPos(doc, live.focus, { from });
+    logCaretBoundaryTrace("repair.strand", {
+      branch: "normalizeLive",
+      liveWire: docPosToWireOffset(doc, live.focus),
+      fromWire: from !== undefined ? docPosToWireOffset(doc, from) : null,
+      resolvedWire: docPosToWireOffset(doc, normalized),
+      willPaint: false,
+    });
+    return normalized;
   }
 
   if (from !== undefined && shouldRestoreAuthorityOverDom(doc, live.focus, from)) {
@@ -264,15 +570,17 @@ export function setDocSelection(
     source?: string;
   }
 ): void {
-  const docSel = normalizeSelection(doc, selection);
+  const fromOpt = options?.from ? { from: options.from } : undefined;
+  const docSel = normalizeSelection(doc, selection, fromOpt);
   const docApi = root.ownerDocument;
   const native = docApi.getSelection();
   if (!native) {
     return;
   }
 
-  const startPoint = resolveDomPointAtDocPos(root, doc, docSel.anchor);
-  const endPoint = resolveDomPointAtDocPos(root, doc, docSel.focus);
+  const paintOpt = options?.from !== undefined ? { from: options.from } : undefined;
+  const startPoint = resolveDomPointAtDocPos(root, doc, docSel.anchor, paintOpt);
+  const endPoint = resolveDomPointAtDocPos(root, doc, docSel.focus, paintOpt);
   const source = options?.source ?? "unknown";
 
   if (!startPoint || !endPoint) {
@@ -309,22 +617,6 @@ export function setDocSelection(
   });
 }
 
-function wireOffsetToRowStartDocPos(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos {
-  let offset = 0;
-  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    const node = doc.nodes[nodeIndex]!;
-    const length = node.type === "text" ? node.text.length : 1 + node.agentId.length;
-    if (wire === offset) {
-      return { nodeIndex, nodeOffset: 0 };
-    }
-    if (node.type === "text" && wire > offset && wire <= offset + length) {
-      return { nodeIndex, nodeOffset: wire - offset };
-    }
-    offset += length;
-  }
-  return wireOffsetToDocPos(doc, wire);
-}
-
 function pickConcreteRowStartSample(
   samples: MeasuredWireOffset[],
   wireLength: number
@@ -349,33 +641,30 @@ function pickConcreteRowEndSample(
   samples: MeasuredWireOffset[],
   wireLength: number
 ): MeasuredWireOffset {
-  let bestInterior: MeasuredWireOffset | null = null;
+  if (samples.length === 0) {
+    throw new Error("pickConcreteRowEndSample: empty samples");
+  }
+  const endWire = layoutRowEndWireFromSamples(samples, wireLength);
+  if (endWire === null) {
+    logVerArrow("layout.rowEndSample.miss", {
+      reason: "noEndWire",
+      sampleCount: samples.length,
+    });
+    return samples[0]!;
+  }
   for (const sample of samples) {
-    if (sample.wire >= wireLength) {
-      continue;
-    }
-    if (
-      bestInterior === null ||
-      sample.left > bestInterior.left ||
-      (sample.left === bestInterior.left && sample.wire > bestInterior.wire)
-    ) {
-      bestInterior = sample;
+    if (sample.wire === endWire) {
+      return sample;
     }
   }
-  if (bestInterior) {
-    return bestInterior;
-  }
-  let best = samples[0]!;
-  for (const sample of samples) {
-    if (sample.left > best.left) {
-      best = sample;
-    } else if (sample.left === best.left && sample.wire > best.wire) {
-      best = sample;
-    }
-  }
-  return best;
+  logVerArrow("layout.rowEndSample.inconsistent", {
+    endWire,
+    sampleWires: samples.map((sample) => sample.wire),
+  });
+  return samples[0]!;
 }
 
+/** Source row content-end: caret at doc-order row tail and sticky goal matches that sample's column — not row-tail wire pick. */
 function sourceIsAtRowContentEnd(
   fromWire: number,
   goalColumn: number,
@@ -389,20 +678,22 @@ function sourceIsAtRowContentEnd(
   if (!sourceRowSamples || sourceRowSamples.length === 0) {
     return false;
   }
-  const endSample = pickConcreteRowEndSample(sourceRowSamples, wireLength);
-  if (Math.abs(goalColumn - endSample.left) > tolerance) {
-    return false;
-  }
-  if (fromWire >= endSample.wire) {
-    return true;
-  }
   let maxInteriorWire = -1;
+  let maxLeft = -Infinity;
   for (const sample of sourceRowSamples) {
     if (sample.wire < wireLength) {
       maxInteriorWire = Math.max(maxInteriorWire, sample.wire);
+      maxLeft = Math.max(maxLeft, sample.left);
     }
   }
-  return fromWire >= maxInteriorWire;
+  if (fromWire < maxInteriorWire) {
+    return false;
+  }
+  const fromSample = sourceRowSamples.find((sample) => sample.wire === fromWire);
+  if (fromSample) {
+    return Math.abs(goalColumn - fromSample.left) <= tolerance;
+  }
+  return goalColumn >= maxLeft - tolerance;
 }
 
 function resolveVisualRowStartLanding(
@@ -426,13 +717,19 @@ function resolveVisualRowStartLanding(
     return null;
   }
   const startSample = pickConcreteRowStartSample(targetLine, wire.length);
-  const landingWire =
-    startSample?.wire ?? wire.lastIndexOf("\n", Math.max(0, targetLine[0]!.wire - 1)) + 1;
-  const rowStartPos = wireOffsetToRowStartDocPos(doc, landingWire);
+  let landingWire = startSample?.wire ?? null;
+  if (landingWire === null) {
+    const minStart = resolveVerticalArrowMinWireLineStart(doc, direction, targetLine);
+    landingWire =
+      minStart !== null
+        ? minStart.offset
+        : wire.lastIndexOf("\n", Math.max(0, targetLine[0]!.wire - 1)) + 1;
+  }
+  const rowStartPos = docPosAtContentWire(doc, landingWire);
   if (doc.nodes[rowStartPos.nodeIndex]?.type !== "text") {
     return null;
   }
-  return snapVerticalArrowLanding(doc, rowStartPos, direction);
+  return snapInterMentionAtomLanding(doc, rowStartPos, direction);
 }
 
 function sourceIsAtConcreteVisualStart(
@@ -460,7 +757,7 @@ function targetRowTextPosForWire(
   if (!rowStart || rowStart.rowIndexForWire(wire) !== rowStart.targetLineIndex) {
     return null;
   }
-  const pos = wireOffsetToRowStartDocPos(doc, wire);
+  const pos = docPosAtContentWire(doc, wire);
   if (doc.nodes[pos.nodeIndex]?.type !== "text") {
     return null;
   }
@@ -552,7 +849,7 @@ function probeTargetRowAtColumn(
     rowStart.goalColumnTolerance
   );
   if (pillPos) {
-    const pillLanding = snapVerticalArrowLanding(doc, pillPos, direction);
+    const pillLanding = snapInterMentionAtomLanding(doc, pillPos, direction);
     const pillWire = docPosToWireOffset(doc, pillLanding);
     const pillRowIndex = rowStart.rowIndexForWire(pillWire);
     if (pillRowIndex === rowStart.targetLineIndex) {
@@ -568,7 +865,7 @@ function probeTargetRowAtColumn(
         branch: "dom-pill-column-snap",
       });
       return {
-        pos: normalizeDocPos(doc, pillLanding, { from: focus }),
+        pos: landingDocPosAtContentWire(doc, pillWire, direction),
         branch: "dom-pill-column-snap",
       };
     }
@@ -586,7 +883,7 @@ function probeTargetRowAtColumn(
     return null;
   }
 
-  const landing = snapVerticalArrowLanding(doc, probed, direction);
+  const landing = snapInterMentionAtomLanding(doc, probed, direction);
   const resolvedWire = docPosToWireOffset(doc, landing);
   const probeRowIndex = rowStart.rowIndexForWire(resolvedWire);
   if (probeRowIndex !== rowStart.targetLineIndex) {
@@ -642,7 +939,7 @@ function probeTargetRowAtColumn(
     branch: "dom-column-probe",
   });
   return {
-    pos: normalizeDocPos(doc, landing, { from: focus }),
+    pos: landingDocPosAtContentWire(doc, resolvedWire, direction),
     branch: "dom-column-probe",
   };
 }
@@ -754,8 +1051,8 @@ function acceptColumnLanding(
   );
   const resolvedWire = atomicWire ?? snapVerticalColumnLandingWire(doc, landingWire, direction);
   const mentionSnapApplied = resolvedWire !== bracketWire;
-  let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, resolvedWire), { from: focus });
-  targetPos = snapVerticalArrowLanding(doc, targetPos, direction);
+  let targetPos = docPosAtContentWire(doc, resolvedWire);
+  targetPos = snapInterMentionAtomLanding(doc, targetPos, direction);
   if (landedOutsideTargetRow(doc, targetPos, rowStart)) {
     const rowContained = targetRowTextPosForWire(doc, resolvedWire, rowStart);
     if (!rowContained) {

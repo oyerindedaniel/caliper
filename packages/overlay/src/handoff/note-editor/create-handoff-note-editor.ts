@@ -44,6 +44,7 @@ import {
   escapeWireForLog,
   logCaretBoundaryTrace,
   logEditStateTrace,
+  logSelectionChangeFirstTouch,
 } from "../handoff-note-debug.js";
 import {
   describeSyncRepairBranch,
@@ -51,6 +52,7 @@ import {
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
   setDocSelection,
+  type HandoffNoteClickIngress,
 } from "./handoff-note-selection.js";
 import { getDocAnchorRect } from "./handoff-note-dom-points.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
@@ -121,6 +123,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
   let lastRenderOutcome: RenderOutcome = { domReplaced: true, docChanged: true };
   let selectedMentionNodeIndex: number | null = null;
   let verticalGoalColumn: number | null = null;
+  let pendingClickIngress: HandoffNoteClickIngress | null = null;
   const history = createHandoffNoteHistory();
 
   const presentationOptions = () => ({
@@ -158,10 +161,35 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       return;
     }
     const repairMode = source === "selectionchange" ? "strand-only" : "full";
-    const focus = repairDocSelectionIfNeeded(root, doc, priorFocus, { mode: repairMode });
-    selection = collapsedSelection(focus);
+    const clickIngress = source === "selectionchange" ? pendingClickIngress : null;
+    const hadClickIngress = clickIngress !== null;
+    if (clickIngress) {
+      pendingClickIngress = null;
+    }
     const priorWire = docPosToWireOffset(doc, priorFocus);
-    const liveWire = docPosToWireOffset(doc, live.focus);
+    const liveWireBeforeRepair = docPosToWireOffset(doc, live.focus);
+    if (source === "selectionchange") {
+      logSelectionChangeFirstTouch(root, doc, {
+        priorWire,
+        liveWire: liveWireBeforeRepair,
+        liveFocus: live.focus,
+        clickIngress,
+      });
+    }
+    suppressDomSelectionSync = true;
+    let focus: HandoffNoteDocPos;
+    try {
+      focus = repairDocSelectionIfNeeded(root, doc, priorFocus, {
+        mode: repairMode,
+        click: clickIngress ?? undefined,
+      });
+    } finally {
+      queueMicrotask(() => {
+        suppressDomSelectionSync = false;
+      });
+    }
+    selection = collapsedSelection(focus);
+    const liveWire = liveWireBeforeRepair;
     const resolvedWire = docPosToWireOffset(doc, focus);
     const wireMoved = priorWire !== liveWire || liveWire !== resolvedWire;
     if (source === "selectionchange" && wireMoved) {
@@ -170,7 +198,14 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         liveWire,
         resolvedWire,
         repairMode,
+        hadClickIngress,
         adopted: liveWire !== resolvedWire ? "repaired" : "accepted",
+        jitterRisk:
+          hadClickIngress && liveWire !== resolvedWire
+            ? "click-repair-painted"
+            : !hadClickIngress && priorWire !== liveWire && liveWire === resolvedWire
+              ? "follow-up-accepted-live"
+              : null,
         ...buildCaretStateSnapshot({
           doc,
           authorityFocus: priorFocus,
@@ -230,6 +265,16 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       return;
     }
     reconcileSelectionFromDom("selectionchange");
+  };
+
+  const onRootMouseDown = (event: MouseEvent) => {
+    if (!root || composing || selectedMentionNodeIndex !== null) {
+      return;
+    }
+    if (!root.contains(event.target as Node)) {
+      return;
+    }
+    pendingClickIngress = { clientX: event.clientX, clientY: event.clientY };
   };
 
   const captureSnapshot = (): HandoffNoteHistorySnapshot => ({
@@ -446,10 +491,13 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     getRoot: () => root,
     setRoot(next) {
       if (root) {
+        root.removeEventListener("mousedown", onRootMouseDown);
         root.ownerDocument.removeEventListener("selectionchange", onDocumentSelectionChange);
       }
       root = next;
+      pendingClickIngress = null;
       if (root) {
+        root.addEventListener("mousedown", onRootMouseDown);
         root.ownerDocument.addEventListener("selectionchange", onDocumentSelectionChange);
       }
     },

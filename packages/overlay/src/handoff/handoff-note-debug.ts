@@ -207,7 +207,7 @@ export function logEditStateTrace(phase: string, data: Record<string, unknown> =
 
 /**
  * Console filters: `state>>` edit ingress, `caret>>setDoc>>` paint, `caret>>repair` authority,
- * `caret>>ver>>` layout (arrow only). Compact snapshots omit full wire/DOM unless verbose.
+ * `caret>>ingress>>` pointer click forensics (`ingress>>firstTouch`, `click.ingress`, `repair.click`, `repair.strand`), `caret>>ver>>` layout (arrow only).
  */
 export function flattenHandoffNoteLog(
   event: string,
@@ -314,6 +314,45 @@ export function handoffNoteLayoutProbe(
 
 export function domPointInMentionPill(root: HTMLElement, node: Node): boolean {
   return root.contains(node) && node.parentElement?.closest?.("[data-handoff-mention]") !== null;
+}
+
+/**
+ * Log browser first-touch on `selectionchange` before reconcile/repair runs.
+ * Filter console: `caret>>ingress>>firstTouch`
+ */
+export function logSelectionChangeFirstTouch(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: {
+    priorWire: number;
+    liveWire: number;
+    liveFocus: HandoffNoteDocPos;
+    clickIngress: { clientX: number; clientY: number } | null;
+  }
+): void {
+  const selection = root.ownerDocument.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const startNode = range?.startContainer ?? null;
+  const inMentionPill = startNode ? domPointInMentionPill(root, startNode) : false;
+  const parent =
+    startNode?.nodeType === Node.TEXT_NODE
+      ? startNode.parentElement
+      : startNode instanceof Element
+        ? startNode
+        : null;
+
+  logCaretBoundaryTrace("ingress>>firstTouch", {
+    priorWire: options.priorWire,
+    liveWire: options.liveWire,
+    hadClickIngress: options.clickIngress !== null,
+    clickX: options.clickIngress?.clientX ?? null,
+    clickY: options.clickIngress?.clientY ?? null,
+    inMentionPill,
+    startContainerKind: startNode?.nodeName ?? null,
+    startOffset: range?.startOffset ?? null,
+    parentTag: parent?.tagName ?? null,
+    activeDoc: snapshotDocPos(doc, options.liveFocus),
+  });
 }
 
 /** Lean native selection for state>> traces — k/o/pill matches full snapshot semantics. */

@@ -256,7 +256,8 @@ export function isInterMentionAtomStart(doc: HandoffNoteDoc, pos: HandoffNoteDoc
   return doc.nodes[pos.nodeIndex - 1]?.type === "mention";
 }
 
-export function snapVerticalArrowLanding(
+/** Up-landing only: snap off glued mention-atom start to segment start. Shared by arrows and layout ingress. */
+export function snapInterMentionAtomLanding(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
@@ -288,7 +289,7 @@ export function resolveDocVerticalArrowMove(
     let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, embeddedMove.offset), {
       from: pos,
     });
-    targetPos = snapVerticalArrowLanding(doc, targetPos, direction);
+    targetPos = snapInterMentionAtomLanding(doc, targetPos, direction);
     if (!docPosEqual(targetPos, pos)) {
       return { pos: targetPos, handled: true };
     }
@@ -316,7 +317,7 @@ export function resolveDocVerticalArrowMove(
   }
 
   let targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, move.offset), { from: pos });
-  targetPos = snapVerticalArrowLanding(doc, targetPos, direction, target?.start);
+  targetPos = snapInterMentionAtomLanding(doc, targetPos, direction, target?.start);
 
   if (docPosEqual(targetPos, pos)) {
     return { pos, handled: false };

@@ -58,6 +58,64 @@ describe("applyDocInsertText", () => {
     expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(6);
   });
 
+  it("inserts plain text after mention end into following text past leading offset", () => {
+    const agentId = "caliper-sandwich01";
+    const wire = `pre @${agentId} @${agentId} tail`;
+    const doc = wireToDoc(wire);
+    const mentionEnd = `pre @${agentId}`.length;
+    const result = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, mentionEnd)),
+      "X"
+    );
+    expect(docToWire(result.doc)).toBe(`pre @${agentId} X@${agentId} tail`);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(mentionEnd + 2);
+  });
+
+  it("inserts plain text after mention end before soft-wrap postfix without gluing", () => {
+    const agentId = "caliper-wrapagent01";
+    const wire = `pre @${agentId} d @${agentId} wraptext @${agentId} `;
+    const doc = wireToDoc(wire);
+    const postfixIdx = doc.nodes.findIndex((n) => n.type === "text" && n.text.includes("wraptext"));
+    const mentionEnd = docPosToWireOffset(doc, {
+      nodeIndex: postfixIdx - 1,
+      nodeOffset: 1 + agentId.length,
+    });
+    const result = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, mentionEnd)),
+      "X"
+    );
+    expect(docToWire(result.doc)).toBe(`pre @${agentId} d @${agentId} Xwraptext @${agentId} `);
+  });
+
+  it("mention-end insert then backspace restores spacer and lands after space", () => {
+    const agentId = "caliper-sandwich01";
+    const doc = wireToDoc(`pre @${agentId} @${agentId} tail`);
+    const mentionEnd = `pre @${agentId}`.length;
+    let state = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, mentionEnd)),
+      "X"
+    );
+    expect(docToWire(state.doc)).toBe(`pre @${agentId} X@${agentId} tail`);
+    state = applyDocDelete(state.doc, state.selection, "backspace")!;
+    expect(docToWire(state.doc)).toBe(`pre @${agentId} @${agentId} tail`);
+    expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(mentionEnd + 1);
+  });
+
+  it("mention end at EOF without following text still uses wire splice", () => {
+    const agentId = "caliper-abc123";
+    const wire = `header @${agentId}`;
+    const doc = wireToDoc(wire);
+    const result = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, wire.length)),
+      "X"
+    );
+    expect(docToWire(result.doc)).toBe(`header @${agentId}X`);
+  });
+
   it("inserts a spaced @ after a committed mention end", () => {
     const agentId = "caliper-abc123";
     const wire = `pre1 @${agentId} `;

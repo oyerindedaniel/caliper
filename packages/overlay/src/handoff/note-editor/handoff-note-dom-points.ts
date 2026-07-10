@@ -28,6 +28,9 @@ import {
   wireOffsetAtTextBreak,
 } from "./handoff-note-dom.js";
 
+/** Layout acquire sample shape (matches layout-map `MeasuredWireOffset`; not imported — cycle). */
+type DomMeasuredWireOffset = { wire: number; top: number; left: number; right?: number };
+
 function isEditorNode(root: HTMLElement, node: Node): boolean {
   return node === root || root.contains(node);
 }
@@ -109,6 +112,29 @@ export function domOffsetForContentRowEndInSplitText(
     return part.length;
   }
   return docOffsetInPart;
+}
+
+/**
+ * Doc position owning the character at a wire index — text-node offset when the wire
+ * maps to text, otherwise falls back to wireOffsetToDocPos (mention boundaries).
+ * Click/layout row-end uses this instead of mention-boundary alias normalization.
+ */
+export function docPosAtContentWire(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos {
+  const wireLen = docToWire(doc).length;
+  const clamped = Math.max(0, Math.min(wire, wireLen));
+  let offset = 0;
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    const length = node.type === "text" ? node.text.length : 1 + node.agentId.length;
+    if (clamped === offset) {
+      return { nodeIndex, nodeOffset: 0 };
+    }
+    if (node.type === "text" && clamped > offset && clamped <= offset + length) {
+      return { nodeIndex, nodeOffset: clamped - offset };
+    }
+    offset += length;
+  }
+  return wireOffsetToDocPos(doc, clamped);
 }
 
 function isLastRenderedDocNode(doc: HandoffNoteDoc, nodeIndex: number): boolean {
@@ -516,7 +542,7 @@ export function domPointToDocPos(
       }
       const tokenLength = mentionWireLength(agentId);
       if (clamped <= 0) {
-        return { nodeIndex, nodeOffset: 0 };
+        return { nodeIndex, nodeOffset: 1 };
       }
       if (clamped >= pillText.length) {
         return { nodeIndex, nodeOffset: tokenLength };
@@ -625,13 +651,90 @@ export function domPointToDocPos(
   return domPointToDocPos(root, doc, container.parentNode ?? root, 0);
 }
 
+const SANDWICH_FOLLOWING_MENTION_OFFSET = 2;
+
+function postMentionNonemptyTextNode(
+  doc: HandoffNoteDoc,
+  mentionNodeIndex: number
+): { textNodeIndex: number; text: string } | null {
+  const mention = doc.nodes[mentionNodeIndex];
+  const textNode = doc.nodes[mentionNodeIndex + 1];
+  if (!mention || mention.type !== "mention") {
+    return null;
+  }
+  if (!textNode || textNode.type !== "text" || textNode.text.length < 1) {
+    return null;
+  }
+  return { textNodeIndex: mentionNodeIndex + 1, text: textNode.text };
+}
+
+function isMentionSandwichSpacerNode(doc: HandoffNoteDoc, mentionNodeIndex: number): boolean {
+  const postText = postMentionNonemptyTextNode(doc, mentionNodeIndex);
+  if (!postText) {
+    return false;
+  }
+  return doc.nodes[mentionNodeIndex + SANDWICH_FOLLOWING_MENTION_OFFSET]?.type === "mention";
+}
+
+function mentionSandwichSpacerContinuationPos(
+  doc: HandoffNoteDoc,
+  leadingMentionNodeIndex: number
+): HandoffNoteDocPos | null {
+  if (!isMentionSandwichSpacerNode(doc, leadingMentionNodeIndex)) {
+    return null;
+  }
+  const spacerIndex = leadingMentionNodeIndex + 1;
+  const followingMentionIndex = leadingMentionNodeIndex + SANDWICH_FOLLOWING_MENTION_OFFSET;
+  const spacer = doc.nodes[spacerIndex];
+  if (spacer?.type !== "text" || spacer.text.length !== 1) {
+    return null;
+  }
+  const continuationPos: HandoffNoteDocPos = { nodeIndex: spacerIndex, nodeOffset: 1 };
+  const followingStartPos: HandoffNoteDocPos = {
+    nodeIndex: followingMentionIndex,
+    nodeOffset: 0,
+  };
+  if (docPosToWireOffset(doc, continuationPos) !== docPosToWireOffset(doc, followingStartPos)) {
+    return null;
+  }
+  return continuationPos;
+}
+
+function continuationPosForFollowingMention(
+  doc: HandoffNoteDoc,
+  followingMentionNodeIndex: number
+): HandoffNoteDocPos | null {
+  return mentionSandwichSpacerContinuationPos(
+    doc,
+    followingMentionNodeIndex - SANDWICH_FOLLOWING_MENTION_OFFSET
+  );
+}
+
+/** Mention-start and 1-char sandwich spacer tail share a wire — paint via the spacer tail owner. */
+function canonicalSandwichAliasPaintDocPos(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): HandoffNoteDocPos {
+  const node = doc.nodes[pos.nodeIndex];
+  if (node?.type !== "mention" || pos.nodeOffset !== 0) {
+    return pos;
+  }
+  const continuation = continuationPosForFollowingMention(doc, pos.nodeIndex);
+  if (continuation && docPosToWireOffset(doc, continuation) === docPosToWireOffset(doc, pos)) {
+    return continuation;
+  }
+  return pos;
+}
+
 export function resolveDomPointAtDocPos(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos
+  pos: HandoffNoteDocPos,
+  options?: { from?: HandoffNoteDocPos }
 ): { node: Node; offset: number } | null {
-  const normalized = normalizeDocPos(doc, pos);
-  const node = doc.nodes[normalized.nodeIndex];
+  const normalized = normalizeDocPos(doc, pos, options?.from ? { from: options.from } : undefined);
+  const paintPos = canonicalSandwichAliasPaintDocPos(doc, normalized);
+  const node = doc.nodes[paintPos.nodeIndex];
   if (!node) {
     if (root.firstChild?.nodeType === Node.TEXT_NODE) {
       return { node: root.firstChild, offset: 0 };
@@ -639,44 +742,45 @@ export function resolveDomPointAtDocPos(
     return { node: root, offset: 0 };
   }
 
-  const renderedIndex = docPosToRenderedDomChildIndex(doc, normalized.nodeIndex);
+  const renderedIndex = docPosToRenderedDomChildIndex(doc, paintPos.nodeIndex);
   const domNode = root.childNodes[renderedIndex];
   if (!domNode) {
-    if (docWireEndsWithNewline(doc) && isLastRenderedDocNode(doc, normalized.nodeIndex)) {
+    if (docWireEndsWithNewline(doc) && isLastRenderedDocNode(doc, paintPos.nodeIndex)) {
       return { node: root, offset: root.childNodes.length - 1 };
     }
     return { node: root, offset: root.childNodes.length };
   }
 
   if (node.type === "text") {
-    const focusWire = docPosToWireOffset(doc, normalized);
+    const focusWire = docPosToWireOffset(doc, paintPos);
     const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
-    const nextDocNode = doc.nodes[normalized.nodeIndex + 1];
+    const nextDocNode = doc.nodes[paintPos.nodeIndex + 1];
     if (
       caretContext.kind === "mention-boundary" &&
       caretContext.edge === "start" &&
       nextDocNode?.type === "mention" &&
-      normalized.nodeOffset >= node.text.length
+      node.text.length === 0 &&
+      paintPos.nodeOffset >= node.text.length
     ) {
-      const mentionRendered = docPosToRenderedDomChildIndex(doc, normalized.nodeIndex + 1);
+      const mentionRendered = docPosToRenderedDomChildIndex(doc, paintPos.nodeIndex + 1);
       return { node: root, offset: mentionRendered };
     }
-    return resolveTextDomPointAtOffset(root, node.text, normalized.nodeOffset, renderedIndex, {
+    return resolveTextDomPointAtOffset(root, node.text, paintPos.nodeOffset, renderedIndex, {
       doc,
       docEndsWithNewline: docWireEndsWithNewline(doc),
-      isLastRenderedNode: isLastRenderedDocNode(doc, normalized.nodeIndex),
-      wireBase: docPosToWireOffset(doc, { nodeIndex: normalized.nodeIndex, nodeOffset: 0 }),
-      focusDocPos: normalized,
+      isLastRenderedNode: isLastRenderedDocNode(doc, paintPos.nodeIndex),
+      wireBase: docPosToWireOffset(doc, { nodeIndex: paintPos.nodeIndex, nodeOffset: 0 }),
+      focusDocPos: paintPos,
     });
   }
 
   const tokenLength = mentionWireLength(node.agentId);
-  if (normalized.nodeOffset <= 0) {
+  if (paintPos.nodeOffset <= 0) {
     return { node: root, offset: renderedIndex };
   }
-  if (normalized.nodeOffset >= tokenLength) {
+  if (paintPos.nodeOffset >= tokenLength) {
     const afterRendered = renderedIndex + 1;
-    const postText = doc.nodes[normalized.nodeIndex + 1];
+    const postText = doc.nodes[paintPos.nodeIndex + 1];
     const abuttingProbe =
       postText?.type === "text"
         ? listEmbeddedBlankBandProbeWires(doc).find((probe) =>
@@ -692,13 +796,13 @@ export function resolveDomPointAtDocPos(
         if (isHandoffBlankAnchorElement(nextDom.parentNode)) {
           return { node: root, offset: afterRendered };
         }
-        const postText = doc.nodes[normalized.nodeIndex + 1];
+        const postText = doc.nodes[paintPos.nodeIndex + 1];
         if (postText?.type === "text" && postText.text.includes("\n")) {
           const parts = postText.text.split("\n");
           const firstPart = parts[0] ?? "";
           if (parts.length > 1 && /^\s+$/.test(firstPart)) {
             const wireBase = docPosToWireOffset(doc, {
-              nodeIndex: normalized.nodeIndex + 1,
+              nodeIndex: paintPos.nodeIndex + 1,
               nodeOffset: 0,
             });
             const breakWire = wireOffsetAtTextBreak(postText.text, wireBase, 0);
@@ -715,7 +819,7 @@ export function resolveDomPointAtDocPos(
   const pillTextNode = domNode.firstChild;
   if (pillTextNode?.nodeType === Node.TEXT_NODE) {
     const pillText = pillTextNode as Text;
-    const pillOffset = normalized.nodeOffset - 1;
+    const pillOffset = paintPos.nodeOffset - 1;
     return {
       node: pillText,
       offset: Math.max(0, Math.min(pillOffset, pillText.length)),
@@ -764,6 +868,47 @@ export function getDocAnchorRect(
   }
 
   return root.getBoundingClientRect();
+}
+
+/** Authoritative geometry for an embedded `\n` rendered as `<br data-handoff-wire-break>`. */
+export function measureWireBreakCoord(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  wire: number
+): DomMeasuredWireOffset | null {
+  const pos = wireOffsetToDocPos(doc, wire);
+  const domPoint = resolveDomPointAtDocPos(root, doc, pos);
+  if (!domPoint) {
+    return null;
+  }
+
+  let element: Element | null = null;
+  if (domPoint.node === root) {
+    const child = root.childNodes[domPoint.offset];
+    if (child instanceof HTMLBRElement) {
+      element = child;
+    }
+  } else if (domPoint.node instanceof HTMLBRElement) {
+    element = domPoint.node;
+  } else if (domPoint.node.parentNode === root) {
+    const sibling = root.childNodes[domPoint.offset];
+    if (sibling instanceof HTMLBRElement) {
+      element = sibling;
+    }
+  }
+
+  if (element && isHandoffWireBreakElement(element)) {
+    const rect = element.getBoundingClientRect();
+    if (hasPositionedDomRect(rect)) {
+      return { wire, top: domRectAnchorMidY(rect), left: rect.left, right: rect.right };
+    }
+  }
+
+  const rect = getDocAnchorRect(root, doc, pos);
+  if (!rect || !hasPositionedDomRect(rect)) {
+    return null;
+  }
+  return { wire, top: domRectAnchorMidY(rect), left: rect.left, right: rect.right };
 }
 
 /**
@@ -826,45 +971,159 @@ export function resolveDomPillBoundaryPosForGoalColumn(
   return null;
 }
 
-/** Map a viewport point inside the editor to a doc caret (contract: visual row/column probe). */
-export function probeDocPosAtVisualColumn(
+export type ViewportCaretHitProbe = {
+  api: "caretPositionFromPoint" | "caretRangeFromPoint" | null;
+  missReason: string | null;
+  pos: HandoffNoteDocPos | null;
+  wire: number | null;
+  caretKind: string | null;
+};
+
+/** Raw DOM caret at viewport (x, y) — layout sample paint without doc authority remap. */
+export function probeDomPointAtViewport(
   root: HTMLElement,
-  doc: HandoffNoteDoc,
-  rowTop: number,
-  column: number
-): HandoffNoteDocPos | null {
+  x: number,
+  y: number
+): { node: Node; offset: number } | null {
   const docApi = root.ownerDocument;
 
   if (typeof docApi.caretPositionFromPoint === "function") {
-    const hit = docApi.caretPositionFromPoint(column, rowTop);
-    if (hit && isEditorNode(root, hit.offsetNode)) {
-      return normalizeDocPos(doc, domPointToDocPos(root, doc, hit.offsetNode, hit.offset), {
-        bias: "start",
-      });
+    const hit = docApi.caretPositionFromPoint(x, y);
+    if (!hit || !isEditorNode(root, hit.offsetNode)) {
+      return null;
     }
+    return { node: hit.offsetNode, offset: hit.offset };
   }
 
   const legacyDoc = docApi as Document & {
     caretRangeFromPoint?: (x: number, y: number) => Range | null;
   };
   if (typeof legacyDoc.caretRangeFromPoint === "function") {
-    const range = legacyDoc.caretRangeFromPoint(column, rowTop);
-    if (range && isEditorNode(root, range.startContainer)) {
-      return normalizeDocPos(
-        doc,
-        domPointToDocPos(root, doc, range.startContainer, range.startOffset),
-        { bias: "start" }
-      );
+    const range = legacyDoc.caretRangeFromPoint(x, y);
+    if (!range || !isEditorNode(root, range.startContainer)) {
+      return null;
     }
+    return { node: range.startContainer, offset: range.startOffset };
   }
 
   return null;
 }
 
-function probeColumnsForLayoutRect(rect: DOMRect): number[] {
+/** Browser caret hit-test at viewport (x, y). Step 2 of click repair; also the primitive behind `probeDocPosAtVisualColumn`. */
+export function probeViewportCaretHit(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  x: number,
+  y: number,
+  options?: { from?: HandoffNoteDocPos; bias?: "start" | "end" }
+): ViewportCaretHitProbe {
+  const docApi = root.ownerDocument;
+  const biasOpt = options?.bias ? { bias: options.bias } : undefined;
+  const fromOpt = options?.from ? { from: options.from, ...biasOpt } : biasOpt;
+
+  if (typeof docApi.caretPositionFromPoint === "function") {
+    const hit = docApi.caretPositionFromPoint(x, y);
+    if (!hit) {
+      return {
+        api: "caretPositionFromPoint",
+        missReason: "caret-miss",
+        pos: null,
+        wire: null,
+        caretKind: null,
+      };
+    }
+    if (!isEditorNode(root, hit.offsetNode)) {
+      return {
+        api: "caretPositionFromPoint",
+        missReason: "outside-editor",
+        pos: null,
+        wire: null,
+        caretKind: null,
+      };
+    }
+    const pos = normalizeDocPos(
+      doc,
+      domPointToDocPos(root, doc, hit.offsetNode, hit.offset),
+      fromOpt
+    );
+    const wire = docPosToWireOffset(doc, pos);
+    return {
+      api: "caretPositionFromPoint",
+      missReason: null,
+      pos,
+      wire,
+      caretKind: describeHandoffNoteCursorContext(doc, wire).kind,
+    };
+  }
+
+  const legacyDoc = docApi as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  if (typeof legacyDoc.caretRangeFromPoint === "function") {
+    const range = legacyDoc.caretRangeFromPoint(x, y);
+    if (!range) {
+      return {
+        api: "caretRangeFromPoint",
+        missReason: "caret-miss",
+        pos: null,
+        wire: null,
+        caretKind: null,
+      };
+    }
+    if (!isEditorNode(root, range.startContainer)) {
+      return {
+        api: "caretRangeFromPoint",
+        missReason: "outside-editor",
+        pos: null,
+        wire: null,
+        caretKind: null,
+      };
+    }
+    const pos = normalizeDocPos(
+      doc,
+      domPointToDocPos(root, doc, range.startContainer, range.startOffset),
+      fromOpt
+    );
+    const wire = docPosToWireOffset(doc, pos);
+    return {
+      api: "caretRangeFromPoint",
+      missReason: null,
+      pos,
+      wire,
+      caretKind: describeHandoffNoteCursorContext(doc, wire).kind,
+    };
+  }
+
+  return { api: null, missReason: "no-caret-api", pos: null, wire: null, caretKind: null };
+}
+
+/** Step 3a of click repair and vertical arrows: caret hit-test at layout row Y and goal column X. */
+export function probeDocPosAtVisualColumn(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  rowTop: number,
+  column: number
+): HandoffNoteDocPos | null {
+  return probeViewportCaretHit(root, doc, column, rowTop, { bias: "start" }).pos;
+}
+
+type LayoutRectProbeColumn = {
+  kind: "left" | "mid" | "right";
+  x: number;
+};
+
+function probeColumnsForLayoutRect(rect: DOMRect): LayoutRectProbeColumn[] {
   const insetLeft = rect.left + Math.min(2, Math.max(0, rect.width / 2));
   const mid = rect.left + rect.width / 2;
-  return insetLeft === mid ? [insetLeft] : [insetLeft, mid];
+  const insetRight = rect.right - Math.min(2, Math.max(0, rect.width / 2));
+  const columns: LayoutRectProbeColumn[] = [{ kind: "left", x: insetLeft }];
+  if (mid !== insetLeft) {
+    columns.push({ kind: "mid", x: mid });
+  }
+  if (insetRight !== mid && insetRight !== insetLeft) {
+    columns.push({ kind: "right", x: insetRight });
+  }
+  return columns;
 }
 
 function textRangeExclusiveEndOffset(node: Text, pointOffset: number): number {
@@ -877,7 +1136,7 @@ export function appendMeasuredSamplesFromWireRange(
   doc: HandoffNoteDoc,
   startWire: number,
   endWireExclusive: number,
-  measured: { wire: number; top: number; left: number }[],
+  measured: DomMeasuredWireOffset[],
   seen: Set<number>
 ): number {
   if (startWire >= endWireExclusive) {
@@ -917,10 +1176,10 @@ export function appendMeasuredSamplesFromWireRange(
       continue;
     }
     const midY = rect.top + rect.height / 2;
-    for (const probeX of probeColumnsForLayoutRect(rect)) {
+    for (const probe of probeColumnsForLayoutRect(rect)) {
       const probed =
-        probeDocPosAtVisualColumn(root, doc, midY, probeX) ??
-        probeDocPosAtVisualColumn(root, doc, rect.top, probeX);
+        probeDocPosAtVisualColumn(root, doc, midY, probe.x) ??
+        probeDocPosAtVisualColumn(root, doc, rect.top, probe.x);
       if (!probed) {
         continue;
       }
@@ -951,54 +1210,580 @@ export function appendMeasuredSamplesFromWireRange(
   return added;
 }
 
+function anchorMidYAtTextNodeOffset(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  nodeOffset: number
+): number | null {
+  const rect = getDocAnchorRect(root, doc, { nodeIndex, nodeOffset });
+  if (!rect || !hasPositionedDomRect(rect)) {
+    return null;
+  }
+  return domRectAnchorMidY(rect);
+}
+
+function isTextOffsetOnLowerFragment(
+  midY: number,
+  upper: DOMRect,
+  lower: DOMRect,
+  tolerance: number
+): boolean {
+  const splitY = (upper.bottom + lower.top) / 2;
+  return midY >= splitY - tolerance;
+}
+
+/** First nodeOffset on the lower visual fragment between two painted line boxes. */
+function findFirstTextOffsetOnLowerFragment(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  localStart: number,
+  localEndExclusive: number,
+  upper: DOMRect,
+  lower: DOMRect,
+  tolerance: number
+): number | null {
+  if (localEndExclusive <= localStart) {
+    return null;
+  }
+  const startMidY = anchorMidYAtTextNodeOffset(root, doc, nodeIndex, localStart);
+  if (startMidY === null) {
+    return null;
+  }
+  if (isTextOffsetOnLowerFragment(startMidY, upper, lower, tolerance)) {
+    return localStart;
+  }
+  const endMidY = anchorMidYAtTextNodeOffset(root, doc, nodeIndex, localEndExclusive - 1);
+  if (endMidY === null || !isTextOffsetOnLowerFragment(endMidY, upper, lower, tolerance)) {
+    return null;
+  }
+
+  let lo = localStart;
+  let hi = localEndExclusive;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const midY = anchorMidYAtTextNodeOffset(root, doc, nodeIndex, mid);
+    if (midY === null) {
+      return null;
+    }
+    if (isTextOffsetOnLowerFragment(midY, upper, lower, tolerance)) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return lo;
+}
+
+function measuredSampleAtTextNodeOffset(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  nodeOffset: number
+): DomMeasuredWireOffset | null {
+  const rect = getDocAnchorRect(root, doc, { nodeIndex, nodeOffset });
+  if (!rect || !hasPositionedDomRect(rect)) {
+    return null;
+  }
+  const top = domRectAnchorMidY(rect);
+  const left = rect.left;
+  if (!isUsableMeasuredLayoutCoord({ top, left })) {
+    return null;
+  }
+  return {
+    wire: docPosToWireOffset(doc, { nodeIndex, nodeOffset }),
+    top,
+    left,
+    right: rect.right,
+  };
+}
+
+function upsertFragmentBoundarySamplesAtSplit(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  textLength: number,
+  splitOffset: number,
+  measured: DomMeasuredWireOffset[],
+  seen: Set<number>
+): void {
+  if (splitOffset === 0) {
+    return;
+  }
+  if (splitOffset > 0) {
+    const prefixEnd = measuredSampleAtTextNodeOffset(root, doc, nodeIndex, splitOffset - 1);
+    if (prefixEnd) {
+      upsertSoftWrapMeasuredSample(measured, seen, prefixEnd);
+    }
+  }
+  if (splitOffset < textLength) {
+    const continuationStart = measuredSampleAtTextNodeOffset(root, doc, nodeIndex, splitOffset);
+    if (continuationStart) {
+      upsertSoftWrapMeasuredSample(measured, seen, continuationStart);
+    }
+  }
+}
+
+function appendPaintedFragmentBoundarySamples(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  localStart: number,
+  localEndExclusive: number,
+  upper: DOMRect,
+  lower: DOMRect,
+  measured: DomMeasuredWireOffset[],
+  seen: Set<number>
+): number | null {
+  const tolerance = Math.max(1, Math.abs(lower.top - upper.top) / 4);
+  const splitOffset = findFirstTextOffsetOnLowerFragment(
+    root,
+    doc,
+    nodeIndex,
+    localStart,
+    localEndExclusive,
+    upper,
+    lower,
+    tolerance
+  );
+  if (splitOffset === null || splitOffset <= localStart) {
+    return splitOffset;
+  }
+  upsertFragmentBoundarySamplesAtSplit(
+    root,
+    doc,
+    nodeIndex,
+    localEndExclusive,
+    splitOffset,
+    measured,
+    seen
+  );
+  return splitOffset;
+}
+
+function wireRangeForTextSubrange(
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  localStart: number,
+  localEndExclusive: number
+): { startWire: number; endWireExclusive: number } {
+  const startWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: localStart });
+  const endWireExclusive = docPosToWireOffset(doc, {
+    nodeIndex,
+    nodeOffset: localEndExclusive,
+  });
+  return { startWire, endWireExclusive };
+}
+
+function isSubstantiveTextSubrange(
+  text: string,
+  localStart: number,
+  localEndExclusive: number
+): boolean {
+  if (localEndExclusive <= localStart) {
+    return false;
+  }
+  const segment = text.slice(localStart, localEndExclusive);
+  return segment.length > 0 && !/^\s*$/.test(segment);
+}
+
+/** Per-wire anchor measure when painted fragment rects are unavailable (headless / unpainted). */
+function appendUnpaintedSegmentBoundarySamples(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  localStart: number,
+  localEndExclusive: number,
+  startWire: number,
+  endWireExclusive: number,
+  measured: DomMeasuredWireOffset[],
+  seen: Set<number>
+): number {
+  const beforeCount = measured.length;
+
+  if (!seen.has(startWire)) {
+    const lineStart = measuredSegmentLineStartSample(root, doc, nodeIndex, localStart, startWire);
+    if (lineStart) {
+      upsertSoftWrapMeasuredSample(measured, seen, lineStart);
+    }
+  }
+
+  const lineEndLocal = localEndExclusive - 1;
+  const lineEndWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: lineEndLocal });
+  if (
+    lineEndLocal >= localStart &&
+    lineEndWire >= startWire &&
+    lineEndWire < endWireExclusive &&
+    !seen.has(lineEndWire)
+  ) {
+    const lineEnd = measuredSampleAtTextNodeOffset(root, doc, nodeIndex, lineEndLocal);
+    if (lineEnd) {
+      upsertSoftWrapMeasuredSample(measured, seen, lineEnd);
+    }
+  }
+
+  return measured.length - beforeCount;
+}
+
+function measuredSegmentLineStartSample(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  localStart: number,
+  startWire: number
+): DomMeasuredWireOffset | null {
+  const direct = measuredSampleAtTextNodeOffset(root, doc, nodeIndex, localStart);
+  if (direct) {
+    return direct;
+  }
+  const wire = docToWire(doc);
+  const breakWire = startWire - 1;
+  if (breakWire < 0 || wire[breakWire] !== "\n") {
+    return null;
+  }
+  const breakCoord = measureWireBreakCoord(root, doc, breakWire);
+  if (!breakCoord || !isUsableMeasuredLayoutCoord(breakCoord)) {
+    return null;
+  }
+  return { wire: startWire, top: breakCoord.top, left: breakCoord.left };
+}
+
+/** Painted fragment boundaries + column probes for one text-node substring. */
+function appendPaintedSoftWrapSamplesForTextSubrange(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  localStart: number,
+  localEndExclusive: number,
+  measured: DomMeasuredWireOffset[],
+  seen: Set<number>
+): number {
+  const node = doc.nodes[nodeIndex];
+  if (
+    node?.type !== "text" ||
+    !isSubstantiveTextSubrange(node.text, localStart, localEndExclusive)
+  ) {
+    return 0;
+  }
+
+  const { startWire, endWireExclusive } = wireRangeForTextSubrange(
+    doc,
+    nodeIndex,
+    localStart,
+    localEndExclusive
+  );
+  if (isEmbeddedBlankBandProbeWire(doc, startWire)) {
+    return 0;
+  }
+
+  const beforeCount = measured.length;
+
+  const startPoint = resolveDomPointAtDocPos(root, doc, { nodeIndex, nodeOffset: localStart });
+  if (!startPoint || startPoint.node.nodeType !== Node.TEXT_NODE) {
+    return appendUnpaintedSegmentBoundarySamples(
+      root,
+      doc,
+      nodeIndex,
+      localStart,
+      localEndExclusive,
+      startWire,
+      endWireExclusive,
+      measured,
+      seen
+    );
+  }
+  const textNode = startPoint.node as Text;
+  const domStart = startPoint.offset;
+  let domEnd: number;
+  if (localEndExclusive < node.text.length && node.text[localEndExclusive] === "\n") {
+    const lastCharPoint = resolveDomPointAtDocPos(root, doc, {
+      nodeIndex,
+      nodeOffset: localEndExclusive - 1,
+    });
+    if (!lastCharPoint || lastCharPoint.node.nodeType !== Node.TEXT_NODE) {
+      return appendUnpaintedSegmentBoundarySamples(
+        root,
+        doc,
+        nodeIndex,
+        localStart,
+        localEndExclusive,
+        startWire,
+        endWireExclusive,
+        measured,
+        seen
+      );
+    }
+    if (lastCharPoint.node !== textNode) {
+      return appendUnpaintedSegmentBoundarySamples(
+        root,
+        doc,
+        nodeIndex,
+        localStart,
+        localEndExclusive,
+        startWire,
+        endWireExclusive,
+        measured,
+        seen
+      );
+    }
+    // Rule 4: last substantive char before embedded `\n` already resolves to the
+    // browser text-node tail (offset === length); do not add +1.
+    domEnd = lastCharPoint.offset;
+  } else {
+    // Segment exclusive end at text-node EOF (plain soft-wrap node or post-`\n` tail).
+    domEnd = textNode.length;
+  }
+  if (domEnd <= domStart) {
+    return appendUnpaintedSegmentBoundarySamples(
+      root,
+      doc,
+      nodeIndex,
+      localStart,
+      localEndExclusive,
+      startWire,
+      endWireExclusive,
+      measured,
+      seen
+    );
+  }
+
+  const range = root.ownerDocument.createRange();
+  try {
+    range.setStart(textNode, domStart);
+    range.setEnd(textNode, domEnd);
+  } catch {
+    return appendUnpaintedSegmentBoundarySamples(
+      root,
+      doc,
+      nodeIndex,
+      localStart,
+      localEndExclusive,
+      startWire,
+      endWireExclusive,
+      measured,
+      seen
+    );
+  }
+
+  const rects = typeof range.getClientRects === "function" ? [...range.getClientRects()] : [];
+  const visualRects = rects
+    .filter((rect) => rect.width > 0 || rect.height > 0)
+    .sort((left, right) => left.top - right.top || left.left - right.left);
+
+  if (visualRects.length > 0) {
+    const bandSplitOffsets: Array<number | null> = [];
+    for (let bandIndex = 0; bandIndex < visualRects.length - 1; bandIndex++) {
+      const upper = visualRects[bandIndex]!;
+      const lower = visualRects[bandIndex + 1]!;
+      if (Math.abs(lower.top - upper.top) <= 1) {
+        bandSplitOffsets[bandIndex] = null;
+        continue;
+      }
+      bandSplitOffsets[bandIndex] = appendPaintedFragmentBoundarySamples(
+        root,
+        doc,
+        nodeIndex,
+        localStart,
+        localEndExclusive,
+        upper,
+        lower,
+        measured,
+        seen
+      );
+    }
+
+    for (let rectIndex = 0; rectIndex < visualRects.length; rectIndex++) {
+      const rect = visualRects[rectIndex]!;
+      const isLastFragment = rectIndex === visualRects.length - 1;
+      const bandSplitOffset = bandSplitOffsets[rectIndex] ?? null;
+      const midY = rect.top + rect.height / 2;
+      for (const column of probeColumnsForLayoutRect(rect)) {
+        const sample = probeSoftWrapSampleAtColumn(root, doc, midY, column.x);
+        if (!sample) {
+          continue;
+        }
+        if (sample.wire < startWire || sample.wire >= endWireExclusive) {
+          continue;
+        }
+        if (
+          shouldSkipPrefixFragmentColumnProbe(
+            doc,
+            nodeIndex,
+            column,
+            isLastFragment,
+            bandSplitOffset,
+            sample.wire
+          )
+        ) {
+          continue;
+        }
+        upsertSoftWrapMeasuredSample(measured, seen, sample);
+      }
+    }
+
+    if (!seen.has(startWire)) {
+      const lineStart = measuredSegmentLineStartSample(root, doc, nodeIndex, localStart, startWire);
+      if (lineStart) {
+        upsertSoftWrapMeasuredSample(measured, seen, lineStart);
+      }
+    }
+
+    const lineEndLocal = localEndExclusive - 1;
+    const lineEndWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: lineEndLocal });
+    if (
+      lineEndLocal >= localStart &&
+      lineEndWire >= startWire &&
+      lineEndWire < endWireExclusive &&
+      !seen.has(lineEndWire)
+    ) {
+      const lineEnd = measuredSampleAtTextNodeOffset(root, doc, nodeIndex, lineEndLocal);
+      if (lineEnd) {
+        upsertSoftWrapMeasuredSample(measured, seen, lineEnd);
+      }
+    }
+  }
+
+  if (measured.length === beforeCount) {
+    return appendUnpaintedSegmentBoundarySamples(
+      root,
+      doc,
+      nodeIndex,
+      localStart,
+      localEndExclusive,
+      startWire,
+      endWireExclusive,
+      measured,
+      seen
+    );
+  }
+
+  return measured.length - beforeCount;
+}
+
+function appendPaintedSoftWrapSamplesForTextNode(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  measured: DomMeasuredWireOffset[],
+  seen: Set<number>
+): void {
+  const node = doc.nodes[nodeIndex];
+  if (node?.type !== "text" || node.text.length === 0) {
+    return;
+  }
+
+  if (!node.text.includes("\n")) {
+    appendPaintedSoftWrapSamplesForTextSubrange(
+      root,
+      doc,
+      nodeIndex,
+      0,
+      node.text.length,
+      measured,
+      seen
+    );
+    return;
+  }
+
+  let segmentStart = 0;
+  for (let local = 0; local < node.text.length; local++) {
+    if (node.text[local] !== "\n") {
+      continue;
+    }
+    appendPaintedSoftWrapSamplesForTextSubrange(
+      root,
+      doc,
+      nodeIndex,
+      segmentStart,
+      local,
+      measured,
+      seen
+    );
+    segmentStart = local + 1;
+  }
+  appendPaintedSoftWrapSamplesForTextSubrange(
+    root,
+    doc,
+    nodeIndex,
+    segmentStart,
+    node.text.length,
+    measured,
+    seen
+  );
+}
+
+function shouldSkipPrefixFragmentColumnProbe(
+  doc: HandoffNoteDoc,
+  nodeIndex: number,
+  column: LayoutRectProbeColumn,
+  isLastFragment: boolean,
+  bandSplitOffset: number | null,
+  probedWire: number
+): boolean {
+  if (isLastFragment) {
+    return false;
+  }
+  if (column.kind === "right") {
+    return true;
+  }
+  if (bandSplitOffset === null || bandSplitOffset <= 0) {
+    return false;
+  }
+  const pos = wireOffsetToDocPos(doc, probedWire);
+  if (pos.nodeIndex !== nodeIndex) {
+    return false;
+  }
+  return pos.nodeOffset >= bandSplitOffset;
+}
+
+function upsertSoftWrapMeasuredSample(
+  measured: DomMeasuredWireOffset[],
+  seen: Set<number>,
+  sample: DomMeasuredWireOffset
+): void {
+  if (!isUsableMeasuredLayoutCoord(sample)) {
+    return;
+  }
+  const existingIndex = measured.findIndex((entry) => entry.wire === sample.wire);
+  if (existingIndex >= 0) {
+    measured[existingIndex] = sample;
+    seen.add(sample.wire);
+    return;
+  }
+  if (seen.has(sample.wire)) {
+    return;
+  }
+  seen.add(sample.wire);
+  measured.push(sample);
+}
+
+function probeSoftWrapSampleAtColumn(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  midY: number,
+  probeX: number
+): DomMeasuredWireOffset | null {
+  const probed = probeDocPosAtVisualColumn(root, doc, midY, probeX);
+  if (!probed) {
+    return null;
+  }
+  const wire = docPosToWireOffset(doc, probed);
+  if (isEmbeddedBlankBandProbeWire(doc, wire)) {
+    return null;
+  }
+  return { wire, top: midY, left: probeX };
+}
+
 /** Append layout samples at each rendered text line (soft-wrap fragments). */
 export function appendSoftWrapLineSamples(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  measured: { wire: number; top: number; left: number }[]
+  measured: DomMeasuredWireOffset[]
 ): void {
   const seen = new Set(measured.map((sample) => sample.wire));
 
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    const node = doc.nodes[nodeIndex];
-    if (node?.type !== "text" || node.text.length === 0 || node.text.includes("\n")) {
-      continue;
-    }
-
-    const point = resolveDomPointAtDocPos(root, doc, { nodeIndex, nodeOffset: 0 });
-    if (!point || point.node.nodeType !== Node.TEXT_NODE) {
-      continue;
-    }
-
-    const range = root.ownerDocument.createRange();
-    range.selectNodeContents(point.node);
-    const rects = typeof range.getClientRects === "function" ? [...range.getClientRects()] : [];
-    if (rects.length === 0) {
-      continue;
-    }
-
-    for (const rect of rects) {
-      if (rect.width <= 0 && rect.height <= 0) {
-        continue;
-      }
-      const midY = rect.top + rect.height / 2;
-      const probeX = rect.left + Math.min(2, Math.max(0, rect.width / 2));
-      const probed =
-        probeDocPosAtVisualColumn(root, doc, midY, probeX) ??
-        probeDocPosAtVisualColumn(root, doc, rect.top, probeX);
-      if (!probed) {
-        continue;
-      }
-      const wire = docPosToWireOffset(doc, probed);
-      if (seen.has(wire) || isEmbeddedBlankBandProbeWire(doc, wire)) {
-        continue;
-      }
-      const sample = { wire, top: midY, left: rect.left };
-      if (!isUsableMeasuredLayoutCoord(sample)) {
-        continue;
-      }
-      seen.add(wire);
-      measured.push(sample);
-    }
+    appendPaintedSoftWrapSamplesForTextNode(root, doc, nodeIndex, measured, seen);
   }
 }

@@ -1,10 +1,13 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  applyDocInsertText,
+  collapsedSelection,
   docPosToWireOffset,
   docToWire,
   listEmbeddedBlankBandProbeWires,
   wireOffsetToDocPos,
   wireToDoc,
+  type HandoffNoteDoc,
 } from "@caliper/core";
 import { renderHandoffNoteDoc } from "./handoff-note-dom.js";
 import {
@@ -14,6 +17,10 @@ import {
   invalidateHandoffNoteLayoutCache,
   isSameWireSoftWrapBandCrossing,
   layoutRowTopTolerance,
+  layoutContentRowEndSample,
+  layoutContentRowContentExtentRight,
+  layoutContentRowEndWire,
+  layoutContentRowStickyColumn,
   readHandoffNoteLayoutCacheKey,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
@@ -26,6 +33,8 @@ import {
   stubHandoffNoteMentionLayoutCoords,
   stubEmbeddedNewlineSegmentAcquire,
   stubHandoffNoteAnchorRectAtWire,
+  stubTextNodeLineRects,
+  mountThreeRowMentionSoftWrapFixture,
 } from "./handoff-note-test-helpers.js";
 
 const AGENT = "caliper-aaaaaaa";
@@ -38,6 +47,117 @@ function expectStrictlyIncreasing(tops: number[]): void {
   for (let index = 1; index < tops.length; index++) {
     expect(tops[index]!).toBeGreaterThan(tops[index - 1]!);
   }
+}
+
+const EMBEDDED_SOFT_WRAP_ROWS = {
+  band0: 100,
+  band1: 118,
+  band2: 154,
+  band3: 172,
+} as const;
+
+const EMBEDDED_SOFT_WRAP_SEGMENT_LEFT = 40;
+const EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH = 160;
+
+function mountEmbeddedSoftWrapSurface(width = 200): HTMLDivElement {
+  const surface = document.createElement("div");
+  surface.style.width = `${width}px`;
+  document.body.appendChild(surface);
+  Object.defineProperty(surface, "clientWidth", { configurable: true, value: width });
+  return surface;
+}
+
+function paintedOffsetTop(
+  nodeOffset: number,
+  bands: { wrapAt: number; newlineAt: number; postWrapAt?: number }
+): number {
+  const { wrapAt, newlineAt, postWrapAt = Number.POSITIVE_INFINITY } = bands;
+  if (nodeOffset < wrapAt) {
+    return EMBEDDED_SOFT_WRAP_ROWS.band0;
+  }
+  if (nodeOffset <= newlineAt) {
+    return EMBEDDED_SOFT_WRAP_ROWS.band1;
+  }
+  if (nodeOffset < postWrapAt) {
+    return EMBEDDED_SOFT_WRAP_ROWS.band2;
+  }
+  return EMBEDDED_SOFT_WRAP_ROWS.band3;
+}
+
+function stubEmbeddedNewlineNodePaint(
+  surface: HTMLElement,
+  doc: HandoffNoteDoc,
+  bands: { wrapAt: number; newlineAt: number; postWrapAt?: number },
+  lineFragmentTops: number[]
+): () => void {
+  const tailLeft = EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH;
+  return stubTextNodeLineRects(
+    surface,
+    doc,
+    0,
+    lineFragmentTops.map((top) => ({
+      top: top - 9,
+      left: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT,
+      width: EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH,
+      height: 18,
+    })),
+    {
+      resolveOffsetRect: (nodeOffset) => ({
+        top: paintedOffsetTop(nodeOffset, bands),
+        left: tailLeft,
+      }),
+    }
+  );
+}
+
+function stubPostNewlineSoftWrapAcquire(
+  surface: HTMLElement,
+  doc: HandoffNoteDoc,
+  postLineStart: number,
+  wireLength: number,
+  postWrapStart: number,
+  postInterior: number
+): () => void {
+  return stubEmbeddedNewlineSegmentAcquire(surface, doc, {
+    startWire: postLineStart,
+    endWireExclusive: wireLength,
+    rects: [
+      {
+        top: EMBEDDED_SOFT_WRAP_ROWS.band2 - 9,
+        left: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT,
+        width: EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH,
+        height: 18,
+      },
+      {
+        top: EMBEDDED_SOFT_WRAP_ROWS.band3 - 9,
+        left: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT,
+        width: EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH,
+        height: 18,
+      },
+    ],
+    probeHits: [
+      {
+        column: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + 2,
+        rowTop: EMBEDDED_SOFT_WRAP_ROWS.band2,
+        pos: wireOffsetToDocPos(doc, postLineStart),
+      },
+      {
+        column: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH / 2,
+        rowTop: EMBEDDED_SOFT_WRAP_ROWS.band2,
+        pos: wireOffsetToDocPos(doc, postLineStart + 2),
+      },
+      {
+        column: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + 2,
+        rowTop: EMBEDDED_SOFT_WRAP_ROWS.band3,
+        pos: wireOffsetToDocPos(doc, postWrapStart),
+      },
+      {
+        column: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH / 2,
+        rowTop: EMBEDDED_SOFT_WRAP_ROWS.band3,
+        pos: wireOffsetToDocPos(doc, postInterior),
+      },
+    ],
+  });
 }
 
 describe("handoff-note-layout-map", () => {
@@ -83,6 +203,39 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
       expect(readHandoffNoteLayoutCacheKey()).toBeNull();
       expect(getCachedMeasuredSamples("hello", 320)).toBeNull();
+    });
+
+    it("invalidates injected cache after generation bump without wire or width change", () => {
+      setMeasuredSamplesCache("hello", 320, [{ wire: 0, top: 0, left: 0 }]);
+      expect(getCachedMeasuredSamples("hello", 320)).not.toBeNull();
+      invalidateHandoffNoteLayoutCache();
+      setMeasuredSamplesCache("hello", 320, [{ wire: 0, top: 12, left: 0 }]);
+      expect(getCachedMeasuredSamples("hello", 320)).toEqual([{ wire: 0, top: 12, left: 0 }]);
+    });
+
+    it("layoutContentRowEndSample returns measured coords for row-end wire", () => {
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: 140, left: 350 },
+          { wire: 43, top: 140, left: 625 },
+          { wire: 48, top: 159, left: 380 },
+        ],
+        18
+      );
+      const doc = wireToDoc("x".repeat(50));
+      expect(layoutContentRowEndWire(layout, doc, 0)).toBe(43);
+      expect(layoutContentRowEndSample(layout, doc, 0)).toEqual({
+        wire: 43,
+        top: 140,
+        left: 625,
+      });
+      expect(layoutContentRowStickyColumn(layout, doc, 0)).toBe(625);
+      expect(layoutContentRowContentExtentRight(layout, doc, 0)).toBe(625);
+      expect(layoutContentRowEndSample(layout, doc, 1)).toEqual({
+        wire: 48,
+        top: 159,
+        left: 380,
+      });
     });
 
     it("reuses cache across repeated vertical measure via selection integration", () => {
@@ -515,6 +668,224 @@ describe("handoff-note-layout-map", () => {
       expect(layout.rowIndexForWire(tailInterior)).toBe(1);
       expect(layout.rowIndexForWire(tailPastEnd)).toBe(1);
       surface.remove();
+    });
+
+    it("keeps typed postfix interior on paint row when mention-end alias sample is on lower row", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const agent = fx.agent;
+      const postfixNode = fx.postfixSpacerNode;
+      const spacer = fx.doc.nodes[postfixNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+
+      const inserted = applyDocInsertText(
+        fx.doc,
+        collapsedSelection({ nodeIndex: postfixNode, nodeOffset: spacer.text.length }),
+        "vapm mist"
+      );
+      fx.doc = inserted.doc;
+      renderHandoffNoteDoc(fx.root, fx.doc, {
+        colorByAgentId: new Map([[agent, "#06f"]]),
+      });
+      const wire = docToWire(fx.doc);
+      const interiorPos = { nodeIndex: postfixNode, nodeOffset: 8 };
+      const interiorWire = docPosToWireOffset(fx.doc, interiorPos);
+      const mistStart = docPosToWireOffset(fx.doc, { nodeIndex: postfixNode, nodeOffset: 1 });
+      const thirdMentionEnd = docPosToWireOffset(fx.doc, {
+        nodeIndex: fx.mentionNodes[2]!,
+        nodeOffset: 1 + agent.length,
+      });
+
+      stubTextNodeLineRects(fx.root, fx.doc, postfixNode, [
+        { top: fx.row1Top, left: 520, width: 120 },
+      ]);
+      invalidateHandoffNoteLayoutCache();
+      setMeasuredSamplesCache(wire, fx.rootWidth, [
+        { wire: 0, top: fx.row0Top, left: 349.5 },
+        { wire: 4, top: fx.row0Top, left: 378.57 },
+        { wire: thirdMentionEnd, top: fx.row1Top, left: 524.02 },
+        { wire: mistStart, top: fx.row1Top, left: 528.77 },
+        { wire: mistStart + 1, top: fx.row1Top, left: 542.47 },
+        { wire: interiorWire, top: fx.row1Top, left: 542.47 },
+        { wire: interiorWire + 1, top: fx.row1Top, left: 556.17 },
+        { wire: fx.fourthMentionStart, top: fx.row2Top, left: 348.5 },
+        { wire: wire.length, top: fx.row2Top, left: 469.21 },
+        { wire: fx.wrapRowStartWire, top: fx.row1Top, left: 355.15 },
+        { wire: fx.interiorWire, top: fx.row1Top, left: 379.09 },
+        { wire: mistStart - 1, top: fx.row2Top, left: 526.77 },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, interiorPos);
+
+      expect(layout.rowIndexForWire(interiorWire)).toBe(1);
+      expect(layout.rowIndexForWire(interiorWire)).not.toBe(2);
+      fx.root.remove();
+    });
+
+    it("infers prefix end from lower-row continuation when trailing spacer sample is absent", () => {
+      const wire = `he @${AGENT} x @${AGENT} tail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const tailInterior = tailStart + 2;
+      const spacerWire = tailStart - 1;
+      const tailPastEnd = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const continuationLeft = 370.02;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart, top: row1Top, left: continuationLeft },
+        { wire: tailPastEnd, top: row1Top, left: continuationLeft },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+
+      expect(layout.rowIndexForWire(spacerWire)).toBe(0);
+      expect(layout.rowIndexForWire(tailStart)).toBe(1);
+      expect(layout.rowIndexForWire(tailInterior)).toBe(1);
+      surface.remove();
+    });
+
+    it("dom acquire pins wrap row bounds from painted fragment boundaries", () => {
+      const wire = `he @${AGENT} x @${AGENT} tail`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const spacerWire = tailStart - 1;
+      const tailTextNodeIndex = 4;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      stubHandoffNoteMentionLayoutCoords(
+        surface,
+        new Map([
+          [1, { top: row0Top, left: 382.09 }],
+          [3, { top: row0Top, left: 507.67 }],
+        ])
+      );
+      const restoreRects = stubTextNodeLineRects(
+        surface,
+        doc,
+        tailTextNodeIndex,
+        [
+          { top: row0Top - 9, left: 580, width: 44, height: 18 },
+          { top: row1Top - 9, left: 347.5, width: 120, height: 18 },
+        ],
+        {
+          resolveOffsetRect: (nodeOffset) =>
+            nodeOffset <= 0
+              ? { top: row0Top, left: 624.82 }
+              : { top: row1Top, left: 370.02 + nodeOffset * 4 },
+        }
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, tailStart + 2)
+        );
+        expect(layout.rowIndexForWire(spacerWire)).toBe(0);
+        expect(layout.rowIndexForWire(tailStart)).toBe(1);
+        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        expect(cached?.some((sample) => sample.wire === spacerWire && sample.top === row0Top)).toBe(
+          true
+        );
+        expect(cached?.some((sample) => sample.wire === tailStart)).toBe(true);
+        expect(cached?.find((sample) => sample.wire === tailStart)?.top).toBeGreaterThan(row0Top);
+      } finally {
+        restoreRects();
+        surface.remove();
+      }
+    });
+
+    it("dom acquire pins each pairwise boundary for three-line soft wrap in one text node", () => {
+      const wire = "0123456789abcdefghijklmnop";
+      const doc = wireToDoc(wire);
+      const line2Start = 8;
+      const line3Start = 17;
+      const row0Top = 100;
+      const row1Top = 118;
+      const row2Top = 136;
+      const surface = document.createElement("div");
+      surface.style.width = "200px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 200 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+
+      const restoreRects = stubTextNodeLineRects(
+        surface,
+        doc,
+        0,
+        [
+          { top: row0Top - 9, left: 40, width: 160, height: 18 },
+          { top: row1Top - 9, left: 40, width: 160, height: 18 },
+          { top: row2Top - 9, left: 40, width: 160, height: 18 },
+        ],
+        {
+          resolveOffsetRect: (nodeOffset) => {
+            if (nodeOffset < line2Start) {
+              return { top: row0Top, left: 160 };
+            }
+            if (nodeOffset < line3Start) {
+              return { top: row1Top, left: 160 };
+            }
+            return { top: row2Top, left: 160 };
+          },
+        }
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, line3Start + 2)
+        );
+        expect(layout.visualRowCount).toBeGreaterThanOrEqual(3);
+        expect(layout.rowIndexForWire(line2Start - 1)).toBe(0);
+        expect(layout.rowIndexForWire(line2Start)).toBe(1);
+        expect(layout.rowIndexForWire(line3Start - 1)).toBe(1);
+        expect(layout.rowIndexForWire(line3Start)).toBe(2);
+        expect(layout.rowIndexForWire(line2Start + 2)).toBe(1);
+        expect(layout.rowIndexForWire(line3Start + 2)).toBe(2);
+        expect(layout.rows[2]?.top).toBeCloseTo(row2Top, 0);
+        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        expect(
+          cached?.some((sample) => sample.wire === line2Start - 1 && sample.top === row0Top)
+        ).toBe(true);
+        expect(cached?.some((sample) => sample.wire === line2Start && sample.top === row1Top)).toBe(
+          true
+        );
+        expect(
+          cached?.some((sample) => sample.wire === line3Start - 1 && sample.top === row1Top)
+        ).toBe(true);
+        expect(cached?.some((sample) => sample.wire === line3Start && sample.top === row2Top)).toBe(
+          true
+        );
+      } finally {
+        restoreRects();
+        surface.remove();
+      }
     });
 
     it("dom acquire samples embedded-newline line interiors on the painted band", () => {
@@ -1034,6 +1405,271 @@ describe("handoff-note-layout-map", () => {
           useRowStartLandingOnTarget: true,
         })
       ).toBe(true);
+    });
+  });
+
+  describe("embedded-newline text node × soft-wrap acquire contract", () => {
+    const preWrapStart = 8;
+    const postWrapBandWidth = 8;
+
+    it("dom acquire pins pre-newline two-band wrap boundaries in cache", () => {
+      const wire = "0123456789abcdefghij\nx";
+      const doc = wireToDoc(wire);
+      const newlineWire = wire.indexOf("\n");
+      const surface = mountEmbeddedSoftWrapSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      const restorePaint = stubEmbeddedNewlineNodePaint(
+        surface,
+        doc,
+        { wrapAt: preWrapStart, newlineAt: newlineWire },
+        [EMBEDDED_SOFT_WRAP_ROWS.band0, EMBEDDED_SOFT_WRAP_ROWS.band1]
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, preWrapStart + 2));
+        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        expect(cached?.find((sample) => sample.wire === preWrapStart - 1)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band0
+        );
+        expect(cached?.find((sample) => sample.wire === preWrapStart)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band1
+        );
+      } finally {
+        restorePaint();
+        surface.remove();
+      }
+    });
+
+    it("dom acquire pins pre-newline three-band wrap boundaries in cache", () => {
+      const wire = "0123456789abcdefghijklmnop\nx";
+      const doc = wireToDoc(wire);
+      const newlineWire = wire.indexOf("\n");
+      const preLine3Start = 17;
+      const preBand2Top = 136;
+      const surface = mountEmbeddedSoftWrapSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      const tailLeft = EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH;
+      const restorePaint = stubTextNodeLineRects(
+        surface,
+        doc,
+        0,
+        [EMBEDDED_SOFT_WRAP_ROWS.band0, EMBEDDED_SOFT_WRAP_ROWS.band1, preBand2Top].map((top) => ({
+          top: top - 9,
+          left: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT,
+          width: EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH,
+          height: 18,
+        })),
+        {
+          resolveOffsetRect: (nodeOffset) => {
+            if (nodeOffset < preWrapStart) {
+              return { top: EMBEDDED_SOFT_WRAP_ROWS.band0, left: tailLeft };
+            }
+            if (nodeOffset < preLine3Start) {
+              return { top: EMBEDDED_SOFT_WRAP_ROWS.band1, left: tailLeft };
+            }
+            return { top: preBand2Top, left: tailLeft };
+          },
+        }
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, preLine3Start + 2));
+        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        expect(cached?.find((sample) => sample.wire === preWrapStart - 1)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band0
+        );
+        expect(cached?.find((sample) => sample.wire === preWrapStart)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band1
+        );
+        expect(cached?.find((sample) => sample.wire === preLine3Start - 1)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band1
+        );
+        expect(cached?.find((sample) => sample.wire === preLine3Start)?.top).toBe(preBand2Top);
+      } finally {
+        restorePaint();
+        surface.remove();
+      }
+    });
+
+    it("dom acquire assigns pre-newline wrap interior to its painted band", () => {
+      const wire = "0123456789abcdefghij\nx";
+      const doc = wireToDoc(wire);
+      const newlineWire = wire.indexOf("\n");
+      const preInterior = preWrapStart + 3;
+      const preLineEnd = newlineWire - 1;
+      const surface = mountEmbeddedSoftWrapSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      const restorePaint = stubEmbeddedNewlineNodePaint(
+        surface,
+        doc,
+        { wrapAt: preWrapStart, newlineAt: newlineWire },
+        [EMBEDDED_SOFT_WRAP_ROWS.band0, EMBEDDED_SOFT_WRAP_ROWS.band1]
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, preInterior)
+        );
+        expect(layout.rowIndexForWire(preWrapStart - 1)).toBe(0);
+        expect(layout.rowIndexForWire(preWrapStart)).toBe(1);
+        expect(layout.rowIndexForWire(preInterior)).toBe(1);
+        expect(layout.rowIndexForWire(preLineEnd)).toBe(1);
+        expect(layout.rows[1]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band1, 0);
+      } finally {
+        restorePaint();
+        surface.remove();
+      }
+    });
+
+    it("dom acquire pins post-newline two-band wrap boundaries on substantive line", () => {
+      const wire = "x\nklmnopqrstuvwxyz0123";
+      const doc = wireToDoc(wire);
+      const postLineStart = wire.indexOf("\n") + 1;
+      const postWrapStart = postLineStart + postWrapBandWidth;
+      const postInterior = postWrapStart + 3;
+      const surface = mountEmbeddedSoftWrapSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      const restorePaint = stubTextNodeLineRects(
+        surface,
+        doc,
+        0,
+        [
+          {
+            top: EMBEDDED_SOFT_WRAP_ROWS.band2 - 9,
+            left: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT,
+            width: EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH,
+            height: 18,
+          },
+          {
+            top: EMBEDDED_SOFT_WRAP_ROWS.band3 - 9,
+            left: EMBEDDED_SOFT_WRAP_SEGMENT_LEFT,
+            width: EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH,
+            height: 18,
+          },
+        ],
+        {
+          resolveOffsetRect: (nodeOffset) => {
+            const tailLeft = EMBEDDED_SOFT_WRAP_SEGMENT_LEFT + EMBEDDED_SOFT_WRAP_SEGMENT_WIDTH;
+            if (nodeOffset < postWrapStart) {
+              return { top: EMBEDDED_SOFT_WRAP_ROWS.band2, left: tailLeft };
+            }
+            return { top: EMBEDDED_SOFT_WRAP_ROWS.band3, left: tailLeft };
+          },
+        }
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, postInterior)
+        );
+        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        expect(cached?.find((sample) => sample.wire === postLineStart)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band2
+        );
+        expect(cached?.find((sample) => sample.wire === postWrapStart)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band3
+        );
+        expect(layout.rowIndexForWire(postLineStart)).toBe(0);
+        expect(layout.rowIndexForWire(postWrapStart)).toBe(1);
+        expect(layout.rowIndexForWire(postInterior)).toBe(1);
+      } finally {
+        restorePaint();
+        surface.remove();
+      }
+    });
+
+    it("dom acquire assigns four visual rows when pre- and post-newline segments each soft-wrap", () => {
+      const wire = "0123456789abcdefghij\nklmnopqrstuvwxyz0123";
+      const doc = wireToDoc(wire);
+      const newlineWire = wire.indexOf("\n");
+      const preInterior = preWrapStart + 3;
+      const postLineStart = newlineWire + 1;
+      const postWrapStart = postLineStart + postWrapBandWidth;
+      const postInterior = postWrapStart + 3;
+      const surface = mountEmbeddedSoftWrapSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+      const restorePaint = stubEmbeddedNewlineNodePaint(
+        surface,
+        doc,
+        { wrapAt: preWrapStart, newlineAt: newlineWire, postWrapAt: postWrapStart },
+        [
+          EMBEDDED_SOFT_WRAP_ROWS.band0,
+          EMBEDDED_SOFT_WRAP_ROWS.band1,
+          EMBEDDED_SOFT_WRAP_ROWS.band2,
+          EMBEDDED_SOFT_WRAP_ROWS.band3,
+        ]
+      );
+      invalidateHandoffNoteLayoutCache();
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, postInterior)
+        );
+        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+
+        expect(layout.visualRowCount).toBeGreaterThanOrEqual(4);
+        expect(layout.rowIndexForWire(preInterior)).toBe(1);
+        expect(layout.rowIndexForWire(postInterior)).toBe(3);
+        expect(layout.rows[0]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band0, 0);
+        expect(layout.rows[1]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band1, 0);
+        expect(layout.rows[2]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band2, 0);
+        expect(layout.rows[3]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band3, 0);
+        expect(cached?.find((sample) => sample.wire === preWrapStart)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band1
+        );
+        expect(cached?.find((sample) => sample.wire === postWrapStart)?.top).toBe(
+          EMBEDDED_SOFT_WRAP_ROWS.band3
+        );
+        const preWrapRow = layout.rowIndexForWire(preInterior);
+        const postWrapRow = layout.rowIndexForWire(postInterior);
+        expect(isSameWireSoftWrapBandCrossing(doc, preWrapRow, postWrapRow, layout.rows)).toBe(
+          false
+        );
+      } finally {
+        restorePaint();
+        surface.remove();
+      }
+    });
+
+    it("infer assigns pre-newline wrap rows from cache on embedded-newline text node", () => {
+      const wire = "0123456789abcdefghij\nklmnopqrstuvwxyz0123";
+      const doc = wireToDoc(wire);
+      const newlineWire = wire.indexOf("\n");
+      const preInterior = preWrapStart + 3;
+      const postLineStart = newlineWire + 1;
+      const postWrapStart = postLineStart + postWrapBandWidth;
+      const postInterior = postWrapStart + 3;
+      const surface = mountEmbeddedSoftWrapSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+
+      setMeasuredSamplesCache(wire, surface.clientWidth, [
+        { wire: 0, top: EMBEDDED_SOFT_WRAP_ROWS.band0, left: 200 },
+        { wire: preWrapStart - 1, top: EMBEDDED_SOFT_WRAP_ROWS.band0, left: 200 },
+        { wire: preWrapStart, top: EMBEDDED_SOFT_WRAP_ROWS.band1, left: 200 },
+        { wire: newlineWire - 1, top: EMBEDDED_SOFT_WRAP_ROWS.band1, left: 200 },
+        { wire: postLineStart, top: EMBEDDED_SOFT_WRAP_ROWS.band2, left: 40 },
+        { wire: postWrapStart - 1, top: EMBEDDED_SOFT_WRAP_ROWS.band2, left: 40 },
+        { wire: postWrapStart, top: EMBEDDED_SOFT_WRAP_ROWS.band3, left: 40 },
+        { wire: wire.length, top: EMBEDDED_SOFT_WRAP_ROWS.band3, left: 40 },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, postInterior));
+
+      expect(layout.rowIndexForWire(preInterior)).toBe(1);
+      expect(layout.rowIndexForWire(postInterior)).toBe(3);
+      expect(layout.rows[1]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band1, 0);
+      expect(layout.rows[3]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band3, 0);
+      surface.remove();
     });
   });
 
