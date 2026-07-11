@@ -93,7 +93,7 @@ function setDocWithLayout(
   samples: { wire: number; top: number; left: number }[]
 ): void {
   editor.setDocFromWire(wire, cursor, { resetHistory: true });
-  setMeasuredSamplesCache(wire, root.clientWidth, samples);
+  setMeasuredSamplesCache(root, wire, root.clientWidth, samples);
 }
 
 const VISUAL_ROW_TOP = { r1: 100, r2: 136, r3: 172, r4: 208 } as const;
@@ -290,24 +290,24 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("first line: up and left resolve to the same wire offset", () => {
       host.editor.setDocFromWire(bleedWire, firstLineExtreme, { resetHistory: true });
-      setMeasuredSamplesCache(bleedWire, host.root.clientWidth, layoutSamples);
+      setMeasuredSamplesCache(host.root, bleedWire, host.root.clientWidth, layoutSamples);
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, firstLineBleedWire, "vertical −1");
 
       host.editor.setDocFromWire(bleedWire, firstLineExtreme, { resetHistory: true });
-      setMeasuredSamplesCache(bleedWire, host.root.clientWidth, layoutSamples);
+      setMeasuredSamplesCache(host.root, bleedWire, host.root.clientWidth, layoutSamples);
       expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, firstLineBleedWire, "horizontal −1");
     });
 
     it("last line: down and right resolve to the same wire offset", () => {
       host.editor.setDocFromWire(bleedWire, lastMentionAt, { resetHistory: true });
-      setMeasuredSamplesCache(bleedWire, host.root.clientWidth, layoutSamples);
+      setMeasuredSamplesCache(host.root, bleedWire, host.root.clientWidth, layoutSamples);
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expectCaretParity(host.editor, host.root, lastLineExtremeEnd, "vertical +1");
 
       host.editor.setDocFromWire(bleedWire, lastMentionAt, { resetHistory: true });
-      setMeasuredSamplesCache(bleedWire, host.root.clientWidth, layoutSamples);
+      setMeasuredSamplesCache(host.root, bleedWire, host.root.clientWidth, layoutSamples);
       expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
       expectCaretParity(host.editor, host.root, lastLineExtremeEnd, "horizontal +1");
     });
@@ -634,6 +634,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     it("empty wire line and next line start round-trip", () => {
       host.editor.setDocFromWire(wrapWire, wrapBlankProbe, { resetHistory: true });
       setMeasuredSamplesCache(
+        host.root,
         wrapWire,
         host.root.clientWidth,
         mountWrapLayoutSamples(wrapBlankProbe, wrapNextLineStart)
@@ -643,6 +644,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       host.editor.setDocFromWire(wrapWire, wrapNextLineStart, { resetHistory: true });
       setMeasuredSamplesCache(
+        host.root,
         wrapWire,
         host.root.clientWidth,
         mountWrapLayoutSamples(wrapNextLineStart, wrapBlankProbe)
@@ -656,6 +658,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const lastLineMentionEnd = lastLineStart + `@${wrapAgentA}`.length;
       host.editor.setDocFromWire(wrapWire, lastLineStart, { resetHistory: true });
       setMeasuredSamplesCache(
+        host.root,
         wrapWire,
         host.root.clientWidth,
         mountWrapLayoutSamples(lastLineStart, lastLineMentionEnd)
@@ -696,7 +699,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("down from empty suffix row lands lower pill start with editor/DOM parity", () => {
       host.editor.setDocFromWire(wire, emptyRowWire, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        suffixBlankAbovePillLayoutSamples()
+      );
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expectCaretParity(
         host.editor,
@@ -708,7 +716,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("down from empty suffix row lands on mention atom start not trailing text node", () => {
       host.editor.setDocFromWire(wire, emptyRowWire, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        suffixBlankAbovePillLayoutSamples()
+      );
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expect(host.editor.getCursor()).toBe(lowerPillStartWire);
       const focus = host.editor.getSelectionState().focus;
@@ -718,7 +731,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("down from lower pill line start boundary-bleeds to post-mention space", () => {
       host.editor.setDocFromWire(wire, lowerPillStartWire, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        suffixBlankAbovePillLayoutSamples()
+      );
       const focus = host.editor.getSelectionState().focus;
       expect(host.editor.getDoc().nodes[focus.nodeIndex]?.type).toBe("mention");
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
@@ -732,7 +750,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("empty suffix row then lower pill start bleeds on second down", () => {
       host.editor.setDocFromWire(wire, emptyRowWire, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        suffixBlankAbovePillLayoutSamples()
+      );
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       const focus = host.editor.getSelectionState().focus;
       expect(host.editor.getDoc().nodes[focus.nodeIndex]?.type).toBe("mention");
@@ -743,7 +766,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("round-trip — up from post-mention then down chain restores lower pill start", () => {
       host.editor.setDocFromWire(wire, postMentionSpaceWire - 1, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, suffixBlankAbovePillLayoutSamples());
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        suffixBlankAbovePillLayoutSamples()
+      );
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, emptyRowWire, "up to empty suffix row");
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
@@ -855,7 +883,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(landmarks.blankRun.length).toBeGreaterThanOrEqual(3);
 
       host.editor.setDocFromWire(wire, endOfLastMention, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, monotonicMeasuredLayoutSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        monotonicMeasuredLayoutSamples(wire)
+      );
     });
 
     it("vertical chain through blank band to middle row with editor/DOM parity", () => {
@@ -902,7 +935,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("no freeze stepping from blank band through middle row", () => {
       host.editor.setDocFromWire(wire, secondBlankAboveBottom, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, monotonicMeasuredLayoutSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        monotonicMeasuredLayoutSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(firstBlankAboveBottom);
@@ -924,7 +962,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("middle row descends back into blank band with parity", () => {
       host.editor.setDocFromWire(wire, middleRowLineStart, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, monotonicMeasuredLayoutSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        monotonicMeasuredLayoutSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expectCaretParity(
@@ -1005,7 +1048,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
           [3, { top: ROW4, left: 0 }],
         ])
       );
-      setMeasuredSamplesCache(lowerRowWire, host.root.clientWidth, [
+      setMeasuredSamplesCache(host.root, lowerRowWire, host.root.clientWidth, [
         { wire: 0, top: ROW1, left: 0 },
         { wire: probes[0]!, top: ROW2, left: 0 },
         { wire: probes[1]!, top: ROW3, left: 0 },
@@ -1771,7 +1814,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const tailInterior = tailStart + 2;
 
       host.editor.setDocFromWire(wire, tailInterior, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, monotonicMeasuredLayoutSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        monotonicMeasuredLayoutSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
       expectCaretParity(host.editor, host.root, tailInterior + 1);
@@ -1862,7 +1910,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: wire.length - 1, top: blankTop, left: 40 }
       );
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, samples);
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, samples);
       for (const blank of blanks) {
         expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
         expectCaretParity(host.editor, host.root, blank);
@@ -1925,15 +1973,15 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const tailStart = wire.lastIndexOf("\n") + 1;
       const samples = monotonicMeasuredLayoutSamples(wire);
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, samples);
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, samples);
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expectCaretParity(host.editor, host.root, blanks[0]!);
       host.editor.setDocFromWire(wire, tailStart, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, samples);
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, samples);
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, blanks[6]!);
       host.editor.setDocFromWire(wire, blanks[0]!, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, samples);
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, samples);
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, 0);
     });
@@ -2024,7 +2072,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("second mention end and upper row round-trip with editor parity", () => {
       host.editor.setDocFromWire(wire, secondMentionEnd, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, layoutSamples);
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, layoutSamples);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, postMentionStart, "up to upper row tail");
@@ -2205,7 +2253,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("up from wrapped suffix tail uses vertical layout not horizontal bleed", () => {
       host.editor.setDocFromWire(wire, tailWire, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, [
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
         { wire: prefixStart, top: row1Top, left: 0 },
         { wire: postMentionStart, top: row1Top, left: 200 },
         { wire: firstMentionEnd, top: row1Top, left: 220 },
@@ -2255,7 +2303,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("up from wrap tail uses vertical layout not horizontal bleed", () => {
       host.editor.setDocFromWire(wire, tailInterior, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, compactWrapSamples());
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).not.toBe(tailInterior - 1);
@@ -2375,7 +2423,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         row1Top,
         wireOffsetToDocPos(wrapDoc, tailInterior)
       );
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+      setMeasuredSamplesCache(host.root, wrapWire, host.root.clientWidth, wrapSamples);
 
       try {
         expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
@@ -2389,7 +2437,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
           row0Top,
           wireOffsetToDocPos(wrapDoc, prefixInterior)
         );
-        setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+        setMeasuredSamplesCache(host.root, wrapWire, host.root.clientWidth, wrapSamples);
 
         expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
         expect(host.editor.getCursor()).toBe(prefixInterior);
@@ -2447,7 +2495,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("down from row 0 head lands on wrapped tail without horizontal bleed", () => {
       host.editor.setDocFromWire(wire, row0Head, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, compactWrapSamples());
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expect(host.editor.getCursor()).toBe(tailStart);
@@ -2473,7 +2521,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: wrapTailStart, top: 140.67, left: 624.82 },
       ];
       host.editor.setDocFromWire(wrapWire, 3, { resetHistory: true });
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+      setMeasuredSamplesCache(host.root, wrapWire, host.root.clientWidth, wrapSamples);
 
       while (host.editor.getCursor() > 0) {
         expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
@@ -2501,7 +2549,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: wrapTailStart, top: 140.67, left: 624.82 },
       ];
       host.editor.setDocFromWire(wrapWire, wrapTailStart, { resetHistory: true });
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+      setMeasuredSamplesCache(host.root, wrapWire, host.root.clientWidth, wrapSamples);
 
       while (host.editor.getCursor() < wrapTailPastEnd) {
         expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
@@ -2547,7 +2595,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: secondPostStart + 1, top: row0Top - 0.43, left: 624.82 },
       ];
       host.editor.setDocFromWire(wrapWire, wrapWire.length, { resetHistory: true });
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+      setMeasuredSamplesCache(host.root, wrapWire, host.root.clientWidth, wrapSamples);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       const upperLanding = host.editor.getCursor();
@@ -2592,7 +2640,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         { wire: secondTextStart, top: row0Top - 0.43, left: 624.82 },
       ];
       host.editor.setDocFromWire(wrapWire, wrapWire.length, { resetHistory: true });
-      setMeasuredSamplesCache(wrapWire, host.root.clientWidth, wrapSamples);
+      setMeasuredSamplesCache(host.root, wrapWire, host.root.clientWidth, wrapSamples);
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).not.toBe(secondTextStart);
@@ -2608,7 +2656,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("down from row 0 end after spacer and up round-trip without horizontal bleed", () => {
       host.editor.setDocFromWire(wire, row0EndAfterSpacer, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, compactWrapSamples());
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expect(host.editor.getCursor()).toBeGreaterThanOrEqual(tailStart);
@@ -2620,7 +2668,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("up from wrapped tail interior after horizontal step uses vertical layout", () => {
       host.editor.setDocFromWire(wire, tailPastEnd, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, compactWrapSamples());
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, compactWrapSamples());
       expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
       expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(tailInterior);
@@ -2681,7 +2729,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const tailStart = wire.indexOf("post");
       const upperBlankProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       host.editor.setDocFromWire(wire, upperBlankProbe, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, softWrapBlankBandSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        softWrapBlankBandSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(tailStart);
@@ -2695,7 +2748,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const tailStart = wire.indexOf("post");
       const upperBlankProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       host.editor.setDocFromWire(wire, upperBlankProbe, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, softWrapBlankBandSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        softWrapBlankBandSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(tailStart);
@@ -2725,7 +2783,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const tailStart = wire.indexOf("post");
       const upperBlankProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       host.editor.setDocFromWire(wire, tailStart, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, softWrapBlankBandSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        softWrapBlankBandSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);
       expect(host.editor.getCursor()).toBe(upperBlankProbe);
@@ -2752,7 +2815,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("up from wide lower row preserves sticky for down round-trip", () => {
       host.editor.setDocFromWire(wire, lowerPastEnd, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, lineBreakSamples());
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, lineBreakSamples());
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBeLessThanOrEqual(upperEnd);
@@ -2807,12 +2870,22 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const lowerEof = wire.length - 1;
       const row0EndBeforeBreak = wire.indexOf("\n");
       host.editor.setDocFromWire(wire, lowerEof, { resetHistory: true });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, wireNewlineWideColumnSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        wireNewlineWideColumnSamples(wire)
+      );
       stubHandoffNoteAnchorRectAtWire(host.root, doc, lowerEof, {
         top: row1Top,
         left: goalColumn,
       });
-      setMeasuredSamplesCache(wire, host.root.clientWidth, wireNewlineWideColumnSamples(wire));
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        wireNewlineWideColumnSamples(wire)
+      );
 
       expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
       expect(host.editor.getCursor()).toBe(row0EndBeforeBreak);

@@ -152,7 +152,10 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       return;
     }
     const priorFocus = selection.focus;
-    const live = readDocSelection(root, doc);
+    const clickIngressPending = source === "selectionchange" ? pendingClickIngress : null;
+    const useAuthorityRead =
+      source === "sync" || (source === "selectionchange" && !clickIngressPending);
+    const live = readDocSelection(root, doc, useAuthorityRead ? { from: priorFocus } : undefined);
     if (
       live.anchor.nodeIndex !== live.focus.nodeIndex ||
       live.anchor.nodeOffset !== live.focus.nodeOffset
@@ -375,7 +378,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       previousDoc: renderOptions?.previousDoc,
     });
     if (lastRenderOutcome.docChanged) {
-      invalidateHandoffNoteLayoutCache();
+      invalidateHandoffNoteLayoutCache(root);
     }
     writeSelection(nextSelection, `render.${source}`, lastRenderOutcome);
   };
@@ -459,7 +462,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     if (!root) {
       return;
     }
-    invalidateHandoffNoteLayoutCache();
+    invalidateHandoffNoteLayoutCache(root);
     const { maxHeight } = readHandoffNoteMetrics(root);
     root.style.height = "auto";
     const contentHeight = root.scrollHeight;
@@ -541,7 +544,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
 
       doc = next;
       selection = normalizeSelection(doc, nextSelection, { from: selection.focus });
-      invalidateHandoffNoteLayoutCache();
+      invalidateHandoffNoteLayoutCache(root);
       renderDoc(selection, "importWire.changed");
       resize();
       syncWireOut("importWire.changed");

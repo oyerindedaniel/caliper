@@ -10,6 +10,7 @@
   listEmbeddedBlankBandProbeWires,
   normalizeDocPos,
   wireOffsetToDocPos,
+  type HandoffNoteCursorContext,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
@@ -27,6 +28,7 @@ import {
   readMentionNodeIndex,
   wireOffsetAtTextBreak,
 } from "./handoff-note-dom.js";
+import { isCrossRowSpacerAndPillDom } from "./handoff-note-row-geometry.js";
 
 /** Layout acquire sample shape (matches layout-map `MeasuredWireOffset`; not imported — cycle). */
 type DomMeasuredWireOffset = { wire: number; top: number; left: number; right?: number };
@@ -651,6 +653,54 @@ export function domPointToDocPos(
   return domPointToDocPos(root, doc, container.parentNode ?? root, 0);
 }
 
+export type DomPointReadOptions = {
+  /** Prior authority doc pos — wins at same-wire alias seams on passive selection read. */
+  from?: HandoffNoteDocPos;
+};
+
+/** Passive DOM read: when wire matches authority but owner differs, trust authority doc pos. */
+export function resolveDomReadDocPos(
+  doc: HandoffNoteDoc,
+  read: HandoffNoteDocPos,
+  authority?: HandoffNoteDocPos
+): HandoffNoteDocPos {
+  if (!authority) {
+    return read;
+  }
+  if (read.nodeIndex === authority.nodeIndex && read.nodeOffset === authority.nodeOffset) {
+    return read;
+  }
+  const readWire = docPosToWireOffset(doc, read);
+  const authorityWire = docPosToWireOffset(doc, authority);
+  if (readWire === authorityWire) {
+    return authority;
+  }
+  const authorityNode = doc.nodes[authority.nodeIndex];
+  const readNode = doc.nodes[read.nodeIndex];
+  if (
+    authorityNode?.type === "mention" &&
+    readNode?.type === "mention" &&
+    authority.nodeIndex === read.nodeIndex
+  ) {
+    return authority;
+  }
+  return read;
+}
+
+/** Cursor kind from focus doc pos — text-node focus is always text; mention uses paint path. */
+export function describeCaretContext(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  options?: { root?: HTMLElement }
+): HandoffNoteCursorContext {
+  const node = doc.nodes[focus.nodeIndex];
+  if (node?.type === "text") {
+    return { kind: "text" };
+  }
+  const paintPos = resolvePaintDocPos(doc, focus, options);
+  return describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, paintPos));
+}
+
 const SANDWICH_FOLLOWING_MENTION_OFFSET = 2;
 
 function postMentionNonemptyTextNode(
@@ -710,17 +760,55 @@ function continuationPosForFollowingMention(
   );
 }
 
-/** Mention-start and 1-char sandwich spacer tail share a wire — paint via the spacer tail owner. */
-function canonicalSandwichAliasPaintDocPos(
+function mentionPillElement(
+  root: HTMLElement,
   doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos
+  mentionNodeIndex: number
+): HTMLSpanElement | null {
+  const rendered = docPosToRenderedDomChildIndex(doc, mentionNodeIndex);
+  const domNode = root.childNodes[rendered];
+  return domNode && isHandoffMentionElement(domNode) ? domNode : null;
+}
+
+/** Same-wire alias paints via spacer tail only when spacer and following pill are on different visual rows. */
+function isCrossRowSandwichSpacerPaintAlias(
+  doc: HandoffNoteDoc,
+  followingMentionNodeIndex: number,
+  root?: HTMLElement
+): boolean {
+  const leadingIndex = followingMentionNodeIndex - SANDWICH_FOLLOWING_MENTION_OFFSET;
+  const spacerIndex = leadingIndex + 1;
+  const spacer = doc.nodes[spacerIndex];
+  if (spacer?.type !== "text" || !/^\s+$/.test(spacer.text) || /[\n\r]/.test(spacer.text)) {
+    return false;
+  }
+  if (!root) {
+    return false;
+  }
+  const spacerRect = getDocAnchorRect(root, doc, { nodeIndex: spacerIndex, nodeOffset: 0 });
+  const pill = mentionPillElement(root, doc, followingMentionNodeIndex);
+  if (!spacerRect || !pill) {
+    return false;
+  }
+  return isCrossRowSpacerAndPillDom(spacerRect, pill) === true;
+}
+
+/** Mention-start and cross-row sandwich spacer tail share a wire — paint via the spacer tail owner. */
+export function resolvePaintDocPos(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  options?: { root?: HTMLElement }
 ): HandoffNoteDocPos {
   const node = doc.nodes[pos.nodeIndex];
   if (node?.type !== "mention" || pos.nodeOffset !== 0) {
     return pos;
   }
   const continuation = continuationPosForFollowingMention(doc, pos.nodeIndex);
-  if (continuation && docPosToWireOffset(doc, continuation) === docPosToWireOffset(doc, pos)) {
+  if (
+    continuation &&
+    docPosToWireOffset(doc, continuation) === docPosToWireOffset(doc, pos) &&
+    isCrossRowSandwichSpacerPaintAlias(doc, pos.nodeIndex, options?.root)
+  ) {
     return continuation;
   }
   return pos;
@@ -733,7 +821,7 @@ export function resolveDomPointAtDocPos(
   options?: { from?: HandoffNoteDocPos }
 ): { node: Node; offset: number } | null {
   const normalized = normalizeDocPos(doc, pos, options?.from ? { from: options.from } : undefined);
-  const paintPos = canonicalSandwichAliasPaintDocPos(doc, normalized);
+  const paintPos = resolvePaintDocPos(doc, normalized, { root });
   const node = doc.nodes[paintPos.nodeIndex];
   if (!node) {
     if (root.firstChild?.nodeType === Node.TEXT_NODE) {
@@ -1052,7 +1140,7 @@ export function probeViewportCaretHit(
       missReason: null,
       pos,
       wire,
-      caretKind: describeHandoffNoteCursorContext(doc, wire).kind,
+      caretKind: describeCaretContext(doc, pos, { root }).kind,
     };
   }
 
@@ -1090,7 +1178,7 @@ export function probeViewportCaretHit(
       missReason: null,
       pos,
       wire,
-      caretKind: describeHandoffNoteCursorContext(doc, wire).kind,
+      caretKind: describeCaretContext(doc, pos, { root }).kind,
     };
   }
 

@@ -18,6 +18,8 @@ import {
   domPointToDocPos,
   isContentTextNodeDomTailBeforeBreak,
   resolveDomPointAtDocPos,
+  resolvePaintDocPos,
+  describeCaretContext,
 } from "./handoff-note-dom-points.js";
 import {
   HANDOFF_LINE_PAD_ATTR,
@@ -34,6 +36,11 @@ import {
   sameRenderedDocStructure,
   getHandoffNoteEditorTabStops,
 } from "./handoff-note-dom.js";
+import {
+  mountThreeRowMentionSoftWrapFixture,
+  applyThreeRowSpacerBrowserParityLayoutStubs,
+  stubHandoffNoteMentionLayoutCoords,
+} from "./handoff-note-test-helpers.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
 import {
@@ -820,7 +827,44 @@ describe("handoff-note-dom", () => {
       expect(parseHandoffNoteDom(root)).toBe(sandwichWire());
     });
 
-    it("paints spacer offset 0 in text and continuation wire at gap before pill", () => {
+    it("same-row sandwich mention-start does not paint-alias to spacer tail", () => {
+      const doc = sandwichDoc();
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[SANDWICH_AGENT, "#06f"]]) });
+      const { spacerIndex } = sandwichAliasAndContinuationWires(doc);
+      const mentionStart = { nodeIndex: spacerIndex + 1, nodeOffset: 0 };
+      expect(resolvePaintDocPos(doc, mentionStart, { root })).toEqual(mentionStart);
+      expect(describeCaretContext(doc, mentionStart, { root }).kind).toBe("mention-boundary");
+    });
+
+    it("cross-row sandwich spacer aliases mention-start wire to text tail for paint", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      stubHandoffNoteMentionLayoutCoords(
+        fx.root,
+        new Map(
+          fx.mentionNodes.map((nodeIndex, i) => [
+            nodeIndex,
+            {
+              top: i < 2 ? fx.row0Top : i === 2 ? fx.row1Top : fx.row2Top,
+              left: 500 + i * 8,
+            },
+          ])
+        )
+      );
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos = { nodeIndex: fx.postfixSpacerNode, nodeOffset: spacer.text.length };
+      const mentionStart = { nodeIndex: fx.postfixSpacerNode + 1, nodeOffset: 0 };
+      expect(resolvePaintDocPos(fx.doc, mentionStart, { root: fx.root })).toEqual(tailPos);
+      expect(describeCaretContext(fx.doc, tailPos, { root: fx.root }).kind).toBe("text");
+      fx.root.remove();
+    });
+
+    it("same-row sandwich paints spacer by doc pos; mention-start at pill boundary", () => {
       const doc = sandwichDoc();
       const { aliasWire, continuationWire, spacerIndex } = sandwichAliasAndContinuationWires(doc);
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[SANDWICH_AGENT, "#06f"]]) });
@@ -842,10 +886,15 @@ describe("handoff-note-dom", () => {
 
       expect(paintAlias.node.nodeType).toBe(Node.TEXT_NODE);
       expect(paintAlias.offset).toBe(0);
-      expect(paintCont).toEqual(paintTail);
+      expect(paintTail.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(paintTail.offset).toBe(1);
+      // Same-row: no paint alias — mention-start paints pill exterior, not spacer tail.
+      expect(paintMentionStart).not.toEqual(paintTail);
       expect(paintCont).toEqual(paintMentionStart);
-      expect(paintCont.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(paintCont.offset).toBe(1);
+      expect(domPointToDocPos(root, doc, paintCont.node, paintCont.offset)).toEqual({
+        nodeIndex: spacerIndex + 1,
+        nodeOffset: 0,
+      });
     });
 
     it("reads spacer offset 0 and 1 back to wires 23 and 24", () => {

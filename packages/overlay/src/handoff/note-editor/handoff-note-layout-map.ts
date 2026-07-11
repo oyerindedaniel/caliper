@@ -21,19 +21,39 @@ import {
   isFiniteMeasuredLayoutCoord,
   isUsableMeasuredLayoutCoord,
   measureWireBreakCoord,
+  resolvePaintDocPos,
 } from "./handoff-note-dom-points.js";
+import {
+  isCrossRowSpacerAndPillDom,
+  isDistinctVisualRow,
+  MIN_INTER_ROW_GAP_PX,
+  pillElementMidY,
+  sharesVisualRowBand,
+} from "./handoff-note-row-geometry.js";
 
-export type MeasuredWireOffset = { wire: number; top: number; left: number; right?: number };
+export type MeasuredWireOffset = {
+  wire: number;
+  top: number;
+  left: number;
+  right?: number;
+  paintDocPos?: HandoffNoteDocPos;
+};
 
-/** Minimum distinct top gap (px) to treat two sample bands as separate visual rows. */
-const MIN_INTER_ROW_GAP_PX = 4;
+export type WirePaintContext = {
+  paintDocPos: HandoffNoteDocPos;
+  rowIndex: number;
+  top: number;
+};
+
+/** Layout map before paint-index attachment (wire-keyed row lookup without paintContextForWire). */
+type HandoffNoteLayoutMapBase = Omit<HandoffNoteLayoutMap, "paintContextForWire">;
 
 const MIN_LAYOUT_LINE_HEIGHT_PX = 8;
 const MAX_LAYOUT_LINE_HEIGHT_PX = 24;
 
 /**
  * Row-bound extent when `right` was not measured: falls back to `left` (caret anchor),
- * not a painted right edge. Use `maxPaintedContentExtentRight` for content-extent tests.
+ * not a painted right edge.
  */
 export function measuredSampleRight(sample: MeasuredWireOffset): number {
   return sample.right ?? sample.left;
@@ -43,17 +63,6 @@ function resolveVisualRowLineHeight(stride: number | null, seedLineHeight: numbe
   return stride !== null && stride > MIN_INTER_ROW_GAP_PX
     ? stride
     : Math.min(Math.max(seedLineHeight, MIN_LAYOUT_LINE_HEIGHT_PX), MAX_LAYOUT_LINE_HEIGHT_PX);
-}
-
-/** Trailing painted content extent — explicit `right` when measured, else left anchors only. */
-function maxPaintedContentExtentRight(samples: MeasuredWireOffset[]): number | null {
-  const explicitRights = samples
-    .map((sample) => sample.right)
-    .filter((right): right is number => right !== undefined);
-  if (explicitRights.length > 0) {
-    return Math.max(...explicitRights);
-  }
-  return maxLeft(samples);
 }
 
 function minSampleField(
@@ -92,8 +101,68 @@ function maxLeft(samples: MeasuredWireOffset[]): number | null {
   return maxSampleField(samples, (sample) => sample.left);
 }
 
-function maxRight(samples: MeasuredWireOffset[]): number | null {
-  return maxSampleField(samples, measuredSampleRight);
+export type LayoutContentRowEdgeScan = {
+  endWire: number | null;
+  endSample: MeasuredWireOffset | null;
+  startSample: MeasuredWireOffset | null;
+  minLeft: number;
+  maxLeft: number;
+  stickyColumn: number | null;
+  contentExtentRight: number | null;
+  fromSample: MeasuredWireOffset | null;
+};
+
+export function layoutContentRowEdgeScan(
+  row: HandoffNoteLayoutRow,
+  wireLength: number,
+  options?: { fromWire?: number }
+): LayoutContentRowEdgeScan {
+  let endWire: number | null = null;
+  let endSample: MeasuredWireOffset | null = null;
+  let startSample: MeasuredWireOffset | null = null;
+  let minLeft = Infinity;
+  let maxLeft = -Infinity;
+  let stickyColumn: number | null = null;
+  let maxExplicitRight: number | null = null;
+  let fromSample: MeasuredWireOffset | null = null;
+
+  for (const sample of row.samples) {
+    minLeft = Math.min(minLeft, sample.left);
+    maxLeft = Math.max(maxLeft, sample.left);
+    if (options?.fromWire !== undefined && sample.wire === options.fromWire) {
+      fromSample = sample;
+    }
+    if (sample.wire >= wireLength) {
+      continue;
+    }
+    if (
+      startSample === null ||
+      sample.left < startSample.left ||
+      (sample.left === startSample.left && sample.wire < startSample.wire)
+    ) {
+      startSample = sample;
+    }
+    if (endWire === null || sample.wire > endWire) {
+      endWire = sample.wire;
+      endSample = sample;
+    }
+    stickyColumn = stickyColumn === null ? sample.left : Math.max(stickyColumn, sample.left);
+    if (sample.right !== undefined) {
+      maxExplicitRight =
+        maxExplicitRight === null ? sample.right : Math.max(maxExplicitRight, sample.right);
+    }
+  }
+
+  return {
+    endWire,
+    endSample,
+    startSample,
+    minLeft: row.samples.length === 0 ? Infinity : minLeft,
+    maxLeft: row.samples.length === 0 ? -Infinity : maxLeft,
+    stickyColumn,
+    contentExtentRight: maxExplicitRight ?? stickyColumn,
+    fromSample,
+  };
 }
 
 export type HandoffNoteLayoutRowKind = "blank" | "content";
@@ -125,6 +194,7 @@ export type HandoffNoteLayoutMap = {
   visualRowCount: number;
   rowIndexForWire(wire: number): number;
   coordsForWire(wire: number): MeasuredWireOffset | null;
+  paintContextForWire(wire: number): WirePaintContext | null;
   /** When row-tail wire is a soft-wrap prefix end, first wire on the continuation band. */
   continuationAfterRowEndWire(rowEndWire: number): number | null;
   shouldPreserveGoalColumnOnShorterRowLanding(input: ShorterRowStickyGoalInput): boolean;
@@ -135,63 +205,71 @@ export function layoutRowTopTolerance(lineHeight: number): number {
   return Math.max(2, lineHeight * 0.25);
 }
 
-type LayoutCache = {
+type LayoutCacheEntry = {
   wire: string;
   rootWidth: number;
   measured: MeasuredWireOffset[];
-  /** Bumped on invalidate — stale entries must not outlive doc/geometry mutations. */
+  /** Matched against global bump from `invalidateHandoffNoteLayoutCache()`. */
   generation: number;
 };
 
-let layoutCache: LayoutCache | null = null;
+/** Per editor root — same wire+width on two roots must not share measured geometry. */
+const layoutCacheByRoot = new WeakMap<HTMLElement, LayoutCacheEntry>();
 let measuredCacheGeneration = 0;
 
-export function invalidateHandoffNoteLayoutCache(): void {
-  layoutCache = null;
+export function invalidateHandoffNoteLayoutCache(root?: HTMLElement): void {
+  if (root) {
+    layoutCacheByRoot.delete(root);
+    return;
+  }
   measuredCacheGeneration++;
 }
 
-export function readHandoffNoteLayoutCacheKey(): {
+export function readHandoffNoteLayoutCacheKey(root: HTMLElement): {
   wire: string;
   rootWidth: number;
   sampleCount: number;
 } | null {
-  if (!layoutCache) {
+  const entry = layoutCacheByRoot.get(root);
+  if (!entry || entry.generation !== measuredCacheGeneration) {
     return null;
   }
   return {
-    wire: layoutCache.wire,
-    rootWidth: layoutCache.rootWidth,
-    sampleCount: layoutCache.measured.length,
+    wire: entry.wire,
+    rootWidth: entry.rootWidth,
+    sampleCount: entry.measured.length,
   };
 }
 
 export function getCachedMeasuredSamples(
+  root: HTMLElement,
   wire: string,
   rootWidth: number
 ): MeasuredWireOffset[] | null {
+  const entry = layoutCacheByRoot.get(root);
   if (
-    layoutCache &&
-    layoutCache.wire === wire &&
-    layoutCache.rootWidth === rootWidth &&
-    layoutCache.generation === measuredCacheGeneration
+    entry &&
+    entry.wire === wire &&
+    entry.rootWidth === rootWidth &&
+    entry.generation === measuredCacheGeneration
   ) {
-    return layoutCache.measured;
+    return entry.measured;
   }
   return null;
 }
 
 export function setMeasuredSamplesCache(
+  root: HTMLElement,
   wire: string,
   rootWidth: number,
   measured: MeasuredWireOffset[]
 ): void {
-  layoutCache = {
+  layoutCacheByRoot.set(root, {
     wire,
     rootWidth,
     measured: cloneMeasuredSamples(measured),
     generation: measuredCacheGeneration,
-  };
+  });
   logVerArrow("layout.cacheInject", {
     wireLen: wire.length,
     rootWidth,
@@ -276,14 +354,6 @@ function mentionPillElement(
   return child;
 }
 
-function pillMidY(pill: HTMLSpanElement): number | null {
-  const rect = pill.getBoundingClientRect();
-  if (rect.width <= 0 && rect.height <= 0) {
-    return null;
-  }
-  return rect.top + rect.height / 2;
-}
-
 function substantiveLineStartFromTrailingMention(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -308,7 +378,7 @@ function substantiveLineStartFromTrailingMention(
     }
     if (node.type === "mention" && nodeStartWire > lineStartWire && nodeStartWire < lineEndWire) {
       const pill = mentionPillElement(root, doc, nodeIndex);
-      const midY = pill ? pillMidY(pill) : null;
+      const midY = pill ? pillElementMidY(pill) : null;
       if (midY !== null) {
         return { wire: lineStartWire, top: midY, left: 0 };
       }
@@ -317,43 +387,146 @@ function substantiveLineStartFromTrailingMention(
   return null;
 }
 
-/** Pill bbox for mentions; Range anchor for text. Text before a mention uses that pill's row. */
+/** Pre-mention text-node start: borrow following pill row only when paint bands align. */
+function isCrossRowSandwichSpacerTextNode(
+  doc: HandoffNoteDoc,
+  textNodeIndex: number,
+  root: HTMLElement | undefined,
+  sampleByWire: Map<number, MeasuredWireOffset>,
+  wireIndex: LayoutWireIndex
+): boolean {
+  const textNode = doc.nodes[textNodeIndex];
+  if (textNode?.type !== "text" || !/^\s+$/.test(textNode.text) || /[\n\r]/.test(textNode.text)) {
+    return false;
+  }
+  const leading = doc.nodes[textNodeIndex - 1];
+  const following = doc.nodes[textNodeIndex + 1];
+  if (leading?.type !== "mention" || following?.type !== "mention") {
+    return false;
+  }
+  const textStartWire = wireIndex.nodeStartWires[textNodeIndex]!;
+  const followingStartWire = wireIndex.nodeStartWires[textNodeIndex + 1]!;
+  const textSample = sampleByWire.get(textStartWire);
+  const followingSample = sampleByWire.get(followingStartWire);
+  if (textSample && followingSample) {
+    return isDistinctVisualRow(textSample.top, followingSample.top);
+  }
+  if (!root) {
+    return false;
+  }
+  const textRect = getDocAnchorRect(root, doc, { nodeIndex: textNodeIndex, nodeOffset: 0 });
+  const followingPill = mentionPillElement(root, doc, textNodeIndex + 1);
+  if (!textRect || !followingPill) {
+    return false;
+  }
+  return isCrossRowSpacerAndPillDom(textRect, followingPill) === true;
+}
+
+function tagCrossRowSandwichSpacerSamples(
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[],
+  wireIndex: LayoutWireIndex,
+  root?: HTMLElement
+): Set<number> {
+  const taggedTextNodes = new Set<number>();
+  const sampleByWire = new Map<number, MeasuredWireOffset>();
+  for (const sample of measured) {
+    sampleByWire.set(sample.wire, sample);
+  }
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex];
+    if (node?.type !== "text") {
+      continue;
+    }
+    if (!isCrossRowSandwichSpacerTextNode(doc, nodeIndex, root, sampleByWire, wireIndex)) {
+      continue;
+    }
+    taggedTextNodes.add(nodeIndex);
+  }
+  return taggedTextNodes;
+}
+
+function buildWirePaintIndex(
+  measured: MeasuredWireOffset[],
+  rowByWire: Map<number, number>
+): Map<number, WirePaintContext> {
+  const index = new Map<number, WirePaintContext>();
+  for (const sample of measured) {
+    if (!sample.paintDocPos) {
+      continue;
+    }
+    const rowIndex = rowByWire.get(sample.wire);
+    if (rowIndex === undefined) {
+      continue;
+    }
+    index.set(sample.wire, {
+      paintDocPos: sample.paintDocPos,
+      rowIndex,
+      top: sample.top,
+    });
+  }
+  return index;
+}
+
+function attachLayoutPaintIndex(
+  layout: HandoffNoteLayoutMapBase,
+  wirePaintIndex: Map<number, WirePaintContext>
+): HandoffNoteLayoutMap {
+  return {
+    ...layout,
+    paintContextForWire(wireOffset: number) {
+      return wirePaintIndex.get(wireOffset) ?? null;
+    },
+    rowIndexForWire(wireOffset: number) {
+      const paintCtx = wirePaintIndex.get(wireOffset);
+      if (paintCtx && paintCtx.rowIndex >= 0) {
+        return paintCtx.rowIndex;
+      }
+      return layout.rowIndexForWire(wireOffset);
+    },
+  };
+}
+
+/** Pill bbox for mentions; Range text anchor; guarded pill-row borrow at text-node start. */
 function measureWireCoord(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   wire: number
 ): MeasuredWireOffset | null {
   const pos = wireOffsetToDocPos(doc, wire);
-  const node = doc.nodes[pos.nodeIndex];
-  if (node?.type === "mention") {
-    const pill = mentionPillElement(root, doc, pos.nodeIndex);
+  const paintPos = resolvePaintDocPos(doc, pos, { root });
+  const paintNode = doc.nodes[paintPos.nodeIndex];
+
+  if (paintNode?.type === "mention") {
+    const pill = mentionPillElement(root, doc, paintPos.nodeIndex);
     if (pill) {
-      const midY = pillMidY(pill);
+      const midY = pillElementMidY(pill);
       if (midY !== null) {
         const rect = pill.getBoundingClientRect();
-        const left = pos.nodeOffset <= 0 ? rect.left : rect.right;
-        return { wire, top: midY, left };
+        const left = paintPos.nodeOffset <= 0 ? rect.left : rect.right;
+        return { wire, top: midY, left, paintDocPos: paintPos };
       }
     }
   }
 
-  const rect = getDocAnchorRect(root, doc, pos);
+  const rect = getDocAnchorRect(root, doc, paintPos);
   if (!rect) {
     return null;
   }
 
-  let top = rect.top + rect.height / 2;
-  if (node?.type === "text" && pos.nodeOffset === 0) {
-    const next = doc.nodes[pos.nodeIndex + 1];
+  const textAnchorMidY = rect.top + rect.height / 2;
+  let top = textAnchorMidY;
+  if (paintNode?.type === "text" && paintPos.nodeOffset === 0) {
+    const next = doc.nodes[paintPos.nodeIndex + 1];
     if (next?.type === "mention") {
-      const pill = mentionPillElement(root, doc, pos.nodeIndex + 1);
-      const midY = pill ? pillMidY(pill) : null;
-      if (midY !== null) {
-        top = midY;
+      const pill = mentionPillElement(root, doc, paintPos.nodeIndex + 1);
+      const nextPillMidY = pill ? pillElementMidY(pill) : null;
+      if (nextPillMidY !== null && sharesVisualRowBand(textAnchorMidY, nextPillMidY)) {
+        top = nextPillMidY;
       }
     }
   }
-  return { wire, top, left: rect.left };
+  return { wire, top, left: rect.left, paintDocPos: paintPos };
 }
 
 /** Text anchor first; wire-break `<br>` midY when text measure is missing (post-rebuild substantive rows). */
@@ -570,15 +743,19 @@ function ensureSubstantiveContentLineStartSamples(
         const next = doc.nodes[pos.nodeIndex + 1];
         if (next?.type === "mention") {
           const pill = mentionPillElement(root, doc, pos.nodeIndex + 1);
-          const midY = pill ? pillMidY(pill) : null;
+          const midY = pill ? pillElementMidY(pill) : null;
           if (midY !== null) {
-            upsertMeasuredSample(measured, { wire: lineStartWire, top: midY, left: 0 });
-            logVerArrow("layout.contentLineStart", {
-              lineStartWire,
-              action: "mentionBand",
-              top: Math.round(midY * 100) / 100,
-            });
-            continue;
+            const rect = getDocAnchorRect(root, doc, pos);
+            const textMidY = rect ? rect.top + rect.height / 2 : midY;
+            if (sharesVisualRowBand(textMidY, midY)) {
+              upsertMeasuredSample(measured, { wire: lineStartWire, top: midY, left: 0 });
+              logVerArrow("layout.contentLineStart", {
+                lineStartWire,
+                action: "mentionBand",
+                top: Math.round(midY * 100) / 100,
+              });
+              continue;
+            }
           }
         }
       }
@@ -868,46 +1045,51 @@ function buildDocOrderedLayoutMap(
   const rowCenters = rows.map((row) => row.top);
   const stride = minimumDistinctTopGap(rowCenters);
   const resolvedLineHeight = resolveVisualRowLineHeight(stride, lineHeight);
-
-  return {
-    samples: measured,
-    rows,
-    lineHeight: resolvedLineHeight,
-    visualRowCount: rows.length,
-    rowIndexForWire(wireOffset: number) {
-      const direct = rowByWire.get(wireOffset);
-      if (direct !== undefined) {
-        return direct;
-      }
-      return resolveRowIndexFromBracketingSamples(wireOffset, measured, rowCenters, doc, wrapSpans);
-    },
-    coordsForWire(wireOffset: number) {
-      let rowIndex = rowByWire.get(wireOffset);
-      if (rowIndex === undefined) {
-        rowIndex = resolveRowIndexFromBracketingSamples(
-          wireOffset,
-          measured,
-          rowCenters,
-          doc,
-          wrapSpans
-        );
-      }
-      const row = rows[rowIndex];
-      if (row && row.kind === "content" && rowIndex > 0 && row.samples.length > 0) {
-        const scoped = resolveCoordFromBracketingSamplesInternal(wireOffset, row.samples);
-        if (scoped) {
-          return { wire: wireOffset, top: row.top, left: scoped.left };
-        }
-      }
-      return resolveCoordFromBracketingSamples(wireOffset, measured, { doc, wrapSpans });
-    },
-    continuationAfterRowEndWire(rowEndWire: number) {
-      return resolveSoftWrapContinuationAfterRowEnd(wrapSpans, rowEndWire, resolvedLineHeight);
-    },
-    shouldPreserveGoalColumnOnShorterRowLanding(input) {
-      return evaluateShorterRowStickyGoalPreservation(rows, wrapSpans, resolvedLineHeight, input);
-    },
+  const wirePaintIndex = buildWirePaintIndex(measured, rowByWire);
+  const baseRowIndexForWire = (wireOffset: number) => {
+    const direct = rowByWire.get(wireOffset);
+    if (direct !== undefined) {
+      return direct;
+    }
+    return resolveRowIndexFromBracketingSamples(wireOffset, measured, rowCenters, doc, wrapSpans);
   };
+
+  return attachLayoutPaintIndex(
+    {
+      samples: measured,
+      rows,
+      lineHeight: resolvedLineHeight,
+      visualRowCount: rows.length,
+      rowIndexForWire: baseRowIndexForWire,
+      coordsForWire(wireOffset: number) {
+        let rowIndex = rowByWire.get(wireOffset);
+        if (rowIndex === undefined) {
+          rowIndex = resolveRowIndexFromBracketingSamples(
+            wireOffset,
+            measured,
+            rowCenters,
+            doc,
+            wrapSpans
+          );
+        }
+        const row = rows[rowIndex];
+        if (row && row.kind === "content" && rowIndex > 0 && row.samples.length > 0) {
+          const scoped = resolveCoordFromBracketingSamplesInternal(wireOffset, row.samples);
+          if (scoped) {
+            return { wire: wireOffset, top: row.top, left: scoped.left };
+          }
+        }
+        return resolveCoordFromBracketingSamples(wireOffset, measured, { doc, wrapSpans });
+      },
+      continuationAfterRowEndWire(rowEndWire: number) {
+        return resolveSoftWrapContinuationAfterRowEnd(wrapSpans, rowEndWire, resolvedLineHeight);
+      },
+      shouldPreserveGoalColumnOnShorterRowLanding(input) {
+        return evaluateShorterRowStickyGoalPreservation(rows, wrapSpans, resolvedLineHeight, input);
+      },
+    },
+    wirePaintIndex
+  );
 }
 
 function minimumDistinctTopGap(tops: number[]): number | null {
@@ -1131,7 +1313,7 @@ function collectMentionMidYs(root: HTMLElement, doc: HandoffNoteDoc): number[] {
     if (!pill) {
       continue;
     }
-    const midY = pillMidY(pill);
+    const midY = pillElementMidY(pill);
     if (midY !== null) {
       tops.push(midY);
     }
@@ -1172,7 +1354,7 @@ function alignTextBeforeMentionRows(
       continue;
     }
     const mentionSample = measured.find((entry) => entry.wire === mentionStart);
-    if (mentionSample) {
+    if (mentionSample && sharesVisualRowBand(sample.top, mentionSample.top)) {
       sample.top = mentionSample.top;
     }
   }
@@ -1200,7 +1382,7 @@ function alignEmbeddedNewlinePrefixAfterMentionRows(
     const nodeStartWire = wireIndex.nodeStartWires[nodeIndex] ?? 0;
     const prefixEndWire = nodeStartWire + firstBreak;
     const pill = mentionPillElement(root, doc, nodeIndex - 1);
-    const midY = pill ? pillMidY(pill) : null;
+    const midY = pill ? pillElementMidY(pill) : null;
     if (midY === null) {
       continue;
     }
@@ -1234,6 +1416,9 @@ function pinMentionSampleRows(
   hint: LayoutWireScanHint
 ): void {
   for (const sample of measured) {
+    if (sample.paintDocPos && doc.nodes[sample.paintDocPos.nodeIndex]?.type === "text") {
+      continue;
+    }
     const pos = resolveWireAtOffset(doc, wireIndex, sample.wire, hint);
     if (doc.nodes[pos.nodeIndex]?.type !== "mention") {
       continue;
@@ -1242,7 +1427,7 @@ function pinMentionSampleRows(
     if (!pill) {
       continue;
     }
-    const midY = pillMidY(pill);
+    const midY = pillElementMidY(pill);
     if (midY !== null) {
       sample.top = midY;
     }
@@ -1656,7 +1841,7 @@ function resolveRowIndexForDocWire(
   }
 
   const pill = mentionPillElement(root, doc, pos.nodeIndex);
-  const midY = pill ? pillMidY(pill) : null;
+  const midY = pill ? pillElementMidY(pill) : null;
   if (midY !== null && rowCenters.length > 0) {
     return nearestRowCenterIndex(midY, rowCenters);
   }
@@ -2039,6 +2224,9 @@ function buildPostMentionSoftWrapSpan(
   if (node?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
     return null;
   }
+  if (/^\s+$/.test(node.text)) {
+    return null;
+  }
   const nodeEndWire = docPosToWireOffset(doc, {
     nodeIndex: textNodeIndex,
     nodeOffset: node.text.length,
@@ -2069,7 +2257,8 @@ function applyPostMentionStructuralSamplePins(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   rowClusterTol: number,
-  wireIndex: LayoutWireIndex
+  wireIndex: LayoutWireIndex,
+  crossRowSandwichSpacers: Set<number> = new Set()
 ): Map<number, TextSoftWrapSpan> {
   const wrapSpans = new Map<number, TextSoftWrapSpan>();
   const sampleByWire = new Map<number, MeasuredWireOffset>();
@@ -2084,6 +2273,9 @@ function applyPostMentionStructuralSamplePins(
     const textNodeIndex = nodeIndex + 1;
     const textNode = doc.nodes[textNodeIndex];
     if (textNode?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
+      continue;
+    }
+    if (crossRowSandwichSpacers.has(textNodeIndex)) {
       continue;
     }
 
@@ -2174,6 +2366,85 @@ function applyPostMentionStructuralSamplePins(
   return wrapSpans;
 }
 
+/** Max midY delta for text fragment vs pill on one painted row (half line box). */
+function samePaintBandMidYSlop(lineHeight: number, rowClusterTol: number): number {
+  return Math.max(rowClusterTol * 2, lineHeight * 0.45);
+}
+
+/**
+ * When wrapped text continuation and the immediately following mention paint on one
+ * visual row, pill band midY is row authority — fragment midY can sit ~half a line lower.
+ */
+function alignContinuationBandToFollowingMention(
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[],
+  wrapSpans: Map<number, TextSoftWrapSpan>,
+  wireIndex: LayoutWireIndex,
+  rowClusterTol: number,
+  lineHeight: number,
+  crossRowSandwichSpacers: Set<number> = new Set()
+): void {
+  const coBandSlop = samePaintBandMidYSlop(lineHeight, rowClusterTol);
+  const hint: LayoutWireScanHint = { nodeIndex: 0 };
+  const sampleByWire = new Map<number, MeasuredWireOffset>();
+  const samplesByTextNode = new Map<number, MeasuredWireOffset[]>();
+  for (const sample of measured) {
+    sampleByWire.set(sample.wire, sample);
+    const pos = resolveWireAtOffset(doc, wireIndex, sample.wire, hint);
+    if (doc.nodes[pos.nodeIndex]?.type !== "text") {
+      continue;
+    }
+    const bucket = samplesByTextNode.get(pos.nodeIndex);
+    if (bucket) {
+      bucket.push(sample);
+    } else {
+      samplesByTextNode.set(pos.nodeIndex, [sample]);
+    }
+  }
+
+  for (const [textNodeIndex, span] of wrapSpans) {
+    if (crossRowSandwichSpacers.has(textNodeIndex)) {
+      continue;
+    }
+    const nextNode = doc.nodes[textNodeIndex + 1];
+    if (nextNode?.type !== "mention") {
+      continue;
+    }
+    const mentionStartWire = wireIndex.nodeStartWires[textNodeIndex + 1]!;
+    const mentionSample = sampleByWire.get(mentionStartWire);
+    if (!mentionSample) {
+      continue;
+    }
+    if (mentionSample.top <= span.prefixTop + rowClusterTol) {
+      continue;
+    }
+    if (Math.abs(mentionSample.top - span.continuationTop) > coBandSlop) {
+      continue;
+    }
+    const bandTop = mentionSample.top;
+    span.continuationTop = bandTop;
+    const nodeSamples = samplesByTextNode.get(textNodeIndex);
+    if (!nodeSamples) {
+      continue;
+    }
+    for (const sample of nodeSamples) {
+      if (sample.wire >= mentionStartWire) {
+        continue;
+      }
+      if (sample.top <= span.prefixTop + rowClusterTol) {
+        continue;
+      }
+      sample.top = bandTop;
+    }
+    logVerArrow("layout.continuationMentionCoBand", {
+      textNodeIndex,
+      mentionStartWire,
+      bandTop: Math.round(bandTop * 100) / 100,
+      continuationStartWire: span.continuationStartWire,
+    });
+  }
+}
+
 function applyPlainTextSoftWrapSpans(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
@@ -2247,8 +2518,16 @@ function pinAdjacentTextSampleRows(
     if (prev?.type !== "mention") {
       continue;
     }
+    const following = doc.nodes[pos.nodeIndex + 1];
+    if (following?.type === "mention" && /^\s+$/.test(node.text) && !/[\n\r]/.test(node.text)) {
+      const followingPill = mentionPillElement(root, doc, pos.nodeIndex + 1);
+      const followingMidY = followingPill ? pillElementMidY(followingPill) : null;
+      if (followingMidY !== null && sample.top + MIN_INTER_ROW_GAP_PX < followingMidY) {
+        continue;
+      }
+    }
     const pill = mentionPillElement(root, doc, pos.nodeIndex - 1);
-    const midY = pill ? pillMidY(pill) : null;
+    const midY = pill ? pillElementMidY(pill) : null;
     if (midY !== null && sample.top <= midY + bandTolerance) {
       sample.top = midY;
     }
@@ -2310,29 +2589,34 @@ function buildMapFromMeasured(
   const rowByWire = buildRowIndexLookup(rows);
   const stride = minimumDistinctTopGap(centers);
   const resolvedLineHeight = resolveVisualRowLineHeight(stride, lineHeight);
-
-  return {
-    samples: measured,
-    rows,
-    lineHeight: resolvedLineHeight,
-    visualRowCount: rows.length,
-    rowIndexForWire(wireOffset: number) {
-      const direct = rowByWire.get(wireOffset);
-      if (direct !== undefined) {
-        return direct;
-      }
-      return resolveRowIndexFromBracketingSamples(wireOffset, measured, centers);
-    },
-    coordsForWire(wireOffset: number) {
-      return resolveCoordFromBracketingSamples(wireOffset, measured);
-    },
-    continuationAfterRowEndWire() {
-      return null;
-    },
-    shouldPreserveGoalColumnOnShorterRowLanding(input) {
-      return evaluateShorterRowStickyGoalPreservation(rows, new Map(), resolvedLineHeight, input);
-    },
+  const wirePaintIndex = buildWirePaintIndex(measured, rowByWire);
+  const baseRowIndexForWire = (wireOffset: number) => {
+    const direct = rowByWire.get(wireOffset);
+    if (direct !== undefined) {
+      return direct;
+    }
+    return resolveRowIndexFromBracketingSamples(wireOffset, measured, centers);
   };
+
+  return attachLayoutPaintIndex(
+    {
+      samples: measured,
+      rows,
+      lineHeight: resolvedLineHeight,
+      visualRowCount: rows.length,
+      rowIndexForWire: baseRowIndexForWire,
+      coordsForWire(wireOffset: number) {
+        return resolveCoordFromBracketingSamples(wireOffset, measured);
+      },
+      continuationAfterRowEndWire() {
+        return null;
+      },
+      shouldPreserveGoalColumnOnShorterRowLanding(input) {
+        return evaluateShorterRowStickyGoalPreservation(rows, new Map(), resolvedLineHeight, input);
+      },
+    },
+    wirePaintIndex
+  );
 }
 
 function applyDomAcquireSamplePins(
@@ -2346,6 +2630,7 @@ function applyDomAcquireSamplePins(
   alignTextBeforeMentionRows(doc, measured, wireIndex, hint);
   pinMentionSampleRows(root, doc, measured, wireIndex, hint);
   pinAdjacentTextSampleRows(root, doc, measured, wireIndex, hint, lineHeight);
+  tagCrossRowSandwichSpacerSamples(doc, measured, wireIndex, root);
 }
 
 /** EOF caret on a trailing-only blank band sits on the visual row below the last probe. */
@@ -2399,8 +2684,24 @@ function applyStructuralSamplePins(
     measured,
     dedupeMeasuredSamplesForInfer(doc, wireIndex, measured, rowClusterTol)
   );
-  const wrapSpans = applyPostMentionStructuralSamplePins(doc, measured, rowClusterTol, wireIndex);
+  const crossRowSandwichSpacers = tagCrossRowSandwichSpacerSamples(doc, measured, wireIndex, root);
+  const wrapSpans = applyPostMentionStructuralSamplePins(
+    doc,
+    measured,
+    rowClusterTol,
+    wireIndex,
+    crossRowSandwichSpacers
+  );
   applyPlainTextSoftWrapSpans(doc, measured, rowClusterTol, wireIndex, wrapSpans);
+  alignContinuationBandToFollowingMention(
+    doc,
+    measured,
+    wrapSpans,
+    wireIndex,
+    rowClusterTol,
+    lineHeight,
+    crossRowSandwichSpacers
+  );
   finalizeWrapSpanVisualBands(wrapSpans, measured, rowClusterTol);
   return wrapSpans;
 }
@@ -2477,7 +2778,7 @@ function acquireDomMeasuredSamples(
   rootWidth: number
 ): MeasuredWireOffset[] {
   const wire = wireIndex.wire;
-  const cached = getCachedMeasuredSamples(wire, rootWidth);
+  const cached = getCachedMeasuredSamples(root, wire, rootWidth);
   if (cached) {
     logVerArrow("layout.acquire", {
       source: "cache",
@@ -2495,7 +2796,7 @@ function acquireDomMeasuredSamples(
   applyDomAcquireSamplePins(root, doc, measured, wireIndex);
   appendSoftWrapLineSamples(root, doc, measured);
   alignEmbeddedNewlinePrefixAfterMentionRows(root, doc, measured, wireIndex);
-  setMeasuredSamplesCache(wire, rootWidth, measured);
+  setMeasuredSamplesCache(root, wire, rootWidth, measured);
   logVerArrow("layout.acquire", {
     source: "dom",
     wireLen: wire.length,
@@ -2529,6 +2830,10 @@ function withDomRowResolutionOverrides(
   return {
     ...baseLayout,
     rowIndexForWire(wireOffset: number) {
+      const paintCtx = baseLayout.paintContextForWire(wireOffset);
+      if (paintCtx && paintCtx.rowIndex >= 0) {
+        return paintCtx.rowIndex;
+      }
       const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(
         doc,
         wireOffset,
@@ -2611,6 +2916,62 @@ export function closestLayoutRowIndexForTop(layout: HandoffNoteLayoutMap, top: n
   return nearestRowCenterIndex(top, centers);
 }
 
+/**
+ * Whitespace-only pre-mention gap painted above the following pill: layout row follows
+ * measured text paint, not the lower mention-start wire alias.
+ */
+export function layoutRowIndexForDocPos(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  pos: HandoffNoteDocPos
+): number {
+  const paintPos =
+    doc.nodes[pos.nodeIndex]?.type === "mention" ? pos : resolvePaintDocPos(doc, pos, { root });
+  const paintWire = docPosToWireOffset(doc, paintPos);
+  const paintCtx = layout.paintContextForWire(paintWire);
+  if (paintCtx && paintCtx.rowIndex >= 0) {
+    return paintCtx.rowIndex;
+  }
+  const directRow = layout.rowIndexForWire(paintWire);
+  const node = doc.nodes[paintPos.nodeIndex];
+  if (node?.type !== "text" || !/^\s+$/.test(node.text) || directRow < 0) {
+    return directRow;
+  }
+  const next = doc.nodes[paintPos.nodeIndex + 1];
+  if (next?.type !== "mention") {
+    return layout.rowIndexForWire(paintWire);
+  }
+  const nodeStartWire = docPosToWireOffset(doc, { nodeIndex: paintPos.nodeIndex, nodeOffset: 0 });
+  const coord = layout.coordsForWire(nodeStartWire) ?? measureWireCoord(root, doc, nodeStartWire);
+  const pill = mentionPillElement(root, doc, paintPos.nodeIndex + 1);
+  const pillY = pill ? pillElementMidY(pill) : null;
+  if (
+    coord &&
+    pillY !== null &&
+    Math.abs(coord.top - pillY) > MIN_INTER_ROW_GAP_PX &&
+    layout.rows.length > 0
+  ) {
+    return nearestRowCenterIndex(
+      coord.top,
+      layout.rows.map((row) => row.top)
+    );
+  }
+  return directRow;
+}
+
+/** Canonical row lookup from focus doc pos — paint authority, not alias wire alone. */
+export function layoutRowForFocus(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  focus: HandoffNoteDocPos
+): number {
+  const node = doc.nodes[focus.nodeIndex];
+  const paintPos = node?.type === "mention" ? focus : resolvePaintDocPos(doc, focus, { root });
+  return layoutRowIndexForDocPos(root, doc, layout, paintPos);
+}
+
 export function layoutVisualRowStartColumn(row: HandoffNoteLayoutRow): number {
   let start = row.samples[0]!;
   for (const sample of row.samples) {
@@ -2621,6 +2982,46 @@ export function layoutVisualRowStartColumn(row: HandoffNoteLayoutRow): number {
   return start.left;
 }
 
+export function layoutContentRowStartSample(
+  row: HandoffNoteLayoutRow,
+  wireLength: number
+): MeasuredWireOffset | null {
+  return layoutContentRowEdgeScan(row, wireLength).startSample;
+}
+
+export function layoutRowSampleColumnExtent(row: HandoffNoteLayoutRow): {
+  minLeft: number;
+  maxLeft: number;
+} {
+  const scan = layoutContentRowEdgeScan(row, Number.POSITIVE_INFINITY);
+  return { minLeft: scan.minLeft, maxLeft: scan.maxLeft };
+}
+
+/** Source at row content end: tail wire + sticky goal matches measured column — not wire pick alone. */
+export function layoutSourceIsAtRowContentEnd(
+  doc: HandoffNoteDoc,
+  row: HandoffNoteLayoutRow,
+  fromWire: number,
+  goalColumn: number,
+  tolerance: number
+): boolean {
+  const wireLength = docToWire(doc).length;
+  if (fromWire >= wireLength) {
+    return true;
+  }
+  const scan = layoutContentRowEdgeScan(row, wireLength, { fromWire });
+  if (scan.endWire === null || scan.stickyColumn === null) {
+    return false;
+  }
+  if (fromWire < scan.endWire) {
+    return false;
+  }
+  if (scan.fromSample) {
+    return Math.abs(goalColumn - scan.fromSample.left) <= tolerance;
+  }
+  return goalColumn >= scan.stickyColumn - tolerance;
+}
+
 /** Highest doc-order layout sample on a visual row — shared row-tail wire for click and vertical nav. */
 export function layoutRowEndWireFromSamples(
   samples: MeasuredWireOffset[],
@@ -2629,16 +3030,10 @@ export function layoutRowEndWireFromSamples(
   if (samples.length === 0) {
     return null;
   }
-  let endWire: number | null = null;
-  for (const sample of samples) {
-    if (sample.wire >= wireLen) {
-      continue;
-    }
-    if (endWire === null || sample.wire > endWire) {
-      endWire = sample.wire;
-    }
-  }
-  return endWire;
+  return layoutContentRowEdgeScan(
+    { kind: "content", top: 0, minLeft: 0, maxLeft: 0, samples },
+    wireLen
+  ).endWire;
 }
 
 /** Last measured wire on a visual content row (highest doc-order layout sample), not interior bracket extent. */
@@ -2657,59 +3052,47 @@ export function layoutContentRowEndWire(
   return layoutRowEndWireFromSamples(row.samples, docToWire(doc).length);
 }
 
-/** Sticky goal column at row tail — trailing paint extent for arrow-exit stickiness. */
 export function layoutContentRowStickyColumn(
   layout: HandoffNoteLayoutMap,
   doc: HandoffNoteDoc,
   rowIndex: number
 ): number | null {
   const row = layout.rows[rowIndex];
-  const endWire = layoutContentRowEndWire(layout, doc, rowIndex);
-  if (!row || endWire === null || row.samples.length === 0) {
+  if (!row || row.samples.length === 0) {
     return null;
   }
-  const scope = row.samples.filter((sample) => sample.wire <= endWire);
-  if (scope.length === 0) {
-    return null;
-  }
-  return maxLeft(scope);
+  return layoutContentRowEdgeScan(row, docToWire(doc).length).stickyColumn;
 }
 
-/** Painted right edge at row tail — trailing content extent for click gap tests. */
 export function layoutContentRowContentExtentRight(
   layout: HandoffNoteLayoutMap,
   doc: HandoffNoteDoc,
   rowIndex: number
 ): number | null {
   const row = layout.rows[rowIndex];
-  const endWire = layoutContentRowEndWire(layout, doc, rowIndex);
-  if (!row || endWire === null || row.samples.length === 0) {
+  if (!row || row.samples.length === 0) {
     return null;
   }
-  const scope = row.samples.filter((sample) => sample.wire <= endWire);
-  return maxPaintedContentExtentRight(scope);
+  return layoutContentRowEdgeScan(row, docToWire(doc).length).contentExtentRight;
 }
 
-/** Measured DOM coord for the row-tail wire — raw sample; sticky column via `.left`. */
+export function layoutContentRowEndSampleForRow(
+  row: HandoffNoteLayoutRow,
+  wireLength: number
+): MeasuredWireOffset | null {
+  return layoutContentRowEdgeScan(row, wireLength).endSample;
+}
+
 export function layoutContentRowEndSample(
   layout: HandoffNoteLayoutMap,
   doc: HandoffNoteDoc,
   rowIndex: number
 ): MeasuredWireOffset | null {
-  const endWire = layoutContentRowEndWire(layout, doc, rowIndex);
-  if (endWire === null) {
-    return null;
-  }
   const row = layout.rows[rowIndex];
   if (!row) {
     return null;
   }
-  for (const sample of row.samples) {
-    if (sample.wire === endWire) {
-      return sample;
-    }
-  }
-  return null;
+  return layoutContentRowEndSampleForRow(row, docToWire(doc).length);
 }
 
 export function isAtLayoutRowStart(

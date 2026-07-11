@@ -8,6 +8,7 @@ import {
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
+import { describeCaretContext } from "./note-editor/handoff-note-dom-points.js";
 
 const LOG_PREFIX = "[handoff-note]";
 
@@ -175,6 +176,13 @@ export function buildCaretStateSnapshot(options: CaretSnapshotOptions): Record<s
   if (showDocPos && options.activeFocus !== undefined) {
     snapshot.activeDoc = snapshotDocPos(options.doc, options.activeFocus);
     snapshot.activeOnMentionNodeEnd = caretOnMentionNodeEnd(options.doc, options.activeFocus);
+    snapshot.caretKind = describeCaretContext(options.doc, options.activeFocus, {
+      root: options.root,
+    }).kind;
+  } else if (options.authorityFocus !== undefined) {
+    snapshot.caretKind = describeCaretContext(options.doc, options.authorityFocus, {
+      root: options.root,
+    }).kind;
   }
   if (options.authorityFocus !== undefined && options.activeFocus !== undefined) {
     snapshot.docPosDrift = docPosDrift;

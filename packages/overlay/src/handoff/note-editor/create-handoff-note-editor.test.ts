@@ -7,6 +7,7 @@
   wireToDoc,
 } from "@caliper/core";
 import { describe, expect, it, beforeEach } from "vitest";
+import { describeCaretContext } from "./handoff-note-dom-points.js";
 import { createHandoffNoteEditor } from "./create-handoff-note-editor.js";
 import { handoffNoteSelectionSnapshot } from "../handoff-note-debug.js";
 import { readMentionNodeIndex } from "./handoff-note-dom.js";
@@ -560,7 +561,7 @@ describe("createHandoffNoteEditor", () => {
       })
     );
 
-    expect(host.editor.getWire()).toBe(`ab @${agentA} \n\nd @${agentB} tail`);
+    expect(host.editor.getWire()).toBe(`ab @${agentA} \n\nd@${agentB} tail`);
     expect(host.editor.getSelectionState().focus.nodeIndex).toBe(caretBefore.nodeIndex);
     expect(host.editor.getDoc().nodes[host.editor.getSelectionState().focus.nodeIndex]?.type).toBe(
       "text"
@@ -866,6 +867,11 @@ describe("createHandoffNoteEditor", () => {
       expect(host.editor.getWire()).not.toMatch(/d@caliper/);
       expect(host.editor.getWire()).toContain(" d @");
       expect(host.editor.getCursor()).toBe(fx.fourthMentionStart + 1);
+      expect(
+        describeCaretContext(host.editor.getDoc(), host.editor.getSelectionState().focus, {
+          root: fx.root,
+        }).kind
+      ).toBe("text");
 
       fx.root.remove();
     });

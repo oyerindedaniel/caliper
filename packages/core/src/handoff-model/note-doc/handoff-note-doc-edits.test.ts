@@ -175,6 +175,33 @@ describe("applyDocInsertText", () => {
     expect(state.doc.nodes[state.selection.focus.nodeIndex]?.type).toBe("text");
   });
 
+  it("preserves single-row whitespace pre-mention gap separator on text-tail insert", () => {
+    const agentA = "caliper-aaaaaaa";
+    const agentB = "caliper-bbbbbbb";
+    const agentC = "caliper-ccccccc";
+    const agentD = "caliper-ddddddd";
+    const wire = `header @${agentA} @${agentB} tail @${agentC} @${agentD} `;
+    const doc = wireToDoc(wire);
+    const mentionNodes = doc.nodes.reduce<number[]>((acc, node, index) => {
+      if (node.type === "mention") {
+        acc.push(index);
+      }
+      return acc;
+    }, []);
+    const spacerNode = mentionNodes[2]! + 1;
+    const spacer = doc.nodes[spacerNode];
+    expect(spacer?.type).toBe("text");
+    if (spacer?.type !== "text") {
+      return;
+    }
+    const tailPos = { nodeIndex: spacerNode, nodeOffset: spacer.text.length };
+    const result = applyDocInsertText(doc, collapsedSelection(tailPos), "d");
+    expect(docToWire(result.doc)).toContain(" d @");
+    expect(docToWire(result.doc)).not.toMatch(/d@caliper/);
+    expect(result.selection.focus).toEqual({ nodeIndex: spacerNode, nodeOffset: 2 });
+    expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
+  });
+
   it("appends in the text node at a mention boundary after line breaks", () => {
     const agentA = "caliper-aaaaaaa";
     const agentB = "caliper-bbbbbbb";

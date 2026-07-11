@@ -31,6 +31,7 @@ import {
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
   invalidateHandoffNoteLayoutCache,
+  layoutRowForFocus,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
   type MeasuredWireOffset,
@@ -218,7 +219,8 @@ export function readHandoffNoteLayoutRowIndexForTests(
   wire: number,
   focus = wireOffsetToDocPos(doc, wire)
 ): number {
-  return buildHandoffNoteLayoutMap(root, doc, focus).rowIndexForWire(wire);
+  const layout = buildHandoffNoteLayoutMap(root, doc, focus);
+  return layoutRowForFocus(root, doc, layout, focus);
 }
 
 type MeasuredLayoutSample = { wire: number; top: number; left: number };
@@ -298,7 +300,12 @@ export function seedMonotonicMeasuredLayout(
   wire: string,
   options?: { baseTop?: number; stride?: number }
 ): void {
-  setMeasuredSamplesCache(wire, root.clientWidth, monotonicMeasuredLayoutSamples(wire, options));
+  setMeasuredSamplesCache(
+    root,
+    wire,
+    root.clientWidth,
+    monotonicMeasuredLayoutSamples(wire, options)
+  );
 }
 
 /** Stub pill geometry so jsdom layout tests match playground wrap rows. */
@@ -332,7 +339,7 @@ export function stubHandoffNoteMentionLayoutCoords(
         toJSON: () => ({}),
       }) as DOMRect;
   }
-  invalidateHandoffNoteLayoutCache();
+  invalidateHandoffNoteLayoutCache(root);
 }
 
 function patchElementLayoutRect(element: Element, sample: StubLayoutCoord): void {
@@ -407,7 +414,7 @@ export function refreshHandoffNoteEditorLayoutGeometry(
       patchLayoutGeometryAtWire(root, doc, 0, sample);
     }
   }
-  invalidateHandoffNoteLayoutCache();
+  invalidateHandoffNoteLayoutCache(root);
 }
 
 /** Test-only: stub caretPositionFromPoint for visual column probe on a target band. */
@@ -568,7 +575,7 @@ function stubHandoffNoteAnchorRectAtDomPoint(
     return range;
   };
 
-  invalidateHandoffNoteLayoutCache();
+  invalidateHandoffNoteLayoutCache(root);
   return () => {
     docApi.createRange = priorCreateRange;
   };
@@ -902,7 +909,7 @@ export function stubEmbeddedNewlineSegmentAcquire(
     return priorRangeFromPoint?.(x, y) ?? null;
   };
 
-  invalidateHandoffNoteLayoutCache();
+  invalidateHandoffNoteLayoutCache(root);
   return () => {
     docApi.createRange = priorCreateRange;
     docApi.caretPositionFromPoint = priorFromPoint;
@@ -983,7 +990,7 @@ export function stubWireRangeRects(
     return range;
   };
 
-  invalidateHandoffNoteLayoutCache();
+  invalidateHandoffNoteLayoutCache(root);
   return () => {
     docApi.createRange = priorCreateRange;
   };
@@ -1023,7 +1030,7 @@ export function prepareVerticalColumnProbe(fixture: VerticalColumnProbeFixture):
   const fromPos = wireOffsetToDocPos(fixture.doc, fixture.fromWire);
   const probePos = wireOffsetToDocPos(fixture.doc, fixture.probeTargetWire);
 
-  setMeasuredSamplesCache(fixture.wire, width, fixture.samples);
+  setMeasuredSamplesCache(fixture.root, fixture.wire, width, fixture.samples);
   let layout = buildHandoffNoteLayoutMap(fixture.root, fixture.doc, fromPos);
 
   const sourceRowIdx = layout.rowIndexForWire(fixture.fromWire);
@@ -1054,7 +1061,7 @@ export function prepareVerticalColumnProbe(fixture: VerticalColumnProbeFixture):
     }
   );
 
-  setMeasuredSamplesCache(fixture.wire, width, fixture.samples);
+  setMeasuredSamplesCache(fixture.root, fixture.wire, width, fixture.samples);
   layout = buildHandoffNoteLayoutMap(fixture.root, fixture.doc, fromPos);
   const targetRowTop = layout.rows[layout.rowIndexForWire(fixture.probeTargetWire)]!.top;
 
@@ -1226,7 +1233,7 @@ export function mountThreeRowMentionSoftWrapFixture() {
     mentionNodes,
     MULTI_MENTION_SOFT_WRAP_AGENT
   );
-  setMeasuredSamplesCache(wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, samples);
+  setMeasuredSamplesCache(root, wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, samples);
   stubTextNodeLineRects(root, doc, middleTextNode, [
     { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520, width: 100 },
     { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380, width: 200 },
@@ -1259,9 +1266,20 @@ export function applyThreeRowSpacerBrowserParityLayoutStubs(
     "root" | "doc" | "postfixSpacerNode" | "row1Top"
   >
 ): void {
-  stubTextNodeLineRects(fx.root, fx.doc, fx.postfixSpacerNode, [
-    { top: fx.row1Top, left: 520, width: 30 },
-  ]);
+  stubTextNodeLineRects(
+    fx.root,
+    fx.doc,
+    fx.postfixSpacerNode,
+    [{ top: fx.row1Top, left: 520, width: 120, height: 18 }],
+    {
+      resolveOffsetRect: (nodeOffset) => ({
+        top: fx.row1Top,
+        left: 520 + nodeOffset * 8,
+        width: 8,
+        height: 18,
+      }),
+    }
+  );
   const postfixSpacer = fx.doc.nodes[fx.postfixSpacerNode];
   if (postfixSpacer?.type === "text") {
     stubHandoffNoteAnchorRectAtDocPos(
@@ -1349,7 +1367,7 @@ export function mountMultiMentionSoftWrapFixture() {
       right: 627.33,
     },
   ];
-  setMeasuredSamplesCache(wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, samples);
+  setMeasuredSamplesCache(root, wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, samples);
 
   const sandwichSpacerNode = mentionNodes[0]! + 1;
   const middleTextNode = mentionNodes[1]! + 1;
@@ -1385,7 +1403,7 @@ export function reapplyMultiMentionSoftWrapStubs(
     "root" | "doc" | "wire" | "middleTextNode" | "sandwichSpacerNode" | "samples"
   >
 ): void {
-  setMeasuredSamplesCache(fx.wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, fx.samples);
+  setMeasuredSamplesCache(fx.root, fx.wire, MULTI_MENTION_SOFT_WRAP_ROOT_W, fx.samples);
   stubTextNodeLineRects(fx.root, fx.doc, fx.middleTextNode, [
     { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520, width: 100 },
     { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380, width: 200 },

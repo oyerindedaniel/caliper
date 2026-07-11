@@ -220,7 +220,9 @@ export function applyDocInsertText(
   if (textNode?.type === "text" && nextNode?.type === "mention") {
     const atTrailingEdge = focus.nodeOffset >= textNode.text.length;
     if (atTrailingEdge) {
-      const result = appendInPreMentionText(doc, focus.nodeIndex + 1, replacement);
+      const result = appendInPreMentionText(doc, focus.nodeIndex + 1, replacement, {
+        preserveSeparator: true,
+      });
       if (result) {
         return result;
       }
@@ -294,18 +296,29 @@ function insertAfterMentionEndInFollowingText(
   };
 }
 
+function isSingleRowWhitespacePreMentionGap(text: string): boolean {
+  return /^\s+$/.test(text) && !/[\n\r]/.test(text);
+}
+
 function appendInPreMentionText(
   doc: HandoffNoteDoc,
   mentionNodeIndex: number,
-  replacement: string
+  replacement: string,
+  options?: { preserveSeparator?: boolean }
 ): HandoffDocEditResult | null {
   const textIdx = mentionNodeIndex - 1;
   const textNode = doc.nodes[textIdx];
   if (textNode?.type !== "text") {
     return null;
   }
-  const nextText = textNode.text + replacement;
-  const focusOffset = nextText.length;
+  const preserveSeparator =
+    options?.preserveSeparator === true && isSingleRowWhitespacePreMentionGap(textNode.text);
+  const nextText = preserveSeparator
+    ? `${textNode.text}${replacement} `
+    : textNode.text + replacement;
+  const focusOffset = preserveSeparator
+    ? textNode.text.length + replacement.length
+    : nextText.length;
   const next: HandoffNoteDoc = {
     nodes: doc.nodes.map((node, index) =>
       index === textIdx ? { type: "text", text: nextText } : node

@@ -21,6 +21,7 @@ import {
   layoutContentRowContentExtentRight,
   layoutContentRowEndWire,
   layoutContentRowStickyColumn,
+  layoutRowForFocus,
   readHandoffNoteLayoutCacheKey,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
@@ -35,6 +36,7 @@ import {
   stubHandoffNoteAnchorRectAtWire,
   stubTextNodeLineRects,
   mountThreeRowMentionSoftWrapFixture,
+  applyThreeRowSpacerBrowserParityLayoutStubs,
 } from "./handoff-note-test-helpers.js";
 
 const AGENT = "caliper-aaaaaaa";
@@ -166,51 +168,84 @@ describe("handoff-note-layout-map", () => {
   });
 
   describe("measured sample cache", () => {
+    const cacheRoot = document.createElement("div");
+    Object.defineProperty(cacheRoot, "clientWidth", { configurable: true, value: 320 });
+
     it("returns null before anything is cached", () => {
-      expect(readHandoffNoteLayoutCacheKey()).toBeNull();
-      expect(getCachedMeasuredSamples("hello", 320)).toBeNull();
+      expect(readHandoffNoteLayoutCacheKey(cacheRoot)).toBeNull();
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toBeNull();
     });
 
-    it("stores and reads samples keyed by wire and root width", () => {
+    it("stores and reads samples keyed by root, wire, and width", () => {
       const samples = [
         { wire: 0, top: 0, left: 0 },
         { wire: 5, top: 0, left: 40 },
       ];
-      setMeasuredSamplesCache("hello", 320, samples);
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, samples);
 
-      expect(readHandoffNoteLayoutCacheKey()).toEqual({
+      expect(readHandoffNoteLayoutCacheKey(cacheRoot)).toEqual({
         wire: "hello",
         rootWidth: 320,
         sampleCount: 2,
       });
-      expect(getCachedMeasuredSamples("hello", 320)).toEqual(samples);
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toEqual(samples);
       samples[0]!.top = 999;
-      expect(getCachedMeasuredSamples("hello", 320)).toEqual([
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toEqual([
         { wire: 0, top: 0, left: 0 },
         { wire: 5, top: 0, left: 40 },
       ]);
     });
 
-    it("misses when wire or width changes", () => {
-      setMeasuredSamplesCache("hello", 320, [{ wire: 0, top: 0, left: 0 }]);
+    it("does not cross-hit another editor root with the same wire and width", () => {
+      const otherRoot = document.createElement("div");
+      Object.defineProperty(otherRoot, "clientWidth", { configurable: true, value: 320 });
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, [{ wire: 0, top: 100, left: 0 }]);
+      setMeasuredSamplesCache(otherRoot, "hello", 320, [{ wire: 0, top: 200, left: 0 }]);
 
-      expect(getCachedMeasuredSamples("hello!", 320)).toBeNull();
-      expect(getCachedMeasuredSamples("hello", 280)).toBeNull();
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toEqual([
+        { wire: 0, top: 100, left: 0 },
+      ]);
+      expect(getCachedMeasuredSamples(otherRoot, "hello", 320)).toEqual([
+        { wire: 0, top: 200, left: 0 },
+      ]);
+    });
+
+    it("misses when wire or width changes", () => {
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, [{ wire: 0, top: 0, left: 0 }]);
+
+      expect(getCachedMeasuredSamples(cacheRoot, "hello!", 320)).toBeNull();
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 280)).toBeNull();
     });
 
     it("clears on invalidation", () => {
-      setMeasuredSamplesCache("hello", 320, [{ wire: 0, top: 0, left: 0 }]);
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, [{ wire: 0, top: 0, left: 0 }]);
       invalidateHandoffNoteLayoutCache();
-      expect(readHandoffNoteLayoutCacheKey()).toBeNull();
-      expect(getCachedMeasuredSamples("hello", 320)).toBeNull();
+      expect(readHandoffNoteLayoutCacheKey(cacheRoot)).toBeNull();
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toBeNull();
+    });
+
+    it("invalidates one root without clearing another root entry", () => {
+      const otherRoot = document.createElement("div");
+      Object.defineProperty(otherRoot, "clientWidth", { configurable: true, value: 320 });
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, [{ wire: 0, top: 10, left: 0 }]);
+      setMeasuredSamplesCache(otherRoot, "hello", 320, [{ wire: 0, top: 20, left: 0 }]);
+
+      invalidateHandoffNoteLayoutCache(cacheRoot);
+
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toBeNull();
+      expect(getCachedMeasuredSamples(otherRoot, "hello", 320)).toEqual([
+        { wire: 0, top: 20, left: 0 },
+      ]);
     });
 
     it("invalidates injected cache after generation bump without wire or width change", () => {
-      setMeasuredSamplesCache("hello", 320, [{ wire: 0, top: 0, left: 0 }]);
-      expect(getCachedMeasuredSamples("hello", 320)).not.toBeNull();
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, [{ wire: 0, top: 0, left: 0 }]);
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).not.toBeNull();
       invalidateHandoffNoteLayoutCache();
-      setMeasuredSamplesCache("hello", 320, [{ wire: 0, top: 12, left: 0 }]);
-      expect(getCachedMeasuredSamples("hello", 320)).toEqual([{ wire: 0, top: 12, left: 0 }]);
+      setMeasuredSamplesCache(cacheRoot, "hello", 320, [{ wire: 0, top: 12, left: 0 }]);
+      expect(getCachedMeasuredSamples(cacheRoot, "hello", 320)).toEqual([
+        { wire: 0, top: 12, left: 0 },
+      ]);
     });
 
     it("layoutContentRowEndSample returns measured coords for row-end wire", () => {
@@ -254,16 +289,16 @@ describe("handoff-note-layout-map", () => {
       const focus = wireOffsetToDocPos(doc, 0);
       resolveDomVerticalArrowMove(surface, doc, focus, "up");
 
-      expect(readHandoffNoteLayoutCacheKey()).toEqual({
+      expect(readHandoffNoteLayoutCacheKey(surface)).toEqual({
         wire: docToWire(doc),
         rootWidth: surface.clientWidth,
         sampleCount: expect.any(Number),
       });
-      const cached = readHandoffNoteLayoutCacheKey();
+      const cached = readHandoffNoteLayoutCacheKey(surface);
       expect(cached?.sampleCount).toBeGreaterThan(0);
 
       resolveDomVerticalArrowMove(surface, doc, focus, "up");
-      expect(readHandoffNoteLayoutCacheKey()).toEqual(cached);
+      expect(readHandoffNoteLayoutCacheKey(surface)).toEqual(cached);
       surface.remove();
     });
   });
@@ -355,7 +390,7 @@ describe("handoff-note-layout-map", () => {
       }
       const endOfLastMention = bottomLineStart + `bottom @${AGENT}`.length - 1;
       samples.push({ wire: endOfLastMention, top: blankTop, left: 200 });
-      setMeasuredSamplesCache(wire, surface.clientWidth, samples);
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, samples);
 
       const layout = buildHandoffNoteLayoutMap(
         surface,
@@ -389,7 +424,7 @@ describe("handoff-note-layout-map", () => {
       const tailWire = wire.length - 1;
       const row1Top = 141.1;
       const row2Top = 195.69;
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: prefixStart, top: row1Top, left: 0 },
         { wire: 20, top: row1Top, left: 200 },
         { wire: 21, top: row1Top, left: 220 },
@@ -455,7 +490,7 @@ describe("handoff-note-layout-map", () => {
 
       buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 0));
 
-      const cached = getCachedMeasuredSamples(docToWire(doc), surface.clientWidth);
+      const cached = getCachedMeasuredSamples(surface, suffixBlankBandWire, surface.clientWidth);
       expect(cached).not.toBeNull();
       for (const sample of cached!) {
         expect(probes.has(sample.wire)).toBe(false);
@@ -507,7 +542,7 @@ describe("handoff-note-layout-map", () => {
           [3, { top: contentTop, left: 0 }],
         ])
       );
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: headerTop, left: 0 },
         { wire: probes[0]!, top: blank1Top, left: 0 },
         { wire: probes[1]!, top: blank2Top, left: 0 },
@@ -575,7 +610,7 @@ describe("handoff-note-layout-map", () => {
       );
 
       expect(layout.visualRowCount).toBeGreaterThanOrEqual(4);
-      const cached = getCachedMeasuredSamples(docToWire(doc), surface.clientWidth);
+      const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
       expect(cached?.some((sample) => sample.wire === lowerLineStart)).toBe(true);
       expect(cached?.some((sample) => sample.wire === probes[0]!)).toBe(false);
       const lowerSample = cached?.find((sample) => sample.wire === lowerLineStart);
@@ -618,7 +653,7 @@ describe("handoff-note-layout-map", () => {
 
       const row1Top = 141.09897422790527;
       const row2Top = 159.29689598083496;
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: prefixStart, top: row1Top, left: 0 },
         { wire: postMentionStart, top: row1Top, left: 200 },
         { wire: firstMentionEnd, top: row1Top, left: 220 },
@@ -649,7 +684,7 @@ describe("handoff-note-layout-map", () => {
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
         {
@@ -703,7 +738,7 @@ describe("handoff-note-layout-map", () => {
         { top: fx.row1Top, left: 520, width: 120 },
       ]);
       invalidateHandoffNoteLayoutCache();
-      setMeasuredSamplesCache(wire, fx.rootWidth, [
+      setMeasuredSamplesCache(fx.root, wire, fx.rootWidth, [
         { wire: 0, top: fx.row0Top, left: 349.5 },
         { wire: 4, top: fx.row0Top, left: 378.57 },
         { wire: thirdMentionEnd, top: fx.row1Top, left: 524.02 },
@@ -725,6 +760,84 @@ describe("handoff-note-layout-map", () => {
       fx.root.remove();
     });
 
+    it("paintContextForWire maps cross-row spacer alias wire to row-1 text tail", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+      const tailPos = { nodeIndex: fx.postfixSpacerNode, nodeOffset: spacer.text.length };
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const paintCtx = layout.paintContextForWire(fx.fourthMentionStart);
+      expect(paintCtx?.paintDocPos).toEqual(tailPos);
+      expect(paintCtx?.rowIndex).toBe(1);
+      expect(layoutRowForFocus(fx.root, fx.doc, layout, tailPos)).toBe(1);
+      expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(1);
+      fx.root.remove();
+    });
+
+    it("dom acquire keeps postfix node-start on painted row when next mention is lower", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const spacer = fx.doc.nodes[fx.postfixSpacerNode];
+      expect(spacer?.type).toBe("text");
+      if (spacer?.type !== "text") {
+        fx.root.remove();
+        return;
+      }
+
+      const inserted = applyDocInsertText(
+        fx.doc,
+        collapsedSelection({ nodeIndex: fx.postfixSpacerNode, nodeOffset: spacer.text.length }),
+        "vapm mist"
+      );
+      fx.doc = inserted.doc;
+      renderHandoffNoteDoc(fx.root, fx.doc, {
+        colorByAgentId: new Map([[fx.agent, "#06f"]]),
+      });
+      stubHandoffNoteMentionLayoutCoords(
+        fx.root,
+        new Map(
+          fx.mentionNodes.map((nodeIndex, i) => [
+            nodeIndex,
+            {
+              top: i < 2 ? fx.row0Top : i === 2 ? fx.row1Top : fx.row2Top,
+              left: 500 + i * 8,
+            },
+          ])
+        )
+      );
+      applyThreeRowSpacerBrowserParityLayoutStubs(fx);
+      invalidateHandoffNoteLayoutCache();
+
+      const interiorPos = { nodeIndex: fx.postfixSpacerNode, nodeOffset: 8 };
+      const interiorWire = docPosToWireOffset(fx.doc, interiorPos);
+      const nodeStartWire = docPosToWireOffset(fx.doc, {
+        nodeIndex: fx.postfixSpacerNode,
+        nodeOffset: 0,
+      });
+      const fourthMentionStart = docPosToWireOffset(fx.doc, {
+        nodeIndex: fx.mentionNodes[3]!,
+        nodeOffset: 0,
+      });
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, interiorPos);
+      const cached = getCachedMeasuredSamples(fx.root, docToWire(fx.doc), fx.rootWidth);
+      const nodeStartSample = cached?.find((sample) => sample.wire === nodeStartWire);
+      const fourthMentionSample = cached?.find((sample) => sample.wire === fourthMentionStart);
+
+      expect(nodeStartSample).toBeDefined();
+      expect(nodeStartSample!.top).toBeCloseTo(fx.row1Top, 0);
+      expect(nodeStartSample!.top).not.toBeCloseTo(fx.row2Top, 0);
+      expect(fourthMentionSample).toBeDefined();
+      expect(fourthMentionSample!.top).toBeCloseTo(fx.row2Top, 0);
+      expect(layout.rowIndexForWire(interiorWire)).toBe(1);
+      expect(layout.rowIndexForWire(interiorWire)).not.toBe(2);
+      expect(layout.rowIndexForWire(fourthMentionStart)).toBe(2);
+      fx.root.remove();
+    });
+
     it("infers prefix end from lower-row continuation when trailing spacer sample is absent", () => {
       const wire = `he @${AGENT} x @${AGENT} tail`;
       const doc = wireToDoc(wire);
@@ -741,7 +854,7 @@ describe("handoff-note-layout-map", () => {
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
         {
@@ -806,7 +919,7 @@ describe("handoff-note-layout-map", () => {
         );
         expect(layout.rowIndexForWire(spacerWire)).toBe(0);
         expect(layout.rowIndexForWire(tailStart)).toBe(1);
-        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.some((sample) => sample.wire === spacerWire && sample.top === row0Top)).toBe(
           true
         );
@@ -869,7 +982,7 @@ describe("handoff-note-layout-map", () => {
         expect(layout.rowIndexForWire(line2Start + 2)).toBe(1);
         expect(layout.rowIndexForWire(line3Start + 2)).toBe(2);
         expect(layout.rows[2]?.top).toBeCloseTo(row2Top, 0);
-        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(
           cached?.some((sample) => sample.wire === line2Start - 1 && sample.top === row0Top)
         ).toBe(true);
@@ -937,7 +1050,7 @@ describe("handoff-note-layout-map", () => {
           doc,
           wireOffsetToDocPos(doc, interiorWire)
         );
-        const cached = getCachedMeasuredSamples(docToWire(doc), surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === lineStartWire)?.top).toBe(row1Top);
         expect(cached?.find((sample) => sample.wire === interiorWire)?.top).toBe(row1Top);
 
@@ -970,7 +1083,7 @@ describe("handoff-note-layout-map", () => {
         left: visualStart,
       });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: visualStart },
         { wire: 4, top: row0Top, left: 374.73 },
         {
@@ -1022,7 +1135,7 @@ describe("handoff-note-layout-map", () => {
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 347.5 },
         { wire: 4, top: row0Top, left: 374.73 },
         {
@@ -1089,7 +1202,7 @@ describe("handoff-note-layout-map", () => {
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
         {
@@ -1128,7 +1241,7 @@ describe("handoff-note-layout-map", () => {
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
         {
@@ -1167,7 +1280,7 @@ describe("handoff-note-layout-map", () => {
       document.body.appendChild(surface);
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 340 },
         { wire: 3, top: row0Top, left: 359.58 },
         {
@@ -1214,7 +1327,7 @@ describe("handoff-note-layout-map", () => {
       document.body.appendChild(surface);
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 347.5 },
         { wire: 4, top: row0Top, left: 374.73 },
         {
@@ -1257,7 +1370,7 @@ describe("handoff-note-layout-map", () => {
       document.body.appendChild(surface);
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 480 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row1Top, left: 347 },
         { wire: firstMentionStart, top: row1Top, left: 360 },
         { wire: docPosToWireOffset(doc, { nodeIndex: 2, nodeOffset: 0 }), top: row1Top, left: 480 },
@@ -1336,7 +1449,7 @@ describe("handoff-note-layout-map", () => {
       document.body.appendChild(surface);
       Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: row0Top, left: 347.5 },
         { wire: 4, top: row0Top, left: 374.73 },
         {
@@ -1428,7 +1541,7 @@ describe("handoff-note-layout-map", () => {
 
       try {
         buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, preWrapStart + 2));
-        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === preWrapStart - 1)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band0
         );
@@ -1476,7 +1589,7 @@ describe("handoff-note-layout-map", () => {
 
       try {
         buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, preLine3Start + 2));
-        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === preWrapStart - 1)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band0
         );
@@ -1570,7 +1683,7 @@ describe("handoff-note-layout-map", () => {
           doc,
           wireOffsetToDocPos(doc, postInterior)
         );
-        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === postLineStart)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band2
         );
@@ -1615,7 +1728,7 @@ describe("handoff-note-layout-map", () => {
           doc,
           wireOffsetToDocPos(doc, postInterior)
         );
-        const cached = getCachedMeasuredSamples(wire, surface.clientWidth);
+        const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
 
         expect(layout.visualRowCount).toBeGreaterThanOrEqual(4);
         expect(layout.rowIndexForWire(preInterior)).toBe(1);
@@ -1652,7 +1765,7 @@ describe("handoff-note-layout-map", () => {
       const surface = mountEmbeddedSoftWrapSurface();
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
 
-      setMeasuredSamplesCache(wire, surface.clientWidth, [
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: EMBEDDED_SOFT_WRAP_ROWS.band0, left: 200 },
         { wire: preWrapStart - 1, top: EMBEDDED_SOFT_WRAP_ROWS.band0, left: 200 },
         { wire: preWrapStart, top: EMBEDDED_SOFT_WRAP_ROWS.band1, left: 200 },
