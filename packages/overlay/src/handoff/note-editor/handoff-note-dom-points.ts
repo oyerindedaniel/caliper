@@ -18,14 +18,12 @@ import {
   buildRenderedNodeIndexMap,
   countWireTextDomChildren,
   docWireEndsWithNewline,
-  HANDOFF_MENTION_ATTR,
   isHandoffBlankAnchorElement,
   isHandoffLinePadElement,
   isHandoffMentionElement,
   isHandoffWireBreakElement,
   iterWireTextDomSlots,
   mentionWireLength,
-  readMentionNodeIndex,
   wireOffsetAtTextBreak,
 } from "./handoff-note-dom.js";
 import { isCrossRowSpacerAndPillDom } from "./handoff-note-row-geometry.js";
@@ -1018,42 +1016,56 @@ export function wireOffsetForPillHalfSplitColumn(
   return goalColumn < mid ? startWire : endWire;
 }
 
-/** DOM-painted pills on a visual row band — half-split landing before caret probe. */
-export function resolveDomPillBoundaryPosForGoalColumn(
-  root: HTMLElement,
+export type TargetRowMentionPaintSpan = {
+  mentionNodeIndex: number;
+  startWire: number;
+  endWire: number;
+  layoutLeft: number;
+  layoutRight: number;
+};
+
+/**
+ * Pill half-split for mentions layout assigned to the target row.
+ * Row membership from layout samples. Column bbox: DOM when goal is inside painted
+ * pill rect; else layout-acquired span (covers soft-wrap co-band and test stubs).
+ */
+export function resolveTargetRowPillWireForGoalColumn(
+  root: HTMLElement | undefined,
   doc: HandoffNoteDoc,
   goalColumn: number,
-  rowTop: number,
-  rowBandTolerance: number,
-  goalColumnTolerance: number
-): HandoffNoteDocPos | null {
-  const pills = root.querySelectorAll<HTMLSpanElement>(`span[${HANDOFF_MENTION_ATTR}]`);
-  for (const pill of pills) {
-    const rect = pill.getBoundingClientRect();
-    const midY = rect.top + rect.height / 2;
-    if (Math.abs(midY - rowTop) > rowBandTolerance) {
-      continue;
+  spans: readonly TargetRowMentionPaintSpan[],
+  tolerance: number
+): number | null {
+  for (const span of spans) {
+    if (root) {
+      const pill = mentionPillElement(root, doc, span.mentionNodeIndex);
+      if (pill) {
+        const rect = pill.getBoundingClientRect();
+        if (hasPositionedDomRect(rect)) {
+          const domWire = wireOffsetForPillHalfSplitColumn(
+            goalColumn,
+            rect.left,
+            rect.right,
+            span.startWire,
+            span.endWire,
+            tolerance
+          );
+          if (domWire !== null) {
+            return domWire;
+          }
+        }
+      }
     }
-    const nodeIndex = readMentionNodeIndex(pill);
-    if (nodeIndex === null) {
-      continue;
-    }
-    const agentId = pill.getAttribute("data-agent-id") ?? "";
-    const startWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
-    const endWire = docPosToWireOffset(doc, {
-      nodeIndex,
-      nodeOffset: mentionWireLength(agentId),
-    });
-    const landingWire = wireOffsetForPillHalfSplitColumn(
+    const layoutWire = wireOffsetForPillHalfSplitColumn(
       goalColumn,
-      rect.left,
-      rect.right,
-      startWire,
-      endWire,
-      goalColumnTolerance
+      span.layoutLeft,
+      span.layoutRight,
+      span.startWire,
+      span.endWire,
+      tolerance
     );
-    if (landingWire !== null) {
-      return wireOffsetToDocPos(doc, landingWire);
+    if (layoutWire !== null) {
+      return layoutWire;
     }
   }
   return null;

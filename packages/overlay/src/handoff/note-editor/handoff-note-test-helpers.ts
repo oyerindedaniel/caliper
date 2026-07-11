@@ -1245,6 +1245,7 @@ export function mountThreeRowMentionSoftWrapFixture() {
     root,
     doc,
     wire,
+    samples,
     agent: MULTI_MENTION_SOFT_WRAP_AGENT,
     mentionNodes,
     middleTextNode,
@@ -1257,6 +1258,37 @@ export function mountThreeRowMentionSoftWrapFixture() {
     row2Top: MULTI_MENTION_SOFT_WRAP_ROW2,
     rootWidth: MULTI_MENTION_SOFT_WRAP_ROOT_W,
   };
+}
+
+/** Re-apply three-row fixture layout stubs after editor setDoc/render. */
+export function reapplyThreeRowMentionSoftWrapStubs(
+  fx: Pick<
+    ReturnType<typeof mountThreeRowMentionSoftWrapFixture>,
+    "root" | "doc" | "wire" | "samples" | "mentionNodes" | "middleTextNode" | "rootWidth"
+  >
+): void {
+  stubHandoffNoteMentionLayoutCoords(
+    fx.root,
+    new Map(
+      fx.mentionNodes.map((nodeIndex, i) => [
+        nodeIndex,
+        {
+          top:
+            i < 2
+              ? MULTI_MENTION_SOFT_WRAP_ROW0
+              : i === 2
+                ? MULTI_MENTION_SOFT_WRAP_ROW1
+                : MULTI_MENTION_SOFT_WRAP_ROW2,
+          left: 500 + i * 8,
+        },
+      ])
+    )
+  );
+  setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, fx.samples);
+  stubTextNodeLineRects(fx.root, fx.doc, fx.middleTextNode, [
+    { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520, width: 100 },
+    { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380, width: 200 },
+  ]);
 }
 
 /** Spacer between third and fourth mention: interior on row 1, alias wire on row 2. */

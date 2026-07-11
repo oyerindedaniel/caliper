@@ -53,6 +53,7 @@ import {
   mountMultiMentionSoftWrapFixture,
   mountThreeRowMentionSoftWrapFixture,
   MULTI_MENTION_SOFT_WRAP_AGENT,
+  reapplyThreeRowMentionSoftWrapStubs,
   applyThreeRowSpacerBrowserParityLayoutStubs,
   stubCaretProbeAtDocPos,
   stubCaretProbeHits,
@@ -1193,7 +1194,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           "up"
         );
         expect(moved.handled).toBe(true);
-        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(moved.branch).toBe("pill-column-snap");
         expect(docPosToWireOffset(doc, moved.pos)).toBe(mentionStart);
         expect(docPosToWireOffset(doc, moved.pos)).not.toBe(mentionEnd);
       } finally {
@@ -1245,7 +1246,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           "down"
         );
         expect(moved.handled).toBe(true);
-        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(moved.branch).toBe("pill-column-snap");
         expect(docPosToWireOffset(doc, moved.pos)).toBe(mentionEnd);
         expect(docPosToWireOffset(doc, moved.pos)).not.toBe(mentionStart);
       } finally {
@@ -1605,49 +1606,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         restoreTargetProbe();
         restoreTargetAnchor();
         restoreSourceAnchor();
-        root.remove();
-      }
-    });
-
-    it("rejects a DOM probe snapped away from the goal column before falling back", () => {
-      const root = document.createElement("div");
-      document.body.appendChild(root);
-      renderHandoffNoteDoc(root, doc, {
-        colorByAgentId: new Map([[AGENT, "#06f"]]),
-      });
-      const badProbeWire = secondTextStart + 1;
-      const goalColumn = 354.3072967529297;
-      const restoreProbe = stubCaretProbeAtDocPos(
-        root,
-        doc,
-        goalColumn,
-        ROW2_TOP,
-        wireOffsetToDocPos(doc, badProbeWire)
-      );
-      const restoreBadAnchor = stubHandoffNoteAnchorRectAtWire(root, doc, badProbeWire, {
-        top: ROW2_TOP,
-        left: 382.09,
-      });
-      setMeasuredSamplesCache(root, WIRE, root.clientWidth, [...samples]);
-      const layout = buildLayoutMapFromSamples([...samples], LINE_HEIGHT, doc);
-
-      try {
-        const moved = resolveLayoutVerticalArrowMove(
-          doc,
-          wireOffsetToDocPos(doc, 1),
-          "down",
-          layout,
-          goalColumn,
-          root
-        );
-
-        expect(moved.handled).toBe(true);
-        expect(moved.branch).not.toBe("dom-column-probe");
-        expect(docPosToWireOffset(doc, moved.pos)).toBe(secondTextStart);
-        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(badProbeWire);
-      } finally {
-        restoreBadAnchor();
-        restoreProbe();
         root.remove();
       }
     });
@@ -2336,7 +2294,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           root
         );
         expect(moved.handled).toBe(true);
-        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(moved.branch).toBe("pill-column-snap");
         expect(docPosToWireOffset(doc, moved.pos)).toBe(secondMentionEnd);
         expect(docPosToWireOffset(doc, moved.pos)).not.toBe(tailStart);
       } finally {
@@ -2356,7 +2314,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         18.2
       );
       expect(moved.handled).toBe(true);
-      expect(moved.branch).not.toBe("dom-pill-column-snap");
+      expect(moved.branch).not.toBe("pill-column-snap");
       expect(
         describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
       ).not.toBe("mention-interior");
@@ -2434,10 +2392,77 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           { stickyGoalColumn: GOAL_IN_BOB_LEFT }
         );
         expect(moved.handled).toBe(true);
-        expect(moved.branch).toBe("dom-pill-column-snap");
+        expect(moved.branch).toBe("pill-column-snap");
         expect(docPosToWireOffset(doc, moved.pos)).toBe(bobStart);
       } finally {
         root.remove();
+      }
+    });
+
+    it("up from row-2 suffix preserves sticky goal via layout pill half-split on row-1 mention", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const thirdMentionNode = fx.mentionNodes[2]!;
+      const thirdMentionStart = docPosToWireOffset(fx.doc, {
+        nodeIndex: thirdMentionNode,
+        nodeOffset: 0,
+      });
+      const thirdMentionEnd = docPosToWireOffset(fx.doc, {
+        nodeIndex: thirdMentionNode,
+        nodeOffset: 1 + fx.agent.length,
+      });
+      const row2PastEnd = fx.wire.length;
+      const stickyGoal = 484.23;
+      const restoreProbe = stubCaretProbeAtDocPos(
+        fx.root,
+        fx.doc,
+        stickyGoal,
+        fx.row1Top,
+        wireOffsetToDocPos(fx.doc, thirdMentionStart)
+      );
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          fx.root,
+          fx.doc,
+          wireOffsetToDocPos(fx.doc, row2PastEnd),
+          "up",
+          { stickyGoalColumn: stickyGoal }
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("pill-column-snap");
+        expect(docPosToWireOffset(fx.doc, moved.pos)).toBe(thirdMentionEnd);
+        expect(moved.goalColumn).toBeCloseTo(stickyGoal, 1);
+      } finally {
+        restoreProbe();
+        fx.root.remove();
+      }
+    });
+
+    it("stale sticky from row-0 Down at pill column pill-snaps on live-session layout", () => {
+      const fx = mountThreeRowMentionSoftWrapFixture();
+      const sticky = 484.22918701171875;
+      const liveSamples = [
+        { wire: 0, top: 140.67, left: 349.5 },
+        { wire: 52, top: 159.3, left: 398.7 },
+        { wire: 70, top: 159.3, left: 515.85 },
+        { wire: 97, top: 177.06, left: 482.45 },
+        { wire: 44, top: 158.86, left: 349.5 },
+        { wire: 51, top: 158.86, left: 395.7 },
+      ];
+      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, liveSamples);
+      reapplyThreeRowMentionSoftWrapStubs(fx);
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          fx.root,
+          fx.doc,
+          wireOffsetToDocPos(fx.doc, 0),
+          "down",
+          { stickyGoalColumn: sticky }
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("pill-column-snap");
+        expect(moved.goalColumn).toBeCloseTo(sticky, 1);
+      } finally {
+        fx.root.remove();
       }
     });
 

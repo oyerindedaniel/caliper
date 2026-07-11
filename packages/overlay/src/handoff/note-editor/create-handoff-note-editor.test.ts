@@ -15,13 +15,16 @@ import {
   dispatchSelectionChange,
   mountMultiMentionSoftWrapFixture,
   mountThreeRowMentionSoftWrapFixture,
+  reapplyThreeRowMentionSoftWrapStubs,
   applyThreeRowSpacerBrowserParityLayoutStubs,
   readDomWireCursor,
   reapplyMultiMentionSoftWrapStubs,
   selectionAtWire,
   setSelectionAtWire,
+  stubHandoffNoteAnchorRectAtWire,
   strandSelectionInMentionPill,
 } from "./handoff-note-test-helpers.js";
+import { setMeasuredSamplesCache } from "./handoff-note-layout-map.js";
 
 function mountEditorHost() {
   const root = document.createElement("div");
@@ -1046,5 +1049,131 @@ describe("createHandoffNoteEditor", () => {
       )
     ).toBe(false);
     expect(popoverEditor.getSelectedMentionNodeIndex()).toBe(0);
+  });
+});
+
+describe("vertical goal column authority (editor state)", () => {
+  const LIVE_SESSION_SAMPLES = [
+    { wire: 0, top: 140.67, left: 349.5 },
+    { wire: 52, top: 159.3, left: 398.7 },
+    { wire: 70, top: 159.3, left: 515.85 },
+    { wire: 97, top: 177.06, left: 482.45 },
+    { wire: 99, top: 177.49, left: 499.24 },
+    { wire: 44, top: 158.86, left: 349.5 },
+    { wire: 51, top: 158.86, left: 395.7 },
+    { wire: 77, top: 159.3, left: 524.02 },
+  ] as const;
+
+  function pressArrow(
+    editor: ReturnType<typeof createHandoffNoteEditor>,
+    key: "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight"
+  ): boolean {
+    return editor.handleKeyDown(
+      new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
+    );
+  }
+
+  it("click ingress clears sticky so Down uses row-0 column not prior pill column", () => {
+    const fx = mountThreeRowMentionSoftWrapFixture();
+    const editor = createHandoffNoteEditor({
+      getColorByAgentId: () => new Map([[fx.agent, "#06f"]]),
+      onWireChange: () => {},
+    });
+    editor.setRoot(fx.root);
+    editor.setDocFromWire(fx.wire, 97, { resetHistory: true });
+    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+    reapplyThreeRowMentionSoftWrapStubs(fx);
+
+    const sticky = 484.22918701171875;
+    const row1PillSnapWire = 70;
+    const restoreRow2Anchor = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
+      top: 177.06,
+      left: sticky,
+    });
+
+    try {
+      expect(pressArrow(editor, "ArrowUp")).toBe(true);
+
+      fx.root.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, clientX: 348, clientY: fx.row0Top })
+      );
+      setSelectionAtWire(fx.root, editor.getDoc(), 0, 0);
+      dispatchSelectionChange(fx.root);
+
+      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+      reapplyThreeRowMentionSoftWrapStubs(fx);
+      stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 0, {
+        top: 140.67,
+        left: 349.5,
+      });
+
+      expect(pressArrow(editor, "ArrowDown")).toBe(true);
+      expect(editor.getCursor()).not.toBe(row1PillSnapWire);
+    } finally {
+      restoreRow2Anchor();
+      fx.root.remove();
+    }
+  });
+
+  it("programmatic caret move without click keeps sticky across vertical arrows", () => {
+    const fx = mountThreeRowMentionSoftWrapFixture();
+    const editor = createHandoffNoteEditor({
+      getColorByAgentId: () => new Map([[fx.agent, "#06f"]]),
+      onWireChange: () => {},
+    });
+    editor.setRoot(fx.root);
+    editor.setDocFromWire(fx.wire, 97, { resetHistory: true });
+    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+    reapplyThreeRowMentionSoftWrapStubs(fx);
+
+    const sticky = 484.22918701171875;
+    const restore = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
+      top: 177.06,
+      left: sticky,
+    });
+    try {
+      expect(pressArrow(editor, "ArrowUp")).toBe(true);
+      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+      reapplyThreeRowMentionSoftWrapStubs(fx);
+      setSelectionAtWire(fx.root, editor.getDoc(), 0, 0);
+      expect(pressArrow(editor, "ArrowDown")).toBe(true);
+      expect(editor.getCursor()).toBe(77);
+    } finally {
+      restore();
+      fx.root.remove();
+    }
+  });
+
+  it("horizontal arrow clears sticky before next vertical move", () => {
+    const fx = mountThreeRowMentionSoftWrapFixture();
+    const editor = createHandoffNoteEditor({
+      getColorByAgentId: () => new Map([[fx.agent, "#06f"]]),
+      onWireChange: () => {},
+    });
+    editor.setRoot(fx.root);
+    editor.setDocFromWire(fx.wire, 97, { resetHistory: true });
+    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+    reapplyThreeRowMentionSoftWrapStubs(fx);
+
+    const sticky = 484.22918701171875;
+    const restore = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
+      top: 177.06,
+      left: sticky,
+    });
+    try {
+      expect(pressArrow(editor, "ArrowUp")).toBe(true);
+      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+      reapplyThreeRowMentionSoftWrapStubs(fx);
+      stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), editor.getCursor(), {
+        top: fx.row0Top,
+        left: 349.5,
+      });
+      expect(pressArrow(editor, "ArrowLeft")).toBe(true);
+      expect(pressArrow(editor, "ArrowDown")).toBe(true);
+      expect(editor.getCursor()).not.toBe(77);
+    } finally {
+      restore();
+      fx.root.remove();
+    }
   });
 });

@@ -2027,13 +2027,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       }
 
       host.editor.setDocFromWire(wire, wrappedInteriorWire, { resetHistory: true });
-      const preservedColumn = 368.5;
       const upProbe = prepareVerticalColumnProbe({
         root: host.root,
         doc: host.editor.getDoc(),
         wire: host.editor.getWire(),
         fromWire: wrappedInteriorWire,
-        goalColumn: preservedColumn,
+        goalColumn,
         probeTargetWire: prefixMidWire,
         samples: layoutSamples,
         expectMinVisualRows: 2,

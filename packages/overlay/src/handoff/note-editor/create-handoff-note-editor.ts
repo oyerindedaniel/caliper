@@ -168,6 +168,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     const hadClickIngress = clickIngress !== null;
     if (clickIngress) {
       pendingClickIngress = null;
+      verticalGoalColumn = null;
     }
     const priorWire = docPosToWireOffset(doc, priorFocus);
     const liveWireBeforeRepair = docPosToWireOffset(doc, live.focus);

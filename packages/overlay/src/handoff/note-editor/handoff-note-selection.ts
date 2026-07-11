@@ -32,11 +32,11 @@ import {
   getDocAnchorRect,
   probeDocPosAtVisualColumn,
   probeViewportCaretHit,
-  resolveDomPillBoundaryPosForGoalColumn,
+  resolveTargetRowPillWireForGoalColumn,
+  type TargetRowMentionPaintSpan,
   resolveDomPointAtDocPos,
   resolveDomReadDocPos,
   resolvePaintDocPos,
-  wireOffsetForPillHalfSplitColumn,
 } from "./handoff-note-dom-points.js";
 import {
   buildHandoffNoteLayoutMap,
@@ -696,10 +696,57 @@ type VisualRowStartContext = {
   layout: HandoffNoteLayoutMap;
   targetRowTop: number;
   targetLineIndex: number;
+  targetLine: MeasuredWireOffset[];
   rowIndexForWire: (wire: number) => number;
   coordsForWire: (wire: number) => MeasuredWireOffset | null;
   goalColumnTolerance: number;
 };
+
+function acceptPillColumnSnapLanding(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteVerticalArrowDirection,
+  column: number,
+  pillWire: number,
+  rowStart: VisualRowStartContext,
+  branch: string
+): VerticalLanding | null {
+  const pillRowIndex = rowStart.rowIndexForWire(pillWire);
+  if (pillRowIndex !== rowStart.targetLineIndex) {
+    return null;
+  }
+  logVerArrow("resolve.domColumnProbe", {
+    direction,
+    fromWire: docPosToWireOffset(doc, focus),
+    probeColumn: column,
+    rowTop: rowStart.targetRowTop,
+    resolvedWire: pillWire,
+    probeRowIndex: pillRowIndex,
+    targetLineIndex: rowStart.targetLineIndex,
+    accepted: true,
+    branch,
+  });
+  return {
+    pos: resolveVerticalLandingDocPos(doc, pillWire, {
+      layout: rowStart.layout,
+      from: focus,
+    }),
+    branch,
+  };
+}
+
+function probeLandingPaintLeft(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  probed: HandoffNoteDocPos,
+  probeCoord: MeasuredWireOffset | null
+): number | null {
+  const anchorRect = getDocAnchorRect(root, doc, probed);
+  if (anchorRect !== null && (anchorRect.height > 0 || anchorRect.width > 0)) {
+    return anchorRect.left;
+  }
+  return probeCoord?.left ?? null;
+}
 
 function probeTargetRowAtColumn(
   doc: HandoffNoteDoc,
@@ -712,38 +759,37 @@ function probeTargetRowAtColumn(
     return null;
   }
 
-  const rowBandTolerance = Math.max(2, rowStart.goalColumnTolerance * 4);
-  const pillPos = resolveDomPillBoundaryPosForGoalColumn(
+  const tolerance = rowStart.goalColumnTolerance;
+  const pillWire = resolveTargetRowPillWireForGoalColumn(
     rowStart.root,
     doc,
     column,
-    rowStart.targetRowTop,
-    rowBandTolerance,
-    rowStart.goalColumnTolerance
+    mentionPaintSpansFromTargetLine(doc, rowStart.targetLine),
+    tolerance
   );
-  if (pillPos) {
-    const pillWire = docPosToWireOffset(doc, pillPos);
-    const pillRowIndex = rowStart.rowIndexForWire(pillWire);
-    if (pillRowIndex === rowStart.targetLineIndex) {
-      logVerArrow("resolve.domColumnProbe", {
-        direction,
-        fromWire: docPosToWireOffset(doc, focus),
-        probeColumn: column,
-        rowTop: rowStart.targetRowTop,
-        resolvedWire: pillWire,
-        probeRowIndex: pillRowIndex,
-        targetLineIndex: rowStart.targetLineIndex,
-        accepted: true,
-        branch: "dom-pill-column-snap",
-      });
-      return {
-        pos: resolveVerticalLandingDocPos(doc, pillWire, {
-          layout: rowStart.layout,
-          from: focus,
-        }),
-        branch: "dom-pill-column-snap",
-      };
+  if (pillWire !== null) {
+    const landed = acceptPillColumnSnapLanding(
+      doc,
+      focus,
+      direction,
+      column,
+      pillWire,
+      rowStart,
+      "pill-column-snap"
+    );
+    if (landed) {
+      return landed;
     }
+    logVerArrow("resolve.domColumnProbe", {
+      direction,
+      fromWire: docPosToWireOffset(doc, focus),
+      probeColumn: column,
+      rowTop: rowStart.targetRowTop,
+      resolvedWire: pillWire,
+      accepted: false,
+      branch: "probe-pill-interior",
+    });
+    return null;
   }
 
   const probed = probeDocPosAtVisualColumn(rowStart.root, doc, rowStart.targetRowTop, column);
@@ -776,30 +822,6 @@ function probeTargetRowAtColumn(
   }
 
   const probeCoord = rowStart.coordsForWire(resolvedWire);
-  const anchorRect = getDocAnchorRect(rowStart.root, doc, probed);
-  const hasCredibleAnchor = anchorRect !== null && (anchorRect.height > 0 || anchorRect.width > 0);
-  const probeLeft = hasCredibleAnchor ? anchorRect!.left : null;
-  if (
-    hasCredibleAnchor &&
-    probeLeft !== null &&
-    Math.abs(probeLeft - column) > rowStart.goalColumnTolerance
-  ) {
-    logVerArrow("resolve.domColumnProbe", {
-      direction,
-      fromWire: docPosToWireOffset(doc, focus),
-      probeColumn: column,
-      rowTop: rowStart.targetRowTop,
-      resolvedWire,
-      probeRowIndex,
-      targetLineIndex: rowStart.targetLineIndex,
-      probeLeft,
-      layoutSampleLeft: probeCoord?.left ?? null,
-      accepted: false,
-      branch: "probe-column-drift",
-    });
-    return null;
-  }
-
   logVerArrow("resolve.domColumnProbe", {
     direction,
     fromWire: docPosToWireOffset(doc, focus),
@@ -808,7 +830,8 @@ function probeTargetRowAtColumn(
     resolvedWire,
     probeRowIndex,
     targetLineIndex: rowStart.targetLineIndex,
-    probeLeft: probeLeft ?? probeCoord?.left ?? null,
+    probeLeft:
+      probeLandingPaintLeft(rowStart.root, doc, probed, probeCoord) ?? probeCoord?.left ?? null,
     accepted: true,
     branch: "dom-column-probe",
   });
@@ -841,12 +864,30 @@ function clampGoalColumnToRowExtent(
   return goalColumn;
 }
 
-type MentionColumnSpan = {
-  startWire: number;
-  endWire: number;
+type MentionColumnSpan = TargetRowMentionPaintSpan & {
   startLeft: number;
-  endLeft: number;
+  pillRight: number;
 };
+
+function mentionSpanPillRight(
+  startSample: MeasuredWireOffset,
+  endSample: MeasuredWireOffset
+): number {
+  return startSample.right ?? endSample.right ?? endSample.left;
+}
+
+function mentionPaintSpansFromTargetLine(
+  doc: HandoffNoteDoc,
+  targetLine: MeasuredWireOffset[]
+): TargetRowMentionPaintSpan[] {
+  return mentionColumnSpansFromTargetLine(doc, targetLine).map((span) => ({
+    mentionNodeIndex: span.mentionNodeIndex,
+    startWire: span.startWire,
+    endWire: span.endWire,
+    layoutLeft: span.startLeft,
+    layoutRight: span.pillRight,
+  }));
+}
 
 function mentionColumnSpansFromTargetLine(
   doc: HandoffNoteDoc,
@@ -863,40 +904,19 @@ function mentionColumnSpansFromTargetLine(
       continue;
     }
     const endSample = sampleByWire.get(context.end);
-    if (!endSample) {
-      continue;
-    }
+    const startPos = wireOffsetToDocPos(doc, context.start);
+    const pillRight = endSample ? mentionSpanPillRight(sample, endSample) : sample.left;
     spans.push({
+      mentionNodeIndex: startPos.nodeIndex,
       startWire: context.start,
       endWire: context.end,
       startLeft: sample.left,
-      endLeft: endSample.left,
+      pillRight,
+      layoutLeft: sample.left,
+      layoutRight: pillRight,
     });
   }
   return spans;
-}
-
-/** Pill half-split on sparse layout samples when goal column is inside a pill span. */
-function resolveMentionAtomicityWireForGoal(
-  doc: HandoffNoteDoc,
-  targetLine: MeasuredWireOffset[],
-  goalColumn: number,
-  tolerance: number
-): number | null {
-  for (const span of mentionColumnSpansFromTargetLine(doc, targetLine)) {
-    const wire = wireOffsetForPillHalfSplitColumn(
-      goalColumn,
-      span.startLeft,
-      span.endLeft,
-      span.startWire,
-      span.endWire,
-      tolerance
-    );
-    if (wire !== null) {
-      return wire;
-    }
-  }
-  return null;
 }
 
 function acceptColumnLanding(
@@ -911,10 +931,11 @@ function acceptColumnLanding(
 ): VerticalLanding | null {
   const tolerance = rowStart?.goalColumnTolerance ?? 2;
   const bracketWire = landingWire;
-  const atomicWire = resolveMentionAtomicityWireForGoal(
+  const atomicWire = resolveTargetRowPillWireForGoalColumn(
+    rowStart?.root,
     doc,
-    targetLine,
     effectiveGoalColumn,
+    mentionPaintSpansFromTargetLine(doc, targetLine),
     tolerance
   );
   const resolvedWire = atomicWire ?? snapVerticalColumnLandingWire(doc, landingWire, direction);
@@ -1407,12 +1428,14 @@ export function resolveLayoutVerticalArrowMove(
   }
 
   const paintRow = layout.paintContextForWire(fromWire)?.rowIndex;
-  const currentLineIndex =
-    root !== undefined
-      ? layoutRowForFocus(root, doc, layout, focus)
-      : paintRow !== undefined && paintRow >= 0
-        ? paintRow
-        : layout.rowIndexForWire(fromWire);
+  let currentLineIndex: number;
+  if (root !== undefined) {
+    currentLineIndex = layoutRowForFocus(root, doc, layout, focus);
+  } else if (paintRow !== undefined && paintRow >= 0) {
+    currentLineIndex = paintRow;
+  } else {
+    currentLineIndex = layout.rowIndexForWire(fromWire);
+  }
   const currentRow = layout.rows[currentLineIndex];
   let effectiveGoalColumn = goalColumn;
   if (currentRow?.kind === "blank") {
@@ -1531,6 +1554,7 @@ export function resolveLayoutVerticalArrowMove(
           layout,
           targetRowTop: targetRow.top,
           targetLineIndex,
+          targetLine: targetRow.samples,
           rowIndexForWire: layout.rowIndexForWire.bind(layout),
           coordsForWire: layout.coordsForWire.bind(layout),
           goalColumnTolerance: edgeTolerance,
@@ -1542,24 +1566,15 @@ export function resolveLayoutVerticalArrowMove(
   if (docPosEqual(targetPos, focus)) {
     return { pos: focus, handled: false };
   }
-  const landedWire = docPosToWireOffset(doc, targetPos);
-  const landedColumn = layout.coordsForWire(landedWire)?.left;
-  const preserveGoalColumn =
-    landedColumn !== undefined &&
-    layout.shouldPreserveGoalColumnOnShorterRowLanding({
-      fromRowIndex: currentLineIndex,
-      targetRowIndex: targetLineIndex,
-      targetRow,
-      effectiveGoalColumn,
-      landedColumn,
-      edgeTolerance,
-      useRowStartLandingOnTarget,
-    });
+  const outputGoalColumn =
+    landingMode.kind === "column-at-goal"
+      ? effectiveGoalColumn
+      : (layout.coordsForWire(docPosToWireOffset(doc, targetPos))?.left ?? effectiveGoalColumn);
   return {
     pos: targetPos,
     handled: true,
     branch,
-    goalColumn: preserveGoalColumn ? effectiveGoalColumn : (landedColumn ?? effectiveGoalColumn),
+    goalColumn: outputGoalColumn,
   };
 }
 
