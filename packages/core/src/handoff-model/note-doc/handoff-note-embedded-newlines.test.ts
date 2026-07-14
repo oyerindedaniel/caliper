@@ -9,7 +9,7 @@ import { docToWire, wireToDoc } from "./handoff-note-doc.js";
 import {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
-  docPosAtMentionStartTextAlias,
+  docPosAtAtomicStartTextAlias,
   mentionStartGluedToPrefixInWire,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
@@ -280,7 +280,7 @@ describe("embedded blank band probes", () => {
     it("returns text tail for prefix row below blank band", () => {
       const doc = wireToDoc(`head\n\nte @${agent} tail`);
       const mentionAt = docToWire(doc).indexOf("@");
-      const alias = docPosAtMentionStartTextAlias(doc, mentionAt);
+      const alias = docPosAtAtomicStartTextAlias(doc, mentionAt);
       expect(alias).not.toBeNull();
       expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
       expect(docPosToWireOffset(doc, alias!)).toBe(mentionAt);
@@ -290,7 +290,7 @@ describe("embedded blank band probes", () => {
       const wire = sandwichedMentionOnlyRowWire().replace(" @", "@");
       const doc = wireToDoc(wire);
       const mentionStart = mentionStartOnSandwichedRow(wire);
-      const alias = docPosAtMentionStartTextAlias(doc, mentionStart);
+      const alias = docPosAtAtomicStartTextAlias(doc, mentionStart);
       expect(alias).not.toBeNull();
       expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
       expect(docPosToWireOffset(doc, alias!)).toBe(mentionStart);
@@ -300,7 +300,7 @@ describe("embedded blank band probes", () => {
       const wire = `header @${agent} row\n\n tail @${agent} \nlower`;
       const doc = wireToDoc(wire);
       const mentionStart = mentionStartOnSandwichedRow(wire);
-      const alias = docPosAtMentionStartTextAlias(doc, mentionStart);
+      const alias = docPosAtAtomicStartTextAlias(doc, mentionStart);
       expect(alias).not.toBeNull();
       expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
       expect(docPosToWireOffset(doc, alias!)).toBe(mentionStart);

@@ -1,5 +1,7 @@
 import {
   docPosToWireOffset,
+  isAtomicNode,
+  nodeTokenLength,
   type HandoffNoteDocPos,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
@@ -941,39 +943,34 @@ export function docPosAtEmbeddedBlankBandProbeAliasLanding(
 }
 
 /**
- * Mention-start wire aliases to the preceding text-node tail (not the mention atom).
- * Used for forward-delete whitespace landing and DOM paint at mention boundaries.
+ * Atomic-start wire aliases to the preceding text-node tail (not the atom).
+ * Same-wire owner as overlay inter-atomic / pre-atom text tails — not a second rule.
+ * Used for forward-delete whitespace landing and DOM paint at atomic boundaries.
  */
-export function docPosAtMentionStartTextAlias(
+export function docPosAtAtomicStartTextAlias(
   doc: HandoffNoteDoc,
-  mentionStartWire: number
+  atomicStartWire: number
 ): HandoffNoteDocPos | null {
-  const context = describeHandoffNoteCursorContext(doc, mentionStartWire);
-  if (context.kind !== "mention-boundary" || context.edge !== "start") {
-    return null;
-  }
-
   let offset = 0;
-  let mentionNodeIndex = -1;
+  let atomicNodeIndex = -1;
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
     const node = doc.nodes[nodeIndex]!;
-    const nodeStart = offset;
-    if (node.type === "mention" && nodeStart === mentionStartWire) {
-      mentionNodeIndex = nodeIndex;
+    if (isAtomicNode(node) && offset === atomicStartWire) {
+      atomicNodeIndex = nodeIndex;
       break;
     }
-    offset += node.type === "text" ? node.text.length : 1 + node.agentId.length;
+    offset += nodeTokenLength(node);
   }
-  if (mentionNodeIndex <= 0) {
+  if (atomicNodeIndex <= 0) {
     return null;
   }
 
-  const prev = doc.nodes[mentionNodeIndex - 1];
+  const prev = doc.nodes[atomicNodeIndex - 1];
   if (prev?.type !== "text") {
     return null;
   }
 
-  return { nodeIndex: mentionNodeIndex - 1, nodeOffset: prev.text.length };
+  return { nodeIndex: atomicNodeIndex - 1, nodeOffset: prev.text.length };
 }
 
 /** Row above mention start has non-whitespace prefix on the same line. */

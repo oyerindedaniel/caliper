@@ -8,13 +8,19 @@ import {
   docToWire,
   listEmbeddedBlankBandProbeWires,
   normalizeDocPos,
-  resolveDocHorizontalArrowMove,
   resolveHandoffNoteArrowMove,
   wireOffsetToDocPos,
   wireToDoc,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
+import {
+  docPosAtContentWire,
+  resolveDomPointAtDocPos,
+  resolvePaintContext,
+  resolvePaintContextAtWire,
+  resolvePaintHorizontalArrowMove,
+} from "./handoff-note-dom-points.js";
 import {
   readDocCursor,
   readDocSelection,
@@ -26,6 +32,7 @@ import {
   setDocSelection,
 } from "./handoff-note-selection.js";
 import {
+  attachPaintIndexToLayoutMap,
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
   invalidateHandoffNoteLayoutCache,
@@ -53,6 +60,7 @@ import {
   mountMultiMentionSoftWrapFixture,
   mountThreeRowMentionSoftWrapFixture,
   MULTI_MENTION_SOFT_WRAP_AGENT,
+  reapplyMultiMentionSoftWrapStubs,
   reapplyThreeRowMentionSoftWrapStubs,
   applyThreeRowSpacerBrowserParityLayoutStubs,
   stubCaretProbeAtDocPos,
@@ -63,11 +71,6 @@ import {
   stubTextNodeLineRects,
 } from "./handoff-note-test-helpers.js";
 import { domPointInMentionPill } from "../handoff-note-debug.js";
-import {
-  docPosAtContentWire,
-  domPointToDocPos,
-  resolveDomPointAtDocPos,
-} from "./handoff-note-dom-points.js";
 
 const NOTE = "Hi @caliper-abc123 there";
 const MENTION_START = "Hi ".length;
@@ -94,12 +97,8 @@ function assertVerticalMove(
   notExpectWire?: number
 ): void {
   setSelectionAtWire(root, doc, fromWire);
-  const moved = resolveDomVerticalArrowMove(
-    root,
-    doc,
-    wireOffsetToDocPos(doc, fromWire),
-    sign === -1 ? "up" : "down"
-  );
+  const focus = resolvePaintContextAtWire(doc, fromWire).focusPos;
+  const moved = resolveDomVerticalArrowMove(root, doc, focus, sign === -1 ? "up" : "down");
   expect(moved.handled).toBe(true);
   expect(docPosToWireOffset(doc, moved.pos)).toBe(expectWire);
   if (notExpectWire !== undefined) {
@@ -414,12 +413,13 @@ describe("handoff-note-selection", () => {
     const move = resolveHandoffNoteArrowMove(gluedDoc, 62, "left");
     expect(move).toEqual({ cursor: 45, handled: true });
 
-    const docMove = resolveDocHorizontalArrowMove(
+    const paintMove = resolvePaintHorizontalArrowMove(
       gluedDoc,
       wireOffsetToDocPos(gluedDoc, 62),
       "left"
     );
-    expect(docPosToWireOffset(gluedDoc, docMove.pos)).toBe(45);
+    expect(paintMove.handled).toBe(true);
+    expect(docPosToWireOffset(gluedDoc, paintMove.pos)).toBe(45);
 
     setSelectionAtWire(glued, gluedDoc, move.cursor, move.cursor, {
       fromOffset: 62,
@@ -1627,7 +1627,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         .map((node, i) => (node.type === "mention" ? i : -1))
         .filter((i) => i >= 0);
       const secondMentionIdx = mentionNodes[1]!;
-      const liveMentionEnd = {
+      const liveAtomicEnd = {
         nodeIndex: secondMentionIdx,
         nodeOffset: 1 + fx.agent.length,
       };
@@ -1636,16 +1636,19 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         left: 624,
       });
 
-      const resolved = resolveClickIngressSelection(fx.root, fx.doc, liveMentionEnd, undefined, {
+      const paint = resolvePaintContext(fx.doc, liveAtomicEnd, { root: fx.root });
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, liveAtomicEnd, undefined, {
         clientX: 630,
         clientY: fx.row0Top,
       });
       restoreAnchor();
 
+      expect(fx.doc.nodes[paint.focusPos.nodeIndex]?.type).toBe("mention");
+      expect(fx.doc.nodes[paint.paintPos.nodeIndex]?.type).toBe("text");
       expect(resolved.resolution).toBe("nativeSelection");
+      expect(resolved.focus).toEqual(paint.paintPos);
       expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.secondPostStart);
       expect(fx.doc.nodes[resolved.focus.nodeIndex]?.type).toBe("text");
-      expect(fx.doc.nodes[resolved.focus.nodeIndex]?.type).not.toBe("mention");
 
       fx.root.remove();
     });
@@ -1740,6 +1743,63 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       });
       expect(resolved.resolution).toBe("nativeSelection");
       expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.continuationWire);
+
+      fx.root.remove();
+    });
+
+    it("Right from second mention lands wrap spacer; next Right enters continuation", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      reapplyMultiMentionSoftWrapStubs(fx);
+
+      // Click may land continuation — click ingress owns that; horizontal does not skip stops.
+      const click = resolveClickIngressSelection(
+        fx.root,
+        fx.doc,
+        fx.continuationTextPos,
+        undefined,
+        {
+          clientX: 630,
+          clientY: fx.row0Top,
+        }
+      );
+      expect(docPosToWireOffset(fx.doc, click.focus)).toBe(fx.continuationWire);
+
+      const mentionNodes = fx.doc.nodes
+        .map((node, i) => (node.type === "mention" ? i : -1))
+        .filter((i) => i >= 0);
+      const secondMentionIdx = mentionNodes[1]!;
+      const mentionStart = { nodeIndex: secondMentionIdx, nodeOffset: 0 };
+      const mentionEnd = {
+        nodeIndex: secondMentionIdx,
+        nodeOffset: 1 + fx.agent.length,
+      };
+      const spacerPos = { nodeIndex: mentionNodes[1]! + 1, nodeOffset: 0 };
+      expect(docPosToWireOffset(fx.doc, spacerPos)).toBe(fx.secondPostStart);
+
+      const fromStart = resolvePaintHorizontalArrowMove(fx.doc, mentionStart, "right", {
+        root: fx.root,
+      });
+      expect(fromStart.handled).toBe(true);
+      expect(docPosToWireOffset(fx.doc, fromStart.pos)).toBe(fx.secondPostStart);
+      expect(docPosToWireOffset(fx.doc, fromStart.pos)).not.toBe(fx.continuationWire);
+
+      const fromEnd = resolvePaintHorizontalArrowMove(fx.doc, mentionEnd, "right", {
+        root: fx.root,
+      });
+      expect(fromEnd.handled).toBe(true);
+      expect(docPosToWireOffset(fx.doc, fromEnd.pos)).toBe(fx.secondPostStart);
+
+      const fromSpacer = resolvePaintHorizontalArrowMove(fx.doc, spacerPos, "right", {
+        root: fx.root,
+      });
+      expect(fromSpacer.handled).toBe(true);
+      expect(docPosToWireOffset(fx.doc, fromSpacer.pos)).toBe(fx.continuationWire);
+
+      const back = resolvePaintHorizontalArrowMove(fx.doc, fx.continuationTextPos, "left", {
+        root: fx.root,
+      });
+      expect(back.handled).toBe(true);
+      expect(docPosToWireOffset(fx.doc, back.pos)).toBe(fx.secondPostStart);
 
       fx.root.remove();
     });
@@ -1883,17 +1943,19 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         },
       ]);
 
-      const resolved = resolveClickIngressSelection(
-        fx.root,
-        fx.doc,
-        wireOffsetToDocPos(fx.doc, fx.fourthMentionStart),
-        undefined,
-        { clientX: 546, clientY: fx.row1Top }
-      );
+      const liveMentionStart = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
+      const resolved = resolveClickIngressSelection(fx.root, fx.doc, liveMentionStart, undefined, {
+        clientX: 546,
+        clientY: fx.row1Top,
+      });
       restore();
 
       expect(resolved.resolution).toBe("nativeSelection");
       expect(resolved.focus).toEqual(tailPos);
+      // Click paint authority is resolvePaintContext.paintPos — not layout paintContextForWire(liveWire).
+      expect(resolved.focus).toEqual(
+        resolvePaintContext(fx.doc, liveMentionStart, { root: fx.root }).paintPos
+      );
       expect(fx.doc.nodes[resolved.focus.nodeIndex]?.type).toBe("text");
 
       fx.root.remove();
@@ -2521,22 +2583,24 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           samples: [{ wire: 3, top: 136, left: 64 }],
         },
       ];
-      const layout: HandoffNoteLayoutMap = {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: (wire) => {
-          if (wire === 1) return 1;
-          if (wire >= 3) return 2;
-          return 0;
+      const layout = attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: (wire) => {
+            if (wire === 1) return 1;
+            if (wire >= 3) return 2;
+            return 0;
+          },
+          coordsForWire: (wire) =>
+            rows.flatMap((row) => row.samples).find((sample) => sample.wire === wire) ?? null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
         },
-        coordsForWire: (wire) =>
-          rows.flatMap((row) => row.samples).find((sample) => sample.wire === wire) ?? null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+        doc
+      );
 
       const moved = resolveLayoutVerticalArrowMove(
         doc,
@@ -2594,23 +2658,25 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           samples: [{ wire: wire.length - 1, top: 195.26, left: 377.52 }],
         },
       ];
-      const layout: HandoffNoteLayoutMap = {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: (w) => {
-          if (w === probe) return 2;
-          if (w >= tailStart && w < probe) return 1;
-          if (w >= wire.length - 1) return 3;
-          return 0;
+      const layout = attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: (w) => {
+            if (w === probe) return 2;
+            if (w >= tailStart && w < probe) return 1;
+            if (w >= wire.length - 1) return 3;
+            return 0;
+          },
+          coordsForWire: (w) =>
+            rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
         },
-        coordsForWire: (w) =>
-          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+        doc
+      );
 
       const moved = resolveLayoutVerticalArrowMove(
         doc,
@@ -2673,23 +2739,25 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           samples: [{ wire: wire.length - 1, top: 195.26, left: 377.52 }],
         },
       ];
-      const layout: HandoffNoteLayoutMap = {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: (w) => {
-          if (w === probe) return 2;
-          if (w >= docLineStartWire && w < probe) return 1;
-          if (w >= wire.length - 4) return 3;
-          return 0;
+      const layout = attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: (w) => {
+            if (w === probe) return 2;
+            if (w >= docLineStartWire && w < probe) return 1;
+            if (w >= wire.length - 4) return 3;
+            return 0;
+          },
+          coordsForWire: (w) =>
+            rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
         },
-        coordsForWire: (w) =>
-          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+        doc
+      );
 
       const moved = resolveLayoutVerticalArrowMove(
         doc,
@@ -2752,23 +2820,25 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           samples: [{ wire: 94, top: 195.26, left: 377.52 }],
         },
       ];
-      const layout: HandoffNoteLayoutMap = {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: (w) => {
-          if (w === probe) return 2;
-          if (w >= middleRowStartWire && w < probe) return 1;
-          if (w >= 94) return 3;
-          return 0;
+      const layout = attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: (w) => {
+            if (w === probe) return 2;
+            if (w >= middleRowStartWire && w < probe) return 1;
+            if (w >= 94) return 3;
+            return 0;
+          },
+          coordsForWire: (w) =>
+            rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
         },
-        coordsForWire: (w) =>
-          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+        doc
+      );
 
       const moved = resolveLayoutVerticalArrowMove(
         doc,
@@ -2826,23 +2896,25 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           samples: [{ wire: wire.length - 1, top: 195.26, left: 377.52 }],
         },
       ];
-      const layout: HandoffNoteLayoutMap = {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: (w) => {
-          if (w === probe) return 2;
-          if (w >= tailStart && w < probe) return 1;
-          if (w >= wire.length - 1) return 3;
-          return 0;
+      const layout = attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: (w) => {
+            if (w === probe) return 2;
+            if (w >= tailStart && w < probe) return 1;
+            if (w >= wire.length - 1) return 3;
+            return 0;
+          },
+          coordsForWire: (w) =>
+            rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
         },
-        coordsForWire: (w) =>
-          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+        doc
+      );
 
       const lowerEof = wire.length - 1;
       const toBlank = resolveLayoutVerticalArrowMove(
@@ -2917,23 +2989,25 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           samples: [{ wire: lowerStart, top: 195.26, left: 377.52 }],
         },
       ];
-      const layout: HandoffNoteLayoutMap = {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: (w) => {
-          if (w === probe) return 2;
-          if (w >= lowerStart) return 3;
-          if (w >= tailStart && w < probe) return 1;
-          return 0;
+      const layout = attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: (w) => {
+            if (w === probe) return 2;
+            if (w >= lowerStart) return 3;
+            if (w >= tailStart && w < probe) return 1;
+            return 0;
+          },
+          coordsForWire: (w) =>
+            rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
         },
-        coordsForWire: (w) =>
-          rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+        doc
+      );
 
       const moved = resolveLayoutVerticalArrowMove(
         doc,
@@ -2954,17 +3028,19 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     const doc = wireToDoc("row\nbelow");
 
     function layoutWithRows(rows: HandoffNoteLayoutRow[]): HandoffNoteLayoutMap {
-      return {
-        samples: rows.flatMap((row) => row.samples),
-        rows,
-        lineHeight: 18,
-        visualRowCount: rows.length,
-        rowIndexForWire: () => -1,
-        coordsForWire: () => null,
-        paintContextForWire: () => null,
-        continuationAfterRowEndWire: () => null,
-        shouldPreserveGoalColumnOnShorterRowLanding: () => false,
-      };
+      return attachPaintIndexToLayoutMap(
+        {
+          samples: rows.flatMap((row) => row.samples),
+          rows,
+          lineHeight: 18,
+          visualRowCount: rows.length,
+          rowIndexForWire: () => -1,
+          coordsForWire: () => null,
+          continuationAfterRowEndWire: () => null,
+          shouldPreserveGoalColumnOnShorterRowLanding: () => false,
+        },
+        doc
+      );
     }
 
     it("down skips co-top inline blank to the next content row", () => {

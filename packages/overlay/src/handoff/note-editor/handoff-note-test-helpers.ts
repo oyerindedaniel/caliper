@@ -598,6 +598,15 @@ function stubRectForCoord(coord: StubLayoutCoord): DOMRect {
   } as DOMRect;
 }
 
+function flattenStubCoords(
+  coord: StubLayoutCoord | StubLayoutCoord[] | null | undefined
+): StubLayoutCoord[] {
+  if (!coord) {
+    return [];
+  }
+  return Array.isArray(coord) ? coord : [coord];
+}
+
 /** Line-fragment rects from getClientRects: `top` is the painted box top, not midY. */
 function stubLineFragmentRect(coord: StubLayoutCoord): DOMRect {
   const height = coord.height ?? 18;
@@ -621,7 +630,10 @@ export function stubTextNodeOffsetAnchorRects(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   nodeIndex: number,
-  resolveRect: (nodeOffset: number, textLength: number) => StubLayoutCoord | null
+  resolveRect: (
+    nodeOffset: number,
+    textLength: number
+  ) => StubLayoutCoord | StubLayoutCoord[] | null
 ): () => void {
   return stubTextNodeLineRects(root, doc, nodeIndex, [], { resolveOffsetRect: resolveRect });
 }
@@ -633,7 +645,10 @@ export function stubTextNodeLineRects(
   nodeIndex: number,
   rects: StubLayoutCoord[],
   options?: {
-    resolveOffsetRect?: (nodeOffset: number, textLength: number) => StubLayoutCoord | null;
+    resolveOffsetRect?: (
+      nodeOffset: number,
+      textLength: number
+    ) => StubLayoutCoord | StubLayoutCoord[] | null;
   }
 ): () => void {
   const docTextNode = doc.nodes[nodeIndex];
@@ -704,19 +719,19 @@ export function stubTextNodeLineRects(
           docOffsetFor(activeSlot, rangeEnd - 1),
           docTextLength
         );
-        if (startCoord) {
-          tops.add(startCoord.top);
+        for (const coord of flattenStubCoords(startCoord)) {
+          tops.add(coord.top);
         }
-        if (endCoord) {
-          tops.add(endCoord.top);
+        for (const coord of flattenStubCoords(endCoord)) {
+          tops.add(coord.top);
         }
         for (let domOffset = rangeStart; domOffset < rangeEnd; domOffset++) {
           const coord = options.resolveOffsetRect(
             docOffsetFor(activeSlot, domOffset),
             docTextLength
           );
-          if (coord) {
-            tops.add(coord.top);
+          for (const entry of flattenStubCoords(coord)) {
+            tops.add(entry.top);
           }
         }
         const matched = rects.filter((rect) => {
@@ -751,10 +766,11 @@ export function stubTextNodeLineRects(
         rangeStart = offset;
         if (options?.resolveOffsetRect) {
           const coord = options.resolveOffsetRect(docOffsetFor(slot, offset), docTextLength);
-          if (coord) {
-            const stubRect = stubRectForCoord(coord);
-            range.getClientRects = () => [stubRect] as unknown as DOMRectList;
-            range.getBoundingClientRect = () => stubRect;
+          const stubCoords = flattenStubCoords(coord);
+          if (stubCoords.length > 0) {
+            const stubRects = stubCoords.map((entry) => stubRectForCoord(entry));
+            range.getClientRects = () => stubRects as unknown as DOMRectList;
+            range.getBoundingClientRect = () => stubRects[0]!;
           }
         }
         attachFragmentRectsForSpan();
@@ -1445,7 +1461,7 @@ export function reapplyMultiMentionSoftWrapStubs(
   ]);
   stubTextNodeOffsetAnchorRects(fx.root, fx.doc, fx.middleTextNode, (offset) =>
     offset <= 0
-      ? { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 520 }
+      ? { top: MULTI_MENTION_SOFT_WRAP_ROW0, left: 624.82 }
       : { top: MULTI_MENTION_SOFT_WRAP_ROW1, left: 380 }
   );
 }

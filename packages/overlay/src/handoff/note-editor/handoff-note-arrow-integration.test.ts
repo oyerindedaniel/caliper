@@ -9,6 +9,7 @@
  * Contract: handoff-note-arrow-contract.md
  */
 import {
+  describeHandoffNoteCursorContext,
   docPosToWireOffset,
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
@@ -16,9 +17,14 @@ import {
   resolveDocVerticalArrowMove,
   wireOffsetToDocPos,
   wireToDoc,
+  type HandoffNoteDoc,
 } from "@caliper/core";
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
+import {
+  resolvePaintContextAtWire,
+  resolvePaintHorizontalArrowMove,
+} from "./handoff-note-dom-points.js";
 import {
   setMeasuredSamplesCache,
   invalidateHandoffNoteLayoutCache,
@@ -62,6 +68,19 @@ function pressArrow(editor: HandoffNoteEditor, axis: ArrowAxis, sign: ArrowSign)
       cancelable: true,
     })
   );
+}
+
+function assertPaintHorizontal(
+  doc: HandoffNoteDoc,
+  fromWire: number,
+  direction: "left" | "right",
+  expectWire: number
+): void {
+  const focus = resolvePaintContextAtWire(doc, fromWire).focusPos;
+  const move = resolvePaintHorizontalArrowMove(doc, focus, direction);
+  expect(move.handled).toBe(true);
+  expect(docPosToWireOffset(doc, move.pos)).toBe(expectWire);
+  expect(describeHandoffNoteCursorContext(doc, expectWire).kind).not.toBe("mention-interior");
 }
 
 function expectCaretParity(
@@ -182,7 +201,7 @@ function compositeWireLandmarks(wire: string) {
 }
 
 function mountEditorHost(
-  agentIds: string[] = [AGENT_COMPOSITE, AGENT_A, AGENT_B, "caliper-abc123"]
+  agentIds: string[] = [AGENT_COMPOSITE, AGENT_A, AGENT_B, "caliper-abc123", "caliper-spacer01"]
 ) {
   const root = document.createElement("div");
   root.style.width = "480px";
@@ -256,6 +275,10 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
       expectCaretParity(host.editor, host.root, mentionEnd);
+      // Paint-normalized land: atomic end selection owns post-mention text at the alias wire.
+      expect(
+        host.editor.getDoc().nodes[host.editor.getSelectionState().focus.nodeIndex]?.type
+      ).toBe("text");
 
       expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, mentionStart);
@@ -267,6 +290,166 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(host.editor, host.root, 4);
       expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
       expectCaretParity(host.editor, host.root, 3);
+    });
+  });
+
+  describe("horizontal — paint authority (resolvePaintHorizontalArrowMove)", () => {
+    it("steps adjacent plain text", () => {
+      const doc = wireToDoc("abcdef");
+      assertPaintHorizontal(doc, 3, "right", 4);
+      assertPaintHorizontal(doc, 4, "left", 3);
+    });
+
+    it("jumps over a mention from its start and returns", () => {
+      const doc = wireToDoc("Hi @caliper-abc123 there");
+      const startWire = "Hi ".length;
+      const endWire = "Hi @caliper-abc123".length;
+      assertPaintHorizontal(doc, startWire, "right", endWire);
+      assertPaintHorizontal(doc, endWire, "left", startWire);
+    });
+
+    it("steps through adjacent mentions separated by canonical space", () => {
+      const doc = wireToDoc("@caliper-a@caliper-b");
+      const firstEnd = "@caliper-a".length;
+      const move = resolvePaintHorizontalArrowMove(doc, wireOffsetToDocPos(doc, firstEnd), "right");
+      expect(move.handled).toBe(true);
+      expect(docPosToWireOffset(doc, move.pos)).toBeGreaterThan(firstEnd);
+    });
+
+    const suffixWire = `row @${AGENT_A} mid @${AGENT_B} tail\n\n\nlower @${AGENT_A} `;
+    const rowTail = suffixWire.indexOf("tail") + 2;
+    const suffixBlank = suffixWire.indexOf("\n\n") + 1;
+    const lowerMention = suffixWire.lastIndexOf("@");
+
+    it("matrix: row tail steps right and left along substantive text", () => {
+      const doc = wireToDoc(suffixWire);
+      assertPaintHorizontal(doc, rowTail, "right", rowTail + 1);
+      assertPaintHorizontal(doc, rowTail + 1, "left", rowTail);
+    });
+
+    it("matrix: suffix blank interior steps along the blank wire line", () => {
+      const doc = wireToDoc(suffixWire);
+      const secondBlank = suffixBlank + 1;
+      assertPaintHorizontal(doc, suffixBlank, "right", secondBlank);
+      assertPaintHorizontal(doc, secondBlank, "left", suffixBlank);
+    });
+
+    it("matrix: lower mention steps right to end and left to pill start", () => {
+      const doc = wireToDoc(suffixWire);
+      const mentionEnd = lowerMention + `@${AGENT_A}`.length;
+      assertPaintHorizontal(doc, lowerMention, "right", mentionEnd);
+      assertPaintHorizontal(doc, mentionEnd, "left", lowerMention);
+    });
+  });
+
+  describe("horizontal — sandwich spacer paint seams", () => {
+    const SPACER_AGENT = "caliper-spacer01";
+
+    it("post-mention Right steps spacer then crosses next pill as one token", () => {
+      const wire = `head @${SPACER_AGENT} @${SPACER_AGENT} end`;
+      const mentionEndWire = `head @${SPACER_AGENT}`.length - 1;
+      const spacerStartWire = `head @${SPACER_AGENT}`.length;
+      const continuationWire = spacerStartWire + 1;
+
+      host.editor.setDocFromWire(wire, mentionEndWire, { resetHistory: true });
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, spacerStartWire, "mention end → spacer");
+      expect(host.editor.getSelectionState().focus).toEqual({ nodeIndex: 2, nodeOffset: 0 });
+      expect(host.editor.getDoc().nodes[2]?.type).toBe("text");
+
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, continuationWire, "spacer → continuation");
+      expect(host.editor.getSelectionState().focus).toEqual({ nodeIndex: 2, nodeOffset: 1 });
+
+      // One-token: do not micro-stop at following mention start.
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      expect(host.editor.getSelectionState().focus).toEqual({ nodeIndex: 4, nodeOffset: 0 });
+      expect(host.editor.getDoc().nodes[3]?.type).toBe("mention");
+      expect(host.editor.getDoc().nodes[4]?.type).toBe("text");
+    });
+
+    /**
+     * Contract: start Right → atomic end; paint of atomic end → post-text spacer.
+     * Bug: step returns mention-end focus while paint/DOM are already spacer text;
+     * writeSelection keepAuthority keeps mention → next Right is a same-wire flip (dead press).
+     * Authority under test: horizontal landing must adopt paint owner (not keepAuthority glue).
+     */
+    it("RIGHT from mention start lands spacer text focus without keepAuthority dead press", () => {
+      const wire = `dhd @${SPACER_AGENT} d @${SPACER_AGENT} whet`;
+      const secondMentionStart = wire.lastIndexOf(`@${SPACER_AGENT}`);
+      const spacerStartWire = secondMentionStart + `@${SPACER_AGENT}`.length;
+      const doc = wireToDoc(wire);
+      const mentionNodeIndex = doc.nodes.findIndex(
+        (n, i) =>
+          n.type === "mention" &&
+          docPosToWireOffset(doc, { nodeIndex: i, nodeOffset: 0 }) === secondMentionStart
+      );
+      expect(mentionNodeIndex).toBeGreaterThanOrEqual(0);
+      const mentionStart = { nodeIndex: mentionNodeIndex, nodeOffset: 0 };
+
+      // Wire import at alias prefers text-before; force mention-start like live after text→mention step.
+      host.editor.applyDoc(doc, { anchor: mentionStart, focus: mentionStart });
+      expect(host.editor.getSelectionState().focus).toEqual(mentionStart);
+
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      // Paint-normalized landing of atomic end = spacer text@0 (contract paint authority).
+      const focus = host.editor.getSelectionState().focus;
+      expect(docPosToWireOffset(host.editor.getDoc(), focus)).toBe(spacerStartWire);
+      expect(host.editor.getDoc().nodes[focus.nodeIndex]?.type).toBe("text");
+      expect(focus.nodeOffset).toBe(0);
+      expectCaretParity(host.editor, host.root, spacerStartWire, "start → spacer owner");
+
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, spacerStartWire + 1, "spacer → interior");
+      expect(host.editor.getSelectionState().focus.nodeOffset).toBe(1);
+    });
+
+    /**
+     * Pill is one horizontal token: text-before Right must not micro-stop at mention start
+     * (same-wire flip). Land post-mention paint owner in one press (spacer, or soft-wrap
+     * continuation when root promotes).
+     */
+    it("RIGHT from text-before crosses mention to spacer text without start micro-stop", () => {
+      const wire = `dhd @${SPACER_AGENT} d @${SPACER_AGENT} whet`;
+      const secondMentionStart = wire.lastIndexOf(`@${SPACER_AGENT}`);
+      const spacerStartWire = secondMentionStart + `@${SPACER_AGENT}`.length;
+
+      host.editor.setDocFromWire(wire, secondMentionStart, { resetHistory: true });
+      const before = host.editor.getSelectionState().focus;
+      expect(host.editor.getDoc().nodes[before.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(host.editor.getDoc(), before)).toBe(secondMentionStart);
+
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      const afterCross = host.editor.getSelectionState().focus;
+      expect(host.editor.getDoc().nodes[afterCross.nodeIndex]?.type).toBe("text");
+      expect(docPosToWireOffset(host.editor.getDoc(), afterCross)).toBe(spacerStartWire);
+      expect(afterCross.nodeOffset).toBe(0);
+      expectCaretParity(host.editor, host.root, spacerStartWire, "text-before → spacer owner");
+
+      expect(pressArrow(host.editor, "horizontal", 1)).toBe(true);
+      expectCaretParity(host.editor, host.root, spacerStartWire + 1, "spacer → interior");
+    });
+
+    it("inter-mention gap text steps char-by-char without mention jump", () => {
+      const wire = `x @${SPACER_AGENT} d @${SPACER_AGENT} z`;
+      const gapNodeIndex = 2;
+      const gapStartWire = `x @${SPACER_AGENT} `.length;
+      const gapEndWire = gapStartWire + 2;
+      host.editor.setDocFromWire(wire, gapEndWire, { resetHistory: true });
+      setSelectionAtWire(host.root, host.editor.getDoc(), gapEndWire, gapEndWire, {
+        fromOffset: gapEndWire,
+      });
+      expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
+      expect(host.editor.getSelectionState().focus).toEqual({
+        nodeIndex: gapNodeIndex,
+        nodeOffset: 2,
+      });
+      expect(pressArrow(host.editor, "horizontal", -1)).toBe(true);
+      expect(host.editor.getSelectionState().focus).toEqual({
+        nodeIndex: gapNodeIndex,
+        nodeOffset: 1,
+      });
+      expect(host.editor.getDoc().nodes[gapNodeIndex]?.type).toBe("text");
     });
   });
 
@@ -516,7 +699,8 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       wireToDoc(longBeforeMentionWire)
     ).filter((wire) => wire >= tailRowEnd);
     const blankAboveContentRow = blanksBelowTail[0]!;
-    const firstBlankBelowTail = blanksBelowTail[1] ?? blanksBelowTail[0]!;
+    /** Adjacent blank visual row below the content line (one Down step). */
+    const firstBlankBelowTail = blanksBelowTail[0]!;
     const rowVisualStart = longBeforeMentionWire.indexOf("row");
 
     it("long tail line: blank below tail and up round-trip with editor parity", () => {
@@ -1925,7 +2109,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const blanksBelowRow = listEmbeddedBlankBandProbeWires(wireToDoc(wire)).filter(
         (probe) => probe > rowTail
       );
-      const firstBlankBelowRow = blanksBelowRow.at(-1)!;
+      const firstBlankBelowRow = blanksBelowRow[0]!;
       host.editor.setDocFromWire(wire, rowTail, { resetHistory: true });
       seedMonotonicMeasuredLayout(host.root, wire);
       expect(pressArrow(host.editor, "vertical", 1)).toBe(true);

@@ -7,9 +7,9 @@ import {
 } from "./handoff-note-doc-pos.js";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
 import {
-  handoffNoteCaretOnMentionNodeEnd,
-  handoffNoteCaretOnMentionNodeStart,
-  handoffNoteIsMentionEndProbeAliasWire,
+  handoffNoteCaretOnAtomicNodeEnd,
+  handoffNoteCaretOnAtomicNodeStart,
+  handoffNoteIsAtomicEndProbeAlias,
 } from "./handoff-note-delete-intent.js";
 import {
   isEmbeddedBlankBandDeleteProbeWire,
@@ -37,8 +37,8 @@ describe("handoff note delete intent — contract authority before handler chain
       const wire = `header @${agent} \n\n\n`;
       const { doc, selection } = chipSpacerBeforeFirstProbe(wire);
       const focus = selection.focus;
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, focus)).toBe(true);
-      expect(handoffNoteIsMentionEndProbeAliasWire(doc, docPosToWireOffset(doc, focus))).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, focus)).toBe(true);
+      expect(handoffNoteIsAtomicEndProbeAlias(doc, focus)).toBe(true);
 
       const removed = applyDocDelete(doc, selection, "backspace")!;
       expect(docToWire(removed.doc)).toBe(`header \n\n\n`);
@@ -48,7 +48,7 @@ describe("handoff note delete intent — contract authority before handler chain
     it("mention-only row + spacer — next backspace removes mention", () => {
       const wire = `@${agent} \n\n\n`;
       const { doc, selection } = chipSpacerBeforeFirstProbe(wire);
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, selection.focus)).toBe(true);
 
       const removed = applyDocDelete(doc, selection, "backspace")!;
       expect(docToWire(removed.doc)).toBe(`\n\n\n`);
@@ -58,7 +58,7 @@ describe("handoff note delete intent — contract authority before handler chain
     it("plain tail + spacer — next backspace chips row text not blank band", () => {
       const wire = `tail \n\n\n`;
       const { doc, selection } = chipSpacerBeforeFirstProbe(wire);
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(false);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, selection.focus)).toBe(false);
 
       const chipped = applyDocDelete(doc, selection, "backspace")!;
       expect(docToWire(chipped.doc)).toBe(`tai\n\n\n`);
@@ -69,7 +69,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const doc = wireToDoc(wire);
       const [firstProbe] = listEmbeddedBlankBandProbeWires(doc);
       const focus = wireOffsetToDocPos(doc, firstProbe!);
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, focus)).toBe(false);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, focus)).toBe(false);
 
       const collapsed = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
       expect(docToWire(collapsed.doc)).toBe(`header @${agent}\n\n`);
@@ -90,7 +90,7 @@ describe("handoff note delete intent — contract authority before handler chain
 
     it("substantive chip lands mention-node-end alias off delete-probe infrastructure", () => {
       const chipped = chipGluedPostfixAtProbe(gluedPostfixUpperBandWire());
-      expect(handoffNoteCaretOnMentionNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
       expect(
         isEmbeddedBlankBandDeleteProbeWire(
           chipped.doc,
@@ -104,7 +104,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const chipped = chipGluedPostfixAtProbe(gluedPostfixUpperBandWire());
       const deleted = applyDocDelete(chipped.doc, chipped.selection, "delete")!;
       expect(docToWire(deleted.doc)).toBe(`note @${agent}\n\n`);
-      expect(handoffNoteCaretOnMentionNodeEnd(deleted.doc, deleted.selection.focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(deleted.doc, deleted.selection.focus)).toBe(true);
       expect(
         isEmbeddedBlankBandDeleteProbeWire(
           deleted.doc,
@@ -119,7 +119,7 @@ describe("handoff note delete intent — contract authority before handler chain
     it("mention node end at probe alias — delete collapses blank band (look right)", () => {
       const wire = `header @${agent} \n\n\n`;
       const { doc, selection } = chipSpacerBeforeFirstProbe(wire);
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, selection.focus)).toBe(true);
 
       const collapsed = applyDocDelete(doc, selection, "delete")!;
       expect(docToWire(collapsed.doc)).toBe(`header @${agent}\n\n`);
@@ -131,7 +131,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const doc = wireToDoc(wire);
       const [firstProbe] = listEmbeddedBlankBandProbeWires(doc);
       const focus = wireOffsetToDocPos(doc, firstProbe!);
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, focus)).toBe(false);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, focus)).toBe(false);
 
       const collapsed = applyDocDelete(doc, collapsedSelection(focus), "delete")!;
       expect(docToWire(collapsed.doc)).toBe(`header @${agent} \n\n`);
@@ -143,7 +143,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const doc = wireToDoc(wire);
       const mentionStart = wire.indexOf("@");
       const focus = wireOffsetToDocPos(doc, mentionStart);
-      expect(handoffNoteCaretOnMentionNodeStart(doc, focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeStart(doc, focus)).toBe(true);
 
       const removed = applyDocDelete(doc, collapsedSelection(focus), "delete")!;
       expect(docToWire(removed.doc)).not.toContain(agent);
@@ -174,10 +174,8 @@ describe("handoff note delete intent — contract authority before handler chain
 
     it("upper band — backspace at mention node end removes top mention only", () => {
       const { doc, selection } = chipSpacerBeforeUpperBandProbe(complexMultiBandWire());
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(true);
-      expect(
-        handoffNoteIsMentionEndProbeAliasWire(doc, docPosToWireOffset(doc, selection.focus))
-      ).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, selection.focus)).toBe(true);
+      expect(handoffNoteIsAtomicEndProbeAlias(doc, selection.focus)).toBe(true);
 
       const removed = applyDocDelete(doc, selection, "backspace")!;
       expect(docToWire(removed.doc)).toBe(`header \n\n\nmiddle\n\n\ntail @${agentB} suffix`);
@@ -187,7 +185,7 @@ describe("handoff note delete intent — contract authority before handler chain
 
     it("upper band — delete at mention node end collapses upper blank band", () => {
       const { doc, selection } = chipSpacerBeforeUpperBandProbe(complexMultiBandWire());
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, selection.focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, selection.focus)).toBe(true);
 
       const collapsed = applyDocDelete(doc, selection, "delete")!;
       expect(docToWire(collapsed.doc)).toBe(
@@ -215,7 +213,7 @@ describe("handoff note delete intent — contract authority before handler chain
         collapsedSelection(wireOffsetToDocPos(doc, lowerBandSpacer)),
         "backspace"
       )!;
-      expect(handoffNoteCaretOnMentionNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
+      expect(handoffNoteCaretOnAtomicNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
 
       const removed = applyDocDelete(chipped.doc, chipped.selection, "backspace")!;
       expect(docToWire(removed.doc)).toBe(`header @${agent}\n\n\nmiddle\n\n\ntail \n\n\n`);
@@ -229,7 +227,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const probes = listEmbeddedBlankBandProbeWires(doc);
       const lowerFirstProbe = probes[probes.length - 3]!;
       const focus = wireOffsetToDocPos(doc, lowerFirstProbe);
-      expect(handoffNoteCaretOnMentionNodeEnd(doc, focus)).toBe(false);
+      expect(handoffNoteCaretOnAtomicNodeEnd(doc, focus)).toBe(false);
 
       const collapsed = applyDocDelete(doc, collapsedSelection(focus), "delete")!;
       expect(docToWire(collapsed.doc)).toBe(
@@ -299,6 +297,51 @@ describe("handoff note delete intent — contract authority before handler chain
       const focus = { nodeIndex: gapNode, nodeOffset: 0 };
       const removed = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
       expect(docToWire(removed.doc).match(new RegExp(`@${agent}`, "g"))).toHaveLength(2);
+    });
+
+    it("substantive text between mentions at offset 0 backspace removes the left pill", () => {
+      // Glued wire `@idmesh` parses as one mention — build the real node shape via spacer chip.
+      const spaced = `Hi @${agent} mesh @${agent} there`;
+      let doc = wireToDoc(spaced);
+      const spaceIdx = spaced.indexOf(" mesh");
+      let state = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceIdx + 1)),
+        "backspace"
+      )!;
+      doc = state.doc;
+      const focus = state.selection.focus;
+      expect(doc.nodes[focus.nodeIndex]?.type).toBe("text");
+      expect(focus.nodeOffset).toBe(0);
+      expect(doc.nodes[focus.nodeIndex - 1]?.type).toBe("mention");
+      expect(doc.nodes[focus.nodeIndex + 1]?.type).toBe("mention");
+
+      state = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
+      const after = docToWire(state.doc);
+      expect(after).toContain("mesh");
+      expect(after).not.toContain(`${agent}mesh`);
+      expect(after).not.toContain(`${agent}esh`);
+      expect(after.match(new RegExp(`@${agent}`, "g"))).toHaveLength(1);
+    });
+
+    it("glued postfix after spacer chip: backspace at text@0 removes the pill, not first char", () => {
+      const spaced = `whe @${agent} d @${agent} mesh @${agent} `;
+      let doc = wireToDoc(spaced);
+      const spaceIdx = spaced.lastIndexOf(" mesh");
+      let focus = wireOffsetToDocPos(doc, spaceIdx + 1);
+      let state = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
+      expect(docToWire(state.doc)).toContain(`@${agent}mesh`);
+      doc = state.doc;
+      focus = state.selection.focus;
+      expect(doc.nodes[focus.nodeIndex]?.type).toBe("text");
+      expect(focus.nodeOffset).toBe(0);
+
+      state = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
+      const after = docToWire(state.doc);
+      expect(after).not.toContain(`${agent}esh`);
+      expect(after).not.toContain(`${agent}mesh`);
+      expect(after).toContain("mesh");
+      expect(after.match(new RegExp(`@${agent}`, "g"))).toHaveLength(2);
     });
 
     it("embedded-newline text between mentions is not an inter-mention gap for forward delete", () => {

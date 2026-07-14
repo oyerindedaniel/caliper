@@ -1086,10 +1086,13 @@ describe("vertical goal column authority (editor state)", () => {
 
     const sticky = 484.22918701171875;
     const row1PillSnapWire = 70;
+    // Anchor stubs invalidate the layout cache — reseed LIVE samples after each stub
+    // (same contract as prepareVerticalColumnProbe). Interior focus @97 needs the row-2 band.
     const restoreRow2Anchor = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
       top: 177.06,
       left: sticky,
     });
+    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
 
     try {
       expect(pressArrow(editor, "ArrowUp")).toBe(true);
@@ -1106,6 +1109,7 @@ describe("vertical goal column authority (editor state)", () => {
         top: 140.67,
         left: 349.5,
       });
+      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
 
       expect(pressArrow(editor, "ArrowDown")).toBe(true);
       expect(editor.getCursor()).not.toBe(row1PillSnapWire);
@@ -1131,6 +1135,7 @@ describe("vertical goal column authority (editor state)", () => {
       top: 177.06,
       left: sticky,
     });
+    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
     try {
       expect(pressArrow(editor, "ArrowUp")).toBe(true);
       setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
@@ -1160,6 +1165,7 @@ describe("vertical goal column authority (editor state)", () => {
       top: 177.06,
       left: sticky,
     });
+    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
     try {
       expect(pressArrow(editor, "ArrowUp")).toBe(true);
       setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
@@ -1168,6 +1174,7 @@ describe("vertical goal column authority (editor state)", () => {
         top: fx.row0Top,
         left: 349.5,
       });
+      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
       expect(pressArrow(editor, "ArrowLeft")).toBe(true);
       expect(pressArrow(editor, "ArrowDown")).toBe(true);
       expect(editor.getCursor()).not.toBe(77);

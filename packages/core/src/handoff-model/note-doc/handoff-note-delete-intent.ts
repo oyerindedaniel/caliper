@@ -1,5 +1,4 @@
 import {
-  describeHandoffNoteCursorContext,
   docLength,
   docToWire,
   resolveHandoffNoteMentionEdit,
@@ -10,17 +9,19 @@ import {
 import {
   collapsedSelection,
   docPosToWireOffset,
+  isAtomicNode,
+  nodeTokenLength,
   normalizeDocPos,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import {
+  docPosAtAtomicStartTextAlias,
   docPosAfterPartialContentRowChipBeforeProbe,
   docPosAfterEmptiedContentRowChipBeforeProbe,
   docAfterForwardMentionRemoveAbsorbAdjacentSpacer,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
-  docPosAtMentionStartTextAlias,
   docTextNodeHasEmbeddedNewline,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandRowAboveProbeIsEmpty,
@@ -57,43 +58,46 @@ export type HandoffNoteDeleteIntent =
   | { kind: "noop" }
   | { kind: "result"; result: HandoffNoteDeleteIntentResult };
 
-function mentionTokenLength(node: HandoffNoteDoc["nodes"][number]): number {
-  return node.type === "mention" ? 1 + node.agentId.length : 0;
-}
-
-/** Doc position rests on committed mention-end (not text-node alias at same wire). */
-export function handoffNoteCaretOnMentionNodeEnd(
+/** Doc position rests on committed atomic-node end (not text-node alias at same wire). */
+export function handoffNoteCaretOnAtomicNodeEnd(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos
 ): boolean {
   const node = doc.nodes[focus.nodeIndex];
-  if (node?.type !== "mention") {
+  if (!isAtomicNode(node)) {
     return false;
   }
-  return focus.nodeOffset >= mentionTokenLength(node);
+  return focus.nodeOffset >= nodeTokenLength(node);
 }
 
-/** Doc position rests on committed mention-start. */
-export function handoffNoteCaretOnMentionNodeStart(
+/** Doc position rests on committed atomic-node start. */
+export function handoffNoteCaretOnAtomicNodeStart(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos
 ): boolean {
   const node = doc.nodes[focus.nodeIndex];
-  return node?.type === "mention" && focus.nodeOffset === 0;
+  return isAtomicNode(node) && focus.nodeOffset === 0;
 }
 
-/** Wire aliases content row end with first probe after substantive abuts (post-spacer chip). */
-export function handoffNoteIsMentionEndProbeAliasWire(
+/**
+ * Atomic end at a blank-band probe wire after substantive content abuts
+ * (post-spacer chip). Doc focus owns the seam — not wire cursor re-classify.
+ */
+export function handoffNoteIsAtomicEndProbeAlias(
   doc: HandoffNoteDoc,
-  focusWire: number
+  focus: HandoffNoteDocPos
 ): boolean {
-  const context = describeHandoffNoteCursorContext(doc, focusWire);
-  const semanticEnd = context.kind === "mention-boundary" && context.edge === "end";
+  const focusWire = docPosToWireOffset(doc, focus);
   return (
-    semanticEnd &&
+    handoffNoteCaretOnAtomicNodeEnd(doc, focus) &&
     isEmbeddedBlankBandProbeWire(doc, focusWire) &&
     embeddedBlankBandSubstantiveContentAbutsProbe(doc, focusWire)
   );
+}
+
+/** Whitespace-only separator between two pills — not substantive text (contract: inter-mention gap). */
+function isWhitespaceOnlyInterMentionGapText(text: string): boolean {
+  return /^\s+$/.test(text) && !/[\n\r]/.test(text);
 }
 
 function isInterMentionGap(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boolean {
@@ -107,6 +111,9 @@ function isInterMentionGap(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boole
     return false;
   }
   if (docTextNodeHasEmbeddedNewline(doc, focus.nodeIndex)) {
+    return false;
+  }
+  if (!isWhitespaceOnlyInterMentionGapText(node.text)) {
     return false;
   }
   const focusWire = docPosToWireOffset(doc, focus);
@@ -136,9 +143,19 @@ function mentionsMergedAt(doc: HandoffNoteDoc, leftMentionIdx: number): boolean 
   );
 }
 
-function caretAtMentionEnd(doc: HandoffNoteDoc, mentionNodeIndex: number): HandoffNoteDocPos {
+function mentionNodeAbutsBlankBandProbe(
+  doc: HandoffNoteDoc,
+  mentionNodeIndex: number
+): number | null {
   const node = doc.nodes[mentionNodeIndex]!;
-  return { nodeIndex: mentionNodeIndex, nodeOffset: mentionTokenLength(node) };
+  const endWire = docPosToWireOffset(doc, {
+    nodeIndex: mentionNodeIndex,
+    nodeOffset: nodeTokenLength(node),
+  });
+  if (!isEmbeddedBlankBandProbeWire(doc, endWire)) {
+    return null;
+  }
+  return endWire;
 }
 
 /** Land after last substantive char when prefix text ends with a single spacer before the pill. */
@@ -309,6 +326,7 @@ function applyInterMentionGapDelete(
     );
   }
 
+  // Offset 0 backspace: chip the first whitespace ahead (separator), not the left pill.
   if (!textNode.text.length) {
     return null;
   }
@@ -371,24 +389,16 @@ function blankBandSelectionFocus(
   return wireOffsetToDocPos(doc, caretWire);
 }
 
-function blankCollapsePreservesMentionEndProbeAlias(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos,
-  focusWire: number
-): boolean {
-  return (
-    handoffNoteCaretOnMentionNodeEnd(doc, focus) &&
-    embeddedBlankBandSubstantiveContentAbutsProbe(doc, focusWire)
-  );
-}
-
 function blankBandMoveFromEmptyRowEnd(
   doc: HandoffNoteDoc,
   move: EmbeddedBlankBandDeleteMove,
   focus: HandoffNoteDocPos,
   focusWire: number
 ): HandoffNoteDeleteIntentResult {
-  if (!blankCollapsePreservesMentionEndProbeAlias(doc, focus, focusWire)) {
+  const preserveAtomicEndProbeAlias =
+    handoffNoteCaretOnAtomicNodeEnd(doc, focus) &&
+    embeddedBlankBandSubstantiveContentAbutsProbe(doc, focusWire);
+  if (!preserveAtomicEndProbeAlias) {
     return blankBandMoveToResult(doc, move);
   }
   return blankBandMoveToResult(doc, { ...move, probeInfrastructureLanding: false });
@@ -433,37 +443,18 @@ function mentionRemoveIntentResult(
   };
 }
 
-function mentionNodeAbutsBlankBandProbe(
-  doc: HandoffNoteDoc,
-  mentionNodeIndex: number
-): number | null {
-  const endPos = caretAtMentionEnd(doc, mentionNodeIndex);
-  const endWire = docPosToWireOffset(doc, endPos);
-  if (!isEmbeddedBlankBandProbeWire(doc, endWire)) {
-    return null;
-  }
-  return endWire;
-}
-
-function caretOnMentionAbuttingBlankBandProbe(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos
-): number | null {
-  const node = doc.nodes[focus.nodeIndex];
-  if (node?.type !== "mention") {
-    return null;
-  }
-  return mentionNodeAbutsBlankBandProbe(doc, focus.nodeIndex);
-}
-
 function resolveDeleteForwardFromMentionAbuttingProbe(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos
 ): HandoffNoteDeleteIntent | null {
-  if (handoffNoteCaretOnMentionNodeStart(doc, focus)) {
+  if (handoffNoteCaretOnAtomicNodeStart(doc, focus)) {
     return null;
   }
-  const probeWire = caretOnMentionAbuttingBlankBandProbe(doc, focus);
+  const node = doc.nodes[focus.nodeIndex];
+  if (node?.type !== "mention") {
+    return null;
+  }
+  const probeWire = mentionNodeAbutsBlankBandProbe(doc, focus.nodeIndex);
   if (probeWire === null) {
     return null;
   }
@@ -495,7 +486,7 @@ function resolveBackspaceOnMentionInteriorAbuttingProbe(
   if (node?.type !== "mention") {
     return null;
   }
-  const tokenLength = mentionTokenLength(node);
+  const tokenLength = nodeTokenLength(node);
   if (focus.nodeOffset <= 0 || focus.nodeOffset >= tokenLength) {
     return null;
   }
@@ -521,11 +512,8 @@ function resolveBoundaryDeleteIntent(
   direction: HandoffNoteEdit,
   focus: HandoffNoteDocPos
 ): HandoffNoteDeleteIntent | null {
-  if (direction === "backspace" && handoffNoteCaretOnMentionNodeEnd(doc, focus)) {
+  if (direction === "backspace" && handoffNoteCaretOnAtomicNodeEnd(doc, focus)) {
     if (embeddedBlankBandSpacerBeforeProbeRowChip(doc, focusWire)) {
-      return null;
-    }
-    if (isInterMentionGap(doc, focus) && focus.nodeOffset === 0) {
       return null;
     }
     const edit = resolveHandoffNoteMentionEdit(doc, focusWire, "backspace");
@@ -548,17 +536,6 @@ function resolveBoundaryDeleteIntent(
   }
 
   return null;
-}
-
-function blankCollapseBlockedAtAlias(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos,
-  focusWire: number
-): boolean {
-  return (
-    handoffNoteCaretOnMentionNodeEnd(doc, focus) &&
-    handoffNoteIsMentionEndProbeAliasWire(doc, focusWire)
-  );
 }
 
 /**
@@ -605,7 +582,7 @@ export function resolveHandoffNoteDeleteIntent(
   }
 
   let blankBandDelete = resolveEmbeddedBlankBandDelete(doc, focusWire, direction, focus);
-  if (!blankBandDelete && direction === "delete" && handoffNoteCaretOnMentionNodeEnd(doc, focus)) {
+  if (!blankBandDelete && direction === "delete" && handoffNoteCaretOnAtomicNodeEnd(doc, focus)) {
     const abuttingProbe = listEmbeddedBlankBandProbeWires(doc).find((probe) =>
       embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)
     );
@@ -622,7 +599,7 @@ export function resolveHandoffNoteDeleteIntent(
     };
   }
 
-  if (direction === "backspace" && !blankCollapseBlockedAtAlias(doc, focus, focusWire)) {
+  if (direction === "backspace" && !handoffNoteIsAtomicEndProbeAlias(doc, focus)) {
     const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(doc, focusWire, focus);
     if (emptyRowEnd) {
       return {
@@ -632,7 +609,7 @@ export function resolveHandoffNoteDeleteIntent(
     }
   }
 
-  if (direction === "delete" && !blankCollapseBlockedAtAlias(doc, focus, focusWire)) {
+  if (direction === "delete" && !handoffNoteIsAtomicEndProbeAlias(doc, focus)) {
     const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, focus);
     if (emptyRowEnd) {
       return {
@@ -652,11 +629,12 @@ export function resolveHandoffNoteDeleteIntent(
     return { kind: "result", result: blankBandMoveToResult(doc, lineBreakJoin) };
   }
 
-  const gapResult = applyInterMentionGapDelete(doc, selection, direction);
   if (isInterMentionGap(doc, focus)) {
+    const gapResult = applyInterMentionGapDelete(doc, selection, direction);
     if (gapResult) {
       return { kind: "result", result: { ...gapResult, caretPolicyOnly: true } };
     }
+    // e.g. Delete at gap text end — do not fall through to mention-atom remove.
     return { kind: "noop" };
   }
 
@@ -710,7 +688,7 @@ export function resolveHandoffNoteDeleteIntent(
     }
     const deletedChar = wire[focusWire]!;
     const spliced = spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), "");
-    const textAlias = docPosAtMentionStartTextAlias(spliced.doc, focusWire);
+    const textAlias = docPosAtAtomicStartTextAlias(spliced.doc, focusWire);
     if (textAlias && /^\s$/.test(deletedChar)) {
       return {
         kind: "result",

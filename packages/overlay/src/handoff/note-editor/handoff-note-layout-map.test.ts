@@ -37,6 +37,7 @@ import {
   stubTextNodeLineRects,
   mountThreeRowMentionSoftWrapFixture,
   applyThreeRowSpacerBrowserParityLayoutStubs,
+  monotonicMeasuredLayoutSamples,
 } from "./handoff-note-test-helpers.js";
 
 const AGENT = "caliper-aaaaaaa";
@@ -463,6 +464,53 @@ describe("handoff-note-layout-map", () => {
       );
     }
 
+    it("unsampled atom on content line keeps content row not trailing blank-probe bracket", () => {
+      const wire = `prefix @${AGENT} \n\n@${AGENT} tail\n\n\n\nbottom @${AGENT}\n`;
+      const doc = wireToDoc(wire);
+      const surface = mountSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const bottomLine = `bottom @${AGENT}`;
+      const bottomLineStart = wire.indexOf(bottomLine);
+      const endOfLastMention = bottomLineStart + bottomLine.length - 1;
+      setMeasuredSamplesCache(
+        surface,
+        wire,
+        surface.clientWidth,
+        monotonicMeasuredLayoutSamples(wire)
+      );
+      const focus = wireOffsetToDocPos(doc, endOfLastMention);
+      const layout = buildHandoffNoteLayoutMap(surface, doc, focus);
+      const contentRow = layout.rowIndexForWire(bottomLineStart);
+      const blankProbeAfter = listEmbeddedBlankBandProbeWires(doc).find(
+        (probe) => probe > endOfLastMention
+      );
+      expect(contentRow).toBeGreaterThanOrEqual(0);
+      expect(layout.rowIndexForWire(endOfLastMention)).toBe(contentRow);
+      expect(layoutRowForFocus(surface, doc, layout, focus)).toBe(contentRow);
+      if (blankProbeAfter !== undefined) {
+        expect(layout.rowIndexForWire(blankProbeAfter)).not.toBe(contentRow);
+      }
+      surface.remove();
+    });
+
+    it("paint index stamps atom interiors onto pill row from boundary samples", () => {
+      const wire = `pre @${AGENT} post`;
+      const doc = wireToDoc(wire);
+      const surface = mountSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      stubHandoffNoteMentionLayoutCoords(surface, new Map([[1, { top: 120, left: 40 }]]));
+      const mentionNodeIndex = doc.nodes.findIndex((node) => node.type === "mention");
+      expect(mentionNodeIndex).toBeGreaterThanOrEqual(0);
+      const startPos = { nodeIndex: mentionNodeIndex, nodeOffset: 0 };
+      const interiorPos = { nodeIndex: mentionNodeIndex, nodeOffset: 3 };
+      const layout = buildHandoffNoteLayoutMap(surface, doc, startPos);
+      const startRow = layout.paintContextForDocPos(startPos)?.rowIndex;
+      expect(startRow).toBeGreaterThanOrEqual(0);
+      expect(layout.paintContextForDocPos(interiorPos)?.rowIndex).toBe(startRow);
+      expect(layoutRowForFocus(surface, doc, layout, interiorPos)).toBe(startRow);
+      surface.remove();
+    });
+
     it("builds layout from DOM acquire without hand-seeded sample cache", () => {
       const doc = wireToDoc(suffixBlankBandWire);
       const surface = mountSurface();
@@ -774,6 +822,7 @@ describe("handoff-note-layout-map", () => {
       const paintCtx = layout.paintContextForWire(fx.fourthMentionStart);
       expect(paintCtx?.paintDocPos).toEqual(tailPos);
       expect(paintCtx?.rowIndex).toBe(1);
+      expect(layout.paintContextForDocPos(tailPos)?.rowIndex).toBe(1);
       expect(layoutRowForFocus(fx.root, fx.doc, layout, tailPos)).toBe(1);
       expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(1);
       fx.root.remove();

@@ -4,23 +4,26 @@ import {
   docTextNodeHasEmbeddedNewline,
   docToWire,
   embeddedTextLedLowerRowSpanAfterBlankBand,
+  isAtomicNode,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
   isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
   listEmbeddedBlankBandProbeWires,
+  nodeTokenLength,
   wireOffsetToDocPos,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
 import { logVerArrow } from "../handoff-note-debug.js";
-import { isHandoffMentionElement } from "./handoff-note-dom.js";
 import {
-  docPosToRenderedDomChildIndex,
+  atomicElement,
   appendSoftWrapLineSamples,
   getDocAnchorRect,
   isFiniteMeasuredLayoutCoord,
   isUsableMeasuredLayoutCoord,
   measureWireBreakCoord,
+  resolvePaintContext,
+  resolvePaintContextAtWire,
   resolvePaintDocPos,
 } from "./handoff-note-dom-points.js";
 import {
@@ -45,8 +48,23 @@ export type WirePaintContext = {
   top: number;
 };
 
-/** Layout map before paint-index attachment (wire-keyed row lookup without paintContextForWire). */
-type HandoffNoteLayoutMapBase = Omit<HandoffNoteLayoutMap, "paintContextForWire">;
+/** Layout map before paint-index attachment (row lookup without paint context accessors). */
+export type LayoutMapWithoutPaintIndex = Omit<
+  HandoffNoteLayoutMap,
+  "paintContextForWire" | "paintContextForDocPos"
+>;
+
+/** Attach doc-primary paint index to a sparse layout stub (tests) or rematerialize indexes. */
+export function attachPaintIndexToLayoutMap(
+  layout: LayoutMapWithoutPaintIndex,
+  doc?: HandoffNoteDoc
+): HandoffNoteLayoutMap {
+  const rowByWire = buildRowIndexLookup(layout.rows);
+  const paintIndexes = buildLayoutPaintIndexes(layout.samples, rowByWire, doc);
+  return attachLayoutPaintIndex(layout, paintIndexes);
+}
+
+type HandoffNoteLayoutMapBase = LayoutMapWithoutPaintIndex;
 
 const MIN_LAYOUT_LINE_HEIGHT_PX = 8;
 const MAX_LAYOUT_LINE_HEIGHT_PX = 24;
@@ -194,6 +212,7 @@ export type HandoffNoteLayoutMap = {
   visualRowCount: number;
   rowIndexForWire(wire: number): number;
   coordsForWire(wire: number): MeasuredWireOffset | null;
+  paintContextForDocPos(pos: HandoffNoteDocPos): WirePaintContext | null;
   paintContextForWire(wire: number): WirePaintContext | null;
   /** When row-tail wire is a soft-wrap prefix end, first wire on the continuation band. */
   continuationAfterRowEndWire(rowEndWire: number): number | null;
@@ -341,19 +360,6 @@ function sampleWireOffsets(doc: HandoffNoteDoc): number[] {
   return [...samples].sort((left, right) => left - right);
 }
 
-function mentionPillElement(
-  root: HTMLElement,
-  doc: HandoffNoteDoc,
-  nodeIndex: number
-): HTMLSpanElement | null {
-  const renderedIndex = docPosToRenderedDomChildIndex(doc, nodeIndex);
-  const child = root.childNodes[renderedIndex];
-  if (!child || !isHandoffMentionElement(child)) {
-    return null;
-  }
-  return child;
-}
-
 function substantiveLineStartFromTrailingMention(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -376,9 +382,9 @@ function substantiveLineStartFromTrailingMention(
     if (nodeStartWire >= lineEndWire) {
       break;
     }
-    if (node.type === "mention" && nodeStartWire > lineStartWire && nodeStartWire < lineEndWire) {
-      const pill = mentionPillElement(root, doc, nodeIndex);
-      const midY = pill ? pillElementMidY(pill) : null;
+    if (isAtomicNode(node) && nodeStartWire > lineStartWire && nodeStartWire < lineEndWire) {
+      const atomEl = atomicElement(root, doc, nodeIndex);
+      const midY = atomEl ? pillElementMidY(atomEl) : null;
       if (midY !== null) {
         return { wire: lineStartWire, top: midY, left: 0 };
       }
@@ -387,8 +393,8 @@ function substantiveLineStartFromTrailingMention(
   return null;
 }
 
-/** Pre-mention text-node start: borrow following pill row only when paint bands align. */
-function isCrossRowSandwichSpacerTextNode(
+/** Pre-atomic text-node start: borrow following atom row only when paint bands align. */
+function isCrossRowInterAtomicSpacerTextNode(
   doc: HandoffNoteDoc,
   textNodeIndex: number,
   root: HTMLElement | undefined,
@@ -401,7 +407,7 @@ function isCrossRowSandwichSpacerTextNode(
   }
   const leading = doc.nodes[textNodeIndex - 1];
   const following = doc.nodes[textNodeIndex + 1];
-  if (leading?.type !== "mention" || following?.type !== "mention") {
+  if (!isAtomicNode(leading) || !isAtomicNode(following)) {
     return false;
   }
   const textStartWire = wireIndex.nodeStartWires[textNodeIndex]!;
@@ -415,14 +421,14 @@ function isCrossRowSandwichSpacerTextNode(
     return false;
   }
   const textRect = getDocAnchorRect(root, doc, { nodeIndex: textNodeIndex, nodeOffset: 0 });
-  const followingPill = mentionPillElement(root, doc, textNodeIndex + 1);
-  if (!textRect || !followingPill) {
+  const followingAtom = atomicElement(root, doc, textNodeIndex + 1);
+  if (!textRect || !followingAtom) {
     return false;
   }
-  return isCrossRowSpacerAndPillDom(textRect, followingPill) === true;
+  return isCrossRowSpacerAndPillDom(textRect, followingAtom) === true;
 }
 
-function tagCrossRowSandwichSpacerSamples(
+function tagCrossRowInterAtomicSpacerSamples(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   wireIndex: LayoutWireIndex,
@@ -438,7 +444,7 @@ function tagCrossRowSandwichSpacerSamples(
     if (node?.type !== "text") {
       continue;
     }
-    if (!isCrossRowSandwichSpacerTextNode(doc, nodeIndex, root, sampleByWire, wireIndex)) {
+    if (!isCrossRowInterAtomicSpacerTextNode(doc, nodeIndex, root, sampleByWire, wireIndex)) {
       continue;
     }
     taggedTextNodes.add(nodeIndex);
@@ -446,39 +452,104 @@ function tagCrossRowSandwichSpacerSamples(
   return taggedTextNodes;
 }
 
-function buildWirePaintIndex(
+type LayoutPaintIndexes = {
+  byWire: Map<number, WirePaintContext>;
+  byDocPos: Map<string, WirePaintContext>;
+};
+
+function docPosLayoutKey(pos: HandoffNoteDocPos): string {
+  return `${pos.nodeIndex}:${pos.nodeOffset}`;
+}
+
+function buildLayoutPaintIndexes(
   measured: MeasuredWireOffset[],
-  rowByWire: Map<number, number>
-): Map<number, WirePaintContext> {
-  const index = new Map<number, WirePaintContext>();
+  rowByWire: Map<number, number>,
+  doc?: HandoffNoteDoc
+): LayoutPaintIndexes {
+  const byWire = new Map<number, WirePaintContext>();
+  const byDocPos = new Map<string, WirePaintContext>();
   for (const sample of measured) {
-    if (!sample.paintDocPos) {
+    const paintDocPos =
+      sample.paintDocPos ??
+      (doc !== undefined ? resolvePaintContextAtWire(doc, sample.wire).paintPos : undefined);
+    if (!paintDocPos) {
       continue;
     }
     const rowIndex = rowByWire.get(sample.wire);
     if (rowIndex === undefined) {
       continue;
     }
-    index.set(sample.wire, {
-      paintDocPos: sample.paintDocPos,
+    const ctx: WirePaintContext = {
+      paintDocPos,
       rowIndex,
       top: sample.top,
-    });
+    };
+    byWire.set(sample.wire, ctx);
+    byDocPos.set(docPosLayoutKey(paintDocPos), ctx);
   }
-  return index;
+  if (doc) {
+    stampAtomicInteriorPaintKeys(doc, byDocPos, byWire);
+  }
+  return { byWire, byDocPos };
+}
+
+/**
+ * Sparse measure indexes wires, not every atom offset. When atom start was measured,
+ * stamp that row onto missing atom paint keys so paintContextForDocPos covers interiors.
+ *
+ * Seed is only a measured sample at atom start (and never a blank-probe wire). No
+ * line-start fallback — soft-wrap can put the atom on a lower visual row than line start.
+ * Unsampled atoms rely on rowIndexForWire (content→blank bracket rule) instead.
+ */
+function stampAtomicInteriorPaintKeys(
+  doc: HandoffNoteDoc,
+  byDocPos: Map<string, WirePaintContext>,
+  byWire: Map<number, WirePaintContext>
+): void {
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex];
+    if (!isAtomicNode(node)) {
+      continue;
+    }
+    const tokenLength = nodeTokenLength(node);
+    const startWire = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
+    if (isEmbeddedBlankBandProbeWire(doc, startWire)) {
+      continue;
+    }
+    const seed = byWire.get(startWire);
+    if (!seed) {
+      continue;
+    }
+    for (let nodeOffset = 0; nodeOffset <= tokenLength; nodeOffset++) {
+      const paintDocPos: HandoffNoteDocPos = { nodeIndex, nodeOffset };
+      const key = docPosLayoutKey(paintDocPos);
+      if (byDocPos.has(key)) {
+        continue;
+      }
+      byDocPos.set(key, {
+        paintDocPos,
+        rowIndex: seed.rowIndex,
+        top: seed.top,
+      });
+    }
+  }
 }
 
 function attachLayoutPaintIndex(
   layout: HandoffNoteLayoutMapBase,
-  wirePaintIndex: Map<number, WirePaintContext>
+  paintIndexes: LayoutPaintIndexes
 ): HandoffNoteLayoutMap {
+  const { byWire, byDocPos } = paintIndexes;
   return {
     ...layout,
+    paintContextForDocPos(pos: HandoffNoteDocPos) {
+      return byDocPos.get(docPosLayoutKey(pos)) ?? null;
+    },
     paintContextForWire(wireOffset: number) {
-      return wirePaintIndex.get(wireOffset) ?? null;
+      return byWire.get(wireOffset) ?? null;
     },
     rowIndexForWire(wireOffset: number) {
-      const paintCtx = wirePaintIndex.get(wireOffset);
+      const paintCtx = byWire.get(wireOffset);
       if (paintCtx && paintCtx.rowIndex >= 0) {
         return paintCtx.rowIndex;
       }
@@ -487,22 +558,21 @@ function attachLayoutPaintIndex(
   };
 }
 
-/** Pill bbox for mentions; Range text anchor; guarded pill-row borrow at text-node start. */
-function measureWireCoord(
+/** Measure geometry for a paint doc pos; wire on the sample is export projection only. */
+function measureDocPosCoord(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  wire: number
+  paintPos: HandoffNoteDocPos
 ): MeasuredWireOffset | null {
-  const pos = wireOffsetToDocPos(doc, wire);
-  const paintPos = resolvePaintDocPos(doc, pos, { root });
+  const wire = docPosToWireOffset(doc, paintPos);
   const paintNode = doc.nodes[paintPos.nodeIndex];
 
-  if (paintNode?.type === "mention") {
-    const pill = mentionPillElement(root, doc, paintPos.nodeIndex);
-    if (pill) {
-      const midY = pillElementMidY(pill);
+  if (isAtomicNode(paintNode)) {
+    const atomEl = atomicElement(root, doc, paintPos.nodeIndex);
+    if (atomEl) {
+      const midY = pillElementMidY(atomEl);
       if (midY !== null) {
-        const rect = pill.getBoundingClientRect();
+        const rect = atomEl.getBoundingClientRect();
         const left = paintPos.nodeOffset <= 0 ? rect.left : rect.right;
         return { wire, top: midY, left, paintDocPos: paintPos };
       }
@@ -518,15 +588,29 @@ function measureWireCoord(
   let top = textAnchorMidY;
   if (paintNode?.type === "text" && paintPos.nodeOffset === 0) {
     const next = doc.nodes[paintPos.nodeIndex + 1];
-    if (next?.type === "mention") {
-      const pill = mentionPillElement(root, doc, paintPos.nodeIndex + 1);
-      const nextPillMidY = pill ? pillElementMidY(pill) : null;
-      if (nextPillMidY !== null && sharesVisualRowBand(textAnchorMidY, nextPillMidY)) {
-        top = nextPillMidY;
+    if (isAtomicNode(next)) {
+      const atomEl = atomicElement(root, doc, paintPos.nodeIndex + 1);
+      const nextAtomMidY = atomEl ? pillElementMidY(atomEl) : null;
+      if (nextAtomMidY !== null && sharesVisualRowBand(textAnchorMidY, nextAtomMidY)) {
+        top = nextAtomMidY;
       }
     }
   }
   return { wire, top, left: rect.left, paintDocPos: paintPos };
+}
+
+/** Pill bbox for mentions; Range text anchor; guarded pill-row borrow at text-node start. */
+function measureWireCoord(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  wire: number
+): MeasuredWireOffset | null {
+  // Acquire measures the structural wire owner, then applies paint-only cross-row alias.
+  // Do not use resolvePaintContextAtWire here — stepping canonical focus prefers inter-atomic
+  // continuation even when paint alias is off, which drops atom geometry from samples.
+  const pos = wireOffsetToDocPos(doc, wire);
+  const paintPos = resolvePaintDocPos(doc, pos, { root });
+  return measureDocPosCoord(root, doc, paintPos);
 }
 
 /** Text anchor first; wire-break `<br>` midY when text measure is missing (post-rebuild substantive rows). */
@@ -742,7 +826,7 @@ function ensureSubstantiveContentLineStartSamples(
       if (node?.type === "text" && pos.nodeOffset === 0) {
         const next = doc.nodes[pos.nodeIndex + 1];
         if (next?.type === "mention") {
-          const pill = mentionPillElement(root, doc, pos.nodeIndex + 1);
+          const pill = atomicElement(root, doc, pos.nodeIndex + 1);
           const midY = pill ? pillElementMidY(pill) : null;
           if (midY !== null) {
             const rect = getDocAnchorRect(root, doc, pos);
@@ -1035,7 +1119,7 @@ function buildDocOrderedLayoutMap(
   const probeWires = new Set(blankRows.map((row) => row.breakProbeWire!));
   const contentMeasured = measured.filter((sample) => !probeWires.has(sample.wire));
   const rowSeedTops = resolveVisualRowSeedTops(pillMidYs, contentMeasured, lineHeight);
-  const contentLayout = buildMapFromMeasured(contentMeasured, rowSeedTops, lineHeight);
+  const contentLayout = buildMapFromMeasured(contentMeasured, rowSeedTops, lineHeight, doc);
   const contentRows: HandoffNoteLayoutRow[] = contentLayout.rows.map((row) => ({
     ...row,
     kind: "content" as const,
@@ -1045,7 +1129,7 @@ function buildDocOrderedLayoutMap(
   const rowCenters = rows.map((row) => row.top);
   const stride = minimumDistinctTopGap(rowCenters);
   const resolvedLineHeight = resolveVisualRowLineHeight(stride, lineHeight);
-  const wirePaintIndex = buildWirePaintIndex(measured, rowByWire);
+  const wirePaintIndex = buildLayoutPaintIndexes(measured, rowByWire, doc);
   const baseRowIndexForWire = (wireOffset: number) => {
     const direct = rowByWire.get(wireOffset);
     if (direct !== undefined) {
@@ -1202,42 +1286,42 @@ function pickFarApartDuplicateSample(
     sampleByWire.set(sample.wire, sample);
   }
 
-  for (let mentionIndex = 0; mentionIndex < doc.nodes.length; mentionIndex++) {
-    if (doc.nodes[mentionIndex]?.type !== "mention") {
+  for (let atomicIndex = 0; atomicIndex < doc.nodes.length; atomicIndex++) {
+    if (!isAtomicNode(doc.nodes[atomicIndex])) {
       continue;
     }
-    const textNodeIndex = mentionIndex + 1;
+    const textNodeIndex = atomicIndex + 1;
     const textNode = doc.nodes[textNodeIndex];
     if (textNode?.type !== "text") {
       continue;
     }
-    const postMentionStartWire = wireIndex.nodeStartWires[textNodeIndex]!;
-    if (wire !== postMentionStartWire) {
+    const postAtomicStartWire = wireIndex.nodeStartWires[textNodeIndex]!;
+    if (wire !== postAtomicStartWire) {
       continue;
     }
     const nodeEndWire = nodeWireEnd(doc, wireIndex, textNodeIndex);
-    const mentionBandTop = mentionBandTopForPostMention(
+    const atomicBandTop = atomicBandTopForPostAtomic(
       doc,
-      mentionIndex,
-      postMentionStartWire,
+      atomicIndex,
+      postAtomicStartWire,
       sampleByWire,
       rowClusterTol,
       { nodeEndWire, measured }
     );
-    if (mentionBandTop === undefined) {
+    if (atomicBandTop === undefined) {
       break;
     }
     const split = resolveMeasuredSoftWrapSplit(
-      postMentionStartWire,
+      postAtomicStartWire,
       nodeEndWire,
-      mentionBandTop,
+      atomicBandTop,
       rowClusterTol,
       measured
     );
-    if (split?.continuationStartWire === postMentionStartWire) {
+    if (split?.continuationStartWire === postAtomicStartWire) {
       return samples.reduce((left, right) => (left.top >= right.top ? left : right));
     }
-    return pickSampleNearestTop(samples, mentionBandTop);
+    return pickSampleNearestTop(samples, atomicBandTop);
   }
 
   const nodeIndex = nodeIndexForWire(wireIndex, wire);
@@ -1309,7 +1393,7 @@ function collectMentionMidYs(root: HTMLElement, doc: HandoffNoteDoc): number[] {
     if (doc.nodes[nodeIndex]?.type !== "mention") {
       continue;
     }
-    const pill = mentionPillElement(root, doc, nodeIndex);
+    const pill = atomicElement(root, doc, nodeIndex);
     if (!pill) {
       continue;
     }
@@ -1381,7 +1465,7 @@ function alignEmbeddedNewlinePrefixAfterMentionRows(
     }
     const nodeStartWire = wireIndex.nodeStartWires[nodeIndex] ?? 0;
     const prefixEndWire = nodeStartWire + firstBreak;
-    const pill = mentionPillElement(root, doc, nodeIndex - 1);
+    const pill = atomicElement(root, doc, nodeIndex - 1);
     const midY = pill ? pillElementMidY(pill) : null;
     if (midY === null) {
       continue;
@@ -1423,7 +1507,7 @@ function pinMentionSampleRows(
     if (doc.nodes[pos.nodeIndex]?.type !== "mention") {
       continue;
     }
-    const pill = mentionPillElement(root, doc, pos.nodeIndex);
+    const pill = atomicElement(root, doc, pos.nodeIndex);
     if (!pill) {
       continue;
     }
@@ -1509,7 +1593,7 @@ function resolveSoftWrapContinuationAfterRowEnd(
   return null;
 }
 
-function isPostMentionWrapContinuationRowIndex(
+function isPostAtomicWrapContinuationRowIndex(
   rowIndex: number,
   rows: HandoffNoteLayoutRow[],
   wrapSpans: Map<number, TextSoftWrapSpan>,
@@ -1593,7 +1677,7 @@ function evaluateShorterRowStickyGoalPreservation(
     return false;
   }
   const rowTopTolerance = layoutRowTopTolerance(lineHeight);
-  const wrapContinuationTarget = isPostMentionWrapContinuationRowIndex(
+  const wrapContinuationTarget = isPostAtomicWrapContinuationRowIndex(
     targetRowIndex,
     rows,
     wrapSpans,
@@ -1702,6 +1786,17 @@ function resolveRowIndexFromBracketingSamples(
   }
 
   if (prev.wire === next.wire || prev.top === next.top) {
+    return nearestRowCenterIndex(prev.top, rowCenters);
+  }
+
+  // Blank-probe samples start a blank visual row. Unsampled wires before that probe stay on
+  // the preceding content sample — never interpolate across the content→blank boundary.
+  // (Atom end often aliases the probe wire; non-probe wires on the content line must not.)
+  if (
+    doc &&
+    isEmbeddedBlankBandProbeWire(doc, next.wire) &&
+    !isEmbeddedBlankBandProbeWire(doc, wire)
+  ) {
     return nearestRowCenterIndex(prev.top, rowCenters);
   }
 
@@ -1840,7 +1935,7 @@ function resolveRowIndexForDocWire(
     return -1;
   }
 
-  const pill = mentionPillElement(root, doc, pos.nodeIndex);
+  const pill = atomicElement(root, doc, pos.nodeIndex);
   const midY = pill ? pillElementMidY(pill) : null;
   if (midY !== null && rowCenters.length > 0) {
     return nearestRowCenterIndex(midY, rowCenters);
@@ -1862,38 +1957,38 @@ function replaceInferWorkingSamples(
   measured.push(...next);
 }
 
-function mentionBandTopForPostMention(
+function atomicBandTopForPostAtomic(
   doc: HandoffNoteDoc,
-  mentionNodeIndex: number,
-  postMentionStartWire: number,
+  atomicNodeIndex: number,
+  postAtomicStartWire: number,
   sampleByWire: Map<number, MeasuredWireOffset>,
   rowClusterTol: number,
   textNodePaint: { nodeEndWire: number; measured: MeasuredWireOffset[] }
 ): number | undefined {
   const { nodeEndWire, measured } = textNodePaint;
-  const mentionStartWire = docPosToWireOffset(doc, {
-    nodeIndex: mentionNodeIndex,
+  const atomicStartWire = docPosToWireOffset(doc, {
+    nodeIndex: atomicNodeIndex,
     nodeOffset: 0,
   });
-  const mentionEndWire = postMentionStartWire - 1;
-  const mentionStartTop = sampleByWire.get(mentionStartWire)?.top;
-  const mentionEndTop = sampleByWire.get(mentionEndWire)?.top;
-  const postTop = sampleByWire.get(postMentionStartWire)?.top;
+  const atomicEndWire = postAtomicStartWire - 1;
+  const atomicStartTop = sampleByWire.get(atomicStartWire)?.top;
+  const atomicEndTop = sampleByWire.get(atomicEndWire)?.top;
+  const postTop = sampleByWire.get(postAtomicStartWire)?.top;
 
-  if (mentionStartTop !== undefined) {
-    return mentionStartTop;
+  if (atomicStartTop !== undefined) {
+    return atomicStartTop;
   }
 
   let interiorTop: number | undefined;
   const interiorSamples = measured.filter(
-    (sample) => sample.wire >= postMentionStartWire && sample.wire < nodeEndWire
+    (sample) => sample.wire >= postAtomicStartWire && sample.wire < nodeEndWire
   );
   if (interiorSamples.length > 0) {
     interiorTop = minSampleField(interiorSamples, (sample) => sample.top) ?? undefined;
   }
 
   if (interiorTop !== undefined) {
-    if (mentionEndTop !== undefined && Math.abs(mentionEndTop - interiorTop) > rowClusterTol) {
+    if (atomicEndTop !== undefined && Math.abs(atomicEndTop - interiorTop) > rowClusterTol) {
       return interiorTop;
     }
     if (postTop !== undefined && Math.abs(postTop - interiorTop) > rowClusterTol) {
@@ -1901,12 +1996,12 @@ function mentionBandTopForPostMention(
     }
   }
 
-  if (mentionEndTop !== undefined && postTop !== undefined) {
-    if (Math.abs(mentionEndTop - postTop) > rowClusterTol) {
+  if (atomicEndTop !== undefined && postTop !== undefined) {
+    if (Math.abs(atomicEndTop - postTop) > rowClusterTol) {
       return postTop;
     }
   }
-  return mentionEndTop ?? sampleByWire.get(mentionEndWire - 1)?.top ?? postTop;
+  return atomicEndTop ?? sampleByWire.get(atomicEndWire - 1)?.top ?? postTop;
 }
 
 type MeasuredSoftWrapSplit = {
@@ -2211,11 +2306,11 @@ function resolvePrefixBandTopForTextNode(
   return minSampleField(prefixSamples, (sample) => sample.top) ?? minTop;
 }
 
-function buildPostMentionSoftWrapSpan(
+function buildPostAtomicSoftWrapSpan(
   doc: HandoffNoteDoc,
-  mentionNodeIndex: number,
+  atomicNodeIndex: number,
   textNodeIndex: number,
-  postMentionStartWire: number,
+  postAtomicStartWire: number,
   measured: MeasuredWireOffset[],
   sampleByWire: Map<number, MeasuredWireOffset>,
   rowClusterTol: number
@@ -2231,34 +2326,34 @@ function buildPostMentionSoftWrapSpan(
     nodeIndex: textNodeIndex,
     nodeOffset: node.text.length,
   });
-  const mentionBandTop = mentionBandTopForPostMention(
+  const atomicBandTop = atomicBandTopForPostAtomic(
     doc,
-    mentionNodeIndex,
-    postMentionStartWire,
+    atomicNodeIndex,
+    postAtomicStartWire,
     sampleByWire,
     rowClusterTol,
     { nodeEndWire, measured }
   );
-  if (mentionBandTop === undefined) {
+  if (atomicBandTop === undefined) {
     return null;
   }
 
   return assembleTextSoftWrapSpan(
-    postMentionStartWire,
+    postAtomicStartWire,
     nodeEndWire,
-    mentionBandTop,
+    atomicBandTop,
     measured,
     rowClusterTol
   );
 }
 
-/** Mention loop: soft-wrap span detection, mention-adjacent align, tail sample promotion. */
-function applyPostMentionStructuralSamplePins(
+/** Atomic loop: soft-wrap span detection, atom-adjacent align, tail sample promotion. */
+function applyPostAtomicStructuralSamplePins(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   rowClusterTol: number,
   wireIndex: LayoutWireIndex,
-  crossRowSandwichSpacers: Set<number> = new Set()
+  crossRowInterAtomicSpacers: Set<number> = new Set()
 ): Map<number, TextSoftWrapSpan> {
   const wrapSpans = new Map<number, TextSoftWrapSpan>();
   const sampleByWire = new Map<number, MeasuredWireOffset>();
@@ -2267,7 +2362,7 @@ function applyPostMentionStructuralSamplePins(
   }
 
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    if (doc.nodes[nodeIndex]?.type !== "mention") {
+    if (!isAtomicNode(doc.nodes[nodeIndex])) {
       continue;
     }
     const textNodeIndex = nodeIndex + 1;
@@ -2275,16 +2370,16 @@ function applyPostMentionStructuralSamplePins(
     if (textNode?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
       continue;
     }
-    if (crossRowSandwichSpacers.has(textNodeIndex)) {
+    if (crossRowInterAtomicSpacers.has(textNodeIndex)) {
       continue;
     }
 
-    const postMentionStartWire = wireIndex.nodeStartWires[textNodeIndex]!;
-    const span = buildPostMentionSoftWrapSpan(
+    const postAtomicStartWire = wireIndex.nodeStartWires[textNodeIndex]!;
+    const span = buildPostAtomicSoftWrapSpan(
       doc,
       nodeIndex,
       textNodeIndex,
-      postMentionStartWire,
+      postAtomicStartWire,
       measured,
       sampleByWire,
       rowClusterTol
@@ -2293,23 +2388,19 @@ function applyPostMentionStructuralSamplePins(
       wrapSpans.set(textNodeIndex, span);
     }
 
-    const mentionEndWire = postMentionStartWire - 1;
-    const endSample = sampleByWire.get(mentionEndWire);
-    const postSample = sampleByWire.get(postMentionStartWire);
+    const atomicEndWire = postAtomicStartWire - 1;
+    const endSample = sampleByWire.get(atomicEndWire);
+    const postSample = sampleByWire.get(postAtomicStartWire);
     if (!endSample && !postSample) {
       continue;
     }
 
     const nodeEndWire = nodeWireEnd(doc, wireIndex, textNodeIndex);
     const bandTop =
-      mentionBandTopForPostMention(
-        doc,
-        nodeIndex,
-        postMentionStartWire,
-        sampleByWire,
-        rowClusterTol,
-        { nodeEndWire, measured }
-      ) ?? Math.max(endSample?.top ?? -Infinity, postSample?.top ?? -Infinity);
+      atomicBandTopForPostAtomic(doc, nodeIndex, postAtomicStartWire, sampleByWire, rowClusterTol, {
+        nodeEndWire,
+        measured,
+      }) ?? Math.max(endSample?.top ?? -Infinity, postSample?.top ?? -Infinity);
     if (endSample) {
       endSample.top = bandTop;
     }
@@ -2317,7 +2408,7 @@ function applyPostMentionStructuralSamplePins(
     if (!span) {
       for (const sample of measured) {
         if (
-          sample.wire >= postMentionStartWire &&
+          sample.wire >= postAtomicStartWire &&
           sample.wire < nodeEndWire &&
           sample.top < bandTop &&
           bandTop - sample.top <= rowClusterTol
@@ -2348,16 +2439,16 @@ function applyPostMentionStructuralSamplePins(
         }
       }
       logVerArrow("layout.softWrapTailPromote", {
-        postMentionStartWire,
+        postAtomicStartWire,
         continuationStartWire: span.continuationStartWire,
         continuationTop: span.continuationTop,
         continuationStartLeft: span.continuationStartLeft,
       });
     }
 
-    logVerArrow("layout.mentionAdjacentAlign", {
-      mentionEndWire,
-      postMentionStartWire,
+    logVerArrow("layout.atomicAdjacentAlign", {
+      atomicEndWire,
+      postAtomicStartWire,
       bandTop,
       wrapTailTop,
     });
@@ -2382,7 +2473,7 @@ function alignContinuationBandToFollowingMention(
   wireIndex: LayoutWireIndex,
   rowClusterTol: number,
   lineHeight: number,
-  crossRowSandwichSpacers: Set<number> = new Set()
+  crossRowInterAtomicSpacers: Set<number> = new Set()
 ): void {
   const coBandSlop = samePaintBandMidYSlop(lineHeight, rowClusterTol);
   const hint: LayoutWireScanHint = { nodeIndex: 0 };
@@ -2403,7 +2494,7 @@ function alignContinuationBandToFollowingMention(
   }
 
   for (const [textNodeIndex, span] of wrapSpans) {
-    if (crossRowSandwichSpacers.has(textNodeIndex)) {
+    if (crossRowInterAtomicSpacers.has(textNodeIndex)) {
       continue;
     }
     const nextNode = doc.nodes[textNodeIndex + 1];
@@ -2520,13 +2611,13 @@ function pinAdjacentTextSampleRows(
     }
     const following = doc.nodes[pos.nodeIndex + 1];
     if (following?.type === "mention" && /^\s+$/.test(node.text) && !/[\n\r]/.test(node.text)) {
-      const followingPill = mentionPillElement(root, doc, pos.nodeIndex + 1);
+      const followingPill = atomicElement(root, doc, pos.nodeIndex + 1);
       const followingMidY = followingPill ? pillElementMidY(followingPill) : null;
       if (followingMidY !== null && sample.top + MIN_INTER_ROW_GAP_PX < followingMidY) {
         continue;
       }
     }
-    const pill = mentionPillElement(root, doc, pos.nodeIndex - 1);
+    const pill = atomicElement(root, doc, pos.nodeIndex - 1);
     const midY = pill ? pillElementMidY(pill) : null;
     if (midY !== null && sample.top <= midY + bandTolerance) {
       sample.top = midY;
@@ -2577,7 +2668,8 @@ function buildRowIndexLookup(rows: HandoffNoteLayoutRow[]): Map<number, number> 
 function buildMapFromMeasured(
   measured: MeasuredWireOffset[],
   rowCenters: number[],
-  lineHeight: number
+  lineHeight: number,
+  doc?: HandoffNoteDoc
 ): HandoffNoteLayoutMap {
   const tolerance = rowClusterTolerance(
     rowCenters,
@@ -2589,13 +2681,13 @@ function buildMapFromMeasured(
   const rowByWire = buildRowIndexLookup(rows);
   const stride = minimumDistinctTopGap(centers);
   const resolvedLineHeight = resolveVisualRowLineHeight(stride, lineHeight);
-  const wirePaintIndex = buildWirePaintIndex(measured, rowByWire);
+  const wirePaintIndex = buildLayoutPaintIndexes(measured, rowByWire, doc);
   const baseRowIndexForWire = (wireOffset: number) => {
     const direct = rowByWire.get(wireOffset);
     if (direct !== undefined) {
       return direct;
     }
-    return resolveRowIndexFromBracketingSamples(wireOffset, measured, centers);
+    return resolveRowIndexFromBracketingSamples(wireOffset, measured, centers, doc);
   };
 
   return attachLayoutPaintIndex(
@@ -2630,7 +2722,6 @@ function applyDomAcquireSamplePins(
   alignTextBeforeMentionRows(doc, measured, wireIndex, hint);
   pinMentionSampleRows(root, doc, measured, wireIndex, hint);
   pinAdjacentTextSampleRows(root, doc, measured, wireIndex, hint, lineHeight);
-  tagCrossRowSandwichSpacerSamples(doc, measured, wireIndex, root);
 }
 
 /** EOF caret on a trailing-only blank band sits on the visual row below the last probe. */
@@ -2684,13 +2775,18 @@ function applyStructuralSamplePins(
     measured,
     dedupeMeasuredSamplesForInfer(doc, wireIndex, measured, rowClusterTol)
   );
-  const crossRowSandwichSpacers = tagCrossRowSandwichSpacerSamples(doc, measured, wireIndex, root);
-  const wrapSpans = applyPostMentionStructuralSamplePins(
+  const crossRowInterAtomicSpacers = tagCrossRowInterAtomicSpacerSamples(
+    doc,
+    measured,
+    wireIndex,
+    root
+  );
+  const wrapSpans = applyPostAtomicStructuralSamplePins(
     doc,
     measured,
     rowClusterTol,
     wireIndex,
-    crossRowSandwichSpacers
+    crossRowInterAtomicSpacers
   );
   applyPlainTextSoftWrapSpans(doc, measured, rowClusterTol, wireIndex, wrapSpans);
   alignContinuationBandToFollowingMention(
@@ -2700,7 +2796,7 @@ function applyStructuralSamplePins(
     wireIndex,
     rowClusterTol,
     lineHeight,
-    crossRowSandwichSpacers
+    crossRowInterAtomicSpacers
   );
   finalizeWrapSpanVisualBands(wrapSpans, measured, rowClusterTol);
   return wrapSpans;
@@ -2715,7 +2811,7 @@ type InferLayoutFromMeasuredOptions = {
 /**
  * Layout inference pipeline (runs on every build):
  * 1. clone DOM cache → working copy (infer never mutates cached snapshot)
- * 2. structuralPins (dedupe → post-mention spans → plain-text spans → visual bands)
+ * 2. structuralPins (dedupe → post-atomic spans → plain-text spans → visual bands)
  * 3. blankMaterialize → clusterSort → row lookup
  *
  * Blank ladder brackets read a frozen content-only snapshot, never prior blank upserts.
@@ -2763,7 +2859,7 @@ function inferLayoutFromMeasured(
       lineHeight
     )
   );
-  return buildMapFromMeasured(working, rowCenters, lineHeight);
+  return buildMapFromMeasured(working, rowCenters, lineHeight, doc);
 }
 
 /**
@@ -2827,10 +2923,16 @@ function withDomRowResolutionOverrides(
   rowCenters: number[],
   rowByWire: Map<number, number>
 ): HandoffNoteLayoutMap {
+  /** Wire shim → paint doc pos → paint index (alias seams must not trust raw wire alone). */
+  const paintContextForWire = (wireOffset: number) => {
+    const paintPos = resolvePaintContextAtWire(doc, wireOffset, { root }).paintPos;
+    return baseLayout.paintContextForDocPos(paintPos);
+  };
   return {
     ...baseLayout,
+    paintContextForWire,
     rowIndexForWire(wireOffset: number) {
-      const paintCtx = baseLayout.paintContextForWire(wireOffset);
+      const paintCtx = paintContextForWire(wireOffset);
       if (paintCtx && paintCtx.rowIndex >= 0) {
         return paintCtx.rowIndex;
       }
@@ -2917,8 +3019,8 @@ export function closestLayoutRowIndexForTop(layout: HandoffNoteLayoutMap, top: n
 }
 
 /**
- * Whitespace-only pre-mention gap painted above the following pill: layout row follows
- * measured text paint, not the lower mention-start wire alias.
+ * Row from paint doc pos via paint index. Cross-row inter-atomic spacer text keeps
+ * measured text paint when it sits above the following atom.
  */
 export function layoutRowIndexForDocPos(
   root: HTMLElement,
@@ -2926,30 +3028,29 @@ export function layoutRowIndexForDocPos(
   layout: HandoffNoteLayoutMap,
   pos: HandoffNoteDocPos
 ): number {
-  const paintPos =
-    doc.nodes[pos.nodeIndex]?.type === "mention" ? pos : resolvePaintDocPos(doc, pos, { root });
-  const paintWire = docPosToWireOffset(doc, paintPos);
-  const paintCtx = layout.paintContextForWire(paintWire);
+  const { paintPos } = resolvePaintContext(doc, pos, { root });
+  const paintCtx = layout.paintContextForDocPos(paintPos);
   if (paintCtx && paintCtx.rowIndex >= 0) {
     return paintCtx.rowIndex;
   }
+  const paintWire = docPosToWireOffset(doc, paintPos);
   const directRow = layout.rowIndexForWire(paintWire);
   const node = doc.nodes[paintPos.nodeIndex];
   if (node?.type !== "text" || !/^\s+$/.test(node.text) || directRow < 0) {
     return directRow;
   }
   const next = doc.nodes[paintPos.nodeIndex + 1];
-  if (next?.type !== "mention") {
+  if (!isAtomicNode(next)) {
     return layout.rowIndexForWire(paintWire);
   }
   const nodeStartWire = docPosToWireOffset(doc, { nodeIndex: paintPos.nodeIndex, nodeOffset: 0 });
   const coord = layout.coordsForWire(nodeStartWire) ?? measureWireCoord(root, doc, nodeStartWire);
-  const pill = mentionPillElement(root, doc, paintPos.nodeIndex + 1);
-  const pillY = pill ? pillElementMidY(pill) : null;
+  const atomEl = atomicElement(root, doc, paintPos.nodeIndex + 1);
+  const atomY = atomEl ? pillElementMidY(atomEl) : null;
   if (
     coord &&
-    pillY !== null &&
-    Math.abs(coord.top - pillY) > MIN_INTER_ROW_GAP_PX &&
+    atomY !== null &&
+    Math.abs(coord.top - atomY) > MIN_INTER_ROW_GAP_PX &&
     layout.rows.length > 0
   ) {
     return nearestRowCenterIndex(
@@ -2960,16 +3061,14 @@ export function layoutRowIndexForDocPos(
   return directRow;
 }
 
-/** Canonical row lookup from focus doc pos — paint authority, not alias wire alone. */
+/** Canonical row lookup from focus doc pos — paint authority via `paintContextForDocPos`. */
 export function layoutRowForFocus(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   layout: HandoffNoteLayoutMap,
   focus: HandoffNoteDocPos
 ): number {
-  const node = doc.nodes[focus.nodeIndex];
-  const paintPos = node?.type === "mention" ? focus : resolvePaintDocPos(doc, focus, { root });
-  return layoutRowIndexForDocPos(root, doc, layout, paintPos);
+  return layoutRowIndexForDocPos(root, doc, layout, focus);
 }
 
 export function layoutVisualRowStartColumn(row: HandoffNoteLayoutRow): number {

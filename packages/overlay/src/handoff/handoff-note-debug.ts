@@ -215,7 +215,9 @@ export function logEditStateTrace(phase: string, data: Record<string, unknown> =
 
 /**
  * Console filters: `state>>` edit ingress, `caret>>setDoc>>` paint, `caret>>repair` authority,
- * `caret>>ingress>>` pointer click forensics (`ingress>>firstTouch`, `click.ingress`, `repair.click`, `repair.strand`), `caret>>ver>>` layout (arrow only).
+ * `caret>>ingress>>` pointer click forensics (`ingress>>firstTouch`, `click.ingress`, `repair.click`, `repair.strand`),
+ * `caret>>ver>>` layout (arrow only), `caret>>hor>>` horizontal Left/Right (keydown/bail/step/apply/writeFinal/geom),
+ * `caret>>click.ingress` + firstTouch for click-vs-arrow spacer geometry (`geom` field).
  */
 export function flattenHandoffNoteLog(
   event: string,
@@ -261,6 +263,11 @@ export function logVerArrow(source: string, data: Record<string, unknown> = {}):
   flattenHandoffNoteLog(`caret>>ver>>${source}`, data);
 }
 
+/** Horizontal Left/Right only — distinct from `caret>>ver>>` and bleed. */
+export function logHorArrow(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`caret>>hor>>${source}`, data);
+}
+
 export function handoffNoteDomSnapshot(
   root: HTMLElement | undefined
 ): Array<Record<string, unknown>> {
@@ -294,6 +301,56 @@ export function handoffNoteDomSnapshot(
   });
 }
 
+/** Native caret geometry for arrow-vs-click spacer forensics. Includes zero-size rects. */
+export function handoffNoteCaretGeomSnapshot(
+  root: HTMLElement | undefined
+): Record<string, unknown> {
+  if (!root) {
+    return { empty: true };
+  }
+  const selection = root.ownerDocument.getSelection();
+  if (!selection || selection.rangeCount === 0) {
+    return { empty: true };
+  }
+  const range = selection.getRangeAt(0);
+  let caret: { top: number; left: number; width: number; height: number } | null = null;
+  if (typeof range.getBoundingClientRect === "function") {
+    const rect = range.getBoundingClientRect();
+    caret = {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+  const clientRects =
+    typeof range.getClientRects === "function"
+      ? [...range.getClientRects()].map((r) => ({
+          top: r.top,
+          left: r.left,
+          width: r.width,
+          height: r.height,
+        }))
+      : [];
+  const rootRect =
+    typeof root.getBoundingClientRect === "function" ? root.getBoundingClientRect() : null;
+  let relativeTop: number | null = null;
+  let relativeLeft: number | null = null;
+  if (caret !== null && rootRect !== null) {
+    relativeTop = caret.top - rootRect.top;
+    relativeLeft = caret.left - rootRect.left;
+  }
+  return {
+    caret,
+    clientRects,
+    clientRectCount: clientRects.length,
+    rootTop: rootRect?.top ?? null,
+    rootLeft: rootRect?.left ?? null,
+    relativeTop,
+    relativeLeft,
+  };
+}
+
 export function handoffNoteLayoutProbe(
   root: HTMLElement | undefined,
   wireAfter: string
@@ -301,22 +358,21 @@ export function handoffNoteLayoutProbe(
   if (!root) {
     return { domSnapshot: [], wireAfter, scrollHeight: 0, nativeCaretRect: null };
   }
-  const selection = root.ownerDocument.getSelection();
-  let nativeCaretRect: Record<string, number> | null = null;
-  if (selection && selection.rangeCount > 0) {
-    const range = selection.getRangeAt(0);
-    if (typeof range.getBoundingClientRect === "function") {
-      const rect = range.getBoundingClientRect();
-      if (rect.width > 0 || rect.height > 0) {
-        nativeCaretRect = { top: rect.top, left: rect.left, height: rect.height };
-      }
-    }
-  }
+  const geom = handoffNoteCaretGeomSnapshot(root);
+  const caret = geom.caret as
+    | { top: number; left: number; width: number; height: number }
+    | null
+    | undefined;
+  const nativeCaretRect =
+    caret != null && (caret.width > 0 || caret.height > 0)
+      ? { top: caret.top, left: caret.left, height: caret.height }
+      : null;
   return {
     domSnapshot: handoffNoteDomSnapshot(root),
     wireAfter,
     scrollHeight: root.scrollHeight,
     nativeCaretRect,
+    geom,
   };
 }
 
@@ -360,6 +416,7 @@ export function logSelectionChangeFirstTouch(
     startOffset: range?.startOffset ?? null,
     parentTag: parent?.tagName ?? null,
     activeDoc: snapshotDocPos(doc, options.liveFocus),
+    geom: handoffNoteCaretGeomSnapshot(root),
   });
 }
 

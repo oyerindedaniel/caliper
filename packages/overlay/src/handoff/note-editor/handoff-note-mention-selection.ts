@@ -2,11 +2,11 @@ import {
   docPosToWireOffset,
   docToWire,
   resolveWireLineColumn,
-  wireOffsetToDocPos,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
 import { mentionWireLength } from "./handoff-note-dom.js";
+import { resolvePaintContextAtWire } from "./handoff-note-dom-points.js";
 
 export function resolveSelectedMentionArrowExit(
   doc: HandoffNoteDoc,
@@ -25,5 +25,5 @@ export function resolveSelectedMentionArrowExit(
   const wire = docToWire(doc);
   const mentionStart = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
   const { lineStart } = resolveWireLineColumn(wire, mentionStart);
-  return wireOffsetToDocPos(doc, lineStart);
+  return resolvePaintContextAtWire(doc, lineStart).paintPos;
 }

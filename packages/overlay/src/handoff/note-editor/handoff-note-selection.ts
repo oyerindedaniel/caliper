@@ -4,11 +4,12 @@
   docPosEqual,
   docPosToWireOffset,
   docToWire,
+  isAtomicNode,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
+  nodeTokenLength,
   normalizeDocPos,
   normalizeSelection,
-  resolveDocHorizontalArrowMove,
   resolveVerticalArrowMinWireLineStart,
   resolveVerticalArrowRowStartLanding,
   wireOffsetToDocPos,
@@ -33,10 +34,12 @@ import {
   probeDocPosAtVisualColumn,
   probeViewportCaretHit,
   resolveTargetRowPillWireForGoalColumn,
-  type TargetRowMentionPaintSpan,
+  type TargetRowAtomPaintSpan,
   resolveDomPointAtDocPos,
   resolveDomReadDocPos,
-  resolvePaintDocPos,
+  resolvePaintContext,
+  resolvePaintContextAtWire,
+  resolvePaintHorizontalArrowMove,
 } from "./handoff-note-dom-points.js";
 import {
   buildHandoffNoteLayoutMap,
@@ -60,6 +63,30 @@ function contentRowFromSamples(samples: MeasuredWireOffset[]): HandoffNoteLayout
   return { kind: "content", top: 0, minLeft: 0, maxLeft: 0, samples };
 }
 
+/** Doc focus rests inside an atomic token (not start/end boundary). */
+function isAtomicInteriorDocPos(doc: HandoffNoteDoc, focus: HandoffNoteDocPos): boolean {
+  const node = doc.nodes[focus.nodeIndex];
+  if (!isAtomicNode(node)) {
+    return false;
+  }
+  const tokenLength = nodeTokenLength(node);
+  return focus.nodeOffset > 0 && focus.nodeOffset < tokenLength;
+}
+
+function atomicNodeWireBounds(
+  doc: HandoffNoteDoc,
+  nodeIndex: number
+): { start: number; end: number } | null {
+  const node = doc.nodes[nodeIndex];
+  if (!isAtomicNode(node)) {
+    return null;
+  }
+  return {
+    start: docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 }),
+    end: docPosToWireOffset(doc, { nodeIndex, nodeOffset: nodeTokenLength(node) }),
+  };
+}
+
 function readRawWireFocus(root: HTMLElement, doc: HandoffNoteDoc): number {
   const selection = root.ownerDocument.getSelection();
   if (!selection || selection.rangeCount === 0 || !root.contains(selection.anchorNode)) {
@@ -78,11 +105,11 @@ function shouldRestoreAuthorityOverDom(
   /** Cross-wire DOM regression only — same-wire alias seams use resolveDomReadDocPos on read. */
   const liveWire = docPosToWireOffset(doc, live);
   const fromWire = docPosToWireOffset(doc, from);
-  const fromContext = describeHandoffNoteCursorContext(doc, fromWire);
+  const fromCaret = describeCaretContext(doc, from);
 
   if (
-    (fromContext.kind === "mention-boundary" && fromContext.edge === "end") ||
-    fromContext.kind === "mention-interior"
+    (fromCaret.kind === "mention-boundary" && fromCaret.edge === "end") ||
+    fromCaret.kind === "mention-interior"
   ) {
     if (isEmbeddedBlankBandProbeWire(doc, liveWire) && liveWire > fromWire) {
       return true;
@@ -98,8 +125,12 @@ function shouldRestoreAuthorityOverDom(
     return true;
   }
 
-  const context = describeHandoffNoteCursorContext(doc, liveWire);
-  if (context.kind === "mention-boundary" && context.edge === "start" && fromWire > context.end) {
+  const liveCaret = describeCaretContext(doc, live);
+  if (
+    liveCaret.kind === "mention-boundary" &&
+    liveCaret.edge === "start" &&
+    fromWire > liveCaret.end
+  ) {
     return true;
   }
 
@@ -176,15 +207,13 @@ export type HandoffNoteClickIngressResult = {
 function clickIngressPaintFocus(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  layout: HandoffNoteLayoutMap,
   live: HandoffNoteDocPos,
   from?: HandoffNoteDocPos
 ): HandoffNoteDocPos {
-  const liveWire = docPosToWireOffset(doc, live);
-  const paintDocPos =
-    layout.paintContextForWire(liveWire)?.paintDocPos ?? resolvePaintDocPos(doc, live, { root });
+  // Paint seams (incl. atomic end ↔ post-text) owned by resolvePaintContext — click only consumes paintPos.
+  const { paintPos } = resolvePaintContext(doc, live, { root, from });
   const fromOpt = from !== undefined ? { from } : undefined;
-  const normalized = normalizeDocPos(doc, paintDocPos, fromOpt);
+  const normalized = normalizeDocPos(doc, paintPos, fromOpt);
   return from !== undefined ? resolveDomReadDocPos(doc, normalized, from) : normalized;
 }
 
@@ -279,9 +308,7 @@ function isClickPosStrictlyRepresentable(
   pos: HandoffNoteDocPos,
   click: HandoffNoteClickIngress
 ): boolean {
-  const wire = docPosToWireOffset(doc, pos);
-  const context = describeHandoffNoteCursorContext(doc, wire);
-  if (context.kind === "mention-interior") {
+  if (isAtomicInteriorDocPos(doc, pos)) {
     return false;
   }
   if (clickMatchesDocPosPaintAnchor(root, doc, layout, pos, click)) {
@@ -315,15 +342,17 @@ function resolveVerticalLandingDocPos(
   doc: HandoffNoteDoc,
   wire: number,
   options?: {
-    layout?: HandoffNoteLayoutMap;
+    root?: HTMLElement;
     from?: HandoffNoteDocPos;
   }
 ): HandoffNoteDocPos {
-  const paintCtx = options?.layout?.paintContextForWire(wire);
-  const pos = paintCtx?.paintDocPos ?? docPosAtContentWire(doc, wire);
+  const paintPos = resolvePaintContextAtWire(doc, wire, {
+    root: options?.root,
+    from: options?.from,
+  }).paintPos;
   return options?.from
-    ? normalizeDocPos(doc, pos, { from: options.from })
-    : normalizeDocPos(doc, pos);
+    ? normalizeDocPos(doc, paintPos, { from: options.from })
+    : normalizeDocPos(doc, paintPos);
 }
 
 export function resolveClickIngressSelection(
@@ -353,7 +382,7 @@ export function resolveClickIngressSelection(
       clickY: click.clientY,
     });
     return {
-      focus: clickIngressPaintFocus(root, doc, layout, live, from),
+      focus: clickIngressPaintFocus(root, doc, live, from),
       resolution: "nativeSelection",
     };
   }
@@ -364,7 +393,7 @@ export function resolveClickIngressSelection(
     isClickLiveRepresentable(root, doc, layout, viewport.pos, click) &&
     !viewportAliasesStaleWrapContinuation(root, doc, layout, live, viewport.pos, clickRowIndex)
   ) {
-    const focus = clickIngressPaintFocus(root, doc, layout, viewport.pos, from);
+    const focus = clickIngressPaintFocus(root, doc, viewport.pos, from);
     const resolvedWire = docPosToWireOffset(doc, focus);
     logCaretBoundaryTrace("click.ingress", {
       branch: "viewportCaretHit",
@@ -390,7 +419,7 @@ export function resolveClickIngressSelection(
     clickY: click.clientY,
   });
   return {
-    focus: clickIngressPaintFocus(root, doc, layout, live, from),
+    focus: clickIngressPaintFocus(root, doc, live, from),
     resolution: "nativeSelection",
   };
 }
@@ -405,6 +434,7 @@ export function repairDocSelectionIfNeeded(
   }
 ): HandoffNoteDocPos {
   const skipAuthorityRead = options?.mode === "strand-only" && options?.click !== undefined;
+  const liveRaw = readDocSelection(root, doc);
   const live = readDocSelection(root, doc, !skipAuthorityRead && from ? { from } : undefined);
   if (!docPosEqualNormalized(doc, live.anchor, live.focus)) {
     return live.focus;
@@ -412,11 +442,17 @@ export function repairDocSelectionIfNeeded(
 
   const focusWire = readRawWireFocus(root, doc);
   const fromWire = from !== undefined ? docPosToWireOffset(doc, from) : undefined;
-  const context = describeHandoffNoteCursorContext(doc, focusWire);
+  // Raw DOM focus — authority read can collapse same-atom interior onto from (no paint write).
+  const strandedInterior = isAtomicInteriorDocPos(doc, liveRaw.focus)
+    ? liveRaw.focus
+    : isAtomicInteriorDocPos(doc, live.focus)
+      ? live.focus
+      : null;
 
-  if (context.kind === "mention-interior" && fromWire !== undefined) {
-    if (fromWire <= context.start) {
-      const restored = wireOffsetToDocPos(doc, fromWire);
+  if (strandedInterior && fromWire !== undefined) {
+    const bounds = atomicNodeWireBounds(doc, strandedInterior.nodeIndex);
+    if (bounds && fromWire <= bounds.start) {
+      const restored = resolvePaintContext(doc, from!).focusPos;
       logCaretBoundaryTrace("repair", {
         branch: "restoreFromOutsideMention.before",
         liveWire: focusWire,
@@ -429,13 +465,13 @@ export function repairDocSelectionIfNeeded(
       });
       return restored;
     }
-    if (fromWire >= context.end) {
-      const restored = wireOffsetToDocPos(doc, context.start);
+    if (bounds && fromWire >= bounds.end) {
+      const restored = resolvePaintContextAtWire(doc, bounds.start).focusPos;
       logCaretBoundaryTrace("repair", {
         branch: "restoreFromOutsideMention.after",
         liveWire: focusWire,
         fromWire,
-        resolvedWire: context.start,
+        resolvedWire: bounds.start,
       });
       setDocSelection(root, doc, collapsedSelection(restored), {
         from: restored,
@@ -547,14 +583,17 @@ export function setDocSelection(
   native.removeAllRanges();
   native.addRange(range);
 
-  const paintFocus = resolvePaintDocPos(doc, docSel.focus, { root });
+  const paintCtx = resolvePaintContext(doc, docSel.focus, { root });
   const focusWire = docPosToWireOffset(doc, docSel.focus);
-  const caretContext = describeCaretContext(doc, docSel.focus, { root });
+  const caretDetail =
+    paintCtx.caretKind === "mention-boundary"
+      ? describeCaretContext(doc, docSel.focus, { root })
+      : null;
   logCaretBoundaryTrace(`setDoc>>${source}`, {
     requestedWire: focusWire,
-    paintDoc: { nodeIndex: paintFocus.nodeIndex, nodeOffset: paintFocus.nodeOffset },
-    caretKind: caretContext.kind,
-    ...(caretContext.kind === "mention-boundary" ? { edge: caretContext.edge } : {}),
+    paintDoc: { nodeIndex: paintCtx.paintPos.nodeIndex, nodeOffset: paintCtx.paintPos.nodeOffset },
+    caretKind: paintCtx.caretKind,
+    ...(caretDetail?.kind === "mention-boundary" ? { edge: caretDetail.edge } : {}),
     paint: {
       nodeKind: endPoint.node.nodeType,
       offset: endPoint.offset,
@@ -594,7 +633,7 @@ function resolveVisualRowStartLanding(
     return null;
   }
   return resolveVerticalLandingDocPos(doc, landingWire, {
-    layout: rowStart?.layout,
+    root: rowStart?.root,
   });
 }
 
@@ -649,11 +688,18 @@ function snapVerticalColumnLandingWire(
   wire: number,
   direction: HandoffNoteVerticalArrowDirection
 ): number {
-  const context = describeHandoffNoteCursorContext(doc, wire);
-  if (context.kind === "mention-interior") {
-    return direction === "up" ? context.start : context.end;
+  const atWire = wireOffsetToDocPos(doc, wire);
+  const focus = isAtomicInteriorDocPos(doc, atWire)
+    ? atWire
+    : resolvePaintContextAtWire(doc, wire).focusPos;
+  if (!isAtomicInteriorDocPos(doc, focus)) {
+    return wire;
   }
-  return wire;
+  const bounds = atomicNodeWireBounds(doc, focus.nodeIndex);
+  if (!bounds) {
+    return wire;
+  }
+  return direction === "up" ? bounds.start : bounds.end;
 }
 
 /** Past-end bleed carries no wire sample; bracket on unsampled interior wires snaps to nearest layout sample. */
@@ -728,7 +774,7 @@ function acceptPillColumnSnapLanding(
   });
   return {
     pos: resolveVerticalLandingDocPos(doc, pillWire, {
-      layout: rowStart.layout,
+      root: rowStart.root,
       from: focus,
     }),
     branch,
@@ -764,7 +810,7 @@ function probeTargetRowAtColumn(
     rowStart.root,
     doc,
     column,
-    mentionPaintSpansFromTargetLine(doc, rowStart.targetLine),
+    atomPaintSpansFromTargetLine(doc, rowStart.targetLine),
     tolerance
   );
   if (pillWire !== null) {
@@ -835,11 +881,9 @@ function probeTargetRowAtColumn(
     accepted: true,
     branch: "dom-column-probe",
   });
+  const { paintPos } = resolvePaintContext(doc, probed, { root: rowStart.root });
   return {
-    pos: resolveVerticalLandingDocPos(doc, resolvedWire, {
-      layout: rowStart.layout,
-      from: focus,
-    }),
+    pos: normalizeDocPos(doc, paintPos, { from: focus }),
     branch: "dom-column-probe",
   };
 }
@@ -864,56 +908,54 @@ function clampGoalColumnToRowExtent(
   return goalColumn;
 }
 
-type MentionColumnSpan = TargetRowMentionPaintSpan & {
+type AtomColumnSpan = TargetRowAtomPaintSpan & {
   startLeft: number;
-  pillRight: number;
+  atomRight: number;
 };
 
-function mentionSpanPillRight(
-  startSample: MeasuredWireOffset,
-  endSample: MeasuredWireOffset
-): number {
+function atomSpanRight(startSample: MeasuredWireOffset, endSample: MeasuredWireOffset): number {
   return startSample.right ?? endSample.right ?? endSample.left;
 }
 
-function mentionPaintSpansFromTargetLine(
+function atomPaintSpansFromTargetLine(
   doc: HandoffNoteDoc,
   targetLine: MeasuredWireOffset[]
-): TargetRowMentionPaintSpan[] {
-  return mentionColumnSpansFromTargetLine(doc, targetLine).map((span) => ({
-    mentionNodeIndex: span.mentionNodeIndex,
+): TargetRowAtomPaintSpan[] {
+  return atomColumnSpansFromTargetLine(doc, targetLine).map((span) => ({
+    atomNodeIndex: span.atomNodeIndex,
     startWire: span.startWire,
     endWire: span.endWire,
     layoutLeft: span.startLeft,
-    layoutRight: span.pillRight,
+    layoutRight: span.atomRight,
   }));
 }
 
-function mentionColumnSpansFromTargetLine(
+function atomColumnSpansFromTargetLine(
   doc: HandoffNoteDoc,
   targetLine: MeasuredWireOffset[]
-): MentionColumnSpan[] {
+): AtomColumnSpan[] {
   const sampleByWire = new Map<number, MeasuredWireOffset>();
   for (const sample of targetLine) {
     sampleByWire.set(sample.wire, sample);
   }
-  const spans: MentionColumnSpan[] = [];
+  const spans: AtomColumnSpan[] = [];
   for (const sample of targetLine) {
     const context = describeHandoffNoteCursorContext(doc, sample.wire);
     if (context.kind !== "mention-boundary" || context.edge !== "start") {
       continue;
     }
     const endSample = sampleByWire.get(context.end);
-    const startPos = wireOffsetToDocPos(doc, context.start);
-    const pillRight = endSample ? mentionSpanPillRight(sample, endSample) : sample.left;
+    // Atom bbox uses boundary atom owner — not paint-alias doc pos (inter-atomic spacer shares wire).
+    const atomNodeIndex = wireOffsetToDocPos(doc, context.start).nodeIndex;
+    const atomRight = endSample ? atomSpanRight(sample, endSample) : sample.left;
     spans.push({
-      mentionNodeIndex: startPos.nodeIndex,
+      atomNodeIndex,
       startWire: context.start,
       endWire: context.end,
       startLeft: sample.left,
-      pillRight,
+      atomRight,
       layoutLeft: sample.left,
-      layoutRight: pillRight,
+      layoutRight: atomRight,
     });
   }
   return spans;
@@ -935,13 +977,13 @@ function acceptColumnLanding(
     rowStart?.root,
     doc,
     effectiveGoalColumn,
-    mentionPaintSpansFromTargetLine(doc, targetLine),
+    atomPaintSpansFromTargetLine(doc, targetLine),
     tolerance
   );
   const resolvedWire = atomicWire ?? snapVerticalColumnLandingWire(doc, landingWire, direction);
   const mentionSnapApplied = resolvedWire !== bracketWire;
   let targetPos = resolveVerticalLandingDocPos(doc, resolvedWire, {
-    layout: rowStart?.layout,
+    root: rowStart?.root,
     from: focus,
   });
   if (landedOutsideTargetRow(doc, targetPos, rowStart)) {
@@ -1035,14 +1077,18 @@ function resolveBlankExitVisualRowStart(
   focus: HandoffNoteDocPos,
   direction: HandoffNoteVerticalArrowDirection,
   targetLine: MeasuredWireOffset[],
-  wireLength: number
+  wireLength: number,
+  options?: { layout?: HandoffNoteLayoutMap; root?: HTMLElement }
 ): VerticalLanding | null {
   const wireLineLanding = resolveBlankExitContentRowStart(doc, direction, targetLine, wireLength);
   if (!wireLineLanding) {
     return null;
   }
   return {
-    pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, wireLineLanding.offset), { from: focus }),
+    pos: resolveVerticalLandingDocPos(doc, wireLineLanding.offset, {
+      root: options?.root,
+      from: focus,
+    }),
     branch: "blank-exit-visual-row-start",
   };
 }
@@ -1165,7 +1211,8 @@ function resolveRowEdgeToRowEdgeLanding(
   );
   if (fallbackRowStartLanding) {
     return {
-      pos: normalizeDocPos(doc, wireOffsetToDocPos(doc, fallbackRowStartLanding.offset), {
+      pos: resolveVerticalLandingDocPos(doc, fallbackRowStartLanding.offset, {
+        root: rowStart?.root,
         from: focus,
       }),
       branch: fallbackRowStartLanding.branch,
@@ -1396,7 +1443,8 @@ function resolveBlankBandVerticalLanding(
   focus: HandoffNoteDocPos,
   layout: HandoffNoteLayoutMap,
   targetRow: HandoffNoteLayoutRow,
-  targetLineIndex: number
+  targetLineIndex: number,
+  root?: HTMLElement
 ): LayoutVerticalMove {
   const visualStartColumn = blankBandVisualStartColumn(layout, targetLineIndex);
   const breakProbeWire = targetRow.breakProbeWire;
@@ -1404,7 +1452,10 @@ function resolveBlankBandVerticalLanding(
   if (breakProbeWire === undefined) {
     return { pos: focus, handled: false };
   }
-  const pos = normalizeDocPos(doc, wireOffsetToDocPos(doc, breakProbeWire), { from: focus });
+  const pos = resolveVerticalLandingDocPos(doc, breakProbeWire, {
+    root,
+    from: focus,
+  });
   return {
     pos,
     handled: !docPosEqual(pos, focus),
@@ -1427,14 +1478,14 @@ export function resolveLayoutVerticalArrowMove(
     return { pos: focus, handled: false };
   }
 
-  const paintRow = layout.paintContextForWire(fromWire)?.rowIndex;
+  const { paintPos } = resolvePaintContext(doc, focus, { root });
   let currentLineIndex: number;
   if (root !== undefined) {
     currentLineIndex = layoutRowForFocus(root, doc, layout, focus);
-  } else if (paintRow !== undefined && paintRow >= 0) {
-    currentLineIndex = paintRow;
   } else {
-    currentLineIndex = layout.rowIndexForWire(fromWire);
+    const paintRow = layout.paintContextForDocPos(paintPos)?.rowIndex;
+    currentLineIndex =
+      paintRow !== undefined && paintRow >= 0 ? paintRow : layout.rowIndexForWire(fromWire);
   }
   const currentRow = layout.rows[currentLineIndex];
   let effectiveGoalColumn = goalColumn;
@@ -1498,7 +1549,8 @@ export function resolveLayoutVerticalArrowMove(
       focus,
       layout,
       targetRow,
-      targetLineIndex
+      targetLineIndex,
+      root
     );
     if (blankMove.handled) {
       logVerArrow("resolve.blankLand", {
@@ -1521,7 +1573,8 @@ export function resolveLayoutVerticalArrowMove(
       focus,
       direction,
       targetRow.samples,
-      wire.length
+      wire.length,
+      { layout, root }
     );
     if (blankExit && !docPosEqual(blankExit.pos, focus)) {
       logVerArrow("resolve.rowStartProbe", {
@@ -1682,7 +1735,7 @@ export function resolveDomVerticalArrowMove(
 
   if (bleedAllowed) {
     const bleedDirection = direction === "up" ? "left" : "right";
-    const bleedMove = resolveDocHorizontalArrowMove(doc, focus, bleedDirection);
+    const bleedMove = resolvePaintHorizontalArrowMove(doc, focus, bleedDirection, { root });
     const landingWire = docPosToWireOffset(doc, bleedMove.pos);
     const landingGoal = layout.coordsForWire(landingWire)?.left ?? measuredGoal;
     logVerArrow("resolve.boundaryBleed", {

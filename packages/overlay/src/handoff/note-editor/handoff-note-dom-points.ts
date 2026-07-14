@@ -1,5 +1,6 @@
 ﻿import {
   describeHandoffNoteCursorContext,
+  docPosEqual,
   docPosToWireOffset,
   docToWire,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
@@ -8,11 +9,14 @@
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
+  nodeTokenLength,
   normalizeDocPos,
   wireOffsetToDocPos,
+  type HandoffNoteArrowDirection,
   type HandoffNoteCursorContext,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
+  isAtomicNode,
 } from "@caliper/core";
 import {
   buildRenderedNodeIndexMap,
@@ -27,6 +31,7 @@ import {
   wireOffsetAtTextBreak,
 } from "./handoff-note-dom.js";
 import { isCrossRowSpacerAndPillDom } from "./handoff-note-row-geometry.js";
+import { logHorArrow } from "../handoff-note-debug.js";
 
 /** Layout acquire sample shape (matches layout-map `MeasuredWireOffset`; not imported — cycle). */
 type DomMeasuredWireOffset = { wire: number; top: number; left: number; right?: number };
@@ -118,6 +123,7 @@ export function domOffsetForContentRowEndInSplitText(
  * Doc position owning the character at a wire index — text-node offset when the wire
  * maps to text, otherwise falls back to wireOffsetToDocPos (mention boundaries).
  * Click/layout row-end uses this instead of mention-boundary alias normalization.
+ * Paint/selection landing at a wire uses `resolvePaintContextAtWire` instead.
  */
 export function docPosAtContentWire(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos {
   const wireLen = docToWire(doc).length;
@@ -685,61 +691,100 @@ export function resolveDomReadDocPos(
   return read;
 }
 
+export type HandoffNotePaintContext = {
+  focusPos: HandoffNoteDocPos;
+  paintPos: HandoffNoteDocPos;
+  caretKind: HandoffNoteCursorContext["kind"];
+};
+
+function resolveCaretKindForPaintContext(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos,
+  paintPos: HandoffNoteDocPos
+): HandoffNoteCursorContext["kind"] {
+  const focusNode = doc.nodes[focusPos.nodeIndex];
+  if (focusNode?.type === "text") {
+    return "text";
+  }
+  const paintNode = doc.nodes[paintPos.nodeIndex];
+  if (paintNode?.type === "text") {
+    return "text";
+  }
+  return describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, paintPos)).kind;
+}
+
+/** Canonical paint authority: focus doc pos, paint doc pos, and caret kind from paint wire. */
+export function resolvePaintContext(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  options?: { root?: HTMLElement; from?: HandoffNoteDocPos }
+): HandoffNotePaintContext {
+  const wire = docPosToWireOffset(doc, focus);
+  const focusPos = resolveFocusAtWire(doc, wire, { incoming: focus, from: options?.from });
+  const paintPos = resolvePaintPosFromFocus(doc, focusPos, options);
+  return {
+    focusPos,
+    paintPos,
+    caretKind: resolveCaretKindForPaintContext(doc, focusPos, paintPos),
+  };
+}
+
 /** Cursor kind from focus doc pos — text-node focus is always text; mention uses paint path. */
 export function describeCaretContext(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   options?: { root?: HTMLElement }
 ): HandoffNoteCursorContext {
-  const node = doc.nodes[focus.nodeIndex];
-  if (node?.type === "text") {
+  const ctx = resolvePaintContext(doc, focus, options);
+  if (ctx.caretKind === "text") {
     return { kind: "text" };
   }
-  const paintPos = resolvePaintDocPos(doc, focus, options);
-  return describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, paintPos));
+  return describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, ctx.paintPos));
 }
 
-const SANDWICH_FOLLOWING_MENTION_OFFSET = 2;
+/**
+ * Inter-atomic gap: leading atom | single-char spacer text | following atom.
+ * Continuation is spacer offset 1 — same wire as following atomic start.
+ */
+const INTER_ATOMIC_FOLLOWING_OFFSET = 2;
 
-function postMentionNonemptyTextNode(
+/** Painted DOM element for an atomic node (mentions → pill span; other atoms extend here). */
+export function atomicElement(
+  root: HTMLElement,
   doc: HandoffNoteDoc,
-  mentionNodeIndex: number
-): { textNodeIndex: number; text: string } | null {
-  const mention = doc.nodes[mentionNodeIndex];
-  const textNode = doc.nodes[mentionNodeIndex + 1];
-  if (!mention || mention.type !== "mention") {
+  nodeIndex: number
+): HTMLElement | null {
+  if (!isAtomicNode(doc.nodes[nodeIndex])) {
     return null;
   }
-  if (!textNode || textNode.type !== "text" || textNode.text.length < 1) {
-    return null;
+  const rendered = docPosToRenderedDomChildIndex(doc, nodeIndex);
+  const domNode = root.childNodes[rendered];
+  if (domNode && isHandoffMentionElement(domNode)) {
+    return domNode;
   }
-  return { textNodeIndex: mentionNodeIndex + 1, text: textNode.text };
+  return null;
 }
 
-function isMentionSandwichSpacerNode(doc: HandoffNoteDoc, mentionNodeIndex: number): boolean {
-  const postText = postMentionNonemptyTextNode(doc, mentionNodeIndex);
-  if (!postText) {
-    return false;
-  }
-  return doc.nodes[mentionNodeIndex + SANDWICH_FOLLOWING_MENTION_OFFSET]?.type === "mention";
-}
-
-function mentionSandwichSpacerContinuationPos(
+/** Spacer-tail continuation when leading atom sandwiches a 1-char text before another atom. */
+function interAtomicSpacerContinuationPos(
   doc: HandoffNoteDoc,
-  leadingMentionNodeIndex: number
+  leadingAtomicIndex: number
 ): HandoffNoteDocPos | null {
-  if (!isMentionSandwichSpacerNode(doc, leadingMentionNodeIndex)) {
+  if (!isAtomicNode(doc.nodes[leadingAtomicIndex])) {
     return null;
   }
-  const spacerIndex = leadingMentionNodeIndex + 1;
-  const followingMentionIndex = leadingMentionNodeIndex + SANDWICH_FOLLOWING_MENTION_OFFSET;
+  const spacerIndex = leadingAtomicIndex + 1;
+  const followingAtomicIndex = leadingAtomicIndex + INTER_ATOMIC_FOLLOWING_OFFSET;
   const spacer = doc.nodes[spacerIndex];
   if (spacer?.type !== "text" || spacer.text.length !== 1) {
     return null;
   }
+  if (!isAtomicNode(doc.nodes[followingAtomicIndex])) {
+    return null;
+  }
   const continuationPos: HandoffNoteDocPos = { nodeIndex: spacerIndex, nodeOffset: 1 };
   const followingStartPos: HandoffNoteDocPos = {
-    nodeIndex: followingMentionIndex,
+    nodeIndex: followingAtomicIndex,
     nodeOffset: 0,
   };
   if (docPosToWireOffset(doc, continuationPos) !== docPosToWireOffset(doc, followingStartPos)) {
@@ -748,33 +793,23 @@ function mentionSandwichSpacerContinuationPos(
   return continuationPos;
 }
 
-function continuationPosForFollowingMention(
+function continuationPosBeforeAtomicStart(
   doc: HandoffNoteDoc,
-  followingMentionNodeIndex: number
+  followingAtomicIndex: number
 ): HandoffNoteDocPos | null {
-  return mentionSandwichSpacerContinuationPos(
+  return interAtomicSpacerContinuationPos(
     doc,
-    followingMentionNodeIndex - SANDWICH_FOLLOWING_MENTION_OFFSET
+    followingAtomicIndex - INTER_ATOMIC_FOLLOWING_OFFSET
   );
 }
 
-function mentionPillElement(
-  root: HTMLElement,
+/** Same-wire paint via spacer tail only when spacer and following atom sit on different visual rows. */
+function isCrossRowInterAtomicSpacerPaintAlias(
   doc: HandoffNoteDoc,
-  mentionNodeIndex: number
-): HTMLSpanElement | null {
-  const rendered = docPosToRenderedDomChildIndex(doc, mentionNodeIndex);
-  const domNode = root.childNodes[rendered];
-  return domNode && isHandoffMentionElement(domNode) ? domNode : null;
-}
-
-/** Same-wire alias paints via spacer tail only when spacer and following pill are on different visual rows. */
-function isCrossRowSandwichSpacerPaintAlias(
-  doc: HandoffNoteDoc,
-  followingMentionNodeIndex: number,
+  followingAtomicIndex: number,
   root?: HTMLElement
 ): boolean {
-  const leadingIndex = followingMentionNodeIndex - SANDWICH_FOLLOWING_MENTION_OFFSET;
+  const leadingIndex = followingAtomicIndex - INTER_ATOMIC_FOLLOWING_OFFSET;
   const spacerIndex = leadingIndex + 1;
   const spacer = doc.nodes[spacerIndex];
   if (spacer?.type !== "text" || !/^\s+$/.test(spacer.text) || /[\n\r]/.test(spacer.text)) {
@@ -784,32 +819,447 @@ function isCrossRowSandwichSpacerPaintAlias(
     return false;
   }
   const spacerRect = getDocAnchorRect(root, doc, { nodeIndex: spacerIndex, nodeOffset: 0 });
-  const pill = mentionPillElement(root, doc, followingMentionNodeIndex);
-  if (!spacerRect || !pill) {
+  const atomEl = atomicElement(root, doc, followingAtomicIndex);
+  if (!spacerRect || !atomEl) {
     return false;
   }
-  return isCrossRowSpacerAndPillDom(spacerRect, pill) === true;
+  return isCrossRowSpacerAndPillDom(spacerRect, atomEl) === true;
 }
 
-/** Mention-start and cross-row sandwich spacer tail share a wire — paint via the spacer tail owner. */
-export function resolvePaintDocPos(
+/** Blank-band abut keeps atomic-end paint so DOM does not land on blank-anchor text. */
+function blankBandKeepsAtomicEndPaint(doc: HandoffNoteDoc): boolean {
+  return listEmbeddedBlankBandProbeWires(doc).some((probe) =>
+    embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)
+  );
+}
+
+/**
+ * Same-wire paint aliases from focus:
+ * - atomic start → cross-row inter-atomic spacer tail (when spacer/atom on different rows)
+ * - atomic end → following text offset 0, unless blank-band substantive content abuts a probe
+ *   (DOM must paint atomic end off blank infrastructure — same gate as resolveDomPointAtDocPos)
+ */
+function resolvePaintPosFromFocus(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
   options?: { root?: HTMLElement }
 ): HandoffNoteDocPos {
   const node = doc.nodes[pos.nodeIndex];
-  if (node?.type !== "mention" || pos.nodeOffset !== 0) {
+  if (!isAtomicNode(node)) {
     return pos;
   }
-  const continuation = continuationPosForFollowingMention(doc, pos.nodeIndex);
-  if (
-    continuation &&
-    docPosToWireOffset(doc, continuation) === docPosToWireOffset(doc, pos) &&
-    isCrossRowSandwichSpacerPaintAlias(doc, pos.nodeIndex, options?.root)
-  ) {
-    return continuation;
+
+  if (pos.nodeOffset === 0) {
+    const continuation = continuationPosBeforeAtomicStart(doc, pos.nodeIndex);
+    if (
+      continuation &&
+      docPosToWireOffset(doc, continuation) === docPosToWireOffset(doc, pos) &&
+      isCrossRowInterAtomicSpacerPaintAlias(doc, pos.nodeIndex, options?.root)
+    ) {
+      return continuation;
+    }
+    return pos;
   }
-  return pos;
+
+  if (pos.nodeOffset !== atomicEndOffset(doc, pos.nodeIndex)) {
+    return pos;
+  }
+
+  const postText = doc.nodes[pos.nodeIndex + 1];
+  if (postText?.type !== "text") {
+    return pos;
+  }
+  const textStart: HandoffNoteDocPos = { nodeIndex: pos.nodeIndex + 1, nodeOffset: 0 };
+  if (docPosToWireOffset(doc, textStart) !== docPosToWireOffset(doc, pos)) {
+    return pos;
+  }
+  if (blankBandKeepsAtomicEndPaint(doc)) {
+    return pos;
+  }
+  return textStart;
+}
+
+export function resolvePaintDocPos(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  options?: { root?: HTMLElement }
+): HandoffNoteDocPos {
+  return resolvePaintContext(doc, pos, options).paintPos;
+}
+
+function atomicEndOffset(doc: HandoffNoteDoc, nodeIndex: number): number {
+  const node = doc.nodes[nodeIndex];
+  if (!node || !isAtomicNode(node)) {
+    return 0;
+  }
+  return nodeTokenLength(node);
+}
+
+function docPosAtAtomicEnd(doc: HandoffNoteDoc, nodeIndex: number): HandoffNoteDocPos {
+  return { nodeIndex, nodeOffset: atomicEndOffset(doc, nodeIndex) };
+}
+
+function docPosAfterNode(doc: HandoffNoteDoc, nodeIndex: number): HandoffNoteDocPos {
+  if (nodeIndex + 1 < doc.nodes.length) {
+    return { nodeIndex: nodeIndex + 1, nodeOffset: 0 };
+  }
+  const node = doc.nodes[nodeIndex];
+  if (node?.type === "text") {
+    return { nodeIndex, nodeOffset: node.text.length };
+  }
+  return docPosAtAtomicEnd(doc, nodeIndex);
+}
+
+function docPosBeforeNode(doc: HandoffNoteDoc, nodeIndex: number): HandoffNoteDocPos {
+  if (nodeIndex <= 0) {
+    return { nodeIndex: 0, nodeOffset: 0 };
+  }
+  const prev = doc.nodes[nodeIndex - 1];
+  if (prev?.type === "text") {
+    const len = prev.text.length;
+    return { nodeIndex: nodeIndex - 1, nodeOffset: len > 0 ? len : 0 };
+  }
+  return docPosAtAtomicEnd(doc, nodeIndex - 1);
+}
+
+function collectTextOwnersAtWire(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos[] {
+  const owners: HandoffNoteDocPos[] = [];
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex];
+    if (node?.type !== "text") {
+      continue;
+    }
+    for (let nodeOffset = 0; nodeOffset <= node.text.length; nodeOffset++) {
+      const pos = { nodeIndex, nodeOffset };
+      if (docPosToWireOffset(doc, pos) === wire) {
+        owners.push(pos);
+      }
+    }
+  }
+  return owners;
+}
+
+/**
+ * Text tail between two adjacent atomic nodes on the same wire alias.
+ * Gap text must stay on one storage line — newlines mean a new row prefix, not an inter-atomic gap.
+ */
+function isInterAtomicTextTail(
+  doc: HandoffNoteDoc,
+  textNodeIndex: number,
+  pos: HandoffNoteDocPos
+): boolean {
+  const node = doc.nodes[textNodeIndex];
+  if (node?.type !== "text" || pos.nodeOffset !== node.text.length) {
+    return false;
+  }
+  if (/[\n\r]/.test(node.text)) {
+    return false;
+  }
+  return isAtomicNode(doc.nodes[textNodeIndex - 1]) && isAtomicNode(doc.nodes[textNodeIndex + 1]);
+}
+
+function atomicStartPosAtWire(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos | null {
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    if (!isAtomicNode(doc.nodes[nodeIndex])) {
+      continue;
+    }
+    if (docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 }) === wire) {
+      return { nodeIndex, nodeOffset: 0 };
+    }
+  }
+  return null;
+}
+
+/** Default doc owner at a wire when no incoming/from authority is supplied. */
+function resolveCanonicalFocusAtWire(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos {
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    if (!isAtomicNode(doc.nodes[nodeIndex])) {
+      continue;
+    }
+    const continuation = continuationPosBeforeAtomicStart(doc, nodeIndex);
+    if (continuation && docPosToWireOffset(doc, continuation) === wire) {
+      return continuation;
+    }
+  }
+
+  const ctx = describeHandoffNoteCursorContext(doc, wire);
+  const textOwners = collectTextOwnersAtWire(doc, wire);
+
+  if (ctx.kind === "mention-boundary" && ctx.edge === "end") {
+    const postAtomicText = textOwners.find((pos) => {
+      const prev = doc.nodes[pos.nodeIndex - 1];
+      return pos.nodeOffset === 0 && isAtomicNode(prev);
+    });
+    if (postAtomicText) {
+      return postAtomicText;
+    }
+  }
+
+  if (ctx.kind === "mention-boundary" && ctx.edge === "start") {
+    const interAtomicTail = textOwners.find((pos) =>
+      isInterAtomicTextTail(doc, pos.nodeIndex, pos)
+    );
+    if (interAtomicTail) {
+      return interAtomicTail;
+    }
+    const atomicStart = atomicStartPosAtWire(doc, wire);
+    if (atomicStart) {
+      return atomicStart;
+    }
+  }
+
+  if (ctx.kind === "mention-interior") {
+    return wireOffsetToDocPos(doc, wire);
+  }
+
+  if (textOwners[0]) {
+    return textOwners[0];
+  }
+  return wireOffsetToDocPos(doc, wire);
+}
+
+/** Paint/step focus at a wire — incoming/from authority wins; else canonical owner. */
+function resolveFocusAtWire(
+  doc: HandoffNoteDoc,
+  wire: number,
+  options?: { incoming?: HandoffNoteDocPos; from?: HandoffNoteDocPos }
+): HandoffNoteDocPos {
+  if (options?.from && docPosToWireOffset(doc, options.from) === wire) {
+    return options.from;
+  }
+  if (options?.incoming && docPosToWireOffset(doc, options.incoming) === wire) {
+    return options.incoming;
+  }
+  return resolveCanonicalFocusAtWire(doc, wire);
+}
+
+function predecessorTextBeforeAtomicStart(
+  doc: HandoffNoteDoc,
+  atomicNodeIndex: number
+): HandoffNoteDocPos {
+  const prev = doc.nodes[atomicNodeIndex - 1];
+  if (prev?.type !== "text" || prev.text.length < 1) {
+    return docPosBeforeNode(doc, atomicNodeIndex);
+  }
+  const focusPos = { nodeIndex: atomicNodeIndex, nodeOffset: 0 };
+  const endPos = { nodeIndex: atomicNodeIndex - 1, nodeOffset: prev.text.length };
+  const focusWire = docPosToWireOffset(doc, focusPos);
+  const endWire = docPosToWireOffset(doc, endPos);
+  // Text end aliases atomic start.
+  if (endWire === focusWire) {
+    // Inter-atomic gap: land on the gap tail (continuation) — same wire, doc owner change.
+    if (isInterAtomicTextTail(doc, atomicNodeIndex - 1, endPos)) {
+      return endPos;
+    }
+    // Prefix / row-leading text: step to the preceding char (different wire).
+    return { nodeIndex: atomicNodeIndex - 1, nodeOffset: prev.text.length - 1 };
+  }
+  return endPos;
+}
+
+function tryIntraTextHorizontalStep(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos,
+  direction: HandoffNoteArrowDirection
+): HandoffNoteDocPos | null {
+  const node = doc.nodes[focusPos.nodeIndex];
+  if (node?.type !== "text") {
+    return null;
+  }
+  const delta = direction === "left" ? -1 : 1;
+  const nextOffset = focusPos.nodeOffset + delta;
+  if (nextOffset >= 0 && nextOffset <= node.text.length) {
+    return { nodeIndex: focusPos.nodeIndex, nodeOffset: nextOffset };
+  }
+  return null;
+}
+
+function resolveHorizontalDocSuccessor(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos
+): HandoffNoteDocPos | null {
+  const intra = tryIntraTextHorizontalStep(doc, focusPos, "right");
+  if (intra && !docPosEqual(intra, focusPos)) {
+    return intra;
+  }
+
+  const node = doc.nodes[focusPos.nodeIndex];
+  const wire = docPosToWireOffset(doc, focusPos);
+  const ctx = describeHandoffNoteCursorContext(doc, wire);
+
+  if (isAtomicNode(node)) {
+    if (ctx.kind === "mention-interior") {
+      return docPosAfterNode(doc, focusPos.nodeIndex);
+    }
+    if (ctx.kind === "mention-boundary") {
+      if (ctx.edge === "start") {
+        return docPosAtAtomicEnd(doc, focusPos.nodeIndex);
+      }
+      return docPosAfterNode(doc, focusPos.nodeIndex);
+    }
+  }
+
+  if (node?.type === "text") {
+    if (focusPos.nodeOffset >= node.text.length) {
+      const after = docPosAfterNode(doc, focusPos.nodeIndex);
+      // Pill is one horizontal token: do not micro-stop at following atomic start (same wire).
+      if (after && isAtomicNode(doc.nodes[after.nodeIndex]) && after.nodeOffset === 0) {
+        return docPosAfterNode(doc, after.nodeIndex) ?? docPosAtAtomicEnd(doc, after.nodeIndex);
+      }
+      return after;
+    }
+    if (focusPos.nodeOffset === 0 && isAtomicNode(doc.nodes[focusPos.nodeIndex - 1])) {
+      if (node.text.length > 0) {
+        return { nodeIndex: focusPos.nodeIndex, nodeOffset: 1 };
+      }
+      const next = doc.nodes[focusPos.nodeIndex + 1];
+      if (isAtomicNode(next)) {
+        return { nodeIndex: focusPos.nodeIndex + 1, nodeOffset: 0 };
+      }
+    }
+  }
+
+  const nextWire = wire + 1;
+  if (nextWire > docToWire(doc).length) {
+    return null;
+  }
+  return resolveCanonicalFocusAtWire(doc, nextWire);
+}
+
+function resolveHorizontalDocPredecessor(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos
+): HandoffNoteDocPos | null {
+  const intra = tryIntraTextHorizontalStep(doc, focusPos, "left");
+  if (intra && !docPosEqual(intra, focusPos)) {
+    return intra;
+  }
+
+  const node = doc.nodes[focusPos.nodeIndex];
+  const wire = docPosToWireOffset(doc, focusPos);
+  const ctx = describeHandoffNoteCursorContext(doc, wire);
+
+  if (isAtomicNode(node)) {
+    if (ctx.kind === "mention-interior") {
+      return { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 };
+    }
+    if (ctx.kind === "mention-boundary") {
+      if (ctx.edge === "end") {
+        return { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 };
+      }
+      return predecessorTextBeforeAtomicStart(doc, focusPos.nodeIndex);
+    }
+  }
+
+  if (node?.type === "text" && focusPos.nodeOffset === 0) {
+    if (isAtomicNode(doc.nodes[focusPos.nodeIndex - 1])) {
+      return { nodeIndex: focusPos.nodeIndex - 1, nodeOffset: 0 };
+    }
+    return docPosBeforeNode(doc, focusPos.nodeIndex);
+  }
+
+  const prevWire = wire - 1;
+  if (prevWire < 0) {
+    return null;
+  }
+  return resolveCanonicalFocusAtWire(doc, prevWire);
+}
+
+function resolveHorizontalDocStep(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos,
+  direction: HandoffNoteArrowDirection
+): HandoffNoteDocPos | null {
+  return direction === "right"
+    ? resolveHorizontalDocSuccessor(doc, focusPos)
+    : resolveHorizontalDocPredecessor(doc, focusPos);
+}
+
+/** Paint authority for a wire offset — focus and paint after alias seams. */
+export function resolvePaintContextAtWire(
+  doc: HandoffNoteDoc,
+  wire: number,
+  options?: { root?: HTMLElement; from?: HandoffNoteDocPos }
+): HandoffNotePaintContext {
+  const focusPos = resolveFocusAtWire(doc, wire, { from: options?.from });
+  return resolvePaintContext(doc, focusPos, options);
+}
+
+/** Thin alias of `resolvePaintContextAtWire(...).paintPos` for wire→paint import. */
+export function docPosAtPaintWire(
+  doc: HandoffNoteDoc,
+  wire: number,
+  options?: { root?: HTMLElement }
+): HandoffNoteDocPos {
+  return resolvePaintContextAtWire(doc, wire, options).paintPos;
+}
+
+function horPosSnapshot(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): Record<string, unknown> {
+  const node = doc.nodes[pos.nodeIndex];
+  const wire = docPosToWireOffset(doc, pos);
+  return {
+    nodeIndex: pos.nodeIndex,
+    nodeOffset: pos.nodeOffset,
+    nodeType: node?.type ?? "missing",
+    wire,
+    cursorKind: describeHandoffNoteCursorContext(doc, wire).kind,
+  };
+}
+
+export function resolvePaintHorizontalArrowMove(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  direction: HandoffNoteArrowDirection,
+  options?: { root?: HTMLElement; from?: HandoffNoteDocPos }
+): { pos: HandoffNoteDocPos; handled: boolean } {
+  const paintCtx = resolvePaintContext(doc, focus, options);
+  const { focusPos, paintPos } = paintCtx;
+  const step = resolveHorizontalDocStep(doc, focusPos, direction);
+  if (!step || docPosEqual(step, focusPos)) {
+    logHorArrow("step", {
+      direction,
+      handled: false,
+      reason: !step ? "nullStep" : "stepEqualsFocusPos",
+      focusIn: horPosSnapshot(doc, focus),
+      focusPos: horPosSnapshot(doc, focusPos),
+      paintPos: horPosSnapshot(doc, paintPos),
+    });
+    return { pos: focus, handled: false };
+  }
+  const landed = normalizeDocPos(doc, step, { from: step });
+  const paintLanded = resolvePaintContext(doc, landed, {
+    root: options?.root,
+    from: landed,
+  }).paintPos;
+  const selectionLand = normalizeDocPos(doc, paintLanded, { from: paintLanded });
+  if (docPosEqual(selectionLand, focus)) {
+    logHorArrow("step", {
+      direction,
+      handled: false,
+      reason: "paintLandEqualsFocusIn",
+      focusIn: horPosSnapshot(doc, focus),
+      focusPos: horPosSnapshot(doc, focusPos),
+      paintPos: horPosSnapshot(doc, paintPos),
+      step: horPosSnapshot(doc, step),
+      landed: horPosSnapshot(doc, landed),
+      selectionLand: horPosSnapshot(doc, selectionLand),
+    });
+    return { pos: focus, handled: false };
+  }
+  const focusWire = docPosToWireOffset(doc, focusPos);
+  const landWire = docPosToWireOffset(doc, selectionLand);
+  logHorArrow("step", {
+    direction,
+    handled: true,
+    sameWire: focusWire === landWire,
+    focusIn: horPosSnapshot(doc, focus),
+    focusPos: horPosSnapshot(doc, focusPos),
+    paintPos: horPosSnapshot(doc, paintPos),
+    step: horPosSnapshot(doc, step),
+    landed: horPosSnapshot(doc, landed),
+    selectionLand: horPosSnapshot(doc, selectionLand),
+  });
+  return { pos: selectionLand, handled: true };
 }
 
 export function resolveDomPointAtDocPos(
@@ -819,7 +1269,7 @@ export function resolveDomPointAtDocPos(
   options?: { from?: HandoffNoteDocPos }
 ): { node: Node; offset: number } | null {
   const normalized = normalizeDocPos(doc, pos, options?.from ? { from: options.from } : undefined);
-  const paintPos = resolvePaintDocPos(doc, normalized, { root });
+  const { paintPos } = resolvePaintContext(doc, normalized, { root });
   const node = doc.nodes[paintPos.nodeIndex];
   if (!node) {
     if (root.firstChild?.nodeType === Node.TEXT_NODE) {
@@ -838,12 +1288,8 @@ export function resolveDomPointAtDocPos(
   }
 
   if (node.type === "text") {
-    const focusWire = docPosToWireOffset(doc, paintPos);
-    const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
     const nextDocNode = doc.nodes[paintPos.nodeIndex + 1];
     if (
-      caretContext.kind === "mention-boundary" &&
-      caretContext.edge === "start" &&
       nextDocNode?.type === "mention" &&
       node.text.length === 0 &&
       paintPos.nodeOffset >= node.text.length
@@ -867,13 +1313,7 @@ export function resolveDomPointAtDocPos(
   if (paintPos.nodeOffset >= tokenLength) {
     const afterRendered = renderedIndex + 1;
     const postText = doc.nodes[paintPos.nodeIndex + 1];
-    const abuttingProbe =
-      postText?.type === "text"
-        ? listEmbeddedBlankBandProbeWires(doc).find((probe) =>
-            embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)
-          )
-        : undefined;
-    if (abuttingProbe !== undefined) {
+    if (postText?.type === "text" && blankBandKeepsAtomicEndPaint(doc)) {
       return { node: root, offset: afterRendered };
     }
     if (afterRendered < root.childNodes.length) {
@@ -962,7 +1402,7 @@ export function measureWireBreakCoord(
   doc: HandoffNoteDoc,
   wire: number
 ): DomMeasuredWireOffset | null {
-  const pos = wireOffsetToDocPos(doc, wire);
+  const { paintPos: pos } = resolvePaintContextAtWire(doc, wire, { root });
   const domPoint = resolveDomPointAtDocPos(root, doc, pos);
   if (!domPoint) {
     return null;
@@ -1016,8 +1456,8 @@ export function wireOffsetForPillHalfSplitColumn(
   return goalColumn < mid ? startWire : endWire;
 }
 
-export type TargetRowMentionPaintSpan = {
-  mentionNodeIndex: number;
+export type TargetRowAtomPaintSpan = {
+  atomNodeIndex: number;
   startWire: number;
   endWire: number;
   layoutLeft: number;
@@ -1025,22 +1465,22 @@ export type TargetRowMentionPaintSpan = {
 };
 
 /**
- * Pill half-split for mentions layout assigned to the target row.
+ * Atom half-split for atoms layout-assigned to the target row.
  * Row membership from layout samples. Column bbox: DOM when goal is inside painted
- * pill rect; else layout-acquired span (covers soft-wrap co-band and test stubs).
+ * atom rect; else layout-acquired span (covers soft-wrap co-band and test stubs).
  */
 export function resolveTargetRowPillWireForGoalColumn(
   root: HTMLElement | undefined,
   doc: HandoffNoteDoc,
   goalColumn: number,
-  spans: readonly TargetRowMentionPaintSpan[],
+  spans: readonly TargetRowAtomPaintSpan[],
   tolerance: number
 ): number | null {
   for (const span of spans) {
     if (root) {
-      const pill = mentionPillElement(root, doc, span.mentionNodeIndex);
-      if (pill) {
-        const rect = pill.getBoundingClientRect();
+      const atomEl = atomicElement(root, doc, span.atomNodeIndex);
+      if (atomEl) {
+        const rect = atomEl.getBoundingClientRect();
         if (hasPositionedDomRect(rect)) {
           const domWire = wireOffsetForPillHalfSplitColumn(
             goalColumn,
@@ -1152,7 +1592,7 @@ export function probeViewportCaretHit(
       missReason: null,
       pos,
       wire,
-      caretKind: describeCaretContext(doc, pos, { root }).kind,
+      caretKind: resolvePaintContext(doc, pos, { root }).caretKind,
     };
   }
 
@@ -1190,7 +1630,7 @@ export function probeViewportCaretHit(
       missReason: null,
       pos,
       wire,
-      caretKind: describeCaretContext(doc, pos, { root }).kind,
+      caretKind: resolvePaintContext(doc, pos, { root }).caretKind,
     };
   }
 

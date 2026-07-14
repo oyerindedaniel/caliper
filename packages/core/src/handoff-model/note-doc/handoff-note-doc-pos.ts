@@ -3,13 +3,11 @@ import {
   docToWire,
   offsetAtDocPosition,
   resolveDocPosition,
-  type HandoffNoteArrowDirection,
   type HandoffNoteDoc,
   type HandoffNoteNode,
 } from "./handoff-note-doc.js";
 import {
   resolveEmbeddedBlankBandVerticalMove,
-  resolveHorizontalBleedWireMove,
   resolveVerticalArrowWireMove,
   type VerticalNavLineSpan,
 } from "./handoff-note-vertical-nav.js";
@@ -30,8 +28,16 @@ export type HandoffNoteSelection = {
 
 export type DocPosBias = "start" | "end";
 
-function nodeTokenLength(node: HandoffNoteNode): number {
+/** Wire/token length of a doc node (text chars, or atomic `1 + agentId.length`). */
+export function nodeTokenLength(node: HandoffNoteNode): number {
   return node.type === "text" ? node.text.length : 1 + node.agentId.length;
+}
+
+/** Non-text doc node — mention today; other atom kinds extend here. */
+export function isAtomicNode(
+  node: HandoffNoteNode | undefined
+): node is Exclude<HandoffNoteNode, { type: "text" }> {
+  return node != null && node.type !== "text";
 }
 
 export function collapsedSelection(pos: HandoffNoteDocPos): HandoffNoteSelection {
@@ -214,24 +220,6 @@ export function docSelectionToWireRange(
   const start = docPosToWireOffset(doc, selection.anchor);
   const end = docPosToWireOffset(doc, selection.focus);
   return { start: Math.min(start, end), end: Math.max(start, end) };
-}
-
-export function resolveDocHorizontalArrowMove(
-  doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos,
-  direction: HandoffNoteArrowDirection
-): { pos: HandoffNoteDocPos; handled: boolean } {
-  const wire = docPosToWireOffset(doc, pos);
-  const bleed = resolveHorizontalBleedWireMove(doc, wire, direction);
-  if (bleed === null || bleed.offset === wire) {
-    return { pos, handled: false };
-  }
-
-  const targetPos = normalizeDocPos(doc, wireOffsetToDocPos(doc, bleed.offset), { from: pos });
-  if (docPosEqual(targetPos, pos)) {
-    return { pos, handled: false };
-  }
-  return { pos: targetPos, handled: true };
 }
 
 function wireLineStarts(wire: string): number[] {

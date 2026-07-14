@@ -14,7 +14,6 @@ import {
   docSelectionToWireRange,
   normalizeDocPos,
   normalizeSelection,
-  resolveDocHorizontalArrowMove,
   resolveDocVerticalArrowMove,
   selectionsEqual,
   wireOffsetToCollapsedSelection,
@@ -57,39 +56,6 @@ describe("HandoffNoteDocPos", () => {
     const doc = wireToDoc("a\nb @caliper-x");
     const end = docEndPos(doc);
     expect(docPosToWireOffset(doc, end)).toBe(docToWire(doc).length);
-  });
-
-  it("resolveDocHorizontalArrowMove steps adjacent plain text with handled true", () => {
-    const doc = wireToDoc("abcdef");
-    const right = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, 3), "right");
-    expect(right.handled).toBe(true);
-    expect(docPosToWireOffset(doc, right.pos)).toBe(4);
-
-    const left = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, 4), "left");
-    expect(left.handled).toBe(true);
-    expect(docPosToWireOffset(doc, left.pos)).toBe(3);
-  });
-
-  it("resolveDocHorizontalArrowMove jumps over a mention from its start and returns", () => {
-    const doc = wireToDoc("Hi @caliper-abc123 there");
-    const start = wireOffsetToDocPos(doc, "Hi ".length);
-    const endWire = "Hi @caliper-abc123".length;
-    const moved = resolveDocHorizontalArrowMove(doc, start, "right");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(endWire);
-
-    const back = resolveDocHorizontalArrowMove(doc, moved.pos, "left");
-    expect(back.handled).toBe(true);
-    expect(docPosToWireOffset(doc, back.pos)).toBe("Hi ".length);
-  });
-
-  it("resolveDocHorizontalArrowMove steps through adjacent mentions separated by canonical space", () => {
-    const doc = wireToDoc("@caliper-a@caliper-b");
-    const firstEnd = docPosToWireOffset(doc, docEndPos({ nodes: [doc.nodes[0]!] }));
-    const atFirstEnd = wireOffsetToDocPos(doc, "@caliper-a".length);
-    const moved = resolveDocHorizontalArrowMove(doc, atFirstEnd, "right");
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThan(firstEnd);
   });
 
   it("wireOffsetToCollapsedSelection snaps using boundary affinity", () => {
@@ -191,19 +157,6 @@ describe("resolveDocVerticalArrowMove", () => {
     if (notExpectWire !== undefined) {
       expect(docPosToWireOffset(doc, moved.pos)).not.toBe(notExpectWire);
     }
-  }
-
-  function assertHorizontal(
-    doc: ReturnType<typeof wireToDoc>,
-    wire: string,
-    from: number,
-    direction: "left" | "right",
-    expectWire: number
-  ) {
-    const moved = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), direction);
-    expect(moved.handled).toBe(true);
-    expect(docPosToWireOffset(doc, moved.pos)).toBe(expectWire);
-    expect(describeHandoffNoteCursorContext(doc, expectWire).kind).not.toBe("mention-interior");
   }
 
   function pillRowLine(agent: string, pillCount: number, tail = " end"): string {
@@ -637,48 +590,38 @@ describe("resolveDocVerticalArrowMove", () => {
   describe("vertical — boundary bleed at doc extremes", () => {
     const plainTwoLine = "abcdef\nghij";
 
-    it("first line: up and left resolve to the same wire offset", () => {
+    it("first line: up bleeds to previous wire offset", () => {
       const doc = wireToDoc(plainTwoLine);
       const from = 4;
       const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
-      const left = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "left");
       expect(up.handled).toBe(true);
-      expect(left.handled).toBe(true);
       expect(docPosToWireOffset(doc, up.pos)).toBe(from - 1);
-      expect(docPosToWireOffset(doc, left.pos)).toBe(from - 1);
     });
 
-    it("first line on mention row: up and left resolve to the same wire offset", () => {
+    it("first line on mention row: up bleeds to previous wire offset", () => {
       const wire = `handoff notes @${agentA} `;
       const doc = wireToDoc(wire);
       const from = wire.indexOf("@") + `@${agentA}`.length;
       const up = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "up");
-      const left = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "left");
       expect(up.handled).toBe(true);
-      expect(left.handled).toBe(true);
-      expect(docPosToWireOffset(doc, up.pos)).toBe(docPosToWireOffset(doc, left.pos));
+      expect(docPosToWireOffset(doc, up.pos)).toBeLessThan(from);
     });
 
-    it("last line: down and right resolve to the same wire offset", () => {
+    it("last line: down bleeds to next wire offset", () => {
       const doc = wireToDoc(plainTwoLine);
       const from = plainTwoLine.length - 1;
       const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, from), "down");
-      const right = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, from), "right");
       expect(down.handled).toBe(true);
-      expect(right.handled).toBe(true);
       expect(docPosToWireOffset(doc, down.pos)).toBe(plainTwoLine.length);
-      expect(docPosToWireOffset(doc, right.pos)).toBe(plainTwoLine.length);
     });
 
-    it("last line on mention row: down and right resolve to the same wire offset", () => {
+    it("last line on mention row: down bleeds past pill start", () => {
       const wire = `handoff notes @${agentA} \n@${agentA} @${agentB} `;
       const doc = wireToDoc(wire);
       const fromWire = wire.lastIndexOf(`@${agentB}`);
-      const right = resolveDocHorizontalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "right");
       const down = resolveDocVerticalArrowMove(doc, wireOffsetToDocPos(doc, fromWire), "down");
-      expect(right.handled).toBe(true);
       expect(down.handled).toBe(true);
-      expect(docPosToWireOffset(doc, down.pos)).toBe(docPosToWireOffset(doc, right.pos));
+      expect(docPosToWireOffset(doc, down.pos)).toBeGreaterThan(fromWire);
     });
 
     it("doc start and doc end vertical extremes are no-ops", () => {
@@ -793,33 +736,6 @@ describe("resolveDocVerticalArrowMove", () => {
       const secondPill = wire.indexOf(`@${agentA}`, firstPill + 1);
       const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
       assertVertical(doc, firstPill, 1, firstBlank, secondPill);
-    });
-  });
-
-  describe("horizontal — matrix multiline suffix doc", () => {
-    const suffixWire = `row @${agentA} mid @${agentB} tail\n\n\nlower @${agentA} `;
-    const rowTail = suffixWire.indexOf("tail") + 2;
-    const suffixBlank = suffixWire.indexOf("\n\n") + 1;
-    const lowerMention = suffixWire.lastIndexOf("@");
-
-    it("row tail steps right and left along substantive text", () => {
-      const doc = wireToDoc(suffixWire);
-      assertHorizontal(doc, suffixWire, rowTail, "right", rowTail + 1);
-      assertHorizontal(doc, suffixWire, rowTail + 1, "left", rowTail);
-    });
-
-    it("suffix blank interior steps horizontally along the blank wire line", () => {
-      const doc = wireToDoc(suffixWire);
-      const secondBlank = suffixBlank + 1;
-      assertHorizontal(doc, suffixWire, suffixBlank, "right", secondBlank);
-      assertHorizontal(doc, suffixWire, secondBlank, "left", suffixBlank);
-    });
-
-    it("lower mention steps right to end and left to pill start", () => {
-      const doc = wireToDoc(suffixWire);
-      const mentionEnd = lowerMention + `@${agentA}`.length;
-      assertHorizontal(doc, suffixWire, lowerMention, "right", mentionEnd);
-      assertHorizontal(doc, suffixWire, mentionEnd, "left", lowerMention);
     });
   });
 });

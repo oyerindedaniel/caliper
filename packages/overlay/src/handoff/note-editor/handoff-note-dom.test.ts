@@ -19,6 +19,10 @@ import {
   isContentTextNodeDomTailBeforeBreak,
   resolveDomPointAtDocPos,
   resolvePaintDocPos,
+  resolvePaintContext,
+  resolvePaintContextAtWire,
+  resolvePaintHorizontalArrowMove,
+  docPosAtPaintWire,
   describeCaretContext,
 } from "./handoff-note-dom-points.js";
 import {
@@ -676,11 +680,16 @@ describe("handoff-note-dom", () => {
 
       renderHandoffNoteDoc(root, chipped.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
-      const point = resolveDomPointAtDocPos(root, chipped.doc, chipped.selection.focus);
+      const focus = chipped.selection.focus;
+      const paint = resolvePaintContext(chipped.doc, focus);
+      // Blank-band abut: paint stays atomic end (not post-text) so DOM stays off blank anchor.
+      expect(chipped.doc.nodes[paint.focusPos.nodeIndex]?.type).not.toBe("text");
+      expect(paint.paintPos).toEqual(focus);
+      const point = resolveDomPointAtDocPos(root, chipped.doc, paint.paintPos);
       expect(point).not.toBeNull();
       expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
       const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
-      expect(roundTrip).toEqual(chipped.selection.focus);
+      expect(roundTrip).toEqual(focus);
       expect(
         isEmbeddedBlankBandDeleteProbeWire(
           chipped.doc,
@@ -688,6 +697,28 @@ describe("handoff-note-dom", () => {
           roundTrip
         )
       ).toBe(false);
+    });
+
+    it("atomic end without blank-band abut paints post-atomic text at shared wire", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      try {
+        const mentionNodes = fx.doc.nodes
+          .map((node, i) => (node.type === "mention" ? i : -1))
+          .filter((i) => i >= 0);
+        const atomicEnd = {
+          nodeIndex: mentionNodes[1]!,
+          nodeOffset: 1 + fx.agent.length,
+        };
+        const paint = resolvePaintContext(fx.doc, atomicEnd, { root: fx.root });
+        expect(fx.doc.nodes[paint.focusPos.nodeIndex]?.type).not.toBe("text");
+        expect(fx.doc.nodes[paint.paintPos.nodeIndex]?.type).toBe("text");
+        expect(docPosToWireOffset(fx.doc, paint.paintPos)).toBe(
+          docPosToWireOffset(fx.doc, atomicEnd)
+        );
+        expect(paint.paintPos).toEqual({ nodeIndex: atomicEnd.nodeIndex + 1, nodeOffset: 0 });
+      } finally {
+        fx.root.remove();
+      }
     });
 
     it("postfix chip whitespace tail paints after spacer not mention-edge alias", () => {
@@ -834,6 +865,12 @@ describe("handoff-note-dom", () => {
       const mentionStart = { nodeIndex: spacerIndex + 1, nodeOffset: 0 };
       expect(resolvePaintDocPos(doc, mentionStart, { root })).toEqual(mentionStart);
       expect(describeCaretContext(doc, mentionStart, { root }).kind).toBe("mention-boundary");
+      const paintCtx = resolvePaintContext(doc, mentionStart, { root });
+      expect(paintCtx).toEqual({
+        focusPos: mentionStart,
+        paintPos: mentionStart,
+        caretKind: "mention-boundary",
+      });
     });
 
     it("cross-row sandwich spacer aliases mention-start wire to text tail for paint", () => {
@@ -861,6 +898,12 @@ describe("handoff-note-dom", () => {
       const mentionStart = { nodeIndex: fx.postfixSpacerNode + 1, nodeOffset: 0 };
       expect(resolvePaintDocPos(fx.doc, mentionStart, { root: fx.root })).toEqual(tailPos);
       expect(describeCaretContext(fx.doc, tailPos, { root: fx.root }).kind).toBe("text");
+      expect(resolvePaintContext(fx.doc, mentionStart, { root: fx.root })).toEqual({
+        focusPos: mentionStart,
+        paintPos: tailPos,
+        caretKind: "text",
+      });
+      expect(describeCaretContext(fx.doc, mentionStart, { root: fx.root }).kind).toBe("text");
       fx.root.remove();
     });
 
@@ -917,6 +960,63 @@ describe("handoff-note-dom", () => {
       expect(
         docPosToWireOffset(doc, domPointToDocPos(root, doc, paintCont.node, paintCont.offset))
       ).toBe(continuationWire);
+    });
+
+    it("docPosAtPaintWire prefers continuation at alias wire", () => {
+      const doc = sandwichDoc();
+      const { continuationWire } = sandwichAliasAndContinuationWires(doc);
+      const spacerCont = { nodeIndex: 2, nodeOffset: 1 };
+      expect(docPosAtPaintWire(doc, continuationWire)).toEqual(spacerCont);
+      expect(resolvePaintContextAtWire(doc, continuationWire)).toEqual({
+        focusPos: spacerCont,
+        paintPos: spacerCont,
+        caretKind: "text",
+      });
+    });
+
+    it("resolvePaintHorizontalArrowMove steps sandwich spacer then crosses next pill as one token", () => {
+      const doc = sandwichDoc();
+      const mentionEndWire = `pre @${SANDWICH_AGENT}`.length - 1;
+      let pos = wireOffsetToDocPos(doc, mentionEndWire);
+      // Force mention-end focus (paint may alias to spacer at same wire).
+      pos = { nodeIndex: 1, nodeOffset: 1 + SANDWICH_AGENT.length };
+
+      const step1 = resolvePaintHorizontalArrowMove(doc, pos, "right");
+      expect(step1).toEqual({ pos: { nodeIndex: 2, nodeOffset: 0 }, handled: true });
+      pos = step1.pos;
+      const step2 = resolvePaintHorizontalArrowMove(doc, pos, "right");
+      expect(step2).toEqual({ pos: { nodeIndex: 2, nodeOffset: 1 }, handled: true });
+      pos = step2.pos;
+      // Pill is one token: spacer continuation Right crosses the following mention (no start micro-stop).
+      const step3 = resolvePaintHorizontalArrowMove(doc, pos, "right");
+      expect(step3).toEqual({ pos: { nodeIndex: 4, nodeOffset: 0 }, handled: true });
+      expect(doc.nodes[3]?.type).toBe("mention");
+      expect(doc.nodes[4]?.type).toBe("text");
+    });
+
+    it("editor horizontal from spacer continuation crosses next pill; Left lands mention start", () => {
+      const host = mountSandwichEditor();
+      try {
+        const wire = sandwichWire();
+        const doc = sandwichDoc();
+        const { continuationWire } = sandwichAliasAndContinuationWires(doc);
+        const spacerCont = { nodeIndex: 2, nodeOffset: 1 };
+        host.editor.setDocFromWire(wire, continuationWire, { resetHistory: true });
+        expect(host.editor.getSelectionState().focus).toEqual(spacerCont);
+        expect(
+          describeCaretContext(host.editor.getDoc(), spacerCont, { root: host.root }).kind
+        ).toBe("text");
+        expect(pressArrow(host.editor, "ArrowRight")).toBe(true);
+        expect(host.editor.getSelectionState().focus).toEqual({ nodeIndex: 4, nodeOffset: 0 });
+        expect(pressArrow(host.editor, "ArrowLeft")).toBe(true);
+        // After crossing the pill, Left lands the pill start boundary (still landable).
+        expect(host.editor.getSelectionState().focus).toEqual({ nodeIndex: 3, nodeOffset: 0 });
+        expect(pressArrow(host.editor, "ArrowLeft")).toBe(true);
+        expect(host.editor.getSelectionState().focus).toEqual(spacerCont);
+      } finally {
+        invalidateHandoffNoteLayoutCache();
+        host.root.remove();
+      }
     });
 
     it("integration: click, type, backspace, and arrows through sandwich spacer", () => {
