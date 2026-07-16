@@ -81,7 +81,12 @@ export type ActiveHandoffDocMentionQuery = {
   query: string;
 };
 
-function isQueryInsideCommittedMention(note: string, queryStart: number, cursor: number): boolean {
+/**
+ * A committed pill's `@` is never an active typed `@query` start — including when the
+ * caret sits on mention-start (cursor < end). Requiring `cursor >= end` missed that case
+ * and reopened the popover after deleting a pre-pill spacer onto the atom.
+ */
+function isQueryInsideCommittedMention(note: string, queryStart: number): boolean {
   let offset = 0;
   for (const node of parseHandoffNoteWire(note)) {
     if (node.type === "text") {
@@ -91,7 +96,7 @@ function isQueryInsideCommittedMention(note: string, queryStart: number, cursor:
 
     const start = offset;
     const end = offset + 1 + node.agentId.length;
-    if (queryStart === start && cursor >= end) {
+    if (queryStart === start) {
       return true;
     }
     offset = end;
@@ -101,12 +106,11 @@ function isQueryInsideCommittedMention(note: string, queryStart: number, cursor:
 
 function pickBestMentionQueryCandidate(
   note: string,
-  cursor: number,
   candidates: ActiveHandoffMentionQuery[]
 ): ActiveHandoffMentionQuery | null {
   let best: ActiveHandoffMentionQuery | null = null;
   for (const candidate of candidates) {
-    if (isQueryInsideCommittedMention(note, candidate.queryStart, cursor)) {
+    if (isQueryInsideCommittedMention(note, candidate.queryStart)) {
       continue;
     }
     if (!best || candidate.queryStart > best.queryStart) {
@@ -117,14 +121,29 @@ function pickBestMentionQueryCandidate(
 }
 
 /**
+ * Exclusive wire end for `@query` parse. Insert snap / Rule 4 content-row-end rest on the
+ * last character wire while the insertion point is after that character. `slice(0, caretWire)`
+ * would drop that character and miss `@` / filter text when a `\n` follows.
+ */
+export function exclusiveWireEndForContentCaret(note: string, caretWire: number): number {
+  const clamped = Math.max(0, Math.min(caretWire, note.length));
+  if (clamped < note.length && note[clamped] !== "\n") {
+    return clamped + 1;
+  }
+  return clamped;
+}
+
+/**
  * Popover session parse: same-line `@query` or typed continuation after newlines.
  * Blank lines alone after `@` are not an active session — Shift+Enter closes the popover.
+ * Caret wire uses content-row-end meaning (see exclusiveWireEndForContentCaret).
  */
 function resolveActiveHandoffMentionQuery(
   note: string,
   cursor: number
 ): ActiveHandoffMentionQuery | null {
-  const beforeCursor = note.slice(0, cursor);
+  const parseEnd = exclusiveWireEndForContentCaret(note, cursor);
+  const beforeCursor = note.slice(0, parseEnd);
   const candidates: ActiveHandoffMentionQuery[] = [];
 
   const sameLine = beforeCursor.match(/@([^\s@]*)$/);
@@ -137,7 +156,7 @@ function resolveActiveHandoffMentionQuery(
     candidates.push({ queryStart: continued.index, query: continued[2] ?? "" });
   }
 
-  return pickBestMentionQueryCandidate(note, cursor, candidates);
+  return pickBestMentionQueryCandidate(note, candidates);
 }
 
 /** Insert redirect: fold filter chars across newlines onto the `@` line (blank or existing query). */
@@ -145,13 +164,14 @@ export function resolveMentionQueryMultilineInsert(
   note: string,
   cursor: number
 ): ActiveHandoffMentionQuery | null {
-  const beforeCursor = note.slice(0, cursor);
+  const parseEnd = exclusiveWireEndForContentCaret(note, cursor);
+  const beforeCursor = note.slice(0, parseEnd);
   const withNewlines = beforeCursor.match(/@([^\s@]*)(\n+)([^\s@]*)$/);
   if (withNewlines?.index === undefined) {
     return null;
   }
 
-  return pickBestMentionQueryCandidate(note, cursor, [
+  return pickBestMentionQueryCandidate(note, [
     {
       queryStart: withNewlines.index,
       query: (withNewlines[1] ?? "") + (withNewlines[3] ?? ""),
@@ -171,7 +191,8 @@ export function resolveActiveHandoffMentionQueryDoc(
   if (caretContext.kind === "mention-interior") {
     return null;
   }
-  if (caretContext.kind === "mention-boundary" && caretContext.edge === "end") {
+  // Committed atom boundaries are never typed `@query` sessions (start or end).
+  if (caretContext.kind === "mention-boundary") {
     return null;
   }
   const active = resolveActiveHandoffMentionQuery(wire, focusWire);

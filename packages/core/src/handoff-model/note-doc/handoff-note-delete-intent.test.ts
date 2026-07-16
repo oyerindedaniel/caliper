@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDocDelete } from "./handoff-note-doc-edits.js";
+import { applyDocDelete, applyDocInsertText } from "./handoff-note-doc-edits.js";
 import {
   collapsedSelection,
   docPosToWireOffset,
@@ -10,6 +10,7 @@ import {
   handoffNoteCaretOnAtomicNodeEnd,
   handoffNoteCaretOnAtomicNodeStart,
   handoffNoteIsAtomicEndProbeAlias,
+  resolveHandoffNoteDeleteIntent,
 } from "./handoff-note-delete-intent.js";
 import {
   isEmbeddedBlankBandDeleteProbeWire,
@@ -82,14 +83,19 @@ describe("handoff note delete intent — contract authority before handler chain
       return `note @${agent}${postfix}\n\n\n`;
     }
 
-    function chipGluedPostfixAtProbe(wire: string) {
+    function chipGluedPostfixAtContentCaret(wire: string) {
       const doc = wireToDoc(wire);
-      const [probe] = listEmbeddedBlankBandProbeWires(doc);
-      return applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, probe!)), "backspace")!;
+      const postfixWire = wire.search(/[A-Za-z]\n/);
+      expect(postfixWire).toBeGreaterThanOrEqual(0);
+      return applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, postfixWire)),
+        "backspace"
+      )!;
     }
 
     it("substantive chip lands mention-node-end alias off delete-probe infrastructure", () => {
-      const chipped = chipGluedPostfixAtProbe(gluedPostfixUpperBandWire());
+      const chipped = chipGluedPostfixAtContentCaret(gluedPostfixUpperBandWire());
       expect(handoffNoteCaretOnAtomicNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
       expect(
         isEmbeddedBlankBandDeleteProbeWire(
@@ -101,7 +107,7 @@ describe("handoff note delete intent — contract authority before handler chain
     });
 
     it("delete after substantive chip collapses blank preserving mention-end alias", () => {
-      const chipped = chipGluedPostfixAtProbe(gluedPostfixUpperBandWire());
+      const chipped = chipGluedPostfixAtContentCaret(gluedPostfixUpperBandWire());
       const deleted = applyDocDelete(chipped.doc, chipped.selection, "delete")!;
       expect(docToWire(deleted.doc)).toBe(`note @${agent}\n\n`);
       expect(handoffNoteCaretOnAtomicNodeEnd(deleted.doc, deleted.selection.focus)).toBe(true);
@@ -147,6 +153,115 @@ describe("handoff note delete intent — contract authority before handler chain
 
       const removed = applyDocDelete(doc, collapsedSelection(focus), "delete")!;
       expect(docToWire(removed.doc)).not.toContain(agent);
+    });
+  });
+
+  /**
+   * Sole/last content char before `\n` is wire-ambiguous with content-row-end.
+   * Delete landing owns `focusAffinity: before` (deletion point); insert must not bump.
+   */
+  describe("deletion-point affinity — sole residue before \\n", () => {
+    function expectDeleteThenInsert(args: {
+      wire: string;
+      focusWire: number;
+      direction: "delete" | "backspace";
+      wireAfter: string;
+      typed: string;
+      affinity?: "before";
+    }) {
+      const doc = wireToDoc(args.wire);
+      const removed = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, args.focusWire)),
+        args.direction
+      )!;
+      expect(docToWire(removed.doc)).toBe(args.wireAfter);
+      if (args.affinity) {
+        expect(removed.selection.focusAffinity).toBe(args.affinity);
+      }
+      expect(docToWire(applyDocInsertText(removed.doc, removed.selection, "x").doc)).toBe(
+        args.typed
+      );
+    }
+
+    it("delete row-start mention mid-blank inserts before leftover commit space", () => {
+      const wire = `whe\n\n@${agent} \nmean`;
+      expectDeleteThenInsert({
+        wire,
+        focusWire: wire.indexOf("@"),
+        direction: "delete",
+        wireAfter: `whe\n\n \nmean`,
+        typed: `whe\n\nx \nmean`,
+        affinity: "before",
+      });
+    });
+
+    it("backspace mention-end mid-blank inserts before leftover commit space", () => {
+      const wire = `whe\n\n@${agent} \nmean`;
+      expectDeleteThenInsert({
+        wire,
+        focusWire: wire.indexOf("@") + `@${agent}`.length,
+        direction: "backspace",
+        wireAfter: `whe\n\n \nmean`,
+        typed: `whe\n\nx \nmean`,
+        affinity: "before",
+      });
+    });
+
+    it("delete mention before trailing blank band inserts before leftover space", () => {
+      const wire = `header\n\n@${agent} \n\n`;
+      expectDeleteThenInsert({
+        wire,
+        focusWire: wire.indexOf("@"),
+        direction: "delete",
+        wireAfter: `header\n\n \n\n`,
+        typed: `header\n\nx \n\n`,
+        affinity: "before",
+      });
+    });
+
+    it("backspace ordinary text leaving sole space inserts before that space", () => {
+      expectDeleteThenInsert({
+        wire: `a \nmean`,
+        focusWire: 1,
+        direction: "backspace",
+        wireAfter: ` \nmean`,
+        typed: `x \nmean`,
+        affinity: "before",
+      });
+    });
+
+    it("backspace leaving sole char before break inserts before that char", () => {
+      expectDeleteThenInsert({
+        wire: `ab\nmean`,
+        focusWire: 1,
+        direction: "backspace",
+        wireAfter: `b\nmean`,
+        typed: `xb\nmean`,
+        affinity: "before",
+      });
+    });
+
+    it("delete doc-start mention EOF space inserts before leftover space", () => {
+      expectDeleteThenInsert({
+        wire: `@${agent} `,
+        focusWire: 0,
+        direction: "delete",
+        wireAfter: ` `,
+        typed: `x `,
+      });
+    });
+
+    it("prefixed mention delete inserts at leftover commit-space deletion point", () => {
+      const wire = `hi @${agent} \nmean`;
+      expectDeleteThenInsert({
+        wire,
+        focusWire: wire.indexOf("@"),
+        direction: "delete",
+        wireAfter: `hi  \nmean`,
+        typed: `hi x \nmean`,
+        affinity: "before",
+      });
     });
   });
 
@@ -361,6 +476,24 @@ describe("handoff note delete intent — contract authority before handler chain
       )!;
       expect(doc.nodes[cleared.selection.focus.nodeIndex]?.type).toBe("text");
       expect(docToWire(cleared.doc)).toMatch(/\n\n@caliper-abc123 lower/);
+    });
+
+    it("delete at sandwiched line-start \\n uses forward splice not line-start collapse", () => {
+      const wire = `upper @${agent} xx\n\n\nlower @${agent} `;
+      const doc = wireToDoc(wire);
+      const lineStartBeforeLower = wire.indexOf("lower") - 1;
+      const intent = resolveHandoffNoteDeleteIntent(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, lineStartBeforeLower)),
+        "delete"
+      );
+      expect(intent?.kind).toBe("result");
+      if (intent?.kind === "result") {
+        expect(docPosToWireOffset(intent.result.doc, intent.result.selection.focus)).toBe(
+          docToWire(intent.result.doc).indexOf("lower")
+        );
+        expect(docPosToWireOffset(intent.result.doc, intent.result.selection.focus)).not.toBe(0);
+      }
     });
   });
 });

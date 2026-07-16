@@ -1,7 +1,9 @@
 import {
   docToWire,
   formatHandoffAgentIdPill,
+  isAtomicNode,
   listEmbeddedBlankBandProbeWires,
+  nodeTokenLength,
   type HandoffNoteDoc,
   type HandoffNoteNode,
 } from "@caliper/core";
@@ -14,6 +16,8 @@ export const HANDOFF_MENTION_NODE_INDEX_ATTR = "data-handoff-mention-node-index"
 export const HANDOFF_WIRE_BREAK_ATTR = "data-handoff-wire-break";
 export const HANDOFF_LINE_PAD_ATTR = "data-handoff-line-pad";
 export const HANDOFF_BLANK_ANCHOR_ATTR = "data-handoff-blank-anchor";
+/** ZWSP caret dock after a wire-break when the next content is a row-start atom. Not wire. */
+export const HANDOFF_LINE_START_ANCHOR_ATTR = "data-handoff-line-start-anchor";
 export const HANDOFF_BLANK_ANCHOR_CHAR = "\u200b";
 
 export type HandoffNotePresentationOptions = {
@@ -53,6 +57,12 @@ export function isHandoffBlankAnchorElement(
   return node instanceof HTMLSpanElement && node.hasAttribute(HANDOFF_BLANK_ANCHOR_ATTR);
 }
 
+export function isHandoffLineStartAnchorElement(
+  node: Node | null | undefined
+): node is HTMLSpanElement {
+  return node instanceof HTMLSpanElement && node.hasAttribute(HANDOFF_LINE_START_ANCHOR_ATTR);
+}
+
 /** Wire offset at the `\n` between split parts `breakPartIndex` and `breakPartIndex + 1`. */
 export function wireOffsetAtTextBreak(
   text: string,
@@ -71,6 +81,8 @@ export function wireOffsetAtTextBreak(
 export type WireTextDomOptions = {
   wireBase?: number;
   blankProbeWires?: ReadonlySet<number>;
+  /** When set, trailing empty segment after the last `\n` gets a line-start caret dock before the following atom. */
+  lineStartBeforeAtomic?: boolean;
 };
 
 export function readMentionAgentId(element: HTMLSpanElement): string {
@@ -107,7 +119,7 @@ export function countWireTextDomChildren(text: string, options?: WireTextDomOpti
   return count;
 }
 
-export type WireTextDomSlotKind = "text" | "break" | "blank-anchor";
+export type WireTextDomSlotKind = "text" | "break" | "blank-anchor" | "line-start-anchor";
 
 export type WireTextDomSlot = {
   kind: WireTextDomSlotKind;
@@ -147,6 +159,14 @@ export function* iterWireTextDomSlots(
       if (probeWires?.has(breakWire)) {
         yield { kind: "blank-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
         domIdx++;
+      } else if (
+        options?.lineStartBeforeAtomic &&
+        partIndex === parts.length - 2 &&
+        parts[parts.length - 1] === ""
+      ) {
+        // Content row starts with an atom: BR has no selection geom — ZWSP dock owns caret paint.
+        yield { kind: "line-start-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
+        domIdx++;
       }
     }
   }
@@ -157,20 +177,26 @@ export function renderedDomChildCount(doc: HandoffNoteDoc): number {
   const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
   let count = 0;
   let wireCursor = 0;
-  for (const node of doc.nodes) {
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    if (isAtomicNode(node)) {
+      count++;
+      wireCursor += nodeTokenLength(node);
+      continue;
+    }
     if (node.type === "text") {
       if (!node.text) {
         continue;
       }
+      const next = doc.nodes[nodeIndex + 1];
       count += countWireTextDomChildren(node.text, {
         wireBase: wireCursor,
         blankProbeWires: probeWires,
+        lineStartBeforeAtomic: isAtomicNode(next),
       });
       wireCursor += node.text.length;
       continue;
     }
-    count++;
-    wireCursor += mentionWireLength(node.agentId);
   }
   if (docToWire(doc).endsWith("\n")) {
     count++;
@@ -212,6 +238,13 @@ function createBlankAnchorElement(): HTMLSpanElement {
   return span;
 }
 
+function createLineStartAnchorElement(): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.setAttribute(HANDOFF_LINE_START_ANCHOR_ATTR, "true");
+  span.appendChild(document.createTextNode(HANDOFF_BLANK_ANCHOR_CHAR));
+  return span;
+}
+
 /** Map wire `\n` inside a text node to `<br>` siblings; blank probes get a caret anchor after the break. */
 export function appendWireTextToDom(
   parent: HTMLElement,
@@ -231,6 +264,10 @@ export function appendWireTextToDom(
     }
     if (slot.kind === "break") {
       parent.appendChild(createWireBreakElement());
+      continue;
+    }
+    if (slot.kind === "line-start-anchor") {
+      parent.appendChild(createLineStartAnchorElement());
       continue;
     }
     parent.appendChild(createBlankAnchorElement());
@@ -263,9 +300,9 @@ export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
     if (!isRenderedDocNode(node)) {
       continue;
     }
-    if (node.type === "mention") {
+    if (isAtomicNode(node)) {
       map.push(nodeIndex);
-      wireCursor += mentionWireLength(node.agentId);
+      wireCursor += nodeTokenLength(node);
       continue;
     }
     const text = node.text;
@@ -276,9 +313,11 @@ export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
       wireCursor += text.length;
       continue;
     }
+    const next = doc.nodes[nodeIndex + 1];
     for (const _slot of iterWireTextDomSlots(text, 0, {
       wireBase: wireCursor,
       blankProbeWires: probeWires,
+      lineStartBeforeAtomic: isAtomicNode(next),
     })) {
       map.push(nodeIndex);
     }
@@ -364,9 +403,11 @@ function fullRebuildDocDom(
     const node = doc.nodes[nodeIndex]!;
     if (node.type === "text") {
       if (node.text) {
+        const next = doc.nodes[nodeIndex + 1];
         appendWireTextToDom(root, node.text, {
           wireBase: wireCursor,
           blankProbeWires: probeWires,
+          lineStartBeforeAtomic: isAtomicNode(next),
         });
         wireCursor += node.text.length;
       }
@@ -542,6 +583,9 @@ export function parseHandoffNoteDom(root: HTMLElement): string {
     if (isHandoffBlankAnchorElement(child)) {
       continue;
     }
+    if (isHandoffLineStartAnchorElement(child)) {
+      continue;
+    }
     if (isHandoffMentionElement(child)) {
       const agentId = readMentionAgentId(child);
       if (agentId) {
@@ -586,6 +630,9 @@ export function parseHandoffNoteDomToDoc(root: HTMLElement): HandoffNoteDoc {
       continue;
     }
     if (isHandoffBlankAnchorElement(child)) {
+      continue;
+    }
+    if (isHandoffLineStartAnchorElement(child)) {
       continue;
     }
     if (isHandoffMentionElement(child)) {

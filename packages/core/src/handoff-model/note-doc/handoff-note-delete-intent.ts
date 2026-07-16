@@ -8,6 +8,7 @@ import {
 } from "./handoff-note-doc.js";
 import {
   collapsedSelection,
+  collapsedSelectionWithIntent,
   docPosToWireOffset,
   isAtomicNode,
   nodeTokenLength,
@@ -133,7 +134,8 @@ function spliceSelection(
   const next = spliceDocWireRange(doc, start, end, insertion);
   const cursorWire = start + insertion.length;
   const nextFocus = normalizeDocPos(next, wireOffsetToDocPos(next, cursorWire));
-  return { doc: next, selection: collapsedSelection(nextFocus) };
+  // Standard in-row delete: caret stays where the unit was removed (not content-row-end).
+  return { doc: next, selection: collapsedSelectionWithIntent(next, nextFocus, "deletion-point") };
 }
 
 function mentionsMergedAt(doc: HandoffNoteDoc, leftMentionIdx: number): boolean {
@@ -399,20 +401,22 @@ function blankBandMoveFromEmptyRowEnd(
     handoffNoteCaretOnAtomicNodeEnd(doc, focus) &&
     embeddedBlankBandSubstantiveContentAbutsProbe(doc, focusWire);
   if (!preserveAtomicEndProbeAlias) {
-    return blankBandMoveToResult(doc, move);
+    return blankBandMoveToResult(move);
   }
-  return blankBandMoveToResult(doc, { ...move, probeInfrastructureLanding: false });
+  return blankBandMoveToResult({ ...move, probeInfrastructureLanding: false });
 }
 
-function blankBandMoveToResult(
-  doc: HandoffNoteDoc,
-  move: EmbeddedBlankBandDeleteMove
-): HandoffNoteDeleteIntentResult {
+function blankBandMoveToResult(move: EmbeddedBlankBandDeleteMove): HandoffNoteDeleteIntentResult {
+  const focus = normalizeDocPos(move.doc, blankBandSelectionFocus(move.doc, move.caretWire, move));
+  // Branch taxonomy: only row-chip / step-to-content-row-end need
+  // content-row-end affinity; every other blank-band branch lands deletion-point /
+  // visual-start (affinity omitted when the caret is not on a char-before-`\n`).
+  const intent = blankBandDeleteBranchUsesContentRowEndLanding(move.branch)
+    ? "content-row-end"
+    : "deletion-point";
   return {
     doc: move.doc,
-    selection: collapsedSelection(
-      normalizeDocPos(move.doc, blankBandSelectionFocus(move.doc, move.caretWire, move))
-    ),
+    selection: collapsedSelectionWithIntent(move.doc, focus, intent),
   };
 }
 
@@ -438,7 +442,11 @@ function mentionRemoveIntentResult(
   }
   return {
     doc,
-    selection: collapsedSelection(normalizeDocPos(doc, wireOffsetToDocPos(doc, caretWire))),
+    selection: collapsedSelectionWithIntent(
+      doc,
+      normalizeDocPos(doc, wireOffsetToDocPos(doc, caretWire)),
+      "deletion-point"
+    ),
     mentionRemoved: true,
   };
 }
@@ -464,7 +472,7 @@ function resolveDeleteForwardFromMentionAbuttingProbe(
   if (move) {
     return {
       kind: "result",
-      result: blankBandMoveToResult(doc, { ...move, probeInfrastructureLanding: false }),
+      result: blankBandMoveToResult({ ...move, probeInfrastructureLanding: false }),
     };
   }
   const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, probeWire, focus);
@@ -619,14 +627,18 @@ export function resolveHandoffNoteDeleteIntent(
     }
   }
 
-  const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(doc, focusWire);
-  if (lineStartCollapse && (direction === "backspace" || direction === "delete")) {
-    return { kind: "result", result: blankBandMoveToResult(doc, lineStartCollapse) };
+  // line-start collapse is Backspace-only (leading blanks). Delete on the same
+  // line-start `\n` uses the generic forward splice below — lands at lower visual start.
+  if (direction === "backspace") {
+    const lineStartCollapse = resolveEmbeddedBlankBandLineStartCollapse(doc, focusWire);
+    if (lineStartCollapse) {
+      return { kind: "result", result: blankBandMoveToResult(lineStartCollapse) };
+    }
   }
 
   const lineBreakJoin = resolveSubstantiveLineBreakJoin(doc, focusWire, direction);
   if (lineBreakJoin) {
-    return { kind: "result", result: blankBandMoveToResult(doc, lineBreakJoin) };
+    return { kind: "result", result: blankBandMoveToResult(lineBreakJoin) };
   }
 
   if (isInterMentionGap(doc, focus)) {
@@ -694,7 +706,11 @@ export function resolveHandoffNoteDeleteIntent(
         kind: "result",
         result: {
           doc: spliced.doc,
-          selection: collapsedSelection(normalizeDocPos(spliced.doc, textAlias)),
+          selection: collapsedSelectionWithIntent(
+            spliced.doc,
+            normalizeDocPos(spliced.doc, textAlias),
+            "deletion-point"
+          ),
         },
       };
     }

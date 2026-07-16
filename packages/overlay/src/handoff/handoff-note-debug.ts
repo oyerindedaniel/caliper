@@ -218,6 +218,8 @@ export function logEditStateTrace(phase: string, data: Record<string, unknown> =
  * `caret>>ingress>>` pointer click forensics (`ingress>>firstTouch`, `click.ingress`, `repair.click`, `repair.strand`),
  * `caret>>ver>>` layout (arrow only), `caret>>hor>>` horizontal Left/Right (keydown/bail/step/apply/writeFinal/geom),
  * `caret>>click.ingress` + firstTouch for click-vs-arrow spacer geometry (`geom` field).
+ * Empty-geom BR paint: `paintPoint` on `setDoc>>` / `ingress>>firstTouch` (elementRect vs
+ * probeRangeRect vs rootOffsetProbe — which selection target has non-empty client rects).
  */
 export function flattenHandoffNoteLog(
   event: string,
@@ -293,6 +295,9 @@ export function handoffNoteDomSnapshot(
     }
     if (node instanceof HTMLSpanElement && node.hasAttribute("data-handoff-blank-anchor")) {
       return { kind: "blankAnchor" };
+    }
+    if (node instanceof HTMLSpanElement && node.hasAttribute("data-handoff-line-start-anchor")) {
+      return { kind: "lineStartAnchor" };
     }
     if (node instanceof HTMLElement) {
       return { kind: "element", tag: node.tagName, text: node.textContent ?? "" };
@@ -380,6 +385,116 @@ export function domPointInMentionPill(root: HTMLElement, node: Node): boolean {
   return root.contains(node) && node.parentElement?.closest?.("[data-handoff-mention]") !== null;
 }
 
+function rectSnapshot(
+  rect: DOMRect | DOMRectReadOnly | null | undefined
+): Record<string, number> | null {
+  if (!rect) {
+    return null;
+  }
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+/**
+ * Paint-point forensics for empty caret geom (BR vs text vs root offset).
+ * Filter: `paintPoint` on `caret>>setDoc>>` / `caret>>ingress>>firstTouch`.
+ */
+export function handoffNotePaintPointSnapshot(
+  root: HTMLElement | undefined,
+  point: { node: Node; offset: number } | null | undefined
+): Record<string, unknown> {
+  if (!root || !point) {
+    return { empty: true };
+  }
+  const { node, offset } = point;
+  const el = node instanceof Element ? node : null;
+  const text = node.nodeType === Node.TEXT_NODE ? (node.textContent ?? "") : null;
+  const prev = node.previousSibling;
+  const next = node.nextSibling;
+  const siblingKind = (n: Node | null): string | null => {
+    if (!n) {
+      return null;
+    }
+    if (n.nodeType === Node.TEXT_NODE) {
+      return `text:${JSON.stringify((n.textContent ?? "").slice(0, 24))}`;
+    }
+    if (n instanceof HTMLBRElement) {
+      if (n.hasAttribute("data-handoff-wire-break")) {
+        return "wireBreak";
+      }
+      if (n.hasAttribute("data-handoff-line-pad")) {
+        return "linePad";
+      }
+      return "br";
+    }
+    if (n instanceof HTMLElement && n.hasAttribute("data-handoff-mention")) {
+      return `mention:${n.getAttribute("data-agent-id") ?? ""}`;
+    }
+    if (n instanceof HTMLElement) {
+      return `el:${n.tagName}`;
+    }
+    return `node:${n.nodeType}`;
+  };
+  let elementRect: Record<string, number> | null = null;
+  let elementClientRectCount = 0;
+  if (el && typeof el.getBoundingClientRect === "function") {
+    elementRect = rectSnapshot(el.getBoundingClientRect());
+    elementClientRectCount =
+      typeof el.getClientRects === "function" ? el.getClientRects().length : 0;
+  }
+  // Probe: collapsed range at this exact paint point (vs live selection geom).
+  let probeRangeRect: Record<string, number> | null = null;
+  let probeClientRectCount = 0;
+  try {
+    const range = root.ownerDocument.createRange();
+    range.setStart(node, offset);
+    range.collapse(true);
+    probeRangeRect = rectSnapshot(range.getBoundingClientRect());
+    probeClientRectCount = range.getClientRects().length;
+  } catch {
+    probeRangeRect = null;
+  }
+  // Alternate probe: parent root offset at this child's index (mention-start exterior).
+  let rootOffsetProbe: Record<string, unknown> | null = null;
+  if (node.parentNode === root && el) {
+    const childIndex = [...root.childNodes].indexOf(node as ChildNode);
+    if (childIndex >= 0) {
+      try {
+        const alt = root.ownerDocument.createRange();
+        alt.setStart(root, childIndex);
+        alt.collapse(true);
+        rootOffsetProbe = {
+          childIndex,
+          rect: rectSnapshot(alt.getBoundingClientRect()),
+          clientRectCount: alt.getClientRects().length,
+        };
+      } catch {
+        rootOffsetProbe = { childIndex, error: true };
+      }
+    }
+  }
+  return {
+    nodeName: node.nodeName,
+    nodeType: node.nodeType,
+    offset,
+    isWireBreak: el instanceof HTMLBRElement && el.hasAttribute("data-handoff-wire-break"),
+    isLinePad: el instanceof HTMLBRElement && el.hasAttribute("data-handoff-line-pad"),
+    textLen: text?.length ?? null,
+    textTail: text != null ? JSON.stringify(text.slice(Math.max(0, text.length - 12))) : null,
+    prev: siblingKind(prev),
+    next: siblingKind(next),
+    elementRect,
+    elementClientRectCount,
+    probeRangeRect,
+    probeClientRectCount,
+    rootOffsetProbe,
+  };
+}
+
 /**
  * Log browser first-touch on `selectionchange` before reconcile/repair runs.
  * Filter console: `caret>>ingress>>firstTouch`
@@ -404,6 +519,13 @@ export function logSelectionChangeFirstTouch(
       : startNode instanceof Element
         ? startNode
         : null;
+  const paintPoint =
+    startNode != null && range != null
+      ? handoffNotePaintPointSnapshot(root, {
+          node: startNode,
+          offset: range.startOffset,
+        })
+      : { empty: true };
 
   logCaretBoundaryTrace("ingress>>firstTouch", {
     priorWire: options.priorWire,
@@ -416,6 +538,7 @@ export function logSelectionChangeFirstTouch(
     startOffset: range?.startOffset ?? null,
     parentTag: parent?.tagName ?? null,
     activeDoc: snapshotDocPos(doc, options.liveFocus),
+    paintPoint,
     geom: handoffNoteCaretGeomSnapshot(root),
   });
 }

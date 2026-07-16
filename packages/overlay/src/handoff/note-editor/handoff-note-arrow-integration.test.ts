@@ -368,14 +368,8 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getDoc().nodes[4]?.type).toBe("text");
     });
 
-    /**
-     * Contract: start Right → atomic end; paint of atomic end → post-text spacer.
-     * Bug: step returns mention-end focus while paint/DOM are already spacer text;
-     * writeSelection keepAuthority keeps mention → next Right is a same-wire flip (dead press).
-     * Authority under test: horizontal landing must adopt paint owner (not keepAuthority glue).
-     */
     it("RIGHT from mention start lands spacer text focus without keepAuthority dead press", () => {
-      const wire = `dhd @${SPACER_AGENT} d @${SPACER_AGENT} whet`;
+      const wire = `hea @${SPACER_AGENT} d @${SPACER_AGENT} tail`;
       const secondMentionStart = wire.lastIndexOf(`@${SPACER_AGENT}`);
       const spacerStartWire = secondMentionStart + `@${SPACER_AGENT}`.length;
       const doc = wireToDoc(wire);
@@ -410,7 +404,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
      * continuation when root promotes).
      */
     it("RIGHT from text-before crosses mention to spacer text without start micro-stop", () => {
-      const wire = `dhd @${SPACER_AGENT} d @${SPACER_AGENT} whet`;
+      const wire = `hea @${SPACER_AGENT} d @${SPACER_AGENT} tail`;
       const secondMentionStart = wire.lastIndexOf(`@${SPACER_AGENT}`);
       const spacerStartWire = secondMentionStart + `@${SPACER_AGENT}`.length;
 
@@ -1276,7 +1270,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(
         `header @${AGENT_COMPOSITE} \n\nx\ntail @${AGENT_COMPOSITE} `
       );
-      expect(host.editor.getCursor()).toBe(probes[1]! + 2);
+      expect(host.editor.getCursor()).toBe(probes[1]! + 1);
     });
 
     it("filled blank row round-trips vertical navigation after typing", () => {
@@ -1354,7 +1348,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(
         `header @${AGENT_COMPOSITE} \nx\n\ntail @${AGENT_COMPOSITE} `
       );
-      expect(host.editor.getCursor()).toBe(probes[0]! + 2);
+      expect(host.editor.getCursor()).toBe(probes[0]! + 1);
     });
 
     it("typing on lower blank after arrow down inserts on that row not the row above", () => {
@@ -1386,7 +1380,65 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(
         `header @${AGENT_COMPOSITE} \n\nx\ntail @${AGENT_COMPOSITE} `
       );
-      expect(host.editor.getCursor()).toBe(probes[1]! + 2);
+      expect(host.editor.getCursor()).toBe(probes[1]! + 1);
+    });
+
+    it("first char into mid blank does not paint wire-break", () => {
+      const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
+      host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+      stubHandoffNoteMentionLayoutCoords(
+        host.root,
+        new Map([
+          [1, { top: 150, left: 80 }],
+          [3, { top: 280, left: 0 }],
+        ])
+      );
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(probes[1]!);
+
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: "m",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      dispatchSelectionChange(host.root);
+
+      expect(host.editor.getWire()).toContain("\nm\n");
+      const selNode = host.root.ownerDocument.getSelection()?.anchorNode;
+      expect(selNode instanceof HTMLBRElement && isHandoffWireBreakElement(selNode)).toBe(false);
+    });
+
+    it("type mesh into mid blank must not scramble via repair live-behind", () => {
+      const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
+      host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+      stubHandoffNoteMentionLayoutCoords(
+        host.root,
+        new Map([
+          [1, { top: 150, left: 80 }],
+          [3, { top: 280, left: 0 }],
+        ])
+      );
+
+      expect(pressArrow(host.editor, "vertical", -1)).toBe(true);
+      expect(host.editor.getCursor()).toBe(probes[1]!);
+
+      for (const ch of ["m", "e", "s", "h"]) {
+        host.editor.handleBeforeInput(
+          new InputEvent("beforeinput", {
+            inputType: "insertText",
+            data: ch,
+            bubbles: true,
+            cancelable: true,
+          })
+        );
+        dispatchSelectionChange(host.root);
+      }
+
+      expect(host.editor.getWire()).toContain("\nmesh\n");
     });
   });
 
@@ -1760,8 +1812,8 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(
         host.editor,
         host.root,
-        probes[0]!,
-        "upper sandwiched blank backspace collapses one row"
+        host.editor.getWire().indexOf("\n") - 1,
+        "upper sandwiched blank backspace lands content row end above"
       );
     });
 
@@ -1849,8 +1901,17 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\n\nlower `);
-      expect(host.editor.getCursor()).toBe(probes[0]!);
+      const afterFirst = host.editor.getWire();
+      expectCaretParity(
+        host.editor,
+        host.root,
+        afterFirst.indexOf("\n") - 1,
+        "first collapse lands content row end (not remaining blank below)"
+      );
 
+      // Re-enter the remaining blank, then collapse it.
+      const remaining = listEmbeddedBlankBandProbeWires(wireToDoc(afterFirst))[0]!;
+      host.editor.setDocFromWire(afterFirst, remaining, { resetHistory: true });
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\nlower `);
       const resultWire = host.editor.getWire();
@@ -1872,7 +1933,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\n\nlower `);
-      expectCaretParity(host.editor, host.root, probes[0]!, "first sandwiched blank collapse");
+      expectCaretParity(
+        host.editor,
+        host.root,
+        host.editor.getWire().indexOf("\n") - 1,
+        "first sandwiched blank collapse lands content row end"
+      );
     });
 
     it("keydown backspace at single-char header row end deletes character before blank band", () => {

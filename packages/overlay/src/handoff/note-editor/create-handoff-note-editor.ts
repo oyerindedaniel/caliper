@@ -378,7 +378,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       suppressDomSelectionSync = false;
     }
 
-    const live = readDocSelection(root, doc);
+    const live = readDocSelection(root, doc, { from: selection.focus });
     const liveWire = docPosToWireOffset(doc, live.focus);
     if (liveWire !== requestedWire) {
       const branch = liveWire < requestedWire ? "liveBehindRequested" : "liveAheadOfRequested";

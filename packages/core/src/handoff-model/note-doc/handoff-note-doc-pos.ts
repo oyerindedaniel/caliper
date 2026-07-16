@@ -21,9 +21,17 @@ export type HandoffNoteDocPos = {
   nodeOffset: number;
 };
 
+/**
+ * When focus sits on a content char immediately before `\n`, wire alone cannot tell
+ * visual-start / deletion-point from content-row-end. `before` = deletion point (insert
+ * at the char, paint offset 0); `after` = content row end (insert after char, paint text-tail).
+ */
+export type HandoffNoteCaretAffinity = "before" | "after";
+
 export type HandoffNoteSelection = {
   anchor: HandoffNoteDocPos;
   focus: HandoffNoteDocPos;
+  focusAffinity?: HandoffNoteCaretAffinity;
 };
 
 export type DocPosBias = "start" | "end";
@@ -40,8 +48,51 @@ export function isAtomicNode(
   return node != null && node.type !== "text";
 }
 
-export function collapsedSelection(pos: HandoffNoteDocPos): HandoffNoteSelection {
-  return { anchor: { ...pos }, focus: { ...pos } };
+export function collapsedSelection(
+  pos: HandoffNoteDocPos,
+  focusAffinity?: HandoffNoteCaretAffinity
+): HandoffNoteSelection {
+  if (focusAffinity === undefined) {
+    return { anchor: { ...pos }, focus: { ...pos } };
+  }
+  return { anchor: { ...pos }, focus: { ...pos }, focusAffinity };
+}
+
+/** True when focus wire is a content char with a following `\n` (sole/last-char ambiguity). */
+export function isCaretOnContentCharBeforeBreak(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): boolean {
+  const wireText = docToWire(doc);
+  const wire = docPosToWireOffset(doc, pos);
+  if (wire < 0 || wire >= wireText.length || wireText[wire] === "\n") {
+    return false;
+  }
+  return wire + 1 < wireText.length && wireText[wire + 1] === "\n";
+}
+
+/**
+ * Affinity only when last-char-before-`\n` is ambiguous; otherwise omit (no disambiguation).
+ * `deletion-point` → before; `content-row-end` → after.
+ */
+export function caretAffinityForAmbiguousBreak(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  intent: "deletion-point" | "content-row-end"
+): HandoffNoteCaretAffinity | undefined {
+  if (!isCaretOnContentCharBeforeBreak(doc, pos)) {
+    return undefined;
+  }
+  return intent === "deletion-point" ? "before" : "after";
+}
+
+export function collapsedSelectionWithIntent(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  intent: "deletion-point" | "content-row-end"
+): HandoffNoteSelection {
+  const normalized = normalizeDocPos(doc, pos);
+  return collapsedSelection(normalized, caretAffinityForAmbiguousBreak(doc, normalized, intent));
 }
 
 export function docPosEqual(a: HandoffNoteDocPos, b: HandoffNoteDocPos): boolean {
@@ -49,7 +100,11 @@ export function docPosEqual(a: HandoffNoteDocPos, b: HandoffNoteDocPos): boolean
 }
 
 export function selectionsEqual(a: HandoffNoteSelection, b: HandoffNoteSelection): boolean {
-  return docPosEqual(a.anchor, b.anchor) && docPosEqual(a.focus, b.focus);
+  return (
+    docPosEqual(a.anchor, b.anchor) &&
+    docPosEqual(a.focus, b.focus) &&
+    (a.focusAffinity ?? "after") === (b.focusAffinity ?? "after")
+  );
 }
 
 export function cloneDocPos(pos: HandoffNoteDocPos): HandoffNoteDocPos {
@@ -57,9 +112,16 @@ export function cloneDocPos(pos: HandoffNoteDocPos): HandoffNoteDocPos {
 }
 
 export function cloneSelection(selection: HandoffNoteSelection): HandoffNoteSelection {
+  if (selection.focusAffinity === undefined) {
+    return {
+      anchor: cloneDocPos(selection.anchor),
+      focus: cloneDocPos(selection.focus),
+    };
+  }
   return {
     anchor: cloneDocPos(selection.anchor),
     focus: cloneDocPos(selection.focus),
+    focusAffinity: selection.focusAffinity,
   };
 }
 
@@ -197,10 +259,14 @@ export function normalizeSelection(
   options?: { from?: HandoffNoteDocPos }
 ): HandoffNoteSelection {
   const fromOpt = options?.from ? { from: options.from } : undefined;
-  return {
+  const normalized: HandoffNoteSelection = {
     anchor: normalizeDocPos(doc, selection.anchor, fromOpt),
     focus: normalizeDocPos(doc, selection.focus, fromOpt),
   };
+  if (selection.focusAffinity !== undefined) {
+    normalized.focusAffinity = selection.focusAffinity;
+  }
+  return normalized;
 }
 
 export function wireOffsetToCollapsedSelection(

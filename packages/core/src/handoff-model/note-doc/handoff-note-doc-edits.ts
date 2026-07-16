@@ -24,9 +24,11 @@ import {
 } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
+  collapsedSelectionWithIntent,
   docPosToWireOffset,
   expandSelectionFocusToDocEndIfNeeded,
   normalizeDocPos,
+  type HandoffNoteCaretAffinity,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
   wireOffsetToDocPos,
@@ -79,10 +81,15 @@ function applyDeleteCaretPolicy(
   if (resolved === wire) {
     return result;
   }
+  // mentionRemoved → semantic content-row-end at probe; otherwise keep deletion-point affinity.
+  const intent =
+    options?.mentionRemoved && resolved !== wire ? "content-row-end" : "deletion-point";
   return {
     ...result,
-    selection: collapsedSelection(
-      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolved))
+    selection: collapsedSelectionWithIntent(
+      result.doc,
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolved)),
+      intent
     ),
   };
 }
@@ -172,7 +179,11 @@ export function applyDocInsertText(
     return multilineQueryInsert;
   }
 
-  const insertFocus = insertDocPosAfterEmbeddedBlankProbe(doc, focus);
+  const insertFocus = insertDocPosAfterContentRowEndChar(
+    doc,
+    insertDocPosAfterEmbeddedBlankProbe(doc, focus),
+    selection.focusAffinity
+  );
   const focusWire = docPosToWireOffset(doc, insertFocus);
   const boundary = describeHandoffNoteCursorContext(doc, focusWire);
 
@@ -229,7 +240,61 @@ export function applyDocInsertText(
     }
   }
 
-  return spliceDocSelection(doc, insertFocus, insertFocus, replacement);
+  return snapInsertCaretToContentRowEnd(
+    spliceDocSelection(doc, insertFocus, insertFocus, replacement),
+    replacement
+  );
+}
+
+/**
+ * Caret on the last char before a `\n` inserts after that char (before the break),
+ * so continued typing appends instead of prepending — unless affinity is `before`
+ * (deletion-point / visual start on that same ambiguous wire).
+ */
+function insertDocPosAfterContentRowEndChar(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  focusAffinity?: HandoffNoteCaretAffinity
+): HandoffNoteDocPos {
+  if (focusAffinity === "before") {
+    return pos;
+  }
+  const wireText = docToWire(doc);
+  const wire = docPosToWireOffset(doc, pos);
+  if (wire < 0 || wire >= wireText.length) {
+    return pos;
+  }
+  if (wireText[wire] === "\n" || wire + 1 >= wireText.length || wireText[wire + 1] !== "\n") {
+    return pos;
+  }
+  return wireOffsetToDocPos(doc, wire + 1);
+}
+
+/**
+ * After insert, rest on the last inserted char when splice left the caret on the
+ * following `\n` (probe or content break) — Rule 4 content row end, not break paint.
+ * Affinity `after` so the next keystroke appends.
+ */
+function snapInsertCaretToContentRowEnd(
+  result: HandoffDocEditResult,
+  replacement: string
+): HandoffDocEditResult {
+  if (replacement.length === 0 || replacement.includes("\n")) {
+    return result;
+  }
+  const nextWire = docToWire(result.doc);
+  const landed = docPosToWireOffset(result.doc, result.selection.focus);
+  if (landed <= 0 || nextWire[landed] !== "\n" || nextWire[landed - 1] === "\n") {
+    return result;
+  }
+  return {
+    ...result,
+    selection: collapsedSelectionWithIntent(
+      result.doc,
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, landed - 1)),
+      "content-row-end"
+    ),
+  };
 }
 
 function resolveFollowingTextIdxAfterMentionEnd(
@@ -577,7 +642,13 @@ export function insertMentionAtSelection(
   const startWire = docPosToWireOffset(doc, replaceStart);
   const endWire = docPosToWireOffset(doc, replaceEnd);
   const next = insertMentionAt(doc, agentId, startWire, endWire);
-  const cursorWire = Math.min(startWire + `@${agentId} `.length, docLength(next));
+  const inserted = `@${agentId} `;
+  const cursorWire = Math.min(startWire + inserted.length, docLength(next));
   const focus = normalizeDocPos(next, wireOffsetToDocPos(next, cursorWire));
-  return { doc: next, selection: collapsedSelection(focus) };
+  // Same Rule 4 content-row-end snap as applyDocInsertText — do not leave focus on the
+  // following `\n` (mid-blank commit was painting wire-break BR with empty geom).
+  return snapInsertCaretToContentRowEnd(
+    { doc: next, selection: collapsedSelection(focus) },
+    inserted
+  );
 }

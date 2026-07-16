@@ -1,8 +1,10 @@
 ﻿import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   applyDocDelete,
+  applyDocInsertText,
   collapsedSelection,
   docPosToWireOffset,
+  docToWire,
   describeHandoffNoteCursorContext,
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
@@ -18,6 +20,7 @@ import {
   domPointToDocPos,
   isContentTextNodeDomTailBeforeBreak,
   resolveDomPointAtDocPos,
+  resolveDomReadDocPos,
   resolvePaintDocPos,
   resolvePaintContext,
   resolvePaintContextAtWire,
@@ -36,10 +39,12 @@ import {
   tryPatchDocDom,
   isHandoffMentionElement,
   isHandoffBlankAnchorElement,
+  isHandoffLineStartAnchorElement,
   isHandoffWireBreakElement,
   sameRenderedDocStructure,
   getHandoffNoteEditorTabStops,
 } from "./handoff-note-dom.js";
+import { readDocSelection, setDocSelection } from "./handoff-note-selection.js";
 import {
   mountThreeRowMentionSoftWrapFixture,
   applyThreeRowSpacerBrowserParityLayoutStubs,
@@ -669,12 +674,50 @@ describe("handoff-note-dom", () => {
       expect(docPosToWireOffset(doc, roundTrip)).toBe(headerEnd);
     });
 
+    it("sole-char row: content end paints text-tail; following non-probe break paints br", () => {
+      const wire = `header @${AGENT} \n\nm\ntail @${AGENT} `;
+      const doc = wireToDoc(wire);
+      const charWire = wire.indexOf("m");
+      const breakAfterM = charWire + 1;
+      expect(wire[breakAfterM]).toBe("\n");
+      expect(isEmbeddedBlankBandProbeWire(doc, breakAfterM)).toBe(false);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const charFocus = wireOffsetToDocPos(doc, charWire);
+      const charPoint = resolveDomPointAtDocPos(root, doc, charFocus, { from: charFocus });
+      expect(charPoint).not.toBeNull();
+      expect(charPoint!.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(charPoint!.node.textContent).toContain("m");
+      expect(charPoint!.offset).toBe(1);
+
+      const breakFocus = wireOffsetToDocPos(doc, breakAfterM);
+      const breakPoint = resolveDomPointAtDocPos(root, doc, breakFocus, { from: breakFocus });
+      expect(breakPoint).not.toBeNull();
+      expect(
+        breakPoint!.node instanceof HTMLBRElement && isHandoffWireBreakElement(breakPoint!.node)
+      ).toBe(true);
+    });
+
+    it("substantive non-probe line break paints br (layout geom owner)", () => {
+      const wire = `top\n${"hello world ".repeat(10)}tail`;
+      const doc = wireToDoc(wire);
+      const breakWire = wire.indexOf("\n");
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, breakWire));
+      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+        true
+      );
+    });
+
     it("glued postfix substantive chip paints off blank-band anchor at mention-end alias", () => {
-      const doc = wireToDoc(`note @${AGENT}T\n\n\n`);
-      const [probe] = listEmbeddedBlankBandProbeWires(doc);
+      const wire = `note @${AGENT}T\n\n\n`;
+      const doc = wireToDoc(wire);
+      // Blank-row unit: chip glued postfix from the content caret on T, not from the probe.
+      const postfixWire = wire.search(/[A-Za-z]\n/);
+      expect(postfixWire).toBeGreaterThanOrEqual(0);
       const chipped = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, probe!)),
+        collapsedSelection(wireOffsetToDocPos(doc, postfixWire)),
         "backspace"
       )!;
 
@@ -721,7 +764,7 @@ describe("handoff-note-dom", () => {
       }
     });
 
-    it("postfix chip whitespace tail paints after spacer not mention-edge alias", () => {
+    it("postfix chip whitespace tail paints on spacer text not mention-edge alias", () => {
       const chipped = wireToDoc(`header @${AGENT} \n\n\n`);
       const probes = listEmbeddedBlankBandProbeWires(chipped);
       const rowEnd = probes[0]! - 1;
@@ -731,11 +774,15 @@ describe("handoff-note-dom", () => {
 
       const point = resolveDomPointAtDocPos(root, chipped, focus);
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(point?.offset).toBeGreaterThan(0);
+      expect(point?.node.textContent?.[0]).toBe(" ");
+      // Content row end of sole postfix spacer: text-tail (insertion point), still on spacer text.
+      expect(point?.offset).toBe(1);
       expect(
         docPosToWireOffset(chipped, domPointToDocPos(root, chipped, point!.node, point!.offset))
       ).toBe(rowEnd);
       expect(describeHandoffNoteCursorContext(chipped, rowEnd).kind).toBe("mention-boundary");
+      const mentionEl = root.querySelector("[data-handoff-mention]");
+      expect(mentionEl?.contains(point!.node) ?? false).toBe(false);
     });
 
     it("plain leading whitespace paints at matching doc offset", () => {
@@ -776,8 +823,10 @@ describe("handoff-note-dom", () => {
 
       const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus);
       expect(cleared.doc.nodes[cleared.selection.focus.nodeIndex]?.type).toBe("text");
-      expect(point?.node).toBe(root);
-      expect(point?.offset).toBeGreaterThan(0);
+      // Row-start mention after wire-break: ZWSP line-start anchor (selection-capable), not BR/root.
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point?.node).not.toBeInstanceOf(HTMLBRElement);
+      expect(isHandoffLineStartAnchorElement(point?.node.parentNode)).toBe(true);
       expect(
         docPosToWireOffset(
           cleared.doc,
@@ -788,6 +837,108 @@ describe("handoff-note-dom", () => {
       expect(describeHandoffNoteCursorContext(cleared.doc, spaceWire).kind).toBe(
         "mention-boundary"
       );
+    });
+
+    it("forward delete last spacer before row-start mention paints line-start anchor not wire-break", () => {
+      const wire = `webp\n\nwwth @${AGENT} \nlower`;
+      let doc = wireToDoc(wire);
+      let selection = collapsedSelection(wireOffsetToDocPos(doc, wire.indexOf("\n\n") + 2));
+      for (const ch of ["w", "w", "t", "h", " "]) {
+        const next = applyDocDelete(doc, selection, "delete")!;
+        doc = next.doc;
+        selection = next.selection;
+      }
+      expect(docToWire(doc)).toBe(`webp\n\n@${AGENT} \nlower`);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+
+      const focus = selection.focus;
+      const point = resolveDomPointAtDocPos(root, doc, focus, { from: focus })!;
+      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point.node instanceof HTMLBRElement).toBe(false);
+      expect(isHandoffLineStartAnchorElement(point.node.parentNode)).toBe(true);
+      expect(docPosToWireOffset(doc, domPointToDocPos(root, doc, point.node, point.offset))).toBe(
+        docPosToWireOffset(doc, focus)
+      );
+    });
+
+    it("forward delete row-start mention paints leftover spacer at visual start (deletion-point affinity)", () => {
+      const wireBefore = `wit @${AGENT} \n\n@${AGENT} \nbroth @${AGENT} `;
+      const doc = wireToDoc(wireBefore);
+      const mentionAt = wireBefore.indexOf("@", wireBefore.indexOf("\n\n") + 2);
+      const removed = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, mentionAt)),
+        "delete"
+      )!;
+      expect(docToWire(removed.doc)).toBe(`wit @${AGENT} \n\n \nbroth @${AGENT} `);
+      expect(removed.selection.focusAffinity).toBe("before");
+
+      const focus = removed.selection.focus;
+      const focusWire = docPosToWireOffset(removed.doc, focus);
+      expect(docToWire(removed.doc)[focusWire]).toBe(" ");
+
+      renderHandoffNoteDoc(root, removed.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const point = resolveDomPointAtDocPos(root, removed.doc, focus, {
+        focusAffinity: removed.selection.focusAffinity,
+      })!;
+      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point.node.textContent).toBe(" ");
+      expect(point.offset).toBe(0);
+    });
+
+    it("forward delete row-start mention mid-blank paints leftover spacer at visual start", () => {
+      const wireBefore = `whe\n\n@${AGENT} \nmean`;
+      const doc = wireToDoc(wireBefore);
+      const mentionAt = wireBefore.indexOf("@");
+      const removed = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, mentionAt)),
+        "delete"
+      )!;
+      expect(docToWire(removed.doc)).toBe(`whe\n\n \nmean`);
+      expect(removed.selection.focusAffinity).toBe("before");
+
+      renderHandoffNoteDoc(root, removed.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const point = resolveDomPointAtDocPos(root, removed.doc, removed.selection.focus, {
+        focusAffinity: removed.selection.focusAffinity,
+      })!;
+      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(point.node.textContent).toBe(" ");
+      expect(point.offset).toBe(0);
+    });
+
+    it("delete mention paint/read round-trip keeps insert before leftover commit space", () => {
+      const wireBefore = `whe\n\n@${AGENT} \nmean`;
+      const doc = wireToDoc(wireBefore);
+      const removed = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, wireBefore.indexOf("@"))),
+        "delete"
+      )!;
+      expect(removed.selection.focusAffinity).toBe("before");
+      renderHandoffNoteDoc(root, removed.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      setDocSelection(root, removed.doc, removed.selection, { source: "test" });
+      const live = readDocSelection(root, removed.doc);
+      expect(live.focusAffinity).toBe("before");
+      expect(docToWire(applyDocInsertText(removed.doc, live, "x").doc)).toBe(`whe\n\nx \nmean`);
+    });
+
+    it("first mid-blank char paints text-tail after insert", () => {
+      const wire = suffixBlankBandWire();
+      const doc = wireToDoc(wire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const inserted = applyDocInsertText(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, probes[1]!)),
+        "w"
+      );
+      renderHandoffNoteDoc(root, inserted.doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const focus = inserted.selection.focus;
+      const point = resolveDomPointAtDocPos(root, inserted.doc, focus, { from: focus })!;
+      expect(point.node.textContent).toBe("w");
+      expect(point.offset).toBe(1);
     });
   });
 
@@ -1068,10 +1219,29 @@ describe("handoff-note-dom", () => {
       expect(docOffsetFromContentTextNodeDomPoint(0, 3, "hello", 0, 4)).toBe(3);
     });
 
+    it("authority-preserving read keeps non-probe break insert landing over content text-tail last-char alias", () => {
+      const wire = `header\nm\ntail`;
+      const doc = wireToDoc(wire);
+      const breakAfterM = wire.indexOf("m") + 1;
+      const lastChar = breakAfterM - 1;
+      expect(wire[breakAfterM]).toBe("\n");
+      expect(isEmbeddedBlankBandProbeWire(doc, breakAfterM)).toBe(false);
+      const authority = wireOffsetToDocPos(doc, breakAfterM);
+      const read = wireOffsetToDocPos(doc, lastChar);
+      expect(resolveDomReadDocPos(doc, read, authority)).toEqual(authority);
+    });
+
     it("maps content row end to text-node tail on write", () => {
       expect(domOffsetForContentRowEndInSplitText(4, "hello", 0, 4)).toBe(5);
       expect(domOffsetForContentRowEndInSplitText(3, "hello", 0, 4)).toBe(3);
       expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4)).toBe(1);
+      expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4)).toBe(1);
+    });
+
+    it("deletion-point affinity keeps sole-char write at visual start not text-tail", () => {
+      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4, "before")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4, "before")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4, "after")).toBe(1);
     });
 
     it("maps whitespace-only tail before break on read", () => {
@@ -1079,28 +1249,28 @@ describe("handoff-note-dom", () => {
       expect(docOffsetFromContentTextNodeDomPoint(0, 1, " ", 0, 4)).toBe(0);
     });
 
-    it("single-char row: visual start stays offset 0, tail reads as content row end", () => {
-      expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4)).toBe(0);
-      expect(isContentTextNodeDomTailBeforeBreak(1, "h", 0, 4)).toBe(false);
-      expect(docOffsetFromContentTextNodeDomPoint(0, 1, "h", 0, 4)).toBe(1);
+    it("single-char row: text-tail writes and reads as content row end", () => {
+      expect(isContentTextNodeDomTailBeforeBreak(1, "h", 0, 4)).toBe(true);
+      expect(docOffsetFromContentTextNodeDomPoint(0, 1, "h", 0, 4)).toBe(0);
     });
 
-    it("round-trips visual start vs content row end on sole-char row before blank band", () => {
-      const wire = "h\n\n\n";
+    it("post-mention spacer before content \\n paints text-tail; break paints BR", () => {
+      const agent = "caliper-midblank01";
+      const wire = `mesh @${agent} \n\nmesh @${agent} \nwhteh @${agent} `;
       const doc = wireToDoc(wire);
-      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[agent, "#000"]]) });
+      const spacerWire = wire.indexOf(`@${agent} \nwhteh`) + `@${agent} `.length - 1;
+      const breakWire = spacerWire + 1;
+      expect(wire[spacerWire]).toBe(" ");
+      expect(wire[breakWire]).toBe("\n");
 
-      const visualStart = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 0));
-      expect(visualStart?.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(visualStart?.offset).toBe(0);
-      expect(
-        docPosToWireOffset(doc, domPointToDocPos(root, doc, visualStart!.node, visualStart!.offset))
-      ).toBe(0);
+      const spacerPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, spacerWire));
+      expect(spacerPoint?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect((spacerPoint?.node as Text).data).toBe(" ");
+      expect(spacerPoint?.offset).toBe(1);
 
-      const rowEnd = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 1));
-      expect(
-        docPosToWireOffset(doc, domPointToDocPos(root, doc, rowEnd!.node, rowEnd!.offset))
-      ).toBe(1);
+      const breakPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, breakWire));
+      expect(breakPoint?.node instanceof HTMLBRElement).toBe(true);
     });
   });
 });

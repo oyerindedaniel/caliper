@@ -70,8 +70,13 @@ function wireLineStartOffsets(wire: string): number[] {
   return starts;
 }
 
+/**
+ * Blank-band probe next-segments are **empty only** (length 0).
+ * Whitespace-only segments are content rows (typed spaces are real characters) —
+ * they must not keep delete-probe / blank-row ownership.
+ */
 function isBlankBandSegment(segment: string): boolean {
-  return segment.length === 0 || /^\s*$/.test(segment);
+  return segment.length === 0;
 }
 
 function lineStartBeforeWire(wire: string, endWire: number): number {
@@ -417,57 +422,9 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
     }
   }
 
-  if (direction !== "backspace" || !isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, focus)) {
-    return null;
-  }
-
-  const context = embeddedBlankBandProbeContext(doc, focusWire);
-  if (!context) {
-    return null;
-  }
-  if (
-    context.indexInGroup !== 0 ||
-    !embeddedBlankBandHasSubstantiveRowAbove(docToWire(doc), focusWire)
-  ) {
-    return null;
-  }
-
-  const charWire = focusWire - 1;
-  const deletedChar = wire[charWire];
-  if (
-    charWire >= 0 &&
-    deletedChar !== "\n" &&
-    deletedChar !== undefined &&
-    !/^\s$/.test(deletedChar) &&
-    describeHandoffNoteCursorContext(doc, charWire).kind !== "mention-interior" &&
-    !embeddedBlankBandMentionOnlyContentRowAbove(doc, focusWire)
-  ) {
-    const rowChip = resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
-    if (
-      rowChip &&
-      (!embeddedBlankBandIsSandwichedBlankRow(doc, focusWire) ||
-        embeddedBlankBandSubstantiveChipLeavesMentionAbuttingProbe(doc, charWire))
-    ) {
-      return rowChip;
-    }
-  }
-
-  if (embeddedBlankBandIsSandwichedBlankRow(doc, focusWire)) {
-    return null;
-  }
-  if (embeddedBlankBandMentionOnlyContentRowAbove(doc, focusWire)) {
-    return null;
-  }
-
-  const landing = embeddedBlankBandContentRowEndBeforeProbe(doc, focusWire);
-  if (landing === focusWire) {
-    return null;
-  }
-  return {
-    doc,
-    caretWire: landing,
-    branch: "step-to-content-row-end",
-  };
+  // Caret on blank-band delete-probe: blank visual row owns the unit — collapse path
+  // in resolveEmbeddedBlankBandDelete, not content row-chip/step from the probe.
+  return null;
 }
 
 /**
@@ -579,7 +536,8 @@ export function handoffNoteCaretAtClearedContentRowEndBeforeProbe(
 
 /**
  * Empty content row end: caret on the line-start `\n` of a cleared content row,
- * not blank-band delete infrastructure.
+ * not blank-band delete infrastructure. Substantive content still on the row before
+ * a non-probe break is not empty row end.
  */
 export function embeddedBlankBandAtEmptyContentRowEnd(
   doc: HandoffNoteDoc,
@@ -598,6 +556,9 @@ export function embeddedBlankBandAtEmptyContentRowEnd(
     return false;
   }
   if (!isEmbeddedBlankBandProbeWire(doc, caretWire)) {
+    if (isSubstantiveSegment(lineSegmentEndingAt(wire, caretWire).segment)) {
+      return false;
+    }
     return caretWire >= 0 && caretWire < wire.length && wire[caretWire] === "\n";
   }
   if (embeddedBlankBandSubstantiveContentAbutsProbe(doc, caretWire)) {
@@ -741,29 +702,28 @@ function collapseBlankBandBackspaceLanding(
 ): number {
   const nextWire = docToWire(nextDoc);
   const priorWire = docToWire(priorDoc);
-  const { group } = context;
 
   const adjacent = collapseBlankBandAdjacentProbeLanding(deletedProbeWire, context, "backspace");
   if (adjacent !== null) {
     return adjacent;
   }
 
+  // Trailing or sandwiched: after nipping this blank, land content row end above (upward).
+  if (embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire)) {
+    if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(priorWire, deletedProbeWire)) {
+      return lineSegmentEndingAt(priorWire, deletedProbeWire).start;
+    }
+    return embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
+  }
+
+  // Leading: no content above — continue toward remaining blanks / content below.
+  const { group } = context;
   const range = embeddedBlankBandProbeRange(nextWire, group);
   const inBand = listEmbeddedBlankBandProbeWires(nextDoc).filter(
     (probe) => probe >= range.start && probe < range.end
   );
   if (inBand.length > 0) {
     return inBand[0]!;
-  }
-
-  if (
-    embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire) &&
-    embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)
-  ) {
-    if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(priorWire, deletedProbeWire)) {
-      return lineSegmentEndingAt(priorWire, deletedProbeWire).start;
-    }
-    return embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
   }
 
   return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
@@ -1358,8 +1318,26 @@ export function resolveBackspaceFromEmptyContentRowEnd(
 }
 
 /**
+ * True when every wire segment strictly before `focusWire` is empty/whitespace.
+ * Contract line-start collapse: leading blanks only — never when upper content remains.
+ */
+function wireHasNoSubstantiveSegmentBefore(wire: string, focusWire: number): boolean {
+  if (focusWire <= 0) {
+    return true;
+  }
+  for (const segment of wire.slice(0, focusWire).split("\n")) {
+    if (isSubstantiveSegment(segment)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Backspace on a line-start `\n` before substantive content when every segment above is empty.
  * Not a blank-band probe — same collapse landing as blank-band ladder exhaustion.
+ * Sandwiched geometry (substantive content above) must not match — Delete/Backspace there
+ * fall through to generic splice / blank-band probe paths so caret lands at lower visual start.
  */
 export function resolveEmbeddedBlankBandLineStartCollapse(
   doc: HandoffNoteDoc,
@@ -1372,9 +1350,7 @@ export function resolveEmbeddedBlankBandLineStartCollapse(
   if (focusWire < 0 || focusWire >= wire.length || wire[focusWire] !== "\n") {
     return null;
   }
-  const lineStart = lineSegmentEndingAt(wire, focusWire).start;
-  const segmentAbove = wire.slice(lineStart, focusWire);
-  if (isSubstantiveSegment(segmentAbove)) {
+  if (!wireHasNoSubstantiveSegmentBefore(wire, focusWire)) {
     return null;
   }
   const afterBreak = wire.slice(focusWire + 1);

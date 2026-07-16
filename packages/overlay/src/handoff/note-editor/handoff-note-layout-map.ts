@@ -825,7 +825,7 @@ function ensureSubstantiveContentLineStartSamples(
       const node = doc.nodes[pos.nodeIndex];
       if (node?.type === "text" && pos.nodeOffset === 0) {
         const next = doc.nodes[pos.nodeIndex + 1];
-        if (next?.type === "mention") {
+        if (isAtomicNode(next)) {
           const pill = atomicElement(root, doc, pos.nodeIndex + 1);
           const midY = pill ? pillElementMidY(pill) : null;
           if (midY !== null) {
@@ -835,7 +835,7 @@ function ensureSubstantiveContentLineStartSamples(
               upsertMeasuredSample(measured, { wire: lineStartWire, top: midY, left: 0 });
               logVerArrow("layout.contentLineStart", {
                 lineStartWire,
-                action: "mentionBand",
+                action: "atomicBand",
                 top: Math.round(midY * 100) / 100,
               });
               continue;
@@ -1417,7 +1417,8 @@ function resolveVisualRowSeedTops(
   return clusterTopCenters(seeds, tolerance);
 }
 
-function alignTextBeforeMentionRows(
+/** Text immediately before a same-row atom inherits that atom's measured top. */
+function alignTextBeforeAtomicRows(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   wireIndex: LayoutWireIndex,
@@ -1430,21 +1431,21 @@ function alignTextBeforeMentionRows(
       continue;
     }
     const next = doc.nodes[pos.nodeIndex + 1];
-    if (next?.type !== "mention") {
+    if (!isAtomicNode(next)) {
       continue;
     }
-    const mentionStart = wireIndex.nodeStartWires[pos.nodeIndex + 1];
-    if (mentionStart === undefined) {
+    const atomicStart = wireIndex.nodeStartWires[pos.nodeIndex + 1];
+    if (atomicStart === undefined) {
       continue;
     }
-    const mentionSample = measured.find((entry) => entry.wire === mentionStart);
-    if (mentionSample && sharesVisualRowBand(sample.top, mentionSample.top)) {
-      sample.top = mentionSample.top;
+    const atomicSample = measured.find((entry) => entry.wire === atomicStart);
+    if (atomicSample && sharesVisualRowBand(sample.top, atomicSample.top)) {
+      sample.top = atomicSample.top;
     }
   }
 }
 
-function alignEmbeddedNewlinePrefixAfterMentionRows(
+function alignEmbeddedNewlinePrefixAfterAtomicRows(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
@@ -1456,7 +1457,7 @@ function alignEmbeddedNewlinePrefixAfterMentionRows(
       continue;
     }
     const prev = doc.nodes[nodeIndex - 1];
-    if (prev?.type !== "mention") {
+    if (!isAtomicNode(prev)) {
       continue;
     }
     const firstBreak = node.text.indexOf("\n");
@@ -1465,8 +1466,8 @@ function alignEmbeddedNewlinePrefixAfterMentionRows(
     }
     const nodeStartWire = wireIndex.nodeStartWires[nodeIndex] ?? 0;
     const prefixEndWire = nodeStartWire + firstBreak;
-    const pill = atomicElement(root, doc, nodeIndex - 1);
-    const midY = pill ? pillElementMidY(pill) : null;
+    const atomEl = atomicElement(root, doc, nodeIndex - 1);
+    const midY = atomEl ? pillElementMidY(atomEl) : null;
     if (midY === null) {
       continue;
     }
@@ -2582,7 +2583,7 @@ function applyPlainTextSoftWrapSpans(
   }
 }
 
-/** Text after a mention on the same pill row inherits that pill's midY. */
+/** Text after an atom on the same visual row inherits that atom's midY. */
 function pinAdjacentTextSampleRows(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -2606,19 +2607,19 @@ function pinAdjacentTextSampleRows(
       continue;
     }
     const prev = doc.nodes[pos.nodeIndex - 1];
-    if (prev?.type !== "mention") {
+    if (!isAtomicNode(prev)) {
       continue;
     }
     const following = doc.nodes[pos.nodeIndex + 1];
-    if (following?.type === "mention" && /^\s+$/.test(node.text) && !/[\n\r]/.test(node.text)) {
-      const followingPill = atomicElement(root, doc, pos.nodeIndex + 1);
-      const followingMidY = followingPill ? pillElementMidY(followingPill) : null;
+    if (isAtomicNode(following) && /^\s+$/.test(node.text) && !/[\n\r]/.test(node.text)) {
+      const followingAtom = atomicElement(root, doc, pos.nodeIndex + 1);
+      const followingMidY = followingAtom ? pillElementMidY(followingAtom) : null;
       if (followingMidY !== null && sample.top + MIN_INTER_ROW_GAP_PX < followingMidY) {
         continue;
       }
     }
-    const pill = atomicElement(root, doc, pos.nodeIndex - 1);
-    const midY = pill ? pillElementMidY(pill) : null;
+    const atomEl = atomicElement(root, doc, pos.nodeIndex - 1);
+    const midY = atomEl ? pillElementMidY(atomEl) : null;
     if (midY !== null && sample.top <= midY + bandTolerance) {
       sample.top = midY;
     }
@@ -2719,7 +2720,7 @@ function applyDomAcquireSamplePins(
 ): void {
   const lineHeight = parseFloat(getComputedStyle(root).lineHeight) || 16;
   const hint: LayoutWireScanHint = { nodeIndex: 0 };
-  alignTextBeforeMentionRows(doc, measured, wireIndex, hint);
+  alignTextBeforeAtomicRows(doc, measured, wireIndex, hint);
   pinMentionSampleRows(root, doc, measured, wireIndex, hint);
   pinAdjacentTextSampleRows(root, doc, measured, wireIndex, hint, lineHeight);
 }
@@ -2891,7 +2892,7 @@ function acquireDomMeasuredSamples(
   }
   applyDomAcquireSamplePins(root, doc, measured, wireIndex);
   appendSoftWrapLineSamples(root, doc, measured);
-  alignEmbeddedNewlinePrefixAfterMentionRows(root, doc, measured, wireIndex);
+  alignEmbeddedNewlinePrefixAfterAtomicRows(root, doc, measured, wireIndex);
   setMeasuredSamplesCache(root, wire, rootWidth, measured);
   logVerArrow("layout.acquire", {
     source: "dom",

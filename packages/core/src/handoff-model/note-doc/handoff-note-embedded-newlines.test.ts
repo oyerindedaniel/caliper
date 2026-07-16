@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDocDelete, applyDocLineBreak } from "./handoff-note-doc-edits.js";
+import { applyDocDelete, applyDocInsertText, applyDocLineBreak } from "./handoff-note-doc-edits.js";
 import {
   collapsedSelection,
   docPosToWireOffset,
@@ -23,6 +23,7 @@ import {
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
+  resolveEmbeddedBlankBandLineStartCollapse,
   resolveSubstantiveLineBreakJoin,
 } from "./handoff-note-embedded-newlines.js";
 
@@ -61,6 +62,26 @@ describe("embedded blank band probes", () => {
       expect(isEmbeddedBlankBandProbeWire(doc, wire)).toBe(false);
     }
     expect(listEmbeddedBlankBandProbeWires(doc)).toEqual([]);
+  });
+
+  it("does not treat whitespace-only segments as blank band probes", () => {
+    const doc = wireToDoc("a\n   \nb");
+    expect(listEmbeddedBlankBandProbeWires(doc)).toEqual([]);
+    expect(isEmbeddedBlankBandProbeWire(doc, 1)).toBe(false);
+  });
+
+  it("space-filled blank demotes that probe; empty blank above remains", () => {
+    const base = wireToDoc("dh\n\n\nmen");
+    expect(listEmbeddedBlankBandProbeWires(base)).toEqual([2, 3]);
+    const filled = applyDocInsertText(
+      base,
+      collapsedSelection(wireOffsetToDocPos(base, 3)),
+      "      "
+    );
+    expect(docToWire(filled.doc)).toBe("dh\n\n      \nmen");
+    expect(listEmbeddedBlankBandProbeWires(filled.doc)).toEqual([2]);
+    expect(isEmbeddedBlankBandDeleteProbeWire(filled.doc, 3)).toBe(false);
+    expect(isEmbeddedBlankBandDeleteProbeWire(filled.doc, 2)).toBe(true);
   });
 
   it("detects embedded newlines in text nodes", () => {
@@ -167,6 +188,17 @@ describe("embedded blank band probes", () => {
       const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe)).toBe(false);
       expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe)).toBe(true);
+    });
+
+    it("is false on sole-char content row trailing break before substantive content", () => {
+      const agent = "agent";
+      const wire = `header @${agent} \n\nm\ntail @${agent} `;
+      const doc = wireToDoc(wire);
+      const breakAfterM = wire.indexOf("m") + 1;
+      expect(wire[breakAfterM]).toBe("\n");
+      expect(isEmbeddedBlankBandProbeWire(doc, breakAfterM)).toBe(false);
+      const focus = wireOffsetToDocPos(doc, breakAfterM);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, breakAfterM, focus)).toBe(false);
     });
 
     it("is false when substantive row text still abuts the probe on delete infrastructure", () => {
@@ -320,6 +352,29 @@ describe("embedded blank band probes", () => {
       const doc = wireToDoc(`header @${agent} \n\n\n`);
       const mentionAt = docToWire(doc).indexOf("@");
       expect(mentionStartGluedToPrefixInWire(doc, mentionAt)).toBe(false);
+    });
+  });
+
+  describe("line-start collapse", () => {
+    const agent = "caliper-aaaaaaa";
+
+    it("does not match sandwiched geometry when substantive content remains above", () => {
+      const wire = `upper @${agent} xx\n\n\nlower @${agent} `;
+      const doc = wireToDoc(wire);
+      const lineStartBeforeLower = wire.indexOf("lower") - 1;
+      expect(wire[lineStartBeforeLower]).toBe("\n");
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, lineStartBeforeLower)).toBe(false);
+      expect(resolveEmbeddedBlankBandLineStartCollapse(doc, lineStartBeforeLower)).toBeNull();
+    });
+
+    it("matches leading blanks and lands at first substantive visual start", () => {
+      const wire = `\n\nlower @${agent} `;
+      const doc = wireToDoc(wire);
+      const lineStart = wire.indexOf("lower") - 1;
+      const collapse = resolveEmbeddedBlankBandLineStartCollapse(doc, lineStart);
+      expect(collapse).not.toBeNull();
+      expect(collapse!.branch).toBe("backspace-line-start-collapse");
+      expect(collapse!.caretWire).toBe(docToWire(collapse!.doc).indexOf("lower"));
     });
   });
 

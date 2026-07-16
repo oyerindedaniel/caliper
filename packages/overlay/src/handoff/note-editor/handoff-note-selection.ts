@@ -5,6 +5,7 @@
   docPosToWireOffset,
   docToWire,
   isAtomicNode,
+  isCaretOnContentCharBeforeBreak,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
   nodeTokenLength,
@@ -13,6 +14,7 @@
   resolveVerticalArrowMinWireLineStart,
   resolveVerticalArrowRowStartLanding,
   wireOffsetToDocPos,
+  type HandoffNoteCaretAffinity,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
@@ -21,7 +23,9 @@
 import {
   flattenHandoffNoteLog,
   domPointInMentionPill,
+  handoffNoteCaretGeomSnapshot,
   handoffNoteDomSnapshot,
+  handoffNotePaintPointSnapshot,
   handoffNoteSelectionSnapshotCompact,
   logCaretBoundaryTrace,
   logVerArrow,
@@ -162,6 +166,30 @@ export function describeSyncRepairBranch(
   return { probeAliasEligible: false, repairBranch: "acceptedLive" };
 }
 
+/**
+ * Rule 4 collapses text-tail and last-char focus to the same doc wire. Recover
+ * `before` (visual start / deletion point) vs `after` (content-row-end) from the
+ * native DOM offset so selectionchange does not wipe delete-landing affinity.
+ */
+function focusAffinityFromNativeDomPoint(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  container: Node,
+  offset: number
+): HandoffNoteCaretAffinity | undefined {
+  if (!isCaretOnContentCharBeforeBreak(doc, focus)) {
+    return undefined;
+  }
+  if (container.nodeType !== Node.TEXT_NODE) {
+    return undefined;
+  }
+  const text = container.textContent ?? "";
+  if (text.length > 0 && offset >= text.length) {
+    return "after";
+  }
+  return "before";
+}
+
 export function readDocSelection(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -185,7 +213,16 @@ export function readDocSelection(
   const focus = options?.from
     ? resolveDomReadDocPos(doc, normalizeDocPos(doc, rawFocus), options.from)
     : normalizeDocPos(doc, rawFocus, fromOpt);
-  return { anchor, focus };
+  const focusAffinity = focusAffinityFromNativeDomPoint(
+    doc,
+    focus,
+    range.endContainer,
+    range.endOffset
+  );
+  if (focusAffinity === undefined) {
+    return { anchor, focus };
+  }
+  return { anchor, focus, focusAffinity };
 }
 
 export function readDocCursor(root: HTMLElement, doc: HandoffNoteDoc): HandoffNoteDocPos {
@@ -559,7 +596,10 @@ export function setDocSelection(
     return;
   }
 
-  const paintOpt = { from: options?.from ?? docSel.focus };
+  const paintOpt = {
+    from: options?.from ?? docSel.focus,
+    focusAffinity: docSel.focusAffinity,
+  };
   const startPoint = resolveDomPointAtDocPos(root, doc, docSel.anchor, paintOpt);
   const endPoint = resolveDomPointAtDocPos(root, doc, docSel.focus, paintOpt);
   const source = options?.source ?? "unknown";
@@ -599,6 +639,8 @@ export function setDocSelection(
       offset: endPoint.offset,
       inMentionPill: domPointInMentionPill(root, endPoint.node),
     },
+    paintPoint: handoffNotePaintPointSnapshot(root, endPoint),
+    geom: handoffNoteCaretGeomSnapshot(root),
     dom: handoffNoteSelectionSnapshotCompact(root),
   });
 }

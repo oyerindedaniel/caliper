@@ -639,10 +639,13 @@ describe("createHandoffNoteEditor", () => {
     dispatchSelectionChange(host.root);
     expect(host.editor.getCursor()).toBe(mentionStart - 1);
 
+    // prefixEnd is the trailing space before the blank band (`hhshhs␠\\n…`).
+    // Rule 4 / insertDocPosAfterContentRowEndChar: focus on that last content char
+    // inserts *after* it (before the break) — `hhshhs x\\n…`, not before the space.
     const prefixEnd = "hhshhs ".length - 1;
     setSelectionAtWire(host.root, host.editor.getDoc(), prefixEnd, prefixEnd);
     host.editor.insertDocText("x");
-    expect(host.editor.getWire()).toBe(`hhshhsx \n\n\n\n\n@${agentId} `);
+    expect(host.editor.getWire()).toBe(`hhshhs x\n\n\n\n\n@${agentId} `);
     expect(host.editor.getCursor()).toBe(prefixEnd + 1);
   });
 

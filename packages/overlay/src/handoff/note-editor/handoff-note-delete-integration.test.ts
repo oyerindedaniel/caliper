@@ -13,6 +13,7 @@ import {
 } from "@caliper/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
+import { isHandoffLineStartAnchorElement } from "./handoff-note-dom.js";
 import { domPointToDocPos, resolveDomPointAtDocPos } from "./handoff-note-dom-points.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
 import {
@@ -56,7 +57,21 @@ function pressBackspace(editor: HandoffNoteEditor): boolean {
 
 function expectCaretParity(editor: HandoffNoteEditor, root: HTMLElement, wire: number): void {
   expect(editor.getCursor()).toBe(wire);
-  expect(readDomWireCursor(root, editor.getDoc())).toBe(wire);
+  const domWire = readDomWireCursor(root, editor.getDoc());
+  if (domWire === wire) {
+    return;
+  }
+  // Rule 4 alias: authority on a non-probe `\n` may paint the prior content text tail,
+  // which reads back as the last character wire (handoff-note-arrow-contract.md).
+  const doc = editor.getDoc();
+  const text = editor.getWire();
+  const contentRowEnd =
+    text[wire] === "\n" &&
+    !isEmbeddedBlankBandProbeWire(doc, wire) &&
+    domWire === wire - 1 &&
+    text[domWire] !== undefined &&
+    text[domWire] !== "\n";
+  expect(contentRowEnd, `domWire ${domWire} vs authority ${wire}`).toBe(true);
 }
 
 function firstSubstantiveTextNode(root: HTMLElement): Text {
@@ -115,6 +130,21 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(pressDelete(host.editor)).toBe(true);
       expect(host.editor.getWire()).toBe(`\n\n${tail}`);
       expectCaretParity(host.editor, host.root, 0);
+    });
+  });
+
+  describe("whitespace-filled blank graduates to content", () => {
+    it("Delete at space-row visual start nips space; empty blank above stays", () => {
+      const wire = "dh\n\n      \nmen";
+      const firstSpace = wire.indexOf(" ");
+      host.editor.setDocFromWire(wire, firstSpace, { resetHistory: true });
+      expect(listEmbeddedBlankBandProbeWires(host.editor.getDoc())).toEqual([2]);
+      expect(isEmbeddedBlankBandProbeWire(host.editor.getDoc(), firstSpace)).toBe(false);
+
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe("dh\n\n     \nmen");
+      expect(listEmbeddedBlankBandProbeWires(host.editor.getDoc())).toEqual([2]);
+      expectCaretParity(host.editor, host.root, firstSpace);
     });
   });
 
@@ -218,8 +248,9 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(describeHandoffNoteCursorContext(doc, gateWire).kind).toBe("mention-boundary");
 
       const point = resolveDomPointAtDocPos(root, doc, focus);
-      expect(point?.node).toBe(root);
-      expect(point?.offset).toBeGreaterThan(0);
+      // Row-start mention after wire-break: ZWSP line-start anchor (selection-capable), not root/BR.
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffLineStartAnchorElement(point?.node.parentNode)).toBe(true);
       expect(docPosToWireOffset(doc, domPointToDocPos(root, doc, point!.node, point!.offset))).toBe(
         gateWire
       );
@@ -341,21 +372,24 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       return `note @${AGENT_A}T\n\n\nmiddle`;
     }
 
-    it("control — trailing band only chips postfix at probe", () => {
+    it("control — trailing band only collapses blank at probe without chipping postfix", () => {
       const wire = `note @${AGENT_A}T\n\n\n`;
       host.editor.setDocFromWire(wire, listEmbeddedBlankBandProbeWires(wireToDoc(wire))[0]!, {
         resetHistory: true,
       });
       expect(pressBackspace(host.editor)).toBe(true);
-      expect(host.editor.getWire()).toBe(`note @${AGENT_A}\n\n\n`);
+      // Blank-row unit: probe owns the blank; chip glued postfix from content caret only.
+      expect(host.editor.getWire()).toBe(`note @${AGENT_A}T\n\n`);
+      expect(host.editor.getWire()).toContain("T");
     });
 
-    it("sandwiched row — backspace at probe chips postfix not blank collapse", () => {
+    it("sandwiched row — backspace at probe collapses blank not glued postfix chip", () => {
       const wire = sandwichedGluedWire();
       const probe = listEmbeddedBlankBandProbeWires(wireToDoc(wire))[0]!;
       host.editor.setDocFromWire(wire, probe, { resetHistory: true });
       expect(pressBackspace(host.editor)).toBe(true);
-      expect(host.editor.getWire()).toBe(`note @${AGENT_A}\n\n\nmiddle`);
+      expect(host.editor.getWire()).toBe(`note @${AGENT_A}T\n\nmiddle`);
+      expect(host.editor.getWire()).toContain("T");
       expect(host.editor.getWire()).toContain("middle");
     });
   });
@@ -365,7 +399,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       return `header @${AGENT_A} ${postfix}\n\n\n`;
     }
 
-    it("last substantive char chip paints caret after spacer not mention-edge", () => {
+    it("last substantive char chip paints caret on spacer text not mention-edge", () => {
       const wire = prefixMentionPostfixBeforeBand();
       const doc = wireToDoc(wire);
       const [probe] = listEmbeddedBlankBandProbeWires(doc);
@@ -388,7 +422,11 @@ describe("handoff note delete integration (keydown + ingress)", () => {
         wireOffsetToDocPos(chippedDoc, authorityWire)
       );
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(point?.offset).toBeGreaterThan(0);
+      expect(point?.node.textContent?.[0]).toBe(" ");
+      // Sole spacer paints text-tail (insertion point); following break owns break paint.
+      expect(point?.offset).toBe(1);
+      const mentionEl = host.root.querySelector("[data-handoff-mention]");
+      expect(mentionEl?.contains(point!.node) ?? false).toBe(false);
     });
   });
 
