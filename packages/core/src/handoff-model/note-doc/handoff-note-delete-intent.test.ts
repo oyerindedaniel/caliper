@@ -4,6 +4,7 @@ import {
   collapsedSelection,
   collapsedSelectionWithIntent,
   docPosToWireOffset,
+  isCaretOnContentCharBeforeBreak,
   resolveDirectionalUnitFocus,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
@@ -500,6 +501,73 @@ describe("handoff note delete intent — contract authority before handler chain
         "backspace"
       )!;
       expect(docToWire(result.doc)).toBe("tai \n\n\n");
+    });
+  });
+
+  describe("blank-band collapse — CRE landing affinity (progressive trash)", () => {
+    it("last blank collapse onto CRE above substantive join keeps after", () => {
+      // Exhaust sandwiched blanks → residual ordinary `\n` (not a blank probe).
+      // Affinity must stay CRE/after so paint is text-tail and next BS removes the char.
+      let doc = wireToDoc("whe\n\n\ndb");
+      let selection = collapsedSelection(
+        wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc).at(-1)!)
+      );
+      for (let i = 0; i < 5; i++) {
+        const probes = listEmbeddedBlankBandProbeWires(doc);
+        if (probes.length === 0) break;
+        const focusWire = docPosToWireOffset(doc, selection.focus);
+        if (!isEmbeddedBlankBandDeleteProbeWire(doc, focusWire)) break;
+        const next = applyDocDelete(doc, selection, "backspace")!;
+        doc = next.doc;
+        selection = next.selection;
+      }
+      expect(docToWire(doc)).toBe("whe\ndb");
+      const land = docPosToWireOffset(doc, selection.focus);
+      expect(docToWire(doc)[land]).toBe("e");
+      expect(selection.focusAffinity).toBe("after");
+      const chipped = applyDocDelete(doc, selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe("wh\ndb");
+    });
+
+    it("mid-band collapse onto CRE while blank remains keeps after", () => {
+      const doc = wireToDoc("whe\n\n\ndb");
+      const once = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc)[0]!)),
+        "backspace"
+      )!;
+      expect(docToWire(once.doc)[docPosToWireOffset(once.doc, once.selection.focus)]).toBe("e");
+      expect(once.selection.focusAffinity).toBe("after");
+    });
+
+    it("leading sole-char row a\\nb lands visual start without after", () => {
+      let doc = wireToDoc("\n\na\nb");
+      let selection = collapsedSelection(wireOffsetToDocPos(doc, 0));
+      for (const expectedWire of ["\na\nb", "a\nb"]) {
+        const next = applyDocDelete(doc, selection, "backspace")!;
+        expect(docToWire(next.doc)).toBe(expectedWire);
+        doc = next.doc;
+        selection = next.selection;
+      }
+      expect(docToWire(doc)[docPosToWireOffset(doc, selection.focus)]).toBe("a");
+      expect(isCaretOnContentCharBeforeBreak(doc, selection.focus)).toBe(true);
+      expect(selection.focusAffinity).not.toBe("after");
+    });
+
+    it("Delete last blank lands lower visual start without after", () => {
+      let doc = wireToDoc("whe\n\n\ndb");
+      let selection = collapsedSelection(
+        wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc)[0]!)
+      );
+      for (let i = 0; i < 5; i++) {
+        if (listEmbeddedBlankBandProbeWires(doc).length === 0) break;
+        const next = applyDocDelete(doc, selection, "delete")!;
+        doc = next.doc;
+        selection = next.selection;
+        if (docToWire(doc)[docPosToWireOffset(doc, selection.focus)] === "d") break;
+      }
+      expect(docToWire(doc)[docPosToWireOffset(doc, selection.focus)]).toBe("d");
+      expect(selection.focusAffinity).not.toBe("after");
     });
   });
 

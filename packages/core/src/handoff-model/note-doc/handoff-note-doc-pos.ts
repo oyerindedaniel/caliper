@@ -28,6 +28,12 @@ export type HandoffNoteDocPos = {
  */
 export type HandoffNoteCaretAffinity = "before" | "after";
 
+/**
+ * Landing intent for the ambiguous last content char before `\n`.
+ * Maps to affinity: `deletion-point` → `before`; `content-row-end` → `after`.
+ */
+export type HandoffNoteCaretLandingIntent = "deletion-point" | "content-row-end";
+
 export type HandoffNoteSelection = {
   anchor: HandoffNoteDocPos;
   focus: HandoffNoteDocPos;
@@ -136,7 +142,7 @@ export function resolveDirectionalUnitFocus(
 export function caretAffinityForAmbiguousBreak(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
-  intent: "deletion-point" | "content-row-end"
+  intent: HandoffNoteCaretLandingIntent
 ): HandoffNoteCaretAffinity | undefined {
   if (!isCaretOnContentCharBeforeBreak(doc, pos)) {
     return undefined;
@@ -147,7 +153,7 @@ export function caretAffinityForAmbiguousBreak(
 export function collapsedSelectionWithIntent(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
-  intent: "deletion-point" | "content-row-end"
+  intent: HandoffNoteCaretLandingIntent
 ): HandoffNoteSelection {
   const normalized = normalizeDocPos(doc, pos);
   return collapsedSelection(normalized, caretAffinityForAmbiguousBreak(doc, normalized, intent));

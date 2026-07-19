@@ -2,6 +2,7 @@ import {
   docPosToWireOffset,
   isAtomicNode,
   nodeTokenLength,
+  type HandoffNoteCaretLandingIntent,
   type HandoffNoteDocPos,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
@@ -47,6 +48,11 @@ export type EmbeddedBlankBandDeleteMove = {
   doc: HandoffNoteDoc;
   caretWire: number;
   branch: EmbeddedBlankBandDeleteBranch;
+  /**
+   * Owns blankBandMoveToResult affinity. Set with the caret landing at the producer —
+   * never re-derived from residual probe topology in delete-intent.
+   */
+  landingIntent: HandoffNoteCaretLandingIntent;
 };
 
 export type EmbeddedBlankBandGroup = {
@@ -680,21 +686,25 @@ function collapseBlankBandBackspaceLanding(
   deletedProbeWire: number,
   context: EmbeddedBlankBandProbeContext,
   priorDoc: HandoffNoteDoc
-): number {
+): { caretWire: number; landingIntent: HandoffNoteCaretLandingIntent } {
   const nextWire = docToWire(nextDoc);
   const priorWire = docToWire(priorDoc);
 
   const adjacent = collapseBlankBandAdjacentProbeLanding(deletedProbeWire, context, "backspace");
   if (adjacent !== null) {
-    return adjacent;
+    return { caretWire: adjacent, landingIntent: "deletion-point" };
   }
 
   // Trailing or sandwiched: after nipping this blank, land content row end above (upward).
+  // CRE affinity is decided here — residual may still be a blank probe or a substantive join.
   if (embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire)) {
-    if (embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(priorWire, deletedProbeWire)) {
-      return lineSegmentEndingAt(priorWire, deletedProbeWire).start;
-    }
-    return embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
+    const caretWire = embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(
+      priorWire,
+      deletedProbeWire
+    )
+      ? lineSegmentEndingAt(priorWire, deletedProbeWire).start
+      : embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
+    return { caretWire, landingIntent: "content-row-end" };
   }
 
   // Leading: no content above — continue toward remaining blanks / content below.
@@ -704,10 +714,13 @@ function collapseBlankBandBackspaceLanding(
     (probe) => probe >= range.start && probe < range.end
   );
   if (inBand.length > 0) {
-    return inBand[0]!;
+    return { caretWire: inBand[0]!, landingIntent: "deletion-point" };
   }
 
-  return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+  return {
+    caretWire: substantiveRowStartBelowProbe(nextWire, deletedProbeWire),
+    landingIntent: "deletion-point",
+  };
 }
 
 function collapseBlankBandDeleteLanding(
@@ -1050,10 +1063,12 @@ export function resolveEmbeddedBlankBandDelete(
 
   if (direction === "backspace") {
     const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+    const landing = collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc);
     return {
       doc: nextDoc,
-      caretWire: collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc),
+      caretWire: landing.caretWire,
       branch: "backspace-collapse-blank",
+      landingIntent: landing.landingIntent,
     };
   }
 
@@ -1067,6 +1082,7 @@ export function resolveEmbeddedBlankBandDelete(
       doc: nextDoc,
       caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
       branch: "delete-collapse-blank-mid-band",
+      landingIntent: "deletion-point",
     };
   }
 
@@ -1082,6 +1098,7 @@ export function resolveEmbeddedBlankBandDelete(
         context.group
       ),
       branch: "delete-collapse-blank-at-edge",
+      landingIntent: "deletion-point",
     };
   }
 
@@ -1089,6 +1106,7 @@ export function resolveEmbeddedBlankBandDelete(
     doc: nextDoc,
     caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
     branch: "delete-collapse-blank-at-edge",
+    landingIntent: "deletion-point",
   };
 }
 
@@ -1166,6 +1184,7 @@ export function resolveRowChipBeforeEmbeddedBlankProbe(
     doc: nextDoc,
     caretWire,
     branch: "row-chip-before-probe",
+    landingIntent: "content-row-end",
   };
 }
 
@@ -1204,6 +1223,7 @@ export function resolveDeleteFromEmptyContentRowEnd(
       doc: nextDoc,
       caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
       branch: "delete-collapse-blank-mid-band",
+      landingIntent: "deletion-point",
     };
   }
 
@@ -1211,12 +1231,14 @@ export function resolveDeleteFromEmptyContentRowEnd(
     doc: nextDoc,
     caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
     branch: "delete-collapse-blank-at-edge",
+    landingIntent: "deletion-point",
   };
 }
 
 /**
  * Backspace from empty content row end sitting on a band-edge `\n` (not delete-probe).
  * Removes one blank-row newline — same ladder as blank-band collapse.
+ * Lands downward / on remaining infrastructure — never upward CRE.
  */
 export function resolveBackspaceFromEmptyContentRowEnd(
   doc: HandoffNoteDoc,
@@ -1243,6 +1265,7 @@ export function resolveBackspaceFromEmptyContentRowEnd(
     doc: nextDoc,
     caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
     branch: "backspace-collapse-blank",
+    landingIntent: "deletion-point",
   };
 }
 
@@ -1294,6 +1317,7 @@ export function resolveEmbeddedBlankBandLineStartCollapse(
     doc: nextDoc,
     caretWire: embeddedBlankBandSubstantiveContentStartWire(nextDoc),
     branch: "backspace-line-start-collapse",
+    landingIntent: "deletion-point",
   };
 }
 
@@ -1347,5 +1371,6 @@ export function resolveSubstantiveLineBreakJoin(
     doc: nextDoc,
     caretWire: breakWire,
     branch,
+    landingIntent: "deletion-point",
   };
 }

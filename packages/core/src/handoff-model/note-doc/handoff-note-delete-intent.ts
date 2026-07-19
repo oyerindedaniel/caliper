@@ -11,10 +11,10 @@ import {
   collapsedSelectionWithIntent,
   docPosToWireOffset,
   isAtomicNode,
-  isCaretOnContentCharBeforeBreak,
   nodeTokenLength,
   normalizeDocPos,
   resolveDirectionalUnitFocus,
+  type HandoffNoteCaretLandingIntent,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
   wireOffsetToDocPos,
@@ -418,23 +418,6 @@ function blankBandMoveFromEmptyRowEnd(
   return blankBandMoveToResult(move, { doc: priorDoc, focus: priorFocus });
 }
 
-/**
- * Progressive Backspace trash after blank collapse lands on the content-row-end char
- * above the band — affinity `after` so the next Backspace removes that char as unit
- * behind. Leading/line-start landings at a lower visual start must stay deletion-point
- * (next Backspace noops / nips blank, not the first content char).
- */
-function backspaceCollapseLandsAtContentRowEndBeforeProbe(
-  doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos
-): boolean {
-  if (!isCaretOnContentCharBeforeBreak(doc, focus)) {
-    return false;
-  }
-  const focusWire = docPosToWireOffset(doc, focus);
-  return isEmbeddedBlankBandProbeWire(doc, focusWire + 1);
-}
-
 function blankBandMoveToResult(
   move: EmbeddedBlankBandDeleteMove,
   prior?: { doc: HandoffNoteDoc; focus: HandoffNoteDocPos }
@@ -443,17 +426,10 @@ function blankBandMoveToResult(
     move.doc,
     blankBandSelectionFocus(move.doc, move.caretWire, move.branch, prior)
   );
-  // Row-chip / step: CRE. Backspace blank-collapse onto char-before-probe: CRE
-  // (progressive trash). All other blank-band branches: deletion-point / visual start.
-  const intent =
-    blankBandDeleteBranchUsesContentRowEndLanding(move.branch) ||
-    (move.branch === "backspace-collapse-blank" &&
-      backspaceCollapseLandsAtContentRowEndBeforeProbe(move.doc, focus))
-      ? "content-row-end"
-      : "deletion-point";
+  // Affinity owned by the move producer (collapse / row-chip / join) — not re-derived here.
   return {
     doc: move.doc,
-    selection: collapsedSelectionWithIntent(move.doc, focus, intent),
+    selection: collapsedSelectionWithIntent(move.doc, focus, move.landingIntent),
   };
 }
 
@@ -467,7 +443,7 @@ function mentionRemoveIntentResult(
   const doc = mentionEdit.doc;
   let caretWire = rowClearChip?.caretWire ?? mentionStartWire;
   // One unit: atom only. Post-atom commit spacer stays for the next Delete.
-  let landingIntent: "deletion-point" | "content-row-end" = "deletion-point";
+  let landingIntent: HandoffNoteCaretLandingIntent = "deletion-point";
   if (!rowClearChip) {
     const wire = docToWire(doc);
     if (wire[caretWire] === " ") {
