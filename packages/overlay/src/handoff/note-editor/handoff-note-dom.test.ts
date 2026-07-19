@@ -3,6 +3,7 @@ import {
   applyDocDelete,
   applyDocInsertText,
   collapsedSelection,
+  collapsedSelectionWithIntent,
   docPosToWireOffset,
   docToWire,
   describeHandoffNoteCursorContext,
@@ -921,6 +922,33 @@ describe("handoff-note-dom", () => {
       const live = readDocSelection(root, removed.doc);
       expect(live.focusAffinity).toBe("before");
       expect(docToWire(applyDocInsertText(removed.doc, live, "x").doc)).toBe(`whe\n\nx \nmean`);
+    });
+
+    it("row-chip landing paints text-tail and readDocSelection recovers after for Delete", () => {
+      const doc0 = wireToDoc("whed\n\nm");
+      const afterChip = applyDocDelete(
+        doc0,
+        collapsedSelection(wireOffsetToDocPos(doc0, 3)),
+        "delete"
+      )!;
+      expect(docToWire(afterChip.doc)).toBe("whe\n\nm");
+      expect(afterChip.selection.focusAffinity).toBe("after");
+
+      renderHandoffNoteDoc(root, afterChip.doc, { colorByAgentId: new Map() });
+      setDocSelection(root, afterChip.doc, afterChip.selection, { source: "test" });
+      const live = readDocSelection(root, afterChip.doc);
+      expect(live.focusAffinity).toBe("after");
+      expect(docToWire(applyDocDelete(afterChip.doc, live, "delete")!.doc)).toBe("whe\nm");
+    });
+
+    it("content-row-end selection paint/read keeps after through Delete", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const cre = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 2), "content-row-end");
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      setDocSelection(root, doc, cre, { source: "test" });
+      const live = readDocSelection(root, doc);
+      expect(live.focusAffinity).toBe("after");
+      expect(docToWire(applyDocDelete(doc, live, "delete")!.doc)).toBe("whe\nm");
     });
 
     it("first mid-blank char paints text-tail after insert", () => {

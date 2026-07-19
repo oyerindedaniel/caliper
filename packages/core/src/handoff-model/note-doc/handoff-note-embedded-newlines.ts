@@ -47,8 +47,6 @@ export type EmbeddedBlankBandDeleteMove = {
   doc: HandoffNoteDoc;
   caretWire: number;
   branch: EmbeddedBlankBandDeleteBranch;
-  /** When false, selection lands on content-row/mention alias not raw probe wire (mention-interior delete). */
-  probeInfrastructureLanding?: boolean;
 };
 
 export type EmbeddedBlankBandGroup = {
@@ -352,37 +350,28 @@ function caretAtContentRowEndBeforeProbe(
   return false;
 }
 
+/**
+ * Backspace on blank-band probe with content-row alias: unit behind is the prior char.
+ * Caret on the content char itself is owned by resolveHandoffNoteDeleteIntent
+ * (affinity `after` → that char; else generic unit-behind nibble) — never chip ahead here.
+ */
 function resolveBackspaceRowChipAtContentRowEnd(
   doc: HandoffNoteDoc,
   focusWire: number,
   focus: HandoffNoteDocPos
 ): EmbeddedBlankBandDeleteMove | null {
-  if (embeddedBlankBandSpacerBeforeProbeRowChip(doc, focusWire)) {
-    return resolveRowChipBeforeEmbeddedBlankProbe(doc, focusWire);
-  }
-  const wire = docToWire(doc);
-  if (isEmbeddedBlankBandProbeWire(doc, focusWire)) {
-    if (
-      caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, focusWire) ||
-      caretAtContentRowEndBeforeProbe(doc, focus, focusWire)
-    ) {
-      const charWire = focusWire - 1;
-      if (charWire >= 0 && wire[charWire] !== "\n") {
-        return resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
-      }
-    }
+  if (!isEmbeddedBlankBandProbeWire(doc, focusWire)) {
     return null;
   }
-  if (focusWire + 1 < wire.length && isEmbeddedBlankBandProbeWire(doc, focusWire + 1)) {
-    const probeWire = focusWire + 1;
-    if (!caretAtContentRowEndBeforeProbe(doc, focus, probeWire)) {
-      return null;
+  const wire = docToWire(doc);
+  if (
+    caretRestsOnEmbeddedBlankBandProbeAlias(doc, focus, focusWire) ||
+    caretAtContentRowEndBeforeProbe(doc, focus, focusWire)
+  ) {
+    const charWire = focusWire - 1;
+    if (charWire >= 0 && wire[charWire] !== "\n") {
+      return resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
     }
-    const charWire = probeWire - 1;
-    if (charWire < 0 || wire[charWire] === "\n") {
-      return null;
-    }
-    return resolveRowChipBeforeEmbeddedBlankProbe(doc, charWire);
   }
   return null;
 }
@@ -415,16 +404,8 @@ export function resolveContentRowDeleteBeforeEmbeddedBlankBand(
     return null;
   }
 
-  if (focusWire + 1 < wire.length && isEmbeddedBlankBandProbeWire(doc, focusWire + 1)) {
-    const rowChip = resolveBackspaceRowChipAtContentRowEnd(doc, focusWire, focus);
-    if (rowChip) {
-      return rowChip;
-    }
-  }
-
-  // Caret on blank-band delete-probe: blank visual row owns the unit — collapse path
-  // in resolveEmbeddedBlankBandDelete, not content row-chip/step from the probe.
-  return null;
+  // Probe alias only — content-char Backspace unit-behind is intent + affinity.
+  return resolveBackspaceRowChipAtContentRowEnd(doc, focusWire, focus);
 }
 
 /**
@@ -933,58 +914,6 @@ export function docPosAtAtomicStartTextAlias(
   return { nodeIndex: atomicNodeIndex - 1, nodeOffset: prev.text.length };
 }
 
-/** Row above mention start has non-whitespace prefix on the same line. */
-export function rowHasSubstantivePrefixBeforeMention(
-  doc: HandoffNoteDoc,
-  mentionStartWire: number
-): boolean {
-  const wire = docToWire(doc);
-  const prefix = lineSegmentEndingAt(wire, mentionStartWire).segment;
-  return isSubstantiveSegment(prefix);
-}
-
-/**
- * Mention-start wire sits immediately after substantive text with no separator
- * (chip ladder consumed the pre-mention spacer). Distinct from rows that still
- * carry `prefix @mention` spacing before atomic interior remove.
- */
-export function mentionStartGluedToPrefixInWire(
-  doc: HandoffNoteDoc,
-  mentionStartWire: number
-): boolean {
-  const wire = docToWire(doc);
-  if (mentionStartWire <= 0) {
-    return false;
-  }
-  const before = wire[mentionStartWire - 1];
-  return before !== undefined && before !== " " && before !== "\n" && /\S/.test(before);
-}
-
-/**
- * After forward-delete mention remove on a prefixed row, absorb the single
- * mention-adjacent spacer left at mention-start wire so the chip frontier
- * does not rest on phantom whitespace.
- */
-export function docAfterForwardMentionRemoveAbsorbAdjacentSpacer(
-  doc: HandoffNoteDoc,
-  mentionStartWire: number
-): { doc: HandoffNoteDoc; caretWire: number } {
-  const wire = docToWire(doc);
-  if (wire[mentionStartWire] !== " ") {
-    return { doc, caretWire: mentionStartWire };
-  }
-  const lineEndIdx = wire.indexOf("\n", mentionStartWire);
-  const lineEnd = lineEndIdx === -1 ? wire.length : lineEndIdx;
-  const afterSpace = wire.slice(mentionStartWire + 1, lineEnd);
-  if (isSubstantiveSegment(afterSpace)) {
-    return { doc, caretWire: mentionStartWire };
-  }
-  return {
-    doc: spliceDocWireRange(doc, mentionStartWire, mentionStartWire + 1, ""),
-    caretWire: mentionStartWire,
-  };
-}
-
 export function embeddedBlankBandMentionOnlyContentRowAbove(
   doc: HandoffNoteDoc,
   probeWire: number
@@ -1093,9 +1022,9 @@ export function resolveEmbeddedBlankBandDelete(
   focusWire: number,
   direction: HandoffNoteEdit,
   focus?: HandoffNoteDocPos,
-  options?: { mentionEndCollapse?: boolean }
+  options?: { atomicEndCollapse?: boolean }
 ): EmbeddedBlankBandDeleteMove | null {
-  if (!options?.mentionEndCollapse && !isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, focus)) {
+  if (!options?.atomicEndCollapse && !isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, focus)) {
     return null;
   }
 
@@ -1109,7 +1038,7 @@ export function resolveEmbeddedBlankBandDelete(
     return null;
   }
   if (
-    !options?.mentionEndCollapse &&
+    !options?.atomicEndCollapse &&
     caretContext.kind === "mention-boundary" &&
     !isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, focus)
   ) {
@@ -1208,10 +1137,10 @@ export function resolveMentionDeleteRowClearChip(
 /**
  * Content row chip — remove one character on the row immediately before a blank-band probe.
  * `focusWire` is the removed char; probe is at `focusWire + 1`.
- * Called from `applyDocDelete` (caret on char) and from the blank-band step branch
- * (backspace on probe when semantic landing equals the char behind).
+ * Delete: unit ahead at that char. Backspace: only when intent already chose this char as
+ * unit behind (affinity `after` on char-before-break), or probe-alias paths chip the prior char.
  */
-function resolveRowChipBeforeEmbeddedBlankProbe(
+export function resolveRowChipBeforeEmbeddedBlankProbe(
   doc: HandoffNoteDoc,
   focusWire: number
 ): EmbeddedBlankBandDeleteMove | null {

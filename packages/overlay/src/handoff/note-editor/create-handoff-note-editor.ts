@@ -4,6 +4,8 @@
   applyDocLineBreak,
   cloneSelection,
   collapsedSelection,
+  collapsedSelectionCarryingAffinity,
+  collapsedSelectionReconcilingAffinity,
   docEndPos,
   docPosEqual,
   docPosToWireOffset,
@@ -158,7 +160,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     if (!root) {
       return;
     }
-    const priorFocus = selection.focus;
+    const priorSelection = selection;
+    const priorFocus = priorSelection.focus;
     const clickIngressPending = source === "selectionchange" ? pendingClickIngress : null;
     const useAuthorityRead =
       source === "sync" || (source === "selectionchange" && !clickIngressPending);
@@ -199,7 +202,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         suppressDomSelectionSync = false;
       });
     }
-    selection = collapsedSelection(focus);
+    selection = collapsedSelectionReconcilingAffinity(doc, focus, live, priorSelection);
     const liveWire = liveWireBeforeRepair;
     const resolvedWire = docPosToWireOffset(doc, focus);
     const wireMoved = priorWire !== liveWire || liveWire !== resolvedWire;
@@ -791,8 +794,9 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           from: authorityFocusBeforeSync,
           root: root ?? undefined,
         }).focusPos;
+        // Range delete ignores affinity; collapsed Delete carries it via core helper.
         const deleteSelection = collapsed
-          ? { anchor: deleteFocus, focus: deleteFocus }
+          ? collapsedSelectionCarryingAffinity(doc, deleteFocus, active)
           : {
               anchor: resolvePaintContext(doc, active.anchor, {
                 from: authorityFocusBeforeSync,
@@ -1027,7 +1031,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           from: authorityFocusBeforeSync,
           root: root ?? undefined,
         }).focusPos;
-        const deleteSelection = { ...active, focus: deleteFocus, anchor: deleteFocus };
+        const deleteSelection = collapsedSelectionCarryingAffinity(doc, deleteFocus, active);
         logEditStateTrace(`delete>>keydown>>${direction}>>before`, {
           ingress: "keydown",
           priorWire: authorityBefore,

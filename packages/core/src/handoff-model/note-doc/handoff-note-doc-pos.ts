@@ -72,6 +72,64 @@ export function isCaretOnContentCharBeforeBreak(
 }
 
 /**
+ * Past the ambiguous last content char — unit-ahead / insert-after starts at the following `\n`.
+ * Callers decide when (insert: not `before`; delete: explicit `after`).
+ */
+export function docPosAfterContentCharBeforeBreak(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): HandoffNoteDocPos {
+  if (!isCaretOnContentCharBeforeBreak(doc, pos)) {
+    return pos;
+  }
+  return wireOffsetToDocPos(doc, docPosToWireOffset(doc, pos) + 1);
+}
+
+/**
+ * Affinity gate shared by Backspace (unit behind) and Delete (unit ahead) on the
+ * ambiguous last content char before `\n`.
+ *
+ * - Delete + `after`: advance `focus` past the char so the intent chain sees unit ahead
+ *   (break / blank / join). No `contentCharUnit` — downstream owns the ahead unit.
+ * - Backspace + `after`: `focus` stays; `contentCharUnit` is that char (unit behind).
+ * - `before` / omit: `focus` stays; no `contentCharUnit` (Delete nips the char via the
+ *   chain; Backspace uses generic unit-behind).
+ *
+ * Insert is intentionally separate: omit defaults to append-after, while Delete omit
+ * keeps the char as unit ahead.
+ */
+export type DirectionalUnitFocus = {
+  focus: HandoffNoteDocPos;
+  /** Half-open wire range when this keystroke's unit is exactly that content char. */
+  contentCharUnit?: { startWire: number; endWire: number };
+};
+
+export function resolveDirectionalUnitFocus(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  focusAffinity: HandoffNoteCaretAffinity | undefined,
+  direction: "backspace" | "delete"
+): DirectionalUnitFocus {
+  const normalized = normalizeDocPos(doc, focus);
+  if (direction === "delete") {
+    if (focusAffinity === "after") {
+      return {
+        focus: normalizeDocPos(doc, docPosAfterContentCharBeforeBreak(doc, normalized)),
+      };
+    }
+    return { focus: normalized };
+  }
+  if (focusAffinity === "after" && isCaretOnContentCharBeforeBreak(doc, normalized)) {
+    const startWire = docPosToWireOffset(doc, normalized);
+    return {
+      focus: normalized,
+      contentCharUnit: { startWire, endWire: startWire + 1 },
+    };
+  }
+  return { focus: normalized };
+}
+
+/**
  * Affinity only when last-char-before-`\n` is ambiguous; otherwise omit (no disambiguation).
  * `deletion-point` → before; `content-row-end` → after.
  */
@@ -93,6 +151,54 @@ export function collapsedSelectionWithIntent(
 ): HandoffNoteSelection {
   const normalized = normalizeDocPos(doc, pos);
   return collapsedSelection(normalized, caretAffinityForAmbiguousBreak(doc, normalized, intent));
+}
+
+/** Keep affinity only while focus remains on the ambiguous last char before `\n`. */
+export function focusAffinityIfAmbiguousBreak(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  focusAffinity?: HandoffNoteCaretAffinity
+): HandoffNoteCaretAffinity | undefined {
+  if (focusAffinity === undefined || !isCaretOnContentCharBeforeBreak(doc, focus)) {
+    return undefined;
+  }
+  return focusAffinity;
+}
+
+/**
+ * Collapsed selection at `focus`, carrying affinity from `source` when both share the
+ * same wire and that wire is still char-before-break (Delete / paint-normalized focus).
+ */
+export function collapsedSelectionCarryingAffinity(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  source: HandoffNoteSelection
+): HandoffNoteSelection {
+  const sameWire = docPosToWireOffset(doc, focus) === docPosToWireOffset(doc, source.focus);
+  return collapsedSelection(
+    focus,
+    sameWire ? focusAffinityIfAmbiguousBreak(doc, focus, source.focusAffinity) : undefined
+  );
+}
+
+/**
+ * After DOM repair: prefer live-recovered affinity on the same wire, else prior authority.
+ * Drops affinity when focus is no longer the ambiguous char-before-break.
+ */
+export function collapsedSelectionReconcilingAffinity(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  live: HandoffNoteSelection,
+  prior: HandoffNoteSelection
+): HandoffNoteSelection {
+  const focusWire = docPosToWireOffset(doc, focus);
+  let candidate: HandoffNoteCaretAffinity | undefined;
+  if (docPosToWireOffset(doc, live.focus) === focusWire) {
+    candidate = live.focusAffinity;
+  } else if (docPosToWireOffset(doc, prior.focus) === focusWire) {
+    candidate = prior.focusAffinity;
+  }
+  return collapsedSelection(focus, focusAffinityIfAmbiguousBreak(doc, focus, candidate));
 }
 
 export function docPosEqual(a: HandoffNoteDocPos, b: HandoffNoteDocPos): boolean {
@@ -259,12 +365,14 @@ export function normalizeSelection(
   options?: { from?: HandoffNoteDocPos }
 ): HandoffNoteSelection {
   const fromOpt = options?.from ? { from: options.from } : undefined;
+  const focus = normalizeDocPos(doc, selection.focus, fromOpt);
   const normalized: HandoffNoteSelection = {
     anchor: normalizeDocPos(doc, selection.anchor, fromOpt),
-    focus: normalizeDocPos(doc, selection.focus, fromOpt),
+    focus,
   };
-  if (selection.focusAffinity !== undefined) {
-    normalized.focusAffinity = selection.focusAffinity;
+  const focusAffinity = focusAffinityIfAmbiguousBreak(doc, focus, selection.focusAffinity);
+  if (focusAffinity !== undefined) {
+    normalized.focusAffinity = focusAffinity;
   }
   return normalized;
 }

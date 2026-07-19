@@ -4,6 +4,7 @@
  * Overlay ingress: handoff-note-arrow-contract.md (blank-band delete)
  */
 import {
+  collapsedSelectionWithIntent,
   describeHandoffNoteCursorContext,
   docPosToWireOffset,
   isEmbeddedBlankBandProbeWire,
@@ -96,9 +97,16 @@ describe("handoff note delete integration (keydown + ingress)", () => {
   });
 
   describe("prefix-only blank band — chip then collapse ladder", () => {
+    /** Sole `h` before blanks is wire-ambiguous; chip-first needs deletion-point (`before`). */
+    function placeDeletionPointOnSolePrefix(wire: string) {
+      const doc = wireToDoc(wire);
+      const sel = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 0), "deletion-point");
+      host.editor.applyDoc(doc, sel);
+    }
+
     it("forward delete — each nip lands on band head with DOM parity", () => {
       const tail = "tail";
-      host.editor.setDocFromWire(`h\n\n\n${tail}`, 0, { resetHistory: true });
+      placeDeletionPointOnSolePrefix(`h\n\n\n${tail}`);
       expect(pressDelete(host.editor)).toBe(true);
       expect(host.editor.getWire()).toBe(`\n\n\n${tail}`);
 
@@ -111,7 +119,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
 
     it("backspace mirror — chip then collapse lands on band head each nip", () => {
       const tail = "tail";
-      host.editor.setDocFromWire(`h\n\n\n${tail}`, 0, { resetHistory: true });
+      placeDeletionPointOnSolePrefix(`h\n\n\n${tail}`);
       expect(pressDelete(host.editor)).toBe(true);
 
       for (const expectedWire of [`\n\n${tail}`, `\n${tail}`, tail]) {
@@ -119,6 +127,13 @@ describe("handoff note delete integration (keydown + ingress)", () => {
         expect(host.editor.getWire()).toBe(expectedWire);
         expectCaretParity(host.editor, host.root, 0);
       }
+    });
+
+    it("setDocFromWire sole prefix paints CRE — Delete collapses blank first (keeps h)", () => {
+      const tail = "tail";
+      host.editor.setDocFromWire(`h\n\n\n${tail}`, 0, { resetHistory: true });
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe(`h\n\n${tail}`);
     });
 
     it("delete at last probe when another blank remains lands at band head", () => {
@@ -345,7 +360,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       return wire.indexOf("text") + 2;
     }
 
-    it("forward chip through mention remove keeps DOM parity without phantom spacer", () => {
+    it("forward chip through mention remove leaves commit spacer; next Delete clears it", () => {
       const wireStr = embeddedRowChipWire();
       const chipCaret = chipCaretWireInPrefixRow(wireStr);
       host.editor.setDocFromWire(wireStr, chipCaret, { resetHistory: true });
@@ -353,17 +368,19 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(pressDelete(host.editor)).toBe(true);
       expect(pressDelete(host.editor)).toBe(true);
       expect(pressDelete(host.editor)).toBe(true);
-      expect(host.editor.getWire()).toBe(`head\n\nte\nlower @${AGENT_A} `);
+      expect(host.editor.getWire()).toBe(`head\n\nte \nlower @${AGENT_A} `);
       const caretWire = docPosToWireOffset(
         host.editor.getDoc(),
         host.editor.getSelectionState().focus
       );
-      expect(caretWire).toBe(chipCaret);
-      expect(host.editor.getWire()[caretWire]).toBe("\n");
+      expect(host.editor.getWire()[caretWire]).toBe(" ");
+      expect(host.editor.getSelectionState().focusAffinity).toBe("before");
       expectCaretParity(host.editor, host.root, caretWire);
       expect(
         host.editor.getDoc().nodes[host.editor.getSelectionState().focus.nodeIndex]?.type
       ).toBe("text");
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe(`head\n\nte\nlower @${AGENT_A} `);
     });
   });
 

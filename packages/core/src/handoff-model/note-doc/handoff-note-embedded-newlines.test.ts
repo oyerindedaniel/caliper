@@ -10,7 +10,6 @@ import {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
   docPosAtAtomicStartTextAlias,
-  mentionStartGluedToPrefixInWire,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
@@ -150,7 +149,12 @@ describe("embedded blank band probes", () => {
       const doc = wireToDoc(wire);
       const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
       const focus = wireOffsetToDocPos(doc, dPos);
-      const chipped = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
+      // Visual start (omit): unit behind is the blank above — not sole `d`.
+      const nippedBlank = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
+      expect(docToWire(nippedBlank.doc)).toBe("header \n\n\nmiddle\n\nd\n\n\nlower");
+      // CRE (`after`): unit behind is `d` — lands cleared content row end.
+      const chipped = applyDocDelete(doc, collapsedSelection(focus, "after"), "backspace")!;
+      expect(docToWire(chipped.doc)).toBe("header \n\n\nmiddle\n\n\n\n\n\nlower");
       const clearedRowProbe = listEmbeddedBlankBandProbeWires(chipped.doc).find((blankBandProbe) =>
         handoffNoteCaretAtClearedContentRowEndBeforeProbe(
           chipped.doc,
@@ -336,22 +340,6 @@ describe("embedded blank band probes", () => {
       expect(alias).not.toBeNull();
       expect(doc.nodes[alias!.nodeIndex]?.type).toBe("text");
       expect(docPosToWireOffset(doc, alias!)).toBe(mentionStart);
-    });
-  });
-
-  describe("mentionStartGluedToPrefixInWire", () => {
-    const agent = "caliper-abc123";
-
-    it("is true when chip ladder consumed the pre-mention spacer", () => {
-      const doc = wireToDoc(`head\n\nte@${agent} `);
-      const mentionAt = docToWire(doc).indexOf("@", docToWire(doc).indexOf("\n\n") + 2);
-      expect(mentionStartGluedToPrefixInWire(doc, mentionAt)).toBe(true);
-    });
-
-    it("is false when pre-mention spacer remains before atomic remove", () => {
-      const doc = wireToDoc(`header @${agent} \n\n\n`);
-      const mentionAt = docToWire(doc).indexOf("@");
-      expect(mentionStartGluedToPrefixInWire(doc, mentionAt)).toBe(false);
     });
   });
 

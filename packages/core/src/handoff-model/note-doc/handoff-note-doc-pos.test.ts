@@ -8,10 +8,14 @@
 import { describe, expect, it } from "vitest";
 import {
   collapsedSelection,
+  collapsedSelectionCarryingAffinity,
+  collapsedSelectionReconcilingAffinity,
+  collapsedSelectionWithIntent,
   docEndPos,
   docPosEqual,
   docPosToWireOffset,
   docSelectionToWireRange,
+  focusAffinityIfAmbiguousBreak,
   normalizeDocPos,
   normalizeSelection,
   resolveDocVerticalArrowMove,
@@ -736,6 +740,61 @@ describe("resolveDocVerticalArrowMove", () => {
       const secondPill = wire.indexOf(`@${agentA}`, firstPill + 1);
       const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
       assertVertical(doc, firstPill, 1, firstBlank, secondPill);
+    });
+  });
+
+  describe("sole/last-char focusAffinity helpers", () => {
+    const wire = "h\n\ntail";
+    const cre = () => {
+      const doc = wireToDoc(wire);
+      return { doc, at: wireOffsetToDocPos(doc, 0) };
+    };
+
+    it("focusAffinityIfAmbiguousBreak keeps affinity only on char-before-break", () => {
+      const { doc, at } = cre();
+      expect(focusAffinityIfAmbiguousBreak(doc, at, "after")).toBe("after");
+      expect(
+        focusAffinityIfAmbiguousBreak(doc, wireOffsetToDocPos(doc, 1), "after")
+      ).toBeUndefined();
+    });
+
+    it("collapsedSelectionCarryingAffinity requires same wire", () => {
+      const { doc, at } = cre();
+      const source = collapsedSelectionWithIntent(doc, at, "content-row-end");
+      expect(collapsedSelectionCarryingAffinity(doc, at, source).focusAffinity).toBe("after");
+      expect(
+        collapsedSelectionCarryingAffinity(doc, wireOffsetToDocPos(doc, 1), source).focusAffinity
+      ).toBeUndefined();
+    });
+
+    it("collapsedSelectionReconcilingAffinity prefers live then prior on same wire", () => {
+      const { doc, at } = cre();
+      const live = collapsedSelectionWithIntent(doc, at, "content-row-end");
+      const prior = collapsedSelectionWithIntent(doc, at, "deletion-point");
+      expect(collapsedSelectionReconcilingAffinity(doc, at, live, prior).focusAffinity).toBe(
+        "after"
+      );
+      expect(
+        collapsedSelectionReconcilingAffinity(
+          doc,
+          at,
+          collapsedSelection(wireOffsetToDocPos(doc, 1)),
+          prior
+        ).focusAffinity
+      ).toBe("before");
+    });
+
+    it("normalizeSelection drops stale affinity off char-before-break", () => {
+      const { doc, at } = cre();
+      const stale = {
+        ...collapsedSelection(wireOffsetToDocPos(doc, 1)),
+        focusAffinity: "after" as const,
+      };
+      expect(normalizeSelection(doc, stale).focusAffinity).toBeUndefined();
+      expect(
+        normalizeSelection(doc, collapsedSelectionWithIntent(doc, at, "content-row-end"))
+          .focusAffinity
+      ).toBe("after");
     });
   });
 });

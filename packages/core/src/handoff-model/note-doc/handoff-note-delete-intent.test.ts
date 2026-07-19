@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { applyDocDelete, applyDocInsertText } from "./handoff-note-doc-edits.js";
 import {
   collapsedSelection,
+  collapsedSelectionWithIntent,
   docPosToWireOffset,
+  resolveDirectionalUnitFocus,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import { docToWire, wireToDoc } from "./handoff-note-doc.js";
@@ -25,9 +27,10 @@ describe("handoff note delete intent — contract authority before handler chain
     const doc = wireToDoc(wire);
     const probes = listEmbeddedBlankBandProbeWires(doc);
     const spacerWire = probes[0]! - 1;
+    // CRE Backspace: affinity `after` — unit behind is the spacer char.
     const chipped = applyDocDelete(
       doc,
-      collapsedSelection(wireOffsetToDocPos(doc, spacerWire)),
+      collapsedSelection(wireOffsetToDocPos(doc, spacerWire), "after"),
       "backspace"
     )!;
     return { doc: chipped.doc, selection: chipped.selection, probes };
@@ -87,9 +90,10 @@ describe("handoff note delete intent — contract authority before handler chain
       const doc = wireToDoc(wire);
       const postfixWire = wire.search(/[A-Za-z]\n/);
       expect(postfixWire).toBeGreaterThanOrEqual(0);
+      // CRE Backspace: unit behind is the postfix char.
       return applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, postfixWire)),
+        collapsedSelection(wireOffsetToDocPos(doc, postfixWire), "after"),
         "backspace"
       )!;
     }
@@ -265,6 +269,102 @@ describe("handoff note delete intent — contract authority before handler chain
     });
   });
 
+  describe("resolveDirectionalUnitFocus — shared Backspace/Delete affinity gate", () => {
+    it("after: Delete advances focus to break; Backspace keeps focus and names content-char unit", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const focus = wireOffsetToDocPos(doc, 2);
+      const del = resolveDirectionalUnitFocus(doc, focus, "after", "delete");
+      expect(docPosToWireOffset(doc, del.focus)).toBe(3);
+      expect(del.contentCharUnit).toBeUndefined();
+      const bs = resolveDirectionalUnitFocus(doc, focus, "after", "backspace");
+      expect(docPosToWireOffset(doc, bs.focus)).toBe(2);
+      expect(bs.contentCharUnit).toEqual({ startWire: 2, endWire: 3 });
+    });
+
+    it("before / omit: both keys keep focus; neither emits contentCharUnit", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const focus = wireOffsetToDocPos(doc, 2);
+      for (const aff of ["before", undefined] as const) {
+        for (const dir of ["backspace", "delete"] as const) {
+          const resolved = resolveDirectionalUnitFocus(doc, focus, aff, dir);
+          expect(docPosToWireOffset(doc, resolved.focus)).toBe(2);
+          expect(resolved.contentCharUnit).toBeUndefined();
+        }
+      }
+    });
+  });
+
+  /**
+   * Content-row-end (`focusAffinity: after`) on last char before `\n`: Delete acts on the
+   * unit ahead (blank / join), not another chip of that char. Omit / `before` still nip.
+   */
+  describe("content-row-end affinity — Delete unit ahead", () => {
+    it("affinity before on last char before blank: Delete nips that char", () => {
+      const doc = wireToDoc("whed\n\nm");
+      const sel = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 3), "deletion-point");
+      expect(sel.focusAffinity).toBe("before");
+      expect(docToWire(applyDocDelete(doc, sel, "delete")!.doc)).toBe("whe\n\nm");
+    });
+
+    it("affinity after on last char before blank: Delete collapses blank, keeps row text", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const sel = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 2), "content-row-end");
+      expect(sel.focusAffinity).toBe("after");
+      expect(listEmbeddedBlankBandProbeWires(doc)).toContain(3);
+      const result = applyDocDelete(doc, sel, "delete")!;
+      expect(docToWire(result.doc)).toBe("whe\nm");
+    });
+
+    it("after row-chip landing (content-row-end), next Delete does not eat prior char", () => {
+      const doc = wireToDoc("whed\n\nm");
+      const afterChip = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 3)),
+        "delete"
+      )!;
+      expect(docToWire(afterChip.doc)).toBe("whe\n\nm");
+      expect(afterChip.selection.focusAffinity).toBe("after");
+      const second = applyDocDelete(afterChip.doc, afterChip.selection, "delete")!;
+      expect(docToWire(second.doc)).toBe("whe\nm");
+    });
+
+    it("affinity after before substantive \\n: Delete joins rows", () => {
+      const doc = wireToDoc("whe\nm");
+      expect(listEmbeddedBlankBandProbeWires(doc)).toEqual([]);
+      const sel = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 2), "content-row-end");
+      expect(docToWire(applyDocDelete(doc, sel, "delete")!.doc)).toBe("whem");
+    });
+
+    it("Backspace at content-row-end still nips last char", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const sel = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 2), "content-row-end");
+      expect(docToWire(applyDocDelete(doc, sel, "backspace")!.doc)).toBe("wh\n\nm");
+    });
+
+    it("affinity before on last char before blank: Backspace nips prior char not focused char", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const sel = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 2), "deletion-point");
+      expect(sel.focusAffinity).toBe("before");
+      expect(docToWire(applyDocDelete(doc, sel, "backspace")!.doc)).toBe("we\n\nm");
+    });
+
+    it("omit affinity on last char before blank: Backspace matches before (nips prior)", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 2)),
+        "backspace"
+      )!;
+      expect(docToWire(result.doc)).toBe("we\n\nm");
+    });
+
+    it("omit affinity on last char before blank: Delete still nips that char", () => {
+      const doc = wireToDoc("whe\n\nm");
+      const result = applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 2)), "delete")!;
+      expect(docToWire(result.doc)).toBe("wh\n\nm");
+    });
+  });
+
   describe("multi-band wire — probe alias disambiguation", () => {
     const agentB = "caliper-bbbbbbb";
 
@@ -281,7 +381,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const spacerWire = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
       const chipped = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, spacerWire)),
+        collapsedSelection(wireOffsetToDocPos(doc, spacerWire), "after"),
         "backspace"
       )!;
       return { doc: chipped.doc, selection: chipped.selection };
@@ -325,7 +425,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const lowerBandSpacer = lowerTrailingBandSpacerWire(doc);
       const chipped = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, lowerBandSpacer)),
+        collapsedSelection(wireOffsetToDocPos(doc, lowerBandSpacer), "after"),
         "backspace"
       )!;
       expect(handoffNoteCaretOnAtomicNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
@@ -349,6 +449,57 @@ describe("handoff note delete intent — contract authority before handler chain
         `header @${agent} \n\n\nmiddle\n\n\ntail @${agentB} \n\n`
       );
       expect(docToWire(collapsed.doc)).toContain(agentB);
+    });
+  });
+
+  describe("leftover spacer before blank band — unit behind vs ahead", () => {
+    it("visual-start before: Backspace noops on sole leftover space", () => {
+      const doc = wireToDoc(" \n\nmd");
+      const focus = wireOffsetToDocPos(doc, 0);
+      const result = applyDocDelete(doc, collapsedSelection(focus, "before"), "backspace");
+      expect(result).toBeNull();
+      expect(docToWire(doc)).toBe(" \n\nmd");
+    });
+
+    it("visual-start before: Backspace noops on sole substantive char (same as spacer)", () => {
+      const doc = wireToDoc("d\n\nmd");
+      expect(
+        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 0), "before"), "backspace")
+      ).toBeNull();
+      expect(docToWire(doc)).toBe("d\n\nmd");
+    });
+
+    it("visual-start before: Delete clears sole leftover space (unit ahead)", () => {
+      const doc = wireToDoc(" \n\nmd");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0), "before"),
+        "delete"
+      )!;
+      expect(docToWire(result.doc)).toBe("\n\nmd");
+    });
+
+    it("content-row-end after: Backspace removes sole leftover space (unit behind)", () => {
+      const doc = wireToDoc(" \n\nmd");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0), "after"),
+        "backspace"
+      )!;
+      expect(docToWire(result.doc)).toBe("\n\nmd");
+    });
+
+    it("visual-start before on multi-char row: Backspace nips char behind, not spacer ahead", () => {
+      const doc = wireToDoc("tail \n\n\n");
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const spacerWire = probes[0]! - 1;
+      expect(docToWire(doc)[spacerWire]).toBe(" ");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spacerWire), "before"),
+        "backspace"
+      )!;
+      expect(docToWire(result.doc)).toBe("tai \n\n\n");
     });
   });
 

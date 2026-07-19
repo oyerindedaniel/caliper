@@ -16,15 +16,13 @@ import {
 } from "./handoff-note-doc.js";
 import { resolveHandoffNoteDeleteIntent } from "./handoff-note-delete-intent.js";
 import {
-  embeddedBlankBandContentRowEndBeforeProbe,
-  embeddedBlankBandHasSubstantiveRowAbove,
   insertDocPosAfterEmbeddedBlankProbe,
-  isEmbeddedBlankBandProbeWire,
   resolveEmbeddedBlankBandEofLineBreakCaretWire,
 } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
   collapsedSelectionWithIntent,
+  docPosAfterContentCharBeforeBreak,
   docPosToWireOffset,
   expandSelectionFocusToDocEndIfNeeded,
   normalizeDocPos,
@@ -39,10 +37,6 @@ export type HandoffDocEditResult = {
   selection: HandoffNoteSelection;
 };
 
-type HandoffDeleteCaretSnapOptions = {
-  mentionRemoved?: boolean;
-};
-
 function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   return (
     selection.anchor.nodeIndex === selection.focus.nodeIndex &&
@@ -50,40 +44,31 @@ function selectionCollapsed(selection: HandoffNoteSelection): boolean {
   );
 }
 
-/** Delete caret policy: no resting inside committed pills; content-row end after mention delete at probe. */
+/** Delete caret policy: directional interior escape only (out of atom interior). */
 export function snapDeleteCaretWire(
   doc: HandoffNoteDoc,
   wire: number,
-  direction: HandoffNoteEdit,
-  options?: HandoffDeleteCaretSnapOptions
+  direction: HandoffNoteEdit
 ): number {
   const context = describeHandoffNoteCursorContext(doc, wire);
   if (context.kind === "mention-interior") {
     return direction === "backspace" ? context.end : context.start;
-  }
-  if (
-    options?.mentionRemoved &&
-    isEmbeddedBlankBandProbeWire(doc, wire) &&
-    embeddedBlankBandHasSubstantiveRowAbove(docToWire(doc), wire)
-  ) {
-    return embeddedBlankBandContentRowEndBeforeProbe(doc, wire);
   }
   return wire;
 }
 
 function applyDeleteCaretPolicy(
   result: HandoffDocEditResult,
-  direction: HandoffNoteEdit,
-  options?: HandoffDeleteCaretSnapOptions
+  direction: HandoffNoteEdit
 ): HandoffDocEditResult {
   const wire = docPosToWireOffset(result.doc, result.selection.focus);
-  const resolved = snapDeleteCaretWire(result.doc, wire, direction, options);
+  const resolved = snapDeleteCaretWire(result.doc, wire, direction);
   if (resolved === wire) {
     return result;
   }
-  // mentionRemoved → semantic content-row-end at probe; otherwise keep deletion-point affinity.
-  const intent =
-    options?.mentionRemoved && resolved !== wire ? "content-row-end" : "deletion-point";
+  // Interior escape only — preserve affinity intent already stamped by delete intent.
+  const affinity = result.selection.focusAffinity;
+  const intent = affinity === "after" ? "content-row-end" : ("deletion-point" as const);
   return {
     ...result,
     selection: collapsedSelectionWithIntent(
@@ -134,11 +119,7 @@ export function applyDocDelete(
   }
 
   const { result } = intent;
-  return applyDeleteCaretPolicy(
-    { doc: result.doc, selection: result.selection },
-    direction,
-    result.caretPolicyOnly ? undefined : { mentionRemoved: result.mentionRemoved }
-  );
+  return applyDeleteCaretPolicy({ doc: result.doc, selection: result.selection }, direction);
 }
 
 function applyMentionQueryMultilineInsert(
@@ -259,15 +240,7 @@ function insertDocPosAfterContentRowEndChar(
   if (focusAffinity === "before") {
     return pos;
   }
-  const wireText = docToWire(doc);
-  const wire = docPosToWireOffset(doc, pos);
-  if (wire < 0 || wire >= wireText.length) {
-    return pos;
-  }
-  if (wireText[wire] === "\n" || wire + 1 >= wireText.length || wireText[wire + 1] !== "\n") {
-    return pos;
-  }
-  return wireOffsetToDocPos(doc, wire + 1);
+  return docPosAfterContentCharBeforeBreak(doc, pos);
 }
 
 /**
