@@ -14,6 +14,7 @@ import {
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
   handoffNoteCaretAtClearedContentRowEndBeforeProbe,
+  handoffNoteCaretAtLeadingBlankUnderContent,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandDeleteProbeWire,
@@ -194,6 +195,20 @@ describe("embedded blank band probes", () => {
       expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe)).toBe(true);
     });
 
+    it("is true on leading blank under content with probe-infra focus (click = chip)", () => {
+      const doc = wireToDoc(`header\n\n\ntail`);
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const focus = wireOffsetToDocPos(doc, probe);
+      expect(handoffNoteCaretAtLeadingBlankUnderContent(doc, focus, probe)).toBe(true);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe, focus)).toBe(true);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe, focus)).toBe(false);
+      const mid = listEmbeddedBlankBandProbeWires(doc)[1]!;
+      expect(
+        handoffNoteCaretAtLeadingBlankUnderContent(doc, wireOffsetToDocPos(doc, mid), mid)
+      ).toBe(false);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, mid, wireOffsetToDocPos(doc, mid))).toBe(true);
+    });
+
     it("is false on sole-char content row trailing break before substantive content", () => {
       const agent = "agent";
       const wire = `header @${agent} \n\nm\ntail @${agent} `;
@@ -205,13 +220,13 @@ describe("embedded blank band probes", () => {
       expect(embeddedBlankBandAtEmptyContentRowEnd(doc, breakAfterM, focus)).toBe(false);
     });
 
-    it("is false when substantive row text still abuts the probe on delete infrastructure", () => {
+    it("leading blank under abutting content is CRE with probe-infra focus", () => {
       const doc = wireToDoc(`ab\n\n`);
       const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
       const focus = wireOffsetToDocPos(doc, probe);
       expect(embeddedBlankBandSubstantiveContentAbutsProbe(doc, probe)).toBe(true);
-      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe, focus)).toBe(false);
-      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe, focus)).toBe(true);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(doc, probe, focus)).toBe(true);
+      expect(isEmbeddedBlankBandDeleteProbeWire(doc, probe, focus)).toBe(false);
     });
 
     it("is false on interior band tail probe even when focus rests on lineStart alias", () => {

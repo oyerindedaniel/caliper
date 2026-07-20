@@ -13,6 +13,7 @@
   normalizeDocPos,
   wireOffsetToDocPos,
   type HandoffNoteArrowDirection,
+  type HandoffNoteCaretAffinity,
   type HandoffNoteCursorContext,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
@@ -111,13 +112,18 @@ export function domOffsetForContentRowEndInSplitText(
   part: string,
   partIndex: number,
   partCount: number,
-  focusAffinity?: "before" | "after"
+  focusAffinity?: HandoffNoteCaretAffinity
 ): number {
-  // Deletion-point / visual-start affinity: paint at the char, not text-tail.
+  // Deletion-point / visual-start: paint on the char.
   if (focusAffinity === "before") {
     return docOffsetInPart;
   }
-  if (docOffsetInPart === part.length - 1 && part.length > 0 && partIndex < partCount - 1) {
+  if (docOffsetInPart !== part.length - 1 || part.length === 0) {
+    return docOffsetInPart;
+  }
+  // CRE text-tail: omit defaults CRE when a following part exists (`\n` split);
+  // explicit `after` also covers the last part / EOF row end.
+  if (partIndex < partCount - 1 || focusAffinity === "after") {
     return part.length;
   }
   return docOffsetInPart;
@@ -225,7 +231,11 @@ export function docPosToRenderedDomChildIndex(doc: HandoffNoteDoc, nodeIndex: nu
   return rendered;
 }
 
-/** Caret on a wire-break — sole owner of probe / cleared-row / blank-anchor paint with focus. */
+/**
+ * Caret on a wire-break — sole owner of probe / cleared-row / blank-anchor paint with focus.
+ * Cleared content row end shares the blank-anchor ZWSP dock with delete-probe for selection
+ * geom; CRE vs delete-probe remains focus classification (`emptyRowEnd` / delete-probe helpers).
+ */
 function domPointAfterWireBreak(
   root: HTMLElement,
   breakChildIdx: number,
@@ -254,7 +264,10 @@ function domPointAfterWireBreak(
       focusDocPos !== undefined &&
       isEmbeddedBlankBandProbeWire(doc, breakWire) &&
       !isEmbeddedBlankBandDeleteProbeWire(doc, breakWire, focusDocPos);
-    if (emptyRowEnd || nonDeleteProbe) {
+    // Bare `<br>` only for populated sole-char / non-delete-probe alias (content still on row).
+    // CRE and delete-probe both fall through to the blank-anchor ZWSP below (selection geom);
+    // focus classification keeps CRE vs delete-probe — paint does not invent meaning.
+    if (nonDeleteProbe && !emptyRowEnd) {
       return { node: br, offset: 0 };
     }
   }
@@ -317,7 +330,7 @@ function resolveTextDomPointAtOffset(
     isLastRenderedNode: boolean;
     wireBase: number;
     focusDocPos: HandoffNoteDocPos;
-    focusAffinity?: "before" | "after";
+    focusAffinity?: HandoffNoteCaretAffinity;
   }
 ): { node: Node; offset: number } {
   const clamped = Math.max(0, Math.min(nodeOffset, text.length));
@@ -325,7 +338,10 @@ function resolveTextDomPointAtOffset(
   if (!text.includes("\n")) {
     const domNode = root.childNodes[domStartChildIndex];
     if (domNode?.nodeType === Node.TEXT_NODE) {
-      return { node: domNode, offset: clamped };
+      // Same Rule 4 CRE as split text: `after` paints text-tail after the focused char.
+      const offset =
+        options.focusAffinity === "after" && clamped < text.length ? clamped + 1 : clamped;
+      return { node: domNode, offset };
     }
     return { node: root, offset: domStartChildIndex };
   }
@@ -1385,7 +1401,7 @@ export function resolveDomPointAtDocPos(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
-  options?: { from?: HandoffNoteDocPos; focusAffinity?: "before" | "after" }
+  options?: { from?: HandoffNoteDocPos; focusAffinity?: HandoffNoteCaretAffinity }
 ): { node: Node; offset: number } | null {
   const normalized = normalizeDocPos(doc, pos, options?.from ? { from: options.from } : undefined);
   const { paintPos } = resolvePaintContext(doc, normalized, { root });

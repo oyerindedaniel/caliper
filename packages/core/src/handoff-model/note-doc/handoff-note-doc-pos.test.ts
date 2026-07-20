@@ -16,8 +16,10 @@ import {
   docPosToWireOffset,
   docSelectionToWireRange,
   focusAffinityIfAmbiguousBreak,
+  isCaretOnAmbiguousContentRowEndChar,
   normalizeDocPos,
   normalizeSelection,
+  resolveDirectionalUnitFocus,
   resolveDocVerticalArrowMove,
   selectionsEqual,
   wireOffsetToCollapsedSelection,
@@ -795,6 +797,17 @@ describe("resolveDocVerticalArrowMove", () => {
         normalizeSelection(doc, collapsedSelectionWithIntent(doc, at, "content-row-end"))
           .focusAffinity
       ).toBe("after");
+    });
+
+    it("EOF last content char is ambiguous CRE; content-row-end emits after", () => {
+      const doc = wireToDoc("ab ");
+      const at = wireOffsetToDocPos(doc, 2);
+      expect(isCaretOnAmbiguousContentRowEndChar(doc, at)).toBe(true);
+      expect(collapsedSelectionWithIntent(doc, at, "content-row-end").focusAffinity).toBe("after");
+      expect(resolveDirectionalUnitFocus(doc, at, "after", "backspace").contentCharUnit).toEqual({
+        startWire: 2,
+        endWire: 3,
+      });
     });
   });
 });

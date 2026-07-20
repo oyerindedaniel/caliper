@@ -465,8 +465,9 @@ export function insertMentionAt(
   const nextNodes = [...before.nodes];
   const mentionNode: HandoffNoteMentionNode = { type: "mention", agentId };
 
+  // Commit spacer is a space. A following `\n` is a row break — not an existing spacer.
   const padAfterMention = (right: string): HandoffNoteNode[] => {
-    if (/^\s$/.test(right)) {
+    if (right.startsWith(" ")) {
       return [];
     }
     return [{ type: "text", text: " " }];

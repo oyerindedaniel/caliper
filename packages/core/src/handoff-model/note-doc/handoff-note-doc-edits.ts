@@ -22,7 +22,8 @@ import {
 import {
   collapsedSelection,
   collapsedSelectionWithIntent,
-  docPosAfterContentCharBeforeBreak,
+  docPosAfterAmbiguousContentRowEndChar,
+  isCaretOnContentCharBeforeNewline,
   docPosToWireOffset,
   expandSelectionFocusToDocEndIfNeeded,
   normalizeDocPos,
@@ -168,14 +169,18 @@ export function applyDocInsertText(
   const focusWire = docPosToWireOffset(doc, insertFocus);
   const boundary = describeHandoffNoteCursorContext(doc, focusWire);
 
-  if (boundary.kind === "mention-boundary" && boundary.edge === "end" && replacement === "@") {
-    const insert = " @";
-    return spliceDocSelection(
-      doc,
-      wireOffsetToDocPos(doc, boundary.end),
-      wireOffsetToDocPos(doc, boundary.end),
-      insert
-    );
+  if (replacement === "@") {
+    if (boundary.kind === "mention-boundary" && boundary.edge === "end") {
+      return insertAtSignOpeningSessionAfterMentionEnd(doc, boundary.end);
+    }
+    const mentionBefore = resolveMentionNodeIndexForAtSignBeforePill(doc, insertFocus, focusWire);
+    if (mentionBefore !== null) {
+      const mentionStartWire = docPosToWireOffset(doc, {
+        nodeIndex: mentionBefore,
+        nodeOffset: 0,
+      });
+      return insertAtSignOpeningSessionBeforeMentionStart(doc, mentionBefore, mentionStartWire);
+    }
   }
 
   if (boundary.kind === "mention-boundary" && boundary.edge === "end") {
@@ -228,9 +233,12 @@ export function applyDocInsertText(
 }
 
 /**
- * Caret on the last char before a `\n` inserts after that char (before the break),
- * so continued typing appends instead of prepending — unless affinity is `before`
- * (deletion-point / visual start on that same ambiguous wire).
+ * Insert position relative to an ambiguous CRE char.
+ * - `before`: insert at the char (deletion-point).
+ * - `after`: insert past the char (CRE) — including EOF last char.
+ * - omit: append-after only before a following `\n` (row CRE default);
+ *   EOF last char stays put so mention-end / spacer insert paths keep ownership.
+ * Delete/affinity at EOF uses `isCaretOnAmbiguousContentRowEndChar` — separate gate.
  */
 function insertDocPosAfterContentRowEndChar(
   doc: HandoffNoteDoc,
@@ -240,7 +248,10 @@ function insertDocPosAfterContentRowEndChar(
   if (focusAffinity === "before") {
     return pos;
   }
-  return docPosAfterContentCharBeforeBreak(doc, pos);
+  if (focusAffinity === "after" || isCaretOnContentCharBeforeNewline(doc, pos)) {
+    return docPosAfterAmbiguousContentRowEndChar(doc, pos);
+  }
+  return pos;
 }
 
 /**
@@ -336,6 +347,93 @@ function insertAfterMentionEndInFollowingText(
 
 function isSingleRowWhitespacePreMentionGap(text: string): boolean {
   return /^\s+$/.test(text) && !/[\n\r]/.test(text);
+}
+
+/**
+ * Typed `@` immediately before a committed pill — mention atom start, pre-mention
+ * text-tail alias at that wire, or caret on same-row whitespace still ahead of the pill.
+ */
+function resolveMentionNodeIndexForAtSignBeforePill(
+  doc: HandoffNoteDoc,
+  insertFocus: HandoffNoteDocPos,
+  focusWire: number
+): number | null {
+  const node = doc.nodes[insertFocus.nodeIndex];
+  if (node?.type === "mention" && insertFocus.nodeOffset === 0) {
+    return insertFocus.nodeIndex;
+  }
+  if (node?.type === "text") {
+    const next = doc.nodes[insertFocus.nodeIndex + 1];
+    if (next?.type !== "mention") {
+      return null;
+    }
+    const mentionNodeIndex = insertFocus.nodeIndex + 1;
+    const mentionStartWire = docPosToWireOffset(doc, {
+      nodeIndex: mentionNodeIndex,
+      nodeOffset: 0,
+    });
+    if (insertFocus.nodeOffset >= node.text.length || focusWire === mentionStartWire) {
+      return mentionNodeIndex;
+    }
+    const suffix = node.text.slice(insertFocus.nodeOffset);
+    if (suffix.length > 0 && /^\s+$/.test(suffix) && !/[\n\r]/.test(suffix)) {
+      return mentionNodeIndex;
+    }
+  }
+  return null;
+}
+
+/**
+ * Typed `@` at a committed mention boundary opens a new `@query` session.
+ * Wire keeps a spacer so the typed `@` never glues to the pill (`@@id`).
+ * Focus lands on the typed `@` — session parse rejects mention-boundary wires.
+ */
+function insertAtSignOpeningSessionAfterMentionEnd(
+  doc: HandoffNoteDoc,
+  mentionEndWire: number
+): HandoffDocEditResult {
+  const insertAt = wireOffsetToDocPos(doc, mentionEndWire);
+  const spliced = spliceDocSelection(doc, insertAt, insertAt, " @");
+  const atWire = mentionEndWire + 1;
+  return {
+    doc: spliced.doc,
+    selection: collapsedSelection(
+      normalizeDocPos(spliced.doc, wireOffsetToDocPos(spliced.doc, atWire))
+    ),
+  };
+}
+
+function insertAtSignOpeningSessionBeforeMentionStart(
+  doc: HandoffNoteDoc,
+  mentionNodeIndex: number,
+  mentionStartWire: number
+): HandoffDocEditResult {
+  const textIdx = mentionNodeIndex - 1;
+  const textNode = doc.nodes[textIdx];
+  if (textNode?.type === "text") {
+    const atOffset = textNode.text.length;
+    const nextText = `${textNode.text}@ `;
+    const next: HandoffNoteDoc = {
+      nodes: doc.nodes.map((node, index) =>
+        index === textIdx ? { type: "text", text: nextText } : node
+      ),
+    };
+    return {
+      doc: next,
+      selection: collapsedSelection(
+        normalizeDocPos(next, { nodeIndex: textIdx, nodeOffset: atOffset })
+      ),
+    };
+  }
+
+  const insertAt = wireOffsetToDocPos(doc, mentionStartWire);
+  const spliced = spliceDocSelection(doc, insertAt, insertAt, "@ ");
+  return {
+    doc: spliced.doc,
+    selection: collapsedSelection(
+      normalizeDocPos(spliced.doc, wireOffsetToDocPos(spliced.doc, mentionStartWire))
+    ),
+  };
 }
 
 function appendInPreMentionText(
@@ -577,6 +675,7 @@ export function applyDocLineBreak(
   const focusWire = docPosToWireOffset(doc, focus);
   const boundary = describeHandoffNoteCursorContext(doc, focusWire);
 
+  // Pill-start break owns the atom edge — do not CRE-advance past a commit spacer first.
   if (boundary.kind === "mention-boundary" && boundary.edge === "start") {
     const fromMentionAtom = doc.nodes[focus.nodeIndex]?.type === "mention";
     return finishLineBreak(
@@ -586,24 +685,37 @@ export function applyDocLineBreak(
     );
   }
 
-  const run = describeLineBreakCaretRun(doc, docToWire(doc), focusWire);
+  // Same insert-after gate as typed insert: CRE/`after` (and omit before `\n`) splice past
+  // the focused char so a post-mention commit spacer is not pulled under the break.
+  const insertFocus = insertDocPosAfterContentRowEndChar(doc, focus, selection.focusAffinity);
+  const insertWire = docPosToWireOffset(doc, insertFocus);
+
+  const run = describeLineBreakCaretRun(doc, docToWire(doc), insertWire);
   if (run !== null && (run.afterMention || run.beforeMention)) {
-    return finishLineBreak("line-break-caret", focusWire, applyLineBreakCaretPolicy(doc, focus));
+    return finishLineBreak(
+      "line-break-caret",
+      insertWire,
+      applyLineBreakCaretPolicy(doc, insertFocus)
+    );
   }
 
-  if (isOnContentLineBeforeNewlineMention(doc, focus)) {
+  if (isOnContentLineBeforeNewlineMention(doc, insertFocus)) {
     const mentionStartWire = docPosToWireOffset(doc, {
-      nodeIndex: focus.nodeIndex + 1,
+      nodeIndex: insertFocus.nodeIndex + 1,
       nodeOffset: 0,
     });
     return finishLineBreak(
       "before-newline-mention",
-      focusWire,
+      insertWire,
       applyMentionBoundaryLineBreak(doc, mentionStartWire)
     );
   }
 
-  return finishLineBreak("plain.splice", focusWire, spliceDocSelection(doc, focus, focus, "\n"));
+  return finishLineBreak(
+    "plain.splice",
+    insertWire,
+    spliceDocSelection(doc, insertFocus, insertFocus, "\n")
+  );
 }
 
 export function insertMentionAtSelection(
@@ -615,13 +727,17 @@ export function insertMentionAtSelection(
   const startWire = docPosToWireOffset(doc, replaceStart);
   const endWire = docPosToWireOffset(doc, replaceEnd);
   const next = insertMentionAt(doc, agentId, startWire, endWire);
-  const inserted = `@${agentId} `;
-  const cursorWire = Math.min(startWire + inserted.length, docLength(next));
-  const focus = normalizeDocPos(next, wireOffsetToDocPos(next, cursorWire));
-  // Same Rule 4 content-row-end snap as applyDocInsertText — do not leave focus on the
-  // following `\n` (mid-blank commit was painting wire-break BR with empty geom).
-  return snapInsertCaretToContentRowEnd(
-    { doc: next, selection: collapsedSelection(focus) },
-    inserted
-  );
+  // Land on the first post-atom content char as ordinary CRE (`after`). If the atom
+  // abuts a row break with no content char yet, CRE is the char before that break.
+  const wire = docToWire(next);
+  const afterMentionWire = startWire + 1 + agentId.length;
+  let landWire = Math.min(afterMentionWire, docLength(next));
+  if (landWire < wire.length && wire[landWire] === "\n" && landWire > 0) {
+    landWire -= 1;
+  }
+  const focus = normalizeDocPos(next, wireOffsetToDocPos(next, landWire));
+  return {
+    doc: next,
+    selection: collapsedSelectionWithIntent(next, focus, "content-row-end"),
+  };
 }

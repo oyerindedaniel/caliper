@@ -4,6 +4,7 @@ import {
   offsetAtDocPosition,
   resolveDocPosition,
   type HandoffNoteDoc,
+  type HandoffNoteEdit,
   type HandoffNoteNode,
 } from "./handoff-note-doc.js";
 import {
@@ -22,14 +23,15 @@ export type HandoffNoteDocPos = {
 };
 
 /**
- * When focus sits on a content char immediately before `\n`, wire alone cannot tell
- * visual-start / deletion-point from content-row-end. `before` = deletion point (insert
- * at the char, paint offset 0); `after` = content row end (insert after char, paint text-tail).
+ * When focus sits on the last content char of a row (immediately before `\n`, or the
+ * last content char at EOF), wire alone cannot tell visual-start / deletion-point from
+ * content-row-end. `before` = deletion point (insert at the char, paint on char);
+ * `after` = content row end (insert after char, paint text-tail).
  */
 export type HandoffNoteCaretAffinity = "before" | "after";
 
 /**
- * Landing intent for the ambiguous last content char before `\n`.
+ * Landing intent for the ambiguous last content char of a row (`\n` or EOF).
  * Maps to affinity: `deletion-point` → `before`; `content-row-end` → `after`.
  */
 export type HandoffNoteCaretLandingIntent = "deletion-point" | "content-row-end";
@@ -64,8 +66,11 @@ export function collapsedSelection(
   return { anchor: { ...pos }, focus: { ...pos }, focusAffinity };
 }
 
-/** True when focus wire is a content char with a following `\n` (sole/last-char ambiguity). */
-export function isCaretOnContentCharBeforeBreak(
+/**
+ * True when focus wire is a content char with a following `\n` (row-end before break).
+ * Insert omit defaults to append-after only in this case — not at EOF last char.
+ */
+export function isCaretOnContentCharBeforeNewline(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos
 ): boolean {
@@ -78,14 +83,34 @@ export function isCaretOnContentCharBeforeBreak(
 }
 
 /**
- * Past the ambiguous last content char — unit-ahead / insert-after starts at the following `\n`.
+ * True when focus wire is the ambiguous last content char of a row: next wire is `\n`,
+ * or this char is the last wire char (EOF row end). Affinity attach / delete unit gate.
+ */
+export function isCaretOnAmbiguousContentRowEndChar(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): boolean {
+  if (isCaretOnContentCharBeforeNewline(doc, pos)) {
+    return true;
+  }
+  const wireText = docToWire(doc);
+  const wire = docPosToWireOffset(doc, pos);
+  if (wire < 0 || wire >= wireText.length || wireText[wire] === "\n") {
+    return false;
+  }
+  return wire + 1 >= wireText.length;
+}
+
+/**
+ * Past the ambiguous last content char — unit-ahead / insert-after starts at the following
+ * `\n`, or at EOF (past-end) when the row ends without a break.
  * Callers decide when (insert: not `before`; delete: explicit `after`).
  */
-export function docPosAfterContentCharBeforeBreak(
+export function docPosAfterAmbiguousContentRowEndChar(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos
 ): HandoffNoteDocPos {
-  if (!isCaretOnContentCharBeforeBreak(doc, pos)) {
+  if (!isCaretOnAmbiguousContentRowEndChar(doc, pos)) {
     return pos;
   }
   return wireOffsetToDocPos(doc, docPosToWireOffset(doc, pos) + 1);
@@ -93,10 +118,10 @@ export function docPosAfterContentCharBeforeBreak(
 
 /**
  * Affinity gate shared by Backspace (unit behind) and Delete (unit ahead) on the
- * ambiguous last content char before `\n`.
+ * ambiguous last content char of a row (`\n` or EOF).
  *
  * - Delete + `after`: advance `focus` past the char so the intent chain sees unit ahead
- *   (break / blank / join). No `contentCharUnit` — downstream owns the ahead unit.
+ *   (break / blank / join / EOF noop). No `contentCharUnit` — downstream owns the ahead unit.
  * - Backspace + `after`: `focus` stays; `contentCharUnit` is that char (unit behind).
  * - `before` / omit: `focus` stays; no `contentCharUnit` (Delete nips the char via the
  *   chain; Backspace uses generic unit-behind).
@@ -114,29 +139,30 @@ export function resolveDirectionalUnitFocus(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   focusAffinity: HandoffNoteCaretAffinity | undefined,
-  direction: "backspace" | "delete"
+  direction: HandoffNoteEdit
 ): DirectionalUnitFocus {
   const normalized = normalizeDocPos(doc, focus);
-  if (direction === "delete") {
-    if (focusAffinity === "after") {
-      return {
-        focus: normalizeDocPos(doc, docPosAfterContentCharBeforeBreak(doc, normalized)),
-      };
-    }
+  if (focusAffinity !== "after") {
     return { focus: normalized };
   }
-  if (focusAffinity === "after" && isCaretOnContentCharBeforeBreak(doc, normalized)) {
-    const startWire = docPosToWireOffset(doc, normalized);
+  // Shared CRE gate: Delete looks ahead past the char; Backspace's unit behind is the char.
+  if (direction === "delete") {
     return {
-      focus: normalized,
-      contentCharUnit: { startWire, endWire: startWire + 1 },
+      focus: normalizeDocPos(doc, docPosAfterAmbiguousContentRowEndChar(doc, normalized)),
     };
   }
-  return { focus: normalized };
+  if (!isCaretOnAmbiguousContentRowEndChar(doc, normalized)) {
+    return { focus: normalized };
+  }
+  const startWire = docPosToWireOffset(doc, normalized);
+  return {
+    focus: normalized,
+    contentCharUnit: { startWire, endWire: startWire + 1 },
+  };
 }
 
 /**
- * Affinity only when last-char-before-`\n` is ambiguous; otherwise omit (no disambiguation).
+ * Affinity only when last content char of a row is ambiguous (`\n` or EOF); otherwise omit.
  * `deletion-point` → before; `content-row-end` → after.
  */
 export function caretAffinityForAmbiguousBreak(
@@ -144,28 +170,33 @@ export function caretAffinityForAmbiguousBreak(
   pos: HandoffNoteDocPos,
   intent: HandoffNoteCaretLandingIntent
 ): HandoffNoteCaretAffinity | undefined {
-  if (!isCaretOnContentCharBeforeBreak(doc, pos)) {
+  if (!isCaretOnAmbiguousContentRowEndChar(doc, pos)) {
     return undefined;
   }
   return intent === "deletion-point" ? "before" : "after";
 }
 
+/**
+ * Collapsed selection with affinity from landing intent — attaches only on ambiguous
+ * content-char docks (`\n` / EOF). Probe / non-ambiguous focus omits affinity.
+ */
 export function collapsedSelectionWithIntent(
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
   intent: HandoffNoteCaretLandingIntent
 ): HandoffNoteSelection {
   const normalized = normalizeDocPos(doc, pos);
-  return collapsedSelection(normalized, caretAffinityForAmbiguousBreak(doc, normalized, intent));
+  const focusAffinity = caretAffinityForAmbiguousBreak(doc, normalized, intent);
+  return collapsedSelection(normalized, focusAffinity);
 }
 
-/** Keep affinity only while focus remains on the ambiguous last char before `\n`. */
+/** Keep affinity only while focus remains on the ambiguous last content char of a row. */
 export function focusAffinityIfAmbiguousBreak(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   focusAffinity?: HandoffNoteCaretAffinity
 ): HandoffNoteCaretAffinity | undefined {
-  if (focusAffinity === undefined || !isCaretOnContentCharBeforeBreak(doc, focus)) {
+  if (focusAffinity === undefined || !isCaretOnAmbiguousContentRowEndChar(doc, focus)) {
     return undefined;
   }
   return focusAffinity;
@@ -224,17 +255,14 @@ export function cloneDocPos(pos: HandoffNoteDocPos): HandoffNoteDocPos {
 }
 
 export function cloneSelection(selection: HandoffNoteSelection): HandoffNoteSelection {
-  if (selection.focusAffinity === undefined) {
-    return {
-      anchor: cloneDocPos(selection.anchor),
-      focus: cloneDocPos(selection.focus),
-    };
-  }
-  return {
+  const next: HandoffNoteSelection = {
     anchor: cloneDocPos(selection.anchor),
     focus: cloneDocPos(selection.focus),
-    focusAffinity: selection.focusAffinity,
   };
+  if (selection.focusAffinity !== undefined) {
+    next.focusAffinity = selection.focusAffinity;
+  }
+  return next;
 }
 
 export function cloneDoc(doc: HandoffNoteDoc): HandoffNoteDoc {

@@ -449,19 +449,23 @@ describe("handoff-note-dom", () => {
       }
     });
 
-    it("prefix-only leading blank probes resolve to wire-break, not blank anchor", () => {
+    it("prefix-only leading blank probes paint blank-anchor ZWSP when dock exists", () => {
+      // Leading blank probes are delete infrastructure — same selection dock as sandwiched
+      // probes. Bare BR is not a caret dock when a blank-anchor sibling is rendered.
       for (const wire of [`\n`, `\n\n`, `\n\n\ntail`, `\n\ntail`]) {
         const doc = wireToDoc(wire);
-        const focusWire = listEmbeddedBlankBandProbeWires(doc)[0]!;
+        const probes = listEmbeddedBlankBandProbeWires(doc);
+        if (probes.length === 0) {
+          continue;
+        }
+        const focusWire = probes[0]!;
 
         renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
 
         const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, focusWire));
         expect(point, wire).not.toBeNull();
-        expect(
-          point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node),
-          wire
-        ).toBe(true);
+        expect(point?.node.nodeType, wire).toBe(Node.TEXT_NODE);
+        expect(isHandoffBlankAnchorElement(point?.node.parentNode), wire).toBe(true);
         const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
         expect(docPosToWireOffset(doc, roundTrip)).toBe(focusWire);
       }
@@ -478,26 +482,78 @@ describe("handoff-note-dom", () => {
       expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
     });
 
-    it("cleared content row end at interior probe resolves to wire-break", () => {
+    it("cleared content row end at interior probe paints blank-anchor ZWSP not bare BR", () => {
       const wire = `header \n\n\nmiddle\n\n\nd\n\n\nlower`;
       const doc = wireToDoc(wire);
       const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
+      expect(wire[dPos]).toBe("d");
       const chipped = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, dPos)),
+        collapsedSelection(wireOffsetToDocPos(doc, dPos), "after"),
         "backspace"
       )!;
+      expect(docToWire(chipped.doc)).toBe("header \n\n\nmiddle\n\n\n\n\n\nlower");
       const focusWire = docPosToWireOffset(chipped.doc, chipped.selection.focus);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(chipped.doc, focusWire, chipped.selection.focus)
+      ).toBe(false);
 
       renderHandoffNoteDoc(root, chipped.doc, { colorByAgentId: new Map() });
 
       const point = resolveDomPointAtDocPos(root, chipped.doc, chipped.selection.focus);
       expect(point).not.toBeNull();
-      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
-        true
-      );
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(true);
+      expect(point?.node instanceof HTMLBRElement).toBe(false);
       const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
       expect(docPosToWireOffset(chipped.doc, roundTrip)).toBe(focusWire);
+    });
+
+    it("Delete leftover pad between fused bands paints blank-anchor; intent stays off delete-probe", () => {
+      const wire = `upper @${AGENT} \n\n\n \n\n\nlower`;
+      const doc = wireToDoc(wire);
+      const padWire = wire.indexOf(" \n\n\nlower");
+      expect(wire[padWire]).toBe(" ");
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, padWire), "before"),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe(`upper @${AGENT} \n\n\n\n\n\nlower`);
+      const focusWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(cleared.doc, focusWire, cleared.selection.focus)
+      ).toBe(false);
+
+      renderHandoffNoteDoc(root, cleared.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus)!;
+      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(true);
+      expect(
+        docPosToWireOffset(
+          cleared.doc,
+          domPointToDocPos(root, cleared.doc, point.node, point.offset)
+        )
+      ).toBe(focusWire);
+    });
+
+    it("Delete sole leftover space before band paints blank-anchor off delete-probe", () => {
+      const doc = wireToDoc(" \n\nmd");
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0), "before"),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe("\n\nmd");
+      const focusWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(cleared.doc, focusWire, cleared.selection.focus)
+      ).toBe(false);
+
+      renderHandoffNoteDoc(root, cleared.doc, { colorByAgentId: new Map() });
+      const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus)!;
+      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(true);
     });
 
     it("sandwiched blank probe still resolves to blank-band anchor without chip provenance", () => {
@@ -718,9 +774,10 @@ describe("handoff-note-dom", () => {
       expect(postfixWire).toBeGreaterThanOrEqual(0);
       const chipped = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, postfixWire)),
+        collapsedSelection(wireOffsetToDocPos(doc, postfixWire), "after"),
         "backspace"
       )!;
+      expect(docToWire(chipped.doc)).toBe(`note @${AGENT}\n\n\n`);
 
       renderHandoffNoteDoc(root, chipped.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
@@ -1270,6 +1327,12 @@ describe("handoff-note-dom", () => {
       expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4, "before")).toBe(0);
       expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4, "before")).toBe(0);
       expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4, "after")).toBe(1);
+    });
+
+    it("EOF last part: after paints text-tail; omit does not invent CRE on last part", () => {
+      expect(domOffsetForContentRowEndInSplitText(0, "o", 3, 4, "after")).toBe(1);
+      expect(domOffsetForContentRowEndInSplitText(0, "o", 3, 4)).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 1, "after")).toBe(1);
     });
 
     it("maps whitespace-only tail before break on read", () => {

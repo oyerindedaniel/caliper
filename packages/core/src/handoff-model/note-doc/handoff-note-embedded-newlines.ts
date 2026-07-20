@@ -1,4 +1,5 @@
 import {
+  docPosEqual,
   docPosToWireOffset,
   isAtomicNode,
   nodeTokenLength,
@@ -25,13 +26,6 @@ export type EmbeddedBlankBandDeleteBranch =
   | "delete-collapse-blank-at-edge"
   | "delete-line-break-join";
 
-/** Caret lands on content row end / mention alias — not raw probe infrastructure. */
-export function blankBandDeleteBranchUsesContentRowEndLanding(
-  branch: EmbeddedBlankBandDeleteBranch
-): boolean {
-  return branch === "row-chip-before-probe" || branch === "step-to-content-row-end";
-}
-
 /** Caret may rest on blank-band probe infrastructure after collapse. */
 export function blankBandDeleteBranchUsesProbeInfrastructureLanding(
   branch: EmbeddedBlankBandDeleteBranch
@@ -49,10 +43,16 @@ export type EmbeddedBlankBandDeleteMove = {
   caretWire: number;
   branch: EmbeddedBlankBandDeleteBranch;
   /**
-   * Owns blankBandMoveToResult affinity. Set with the caret landing at the producer —
-   * never re-derived from residual probe topology in delete-intent.
+   * Affinity on ambiguous content-char docks only (`collapsedSelectionWithIntent`).
+   * CRE vs delete-probe is structural — not this field. Set at the producer; never
+   * re-derived from residual probe topology in delete-intent.
    */
-  landingIntent: HandoffNoteCaretLandingIntent;
+  affinityIntent: HandoffNoteCaretLandingIntent;
+  /**
+   * Producer-resolved selection focus (row-chip). When set, delete-intent must not
+   * re-derive focus from `caretWire`.
+   */
+  focus?: HandoffNoteDocPos;
 };
 
 export type EmbeddedBlankBandGroup = {
@@ -234,6 +234,42 @@ function embeddedBlankBandChipEndBeforeProbe(
     return physicalEnd;
   }
   return landing;
+}
+
+/**
+ * Cleared visual dock after an emptied content-row chip.
+ *
+ * Semantic content-row-end names the empty segment at the former chip-site probe. After
+ * an abutting clear, that segment is often a pre-existing blank beneath the cleared row;
+ * the cleared visual row is the previous probe in the fused group when that previous
+ * probe still has substantive content above it. Mid-fusion empties keep the semantic land.
+ */
+function caretWireAfterEmptiedContentRowChip(
+  doc: HandoffNoteDoc,
+  probeAfterDelete: number,
+  deletedChar: string
+): number {
+  const natural = embeddedBlankBandChipEndBeforeProbe(doc, probeAfterDelete, deletedChar);
+  const wire = docToWire(doc);
+  const emptied =
+    /^\s$/.test(deletedChar) ||
+    (!embeddedBlankBandHasSubstantiveRowAbove(wire, probeAfterDelete) &&
+      embeddedBlankBandContentRowEndBeforeProbe(doc, probeAfterDelete) === probeAfterDelete);
+  if (!emptied || !isEmbeddedBlankBandProbeWire(doc, natural)) {
+    return natural;
+  }
+  if (!embeddedBlankBandRowAboveProbeIsEmpty(doc, natural)) {
+    return natural;
+  }
+  const context = embeddedBlankBandProbeContext(doc, natural);
+  if (!context || context.indexInGroup <= 0) {
+    return natural;
+  }
+  const previous = context.group.probes[context.indexInGroup - 1]!;
+  if (!embeddedBlankBandHasSubstantiveRowAbove(wire, previous)) {
+    return natural;
+  }
+  return previous;
 }
 
 /** After removing charWire, mention substantive content abuts the probe (not plain row text). */
@@ -522,9 +558,35 @@ export function handoffNoteCaretAtClearedContentRowEndBeforeProbe(
 }
 
 /**
- * Empty content row end: caret on the line-start `\n` of a cleared content row,
+ * Leading blank under substantive content: band-head probe, caret on probe infrastructure.
+ * One dock for click and post-chip — empty content row end, not delete-probe.
+ * Mid/tail blanks stay delete-probe. Same-wire alias owners (mention-end) are not this dock.
+ */
+export function handoffNoteCaretAtLeadingBlankUnderContent(
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  probeWire: number
+): boolean {
+  if (!isEmbeddedBlankBandProbeWire(doc, probeWire)) {
+    return false;
+  }
+  if (!docPosEqual(focus, wireOffsetToDocPos(doc, probeWire))) {
+    return false;
+  }
+  const context = embeddedBlankBandProbeContext(doc, probeWire);
+  if (!context || context.indexInGroup !== 0) {
+    return false;
+  }
+  return embeddedBlankBandHasSubstantiveRowAbove(docToWire(doc), probeWire);
+}
+
+/**
+ * Empty content row end: caret on the cleared / leading blank-row gate before a probe,
  * not blank-band delete infrastructure. Substantive content still on the row before
  * a non-probe break is not empty row end.
+ *
+ * Authority is structural (+ focus owner): emptied row above probe, or leading blank
+ * under content with probe-infra focus. No retained selection flag.
  */
 export function embeddedBlankBandAtEmptyContentRowEnd(
   doc: HandoffNoteDoc,
@@ -535,7 +597,8 @@ export function embeddedBlankBandAtEmptyContentRowEnd(
   if (
     focus &&
     isEmbeddedBlankBandProbeWire(doc, caretWire) &&
-    handoffNoteCaretAtClearedContentRowEndBeforeProbe(doc, focus, caretWire)
+    (handoffNoteCaretAtClearedContentRowEndBeforeProbe(doc, focus, caretWire) ||
+      handoffNoteCaretAtLeadingBlankUnderContent(doc, focus, caretWire))
   ) {
     return true;
   }
@@ -664,7 +727,7 @@ function embeddedBlankBandProbeRange(
 function collapseBlankBandAdjacentProbeLanding(
   deletedProbeWire: number,
   context: EmbeddedBlankBandProbeContext,
-  direction: "backspace" | "delete"
+  direction: HandoffNoteEdit
 ): number | null {
   const { indexInGroup, group } = context;
   if (direction === "backspace" && indexInGroup > 0) {
@@ -686,17 +749,17 @@ function collapseBlankBandBackspaceLanding(
   deletedProbeWire: number,
   context: EmbeddedBlankBandProbeContext,
   priorDoc: HandoffNoteDoc
-): { caretWire: number; landingIntent: HandoffNoteCaretLandingIntent } {
+): { caretWire: number; affinityIntent: HandoffNoteCaretLandingIntent } {
   const nextWire = docToWire(nextDoc);
   const priorWire = docToWire(priorDoc);
 
   const adjacent = collapseBlankBandAdjacentProbeLanding(deletedProbeWire, context, "backspace");
   if (adjacent !== null) {
-    return { caretWire: adjacent, landingIntent: "deletion-point" };
+    return { caretWire: adjacent, affinityIntent: "deletion-point" };
   }
 
   // Trailing or sandwiched: after nipping this blank, land content row end above (upward).
-  // CRE affinity is decided here — residual may still be a blank probe or a substantive join.
+  // CRE affinity is decided here — residual may be a blank probe, a substantive join, or EOF.
   if (embeddedBlankBandHasSubstantiveRowAbove(priorWire, deletedProbeWire)) {
     const caretWire = embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(
       priorWire,
@@ -704,7 +767,7 @@ function collapseBlankBandBackspaceLanding(
     )
       ? lineSegmentEndingAt(priorWire, deletedProbeWire).start
       : embeddedBlankBandContentRowEndBeforeProbe(priorDoc, deletedProbeWire);
-    return { caretWire, landingIntent: "content-row-end" };
+    return { caretWire, affinityIntent: "content-row-end" };
   }
 
   // Leading: no content above — continue toward remaining blanks / content below.
@@ -714,12 +777,12 @@ function collapseBlankBandBackspaceLanding(
     (probe) => probe >= range.start && probe < range.end
   );
   if (inBand.length > 0) {
-    return { caretWire: inBand[0]!, landingIntent: "deletion-point" };
+    return { caretWire: inBand[0]!, affinityIntent: "deletion-point" };
   }
 
   return {
     caretWire: substantiveRowStartBelowProbe(nextWire, deletedProbeWire),
-    landingIntent: "deletion-point",
+    affinityIntent: "deletion-point",
   };
 }
 
@@ -833,7 +896,7 @@ export function embeddedBlankBandSubstantiveContentAbutsProbe(
 /**
  * Doc position after a partial content-row chip (row still has substantive text).
  */
-export function docPosAfterPartialContentRowChipBeforeProbe(
+function docPosAfterPartialContentRowChipBeforeProbe(
   doc: HandoffNoteDoc,
   probeWire: number
 ): HandoffNoteDocPos {
@@ -854,6 +917,8 @@ export function docPosAfterPartialContentRowChipBeforeProbe(
 
 /**
  * Doc position after a content-row chip that cleared the row above the probe.
+ * Prefer alias / semantic content-row-end. Must allow off-wire text land when the chip
+ * move’s caretWire was content (e.g. trailing spacer on a populated row).
  */
 export function docPosAfterEmptiedContentRowChipBeforeProbe(
   doc: HandoffNoteDoc,
@@ -864,6 +929,43 @@ export function docPosAfterEmptiedContentRowChipBeforeProbe(
     return mentionLanding;
   }
   return wireOffsetToDocPos(doc, embeddedBlankBandContentRowEndBeforeProbe(doc, probeWire));
+}
+
+/**
+ * Selection focus for a row-chip land wire.
+ * Probe dock under content: same-wire alias (mention-end) or probe-infrastructure doc pos.
+ * Content caretWire: normal partial/emptied helpers (may land off-wire on row text).
+ */
+function docPosAfterRowChipCaretWire(doc: HandoffNoteDoc, caretWire: number): HandoffNoteDocPos {
+  if (
+    isEmbeddedBlankBandProbeWire(doc, caretWire) &&
+    embeddedBlankBandHasSubstantiveRowAbove(docToWire(doc), caretWire)
+  ) {
+    const alias = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, caretWire);
+    if (alias && docPosToWireOffset(doc, alias) === caretWire) {
+      return alias;
+    }
+    return wireOffsetToDocPos(doc, caretWire);
+  }
+  const probeWire = isEmbeddedBlankBandProbeWire(doc, caretWire)
+    ? caretWire
+    : caretWire + 1 < docToWire(doc).length && isEmbeddedBlankBandProbeWire(doc, caretWire + 1)
+      ? caretWire + 1
+      : caretWire;
+  return docPosAfterPartialContentRowChipBeforeProbe(doc, probeWire);
+}
+
+/**
+ * Single row-chip land surface: cleared visual wire + selection focus after an emptied chip.
+ * Classification (CRE vs delete-probe) is structural on the next key — not retained here.
+ */
+export function resolveRowChipLanding(
+  doc: HandoffNoteDoc,
+  probeAfterDelete: number,
+  deletedChar: string
+): { caretWire: number; focus: HandoffNoteDocPos } {
+  const caretWire = caretWireAfterEmptiedContentRowChip(doc, probeAfterDelete, deletedChar);
+  return { caretWire, focus: docPosAfterRowChipCaretWire(doc, caretWire) };
 }
 
 /**
@@ -1068,7 +1170,7 @@ export function resolveEmbeddedBlankBandDelete(
       doc: nextDoc,
       caretWire: landing.caretWire,
       branch: "backspace-collapse-blank",
-      landingIntent: landing.landingIntent,
+      affinityIntent: landing.affinityIntent,
     };
   }
 
@@ -1082,7 +1184,7 @@ export function resolveEmbeddedBlankBandDelete(
       doc: nextDoc,
       caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
       branch: "delete-collapse-blank-mid-band",
-      landingIntent: "deletion-point",
+      affinityIntent: "deletion-point",
     };
   }
 
@@ -1098,7 +1200,7 @@ export function resolveEmbeddedBlankBandDelete(
         context.group
       ),
       branch: "delete-collapse-blank-at-edge",
-      landingIntent: "deletion-point",
+      affinityIntent: "deletion-point",
     };
   }
 
@@ -1106,7 +1208,7 @@ export function resolveEmbeddedBlankBandDelete(
     doc: nextDoc,
     caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
     branch: "delete-collapse-blank-at-edge",
-    landingIntent: "deletion-point",
+    affinityIntent: "deletion-point",
   };
 }
 
@@ -1177,14 +1279,14 @@ export function resolveRowChipBeforeEmbeddedBlankProbe(
   }
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
-  const probeAfterDelete = focusWire;
-  const deletedChar = wire[focusWire]!;
-  const caretWire = embeddedBlankBandChipEndBeforeProbe(nextDoc, probeAfterDelete, deletedChar);
+  const landing = resolveRowChipLanding(nextDoc, focusWire, wire[focusWire]!);
   return {
     doc: nextDoc,
-    caretWire,
+    caretWire: landing.caretWire,
+    focus: landing.focus,
     branch: "row-chip-before-probe",
-    landingIntent: "content-row-end",
+    // Affinity only if focus lands on an ambiguous content char; probe docks omit.
+    affinityIntent: "content-row-end",
   };
 }
 
@@ -1223,7 +1325,7 @@ export function resolveDeleteFromEmptyContentRowEnd(
       doc: nextDoc,
       caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
       branch: "delete-collapse-blank-mid-band",
-      landingIntent: "deletion-point",
+      affinityIntent: "deletion-point",
     };
   }
 
@@ -1231,14 +1333,19 @@ export function resolveDeleteFromEmptyContentRowEnd(
     doc: nextDoc,
     caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
     branch: "delete-collapse-blank-at-edge",
-    landingIntent: "deletion-point",
+    affinityIntent: "deletion-point",
   };
 }
 
 /**
  * Backspace from empty content row end sitting on a band-edge `\n` (not delete-probe).
- * Removes one blank-row newline — same ladder as blank-band collapse.
- * Lands downward / on remaining infrastructure — never upward CRE.
+ * Removes one blank-row newline.
+ *
+ * Landing (Backspace progressive trash): while a blank remains below in the band, land
+ * that blank; on band exhaustion with content above, land content-row-end above with
+ * `after` (including trailing/EOF) — same upward producer as delete-probe Backspace
+ * exhaustion. Leading blanks with no content above keep downward / lower-start landing.
+ * Delete empty-row-end stays downward-only via `resolveDeleteFromEmptyContentRowEnd`.
  */
 export function resolveBackspaceFromEmptyContentRowEnd(
   doc: HandoffNoteDoc,
@@ -1261,11 +1368,32 @@ export function resolveBackspaceFromEmptyContentRowEnd(
   }
 
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+  const { indexInGroup, group } = context;
+
+  if (indexInGroup < group.probes.length - 1) {
+    return {
+      doc: nextDoc,
+      caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+      branch: "backspace-collapse-blank",
+      affinityIntent: "deletion-point",
+    };
+  }
+
+  if (embeddedBlankBandHasSubstantiveRowAbove(wire, focusWire)) {
+    const landing = collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc);
+    return {
+      doc: nextDoc,
+      caretWire: landing.caretWire,
+      branch: "backspace-collapse-blank",
+      affinityIntent: landing.affinityIntent,
+    };
+  }
+
   return {
     doc: nextDoc,
     caretWire: collapseBlankBandEmptyRowEndLanding(doc, nextDoc, focusWire, context),
     branch: "backspace-collapse-blank",
-    landingIntent: "deletion-point",
+    affinityIntent: "deletion-point",
   };
 }
 
@@ -1317,7 +1445,7 @@ export function resolveEmbeddedBlankBandLineStartCollapse(
     doc: nextDoc,
     caretWire: embeddedBlankBandSubstantiveContentStartWire(nextDoc),
     branch: "backspace-line-start-collapse",
-    landingIntent: "deletion-point",
+    affinityIntent: "deletion-point",
   };
 }
 
@@ -1371,6 +1499,6 @@ export function resolveSubstantiveLineBreakJoin(
     doc: nextDoc,
     caretWire: breakWire,
     branch,
-    landingIntent: "deletion-point",
+    affinityIntent: "deletion-point",
   };
 }

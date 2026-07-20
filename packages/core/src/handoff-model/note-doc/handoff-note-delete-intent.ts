@@ -21,7 +21,6 @@ import {
 } from "./handoff-note-doc-pos.js";
 import {
   docPosAtAtomicStartTextAlias,
-  docPosAfterPartialContentRowChipBeforeProbe,
   docPosAfterEmptiedContentRowChipBeforeProbe,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
   docTextNodeHasEmbeddedNewline,
@@ -34,7 +33,6 @@ import {
   insertDocPosAfterEmbeddedBlankProbe,
   isEmbeddedBlankBandDeleteProbeWire,
   isEmbeddedBlankBandProbeWire,
-  blankBandDeleteBranchUsesContentRowEndLanding,
   blankBandDeleteBranchUsesProbeInfrastructureLanding,
   resolveBackspaceFromEmptyContentRowEnd,
   resolveDeleteFromEmptyContentRowEnd,
@@ -350,16 +348,6 @@ function applyInterMentionGapDelete(
   );
 }
 
-function probeWireAfterRowChip(doc: HandoffNoteDoc, caretWire: number): number {
-  if (isEmbeddedBlankBandProbeWire(doc, caretWire)) {
-    return caretWire;
-  }
-  if (caretWire + 1 < docToWire(doc).length && isEmbeddedBlankBandProbeWire(doc, caretWire + 1)) {
-    return caretWire + 1;
-  }
-  return caretWire;
-}
-
 /**
  * Collapse landing prefers atom/CRE alias when the stroke already owned that seam
  * (prior focus on an atom that abuts the blank-band probe). Otherwise collapse rests
@@ -384,10 +372,6 @@ function blankBandSelectionFocus(
   branch: EmbeddedBlankBandDeleteBranch,
   prior?: { doc: HandoffNoteDoc; focus: HandoffNoteDocPos }
 ): HandoffNoteDocPos {
-  if (blankBandDeleteBranchUsesContentRowEndLanding(branch)) {
-    const probeWire = probeWireAfterRowChip(doc, caretWire);
-    return docPosAfterPartialContentRowChipBeforeProbe(doc, probeWire);
-  }
   const collapseLanding = blankBandDeleteBranchUsesProbeInfrastructureLanding(branch);
   const forceProbeInfrastructure =
     collapseLanding &&
@@ -424,12 +408,12 @@ function blankBandMoveToResult(
 ): HandoffNoteDeleteIntentResult {
   const focus = normalizeDocPos(
     move.doc,
-    blankBandSelectionFocus(move.doc, move.caretWire, move.branch, prior)
+    move.focus ?? blankBandSelectionFocus(move.doc, move.caretWire, move.branch, prior)
   );
-  // Affinity owned by the move producer (collapse / row-chip / join) — not re-derived here.
+  // Affinity intent from the producer — only attaches on ambiguous content-char docks.
   return {
     doc: move.doc,
-    selection: collapsedSelectionWithIntent(move.doc, focus, move.landingIntent),
+    selection: collapsedSelectionWithIntent(move.doc, focus, move.affinityIntent),
   };
 }
 
@@ -443,17 +427,17 @@ function mentionRemoveIntentResult(
   const doc = mentionEdit.doc;
   let caretWire = rowClearChip?.caretWire ?? mentionStartWire;
   // One unit: atom only. Post-atom commit spacer stays for the next Delete.
-  let landingIntent: HandoffNoteCaretLandingIntent = "deletion-point";
+  let affinityIntent: HandoffNoteCaretLandingIntent = "deletion-point";
   if (!rowClearChip) {
     const wire = docToWire(doc);
     if (wire[caretWire] === " ") {
-      landingIntent = "deletion-point";
+      affinityIntent = "deletion-point";
     } else if (
       isEmbeddedBlankBandProbeWire(doc, caretWire) &&
       embeddedBlankBandHasSubstantiveRowAbove(wire, caretWire)
     ) {
       caretWire = embeddedBlankBandContentRowEndBeforeProbe(doc, caretWire);
-      landingIntent = "content-row-end";
+      affinityIntent = "content-row-end";
     }
   }
   return {
@@ -461,7 +445,7 @@ function mentionRemoveIntentResult(
     selection: collapsedSelectionWithIntent(
       doc,
       normalizeDocPos(doc, wireOffsetToDocPos(doc, caretWire)),
-      landingIntent
+      affinityIntent
     ),
   };
 }

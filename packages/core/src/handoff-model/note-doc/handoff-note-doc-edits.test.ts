@@ -23,13 +23,19 @@ import {
   type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
 import {
+  embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
+  embeddedBlankBandProbeContext,
   isEmbeddedBlankBandDeleteProbeWire,
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
   resolveContentRowDeleteBeforeEmbeddedBlankBand,
+  resolveRowChipBeforeEmbeddedBlankProbe,
 } from "./handoff-note-embedded-newlines.js";
-import { handoffNoteCaretOnAtomicNodeEnd } from "./handoff-note-delete-intent.js";
+import {
+  handoffNoteCaretOnAtomicNodeEnd,
+  handoffNoteIsAtomicEndProbeAlias,
+} from "./handoff-note-delete-intent.js";
 import { resolveActiveHandoffMentionQueryDoc } from "../utils/handoff-note.js";
 
 function expectOffDeleteProbeInfrastructure(
@@ -125,6 +131,64 @@ describe("applyDocInsertText", () => {
     const focus = wireOffsetToDocPos(doc, `pre1 @${agentId}`.length);
     const result = applyDocInsertText(doc, collapsedSelection(focus), "@");
     expect(docToWire(result.doc)).toBe(`pre1 @${agentId} @ `);
+    expect(resolveActiveHandoffMentionQueryDoc(result.doc, result.selection)?.query).toBe("");
+    expect(docToWire(result.doc)[docPosToWireOffset(result.doc, result.selection.focus)]).toBe("@");
+  });
+
+  it("inserts @ at mention start as a new session, not glued @@pill", () => {
+    const agentId = "caliper-aaaaaaa";
+    const wire = `prefix @${agentId} `;
+    const doc = wireToDoc(wire);
+    const mentionStart = wire.indexOf("@");
+    const result = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, mentionStart)),
+      "@"
+    );
+    expect(docToWire(result.doc)).toBe(`prefix @ @${agentId} `);
+    expect(docToWire(result.doc).includes("@@")).toBe(false);
+    expect(resolveActiveHandoffMentionQueryDoc(result.doc, result.selection)?.query).toBe("");
+    expect(docToWire(result.doc)[docPosToWireOffset(result.doc, result.selection.focus)]).toBe("@");
+    expect(result.doc.nodes[result.selection.focus.nodeIndex]?.type).toBe("text");
+  });
+
+  it("inserts @ from pre-mention text-tail alias (live click before pill) as a new session", () => {
+    const agentId = "caliper-l5cg02c4k";
+    const wire = `dhd @${agentId} dhhd`;
+    const doc = wireToDoc(wire);
+    const mentionStart = wire.indexOf("@");
+    const prefix = doc.nodes[0];
+    expect(prefix?.type).toBe("text");
+    if (prefix?.type !== "text") {
+      throw new Error("expected prefix text");
+    }
+    // Live click: same wire as mention-start, doc owner is text tail (not mention node).
+    const textTail = collapsedSelection({
+      nodeIndex: 0,
+      nodeOffset: prefix.text.length,
+    });
+    expect(docPosToWireOffset(doc, textTail.focus)).toBe(mentionStart);
+    const result = applyDocInsertText(doc, textTail, "@");
+    expect(docToWire(result.doc)).toBe(`dhd @ @${agentId} dhhd`);
+    expect(docToWire(result.doc).includes("@@")).toBe(false);
+    expect(resolveActiveHandoffMentionQueryDoc(result.doc, result.selection)?.query).toBe("");
+    expect(docToWire(result.doc)[docPosToWireOffset(result.doc, result.selection.focus)]).toBe("@");
+  });
+
+  it("inserts @ on the space char immediately before a pill as a new session", () => {
+    const agentId = "caliper-aaaaaaa";
+    const wire = `dhd @${agentId} `;
+    const doc = wireToDoc(wire);
+    const spaceWire = wire.indexOf("@") - 1;
+    expect(wire[spaceWire]).toBe(" ");
+    const result = applyDocInsertText(
+      doc,
+      collapsedSelection(wireOffsetToDocPos(doc, spaceWire)),
+      "@"
+    );
+    expect(docToWire(result.doc).includes("@@")).toBe(false);
+    expect(resolveActiveHandoffMentionQueryDoc(result.doc, result.selection)?.query).toBe("");
+    expect(docToWire(result.doc)[docPosToWireOffset(result.doc, result.selection.focus)]).toBe("@");
   });
 
   it("inserts at mention start without entering the pill", () => {
@@ -353,7 +417,9 @@ describe("EOF trailing blank band — Shift+Enter caret on probe", () => {
     )!;
 
     expect(docToWire(result.doc)).toBe("header\nd");
+    // Sole blank between rows exhausted → Backspace progressive trash lands header CRE.
     expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe("header".length - 1);
+    expect(result.selection.focusAffinity).toBe("after");
   });
 
   it("backspace on typed EOF row removes content then collapses blank not header", () => {
@@ -760,6 +826,118 @@ describe("embedded blank-band delete contract", () => {
     });
   });
 
+  describe("emptied content-row chip landing — abutting vs mid-fusion", () => {
+    function landSnap(
+      doc: HandoffNoteDoc,
+      selection: { focus: ReturnType<typeof wireOffsetToDocPos> }
+    ) {
+      const focusWire = docPosToWireOffset(doc, selection.focus);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const ctx = embeddedBlankBandProbeContext(doc, focusWire);
+      return {
+        focusWire,
+        probes,
+        indexInGroup: ctx?.indexInGroup ?? -1,
+        deleteProbe: isEmbeddedBlankBandDeleteProbeWire(doc, focusWire, selection.focus),
+        emptyRowEnd: embeddedBlankBandAtEmptyContentRowEnd(doc, focusWire, selection.focus),
+      };
+    }
+
+    it("abutting spacer clear lands band head as CRE (not blank beneath / delete-probe)", () => {
+      const before = "mdh\n \n\ndh ";
+      const spaceWire = before.indexOf(" \n\n");
+      const doc = wireToDoc(before);
+      const move = resolveRowChipBeforeEmbeddedBlankProbe(doc, spaceWire)!;
+      const cleared = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, spaceWire), "before"),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe("mdh\n\n\ndh ");
+      const snap = landSnap(cleared.doc, cleared.selection);
+      const bandHead = snap.probes[0]!;
+      expect(move.caretWire).toBe(bandHead);
+      expect(snap.focusWire).toBe(bandHead);
+      expect(snap.indexInGroup).toBe(0);
+      expect(snap.emptyRowEnd).toBe(true);
+      expect(snap.deleteProbe).toBe(false);
+      // Click on same wire + probe-infra focus shares CRE (no retained chip flag).
+      const clickFocus = wireOffsetToDocPos(cleared.doc, bandHead);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(cleared.doc, bandHead, clickFocus)).toBe(true);
+      expect(isEmbeddedBlankBandDeleteProbeWire(cleared.doc, bandHead, clickFocus)).toBe(false);
+    });
+
+    it("abutting spacer clear with stronger blank run lands band head as CRE", () => {
+      const before = "dh\n \n\n\ndh ";
+      const spaceWire = before.indexOf(" \n\n\n");
+      const cleared = applyDocDelete(
+        wireToDoc(before),
+        collapsedSelection(wireOffsetToDocPos(wireToDoc(before), spaceWire), "before"),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe("dh\n\n\n\ndh ");
+      const snap = landSnap(cleared.doc, cleared.selection);
+      expect(snap.indexInGroup).toBe(0);
+      expect(snap.focusWire).toBe(snap.probes[0]);
+      expect(snap.emptyRowEnd).toBe(true);
+      expect(snap.deleteProbe).toBe(false);
+    });
+
+    it("pad between bands keeps mid-fusion emptyRowEnd", () => {
+      const before = "upper\n\n\n \n\n\nlower";
+      const spaceWire = before.indexOf(" \n\n\nlower");
+      const cleared = applyDocDelete(
+        wireToDoc(before),
+        collapsedSelection(wireOffsetToDocPos(wireToDoc(before), spaceWire), "before"),
+        "delete"
+      )!;
+      expect(docToWire(cleared.doc)).toBe("upper\n\n\n\n\n\nlower");
+      const snap = landSnap(cleared.doc, cleared.selection);
+      expect(snap.deleteProbe).toBe(false);
+      expect(snap.emptyRowEnd).toBe(true);
+      const ctx = embeddedBlankBandProbeContext(cleared.doc, snap.focusWire)!;
+      expect(ctx.indexInGroup).toBeLessThan(ctx.group.probes.length - 1);
+    });
+
+    it("sole-char CRE chip between bands keeps mid-fusion emptyRowEnd", () => {
+      const wire = "header \n\n\nmiddle\n\n\nd\n\n\nlower";
+      const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
+      const cleared = applyDocDelete(
+        wireToDoc(wire),
+        collapsedSelection(wireOffsetToDocPos(wireToDoc(wire), dPos), "after"),
+        "backspace"
+      )!;
+      expect(docToWire(cleared.doc)).toBe("header \n\n\nmiddle\n\n\n\n\n\nlower");
+      const snap = landSnap(cleared.doc, cleared.selection);
+      expect(snap.deleteProbe).toBe(false);
+      expect(snap.emptyRowEnd).toBe(true);
+      expect(snap.indexInGroup).toBeGreaterThan(0);
+    });
+
+    it("mention spacer chip keeps same-wire mention-end alias (not probe infra CRE)", () => {
+      const wire = `header @${agent} \n\n\n`;
+      const spacerWire = listEmbeddedBlankBandProbeWires(wireToDoc(wire))[0]! - 1;
+      const cleared = applyDocDelete(
+        wireToDoc(wire),
+        collapsedSelection(wireOffsetToDocPos(wireToDoc(wire), spacerWire), "after"),
+        "backspace"
+      )!;
+      expect(docToWire(cleared.doc)).toBe(`header @${agent}\n\n\n`);
+      expect(handoffNoteCaretOnAtomicNodeEnd(cleared.doc, cleared.selection.focus)).toBe(true);
+      expect(handoffNoteIsAtomicEndProbeAlias(cleared.doc, cleared.selection.focus)).toBe(true);
+      // Alias owner is not emptyRowEnd; probe-infra focus on same wire is.
+      const focusWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
+      expect(
+        embeddedBlankBandAtEmptyContentRowEnd(cleared.doc, focusWire, cleared.selection.focus)
+      ).toBe(false);
+      expect(
+        isEmbeddedBlankBandDeleteProbeWire(cleared.doc, focusWire, cleared.selection.focus)
+      ).toBe(false);
+      const probeFocus = wireOffsetToDocPos(cleared.doc, focusWire);
+      expect(embeddedBlankBandAtEmptyContentRowEnd(cleared.doc, focusWire, probeFocus)).toBe(true);
+    });
+  });
+
   describe("multi-band — band-scoped step and collapse", () => {
     it("backspace on sandwiched lower-band first probe collapses within lower band only", () => {
       const wire = multiBandWire();
@@ -776,9 +954,11 @@ describe("embedded blank-band delete contract", () => {
       expect(result).not.toBeNull();
       const resultWire = docToWire(result!.doc);
       expect(resultWire).toBe(`header \n\n\nmiddle\n\nlower`);
-      // Blank row owns the unit: land upward at middle content end, not remaining blank below.
+      // Leading blank under content is CRE: first BS lands remaining blank in-band (not up to middle).
       expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        resultWire.indexOf("middle") + "middle".length - 1
+        listEmbeddedBlankBandProbeWires(result!.doc).find(
+          (probeWire) => probeWire >= resultWire.indexOf("middle")
+        )!
       );
     });
 
@@ -850,10 +1030,13 @@ describe("embedded blank-band delete contract", () => {
 
       const result = applyDocDelete(doc, collapsedSelection(focus), "backspace")!;
       expect(docToWire(result.doc)).toBe("TOP\n");
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe("TOP".length - 1);
+      // Leading blank under content is CRE — land downward on remaining blank, not up into TOP.
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(
+        listEmbeddedBlankBandProbeWires(result.doc)[0]
+      );
     });
 
-    it("on first sandwiched blank collapses one blank row instead of stepping to header end", () => {
+    it("on first sandwiched blank collapses one blank row and lands on remaining blank", () => {
       const wire = blankBandSuffixWire();
       const doc = wireToDoc(wire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
@@ -866,9 +1049,9 @@ describe("embedded blank-band delete contract", () => {
 
       expect(result).not.toBeNull();
       expect(docToWire(result!.doc)).toBe(`header @${agent} \n\ntail`);
-      // Upward land at content row end (spacer), not remaining blank below.
+      // Leading blank under content is CRE — land downward on remaining blank, not header end.
       expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        headerRowEndWire(docToWire(result!.doc), listEmbeddedBlankBandProbeWires(result!.doc))
+        listEmbeddedBlankBandProbeWires(result!.doc)[0]
       );
     });
 
@@ -889,7 +1072,7 @@ describe("embedded blank-band delete contract", () => {
       expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(remainingBlank);
     });
 
-    it("after collapsing first sandwiched blank next backspace chips content end not blank below", () => {
+    it("after collapsing sandwiched blanks from band head, exhaustion lands header CRE then chips spacer", () => {
       const wire = blankBandSuffixWire();
       const doc = wireToDoc(wire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
@@ -900,20 +1083,16 @@ describe("embedded blank-band delete contract", () => {
         "backspace"
       )!;
       expect(docToWire(once.doc)).toBe(`header @${agent} \n\ntail`);
-
-      // Landed on content row end — next Backspace chips the spacer; remaining blank stays.
+      // Still on leading blank under content (CRE) — next Backspace nips remaining blank.
       const twice = applyDocDelete(once.doc, once.selection, "backspace")!;
       const resultWire = docToWire(twice.doc);
-      expect(resultWire).toBe(`header @${agent}\n\ntail`);
-      expect(listEmbeddedBlankBandProbeWires(twice.doc)).toHaveLength(1);
-
-      // Collapse the remaining blank only once caret is back on that blank row.
-      const remaining = listEmbeddedBlankBandProbeWires(twice.doc)[0]!;
-      const thrice = applyDocDelete(
-        twice.doc,
-        collapsedSelection(wireOffsetToDocPos(twice.doc, remaining)),
-        "backspace"
-      )!;
+      expect(resultWire).toBe(`header @${agent} \ntail`);
+      // Band exhausted — Backspace progressive trash lands header CRE with after.
+      const headerCre = resultWire.indexOf("\n") - 1;
+      expect(resultWire[headerCre]).toBe(" ");
+      expect(docPosToWireOffset(twice.doc, twice.selection.focus)).toBe(headerCre);
+      expect(twice.selection.focusAffinity).toBe("after");
+      const thrice = applyDocDelete(twice.doc, twice.selection, "backspace")!;
       expect(docToWire(thrice.doc)).toBe(`header @${agent}\ntail`);
     });
 
@@ -1264,7 +1443,7 @@ describe("embedded blank-band delete contract", () => {
       expect(result).not.toBeNull();
       expect(docToWire(result!.doc)).toBe(`header @${agent} \n\ntail @${agent} `);
       expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        headerRowEndWire(docToWire(result!.doc), listEmbeddedBlankBandProbeWires(result!.doc))
+        listEmbeddedBlankBandProbeWires(result!.doc)[0]
       );
     });
 
@@ -1953,6 +2132,43 @@ describe("insertMentionAtSelection", () => {
     const end = wireOffsetToDocPos(doc, 7);
     const result = insertMentionAtSelection(doc, "caliper-aaaaaaa", start, end);
     expect(docToWire(result.doc)).toBe("query @caliper-aaaaaaa ");
+    expect(result.selection.focusAffinity).toBe("after");
+  });
+
+  it("EOF commit lands CRE after on spacer; Shift+Enter keeps spacer above break", () => {
+    const agent = "caliper-abc123";
+    const committed = insertMentionAtSelection(
+      wireToDoc("hi @"),
+      agent,
+      wireOffsetToDocPos(wireToDoc("hi @"), 3),
+      wireOffsetToDocPos(wireToDoc("hi @"), 4)
+    );
+    expect(docToWire(committed.doc)).toBe(`hi @${agent} `);
+    expect(committed.selection.focusAffinity).toBe("after");
+    expect(
+      docToWire(committed.doc)[docPosToWireOffset(committed.doc, committed.selection.focus)]
+    ).toBe(" ");
+    const br = applyDocLineBreak(committed.doc, committed.selection)!;
+    expect(docToWire(br.doc)).toBe(`hi @${agent} \n`);
+  });
+
+  it("EOF commit then two breaks then @ opens mention session (no stranded spacer)", () => {
+    const agent = "caliper-abc123";
+    const doc = wireToDoc("hi @");
+    let state = insertMentionAtSelection(
+      doc,
+      agent,
+      wireOffsetToDocPos(doc, 3),
+      wireOffsetToDocPos(doc, 4)
+    );
+    state = applyDocLineBreak(state.doc, state.selection)!;
+    state = applyDocLineBreak(state.doc, state.selection)!;
+    expect(docToWire(state.doc)).toBe(`hi @${agent} \n\n`);
+    for (const ch of ["d", "h", " ", "@"]) {
+      state = applyDocInsertText(state.doc, state.selection, ch);
+    }
+    expect(docToWire(state.doc)).toBe(`hi @${agent} \n\ndh @`);
+    expect(resolveActiveHandoffMentionQueryDoc(state.doc, state.selection)).not.toBeNull();
   });
 
   it("mid-blank commit rests on post-mention spacer, not the following content \\n", () => {
@@ -1972,6 +2188,47 @@ describe("insertMentionAtSelection", () => {
     expect(wire).toBe(`mesh @${agent} \n\nmesh @${agent} \nwhteh @${agent} `);
     expect(wire[focusWire]).toBe(" ");
     expect(wire[focusWire + 1]).toBe("\n");
+    expect(result.selection.focusAffinity).toBe("after");
+  });
+
+  it("sole residual \\n after @ pads commit spacer and lands on it (not EOF past break)", () => {
+    // Live: fill sandwiched blank then commit — right of @ is a single \\n.
+    const agent = "caliper-2eynixtnx";
+    const before = "dhd \n\ndhd @\n";
+    const doc = wireToDoc(before);
+    const at = before.lastIndexOf("@");
+    const result = insertMentionAtSelection(
+      doc,
+      agent,
+      wireOffsetToDocPos(doc, at),
+      wireOffsetToDocPos(doc, at + 1)
+    );
+    const wire = docToWire(result.doc);
+    const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
+    expect(wire).toBe(`dhd \n\ndhd @${agent} \n`);
+    expect(wire[focusWire]).toBe(" ");
+    expect(wire[focusWire + 1]).toBe("\n");
+    expect(focusWire).toBeLessThan(wire.length);
+    expect(result.selection.focusAffinity).toBe("after");
+  });
+
+  it("trailing @\\n pads commit spacer and lands on it", () => {
+    const agent = "caliper-trailblank01";
+    const before = "dhd \n\n\n@\n";
+    const at = before.lastIndexOf("@");
+    const doc = wireToDoc(before);
+    const result = insertMentionAtSelection(
+      doc,
+      agent,
+      wireOffsetToDocPos(doc, at),
+      wireOffsetToDocPos(doc, at + 1)
+    );
+    const wire = docToWire(result.doc);
+    const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
+    expect(wire).toBe(`dhd \n\n\n@${agent} \n`);
+    expect(wire[focusWire]).toBe(" ");
+    expect(wire[focusWire + 1]).toBe("\n");
+    expect(result.selection.focusAffinity).toBe("after");
   });
 });
 
@@ -2177,7 +2434,10 @@ describe("delete caret policy — blank-band family", () => {
 
       // Blank owns the unit — do not step/chip spacer from the probe.
       expect(docToWire(collapsed.doc)).toBe(`header @${agentA} \n\n`);
-      expect(docPosToWireOffset(collapsed.doc, collapsed.selection.focus)).toBe(mentionEnd);
+      // Multi-blank band head CRE: land remaining blank, not spacer/mention-end.
+      expect(docPosToWireOffset(collapsed.doc, collapsed.selection.focus)).toBe(
+        listEmbeddedBlankBandProbeWires(collapsed.doc)[0]
+      );
       expect(wire[mentionEnd]).toBe(" ");
     });
 
@@ -2968,8 +3228,9 @@ describe("delete caret policy — blank-band family", () => {
         `header @${agentA} \n\nmiddle\n\n\ntail @${agentB} suffix`
       );
       expect(docToWire(collapsed.doc)).toContain(`@${agentA}`);
+      // Band head CRE with blank below: land remaining upper-band blank.
       expect(docPosToWireOffset(collapsed.doc, collapsed.selection.focus)).toBe(
-        listEmbeddedBlankBandProbeWires(collapsed.doc)[0]! - 1
+        listEmbeddedBlankBandProbeWires(collapsed.doc)[0]
       );
     });
 
@@ -3003,9 +3264,11 @@ describe("delete caret policy — blank-band family", () => {
 
       const resultWire = docToWire(result.doc);
       expect(resultWire).toBe(`header @${agentA} \n\n\nmiddle\n\ntail @${agentB} suffix`);
-      // Upward land at middle content end — not remaining lower-band blank.
+      // Band head CRE with blank below: land remaining lower-band blank.
       expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(
-        resultWire.indexOf("middle") + "middle".length - 1
+        listEmbeddedBlankBandProbeWires(result.doc).find(
+          (probeWire) => probeWire >= resultWire.indexOf("middle")
+        )!
       );
     });
 

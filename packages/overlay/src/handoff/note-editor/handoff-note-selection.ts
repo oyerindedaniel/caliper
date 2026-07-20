@@ -5,7 +5,7 @@
   docPosToWireOffset,
   docToWire,
   isAtomicNode,
-  isCaretOnContentCharBeforeBreak,
+  isCaretOnAmbiguousContentRowEndChar,
   isEmbeddedBlankBandProbeWire,
   isInlineSuffixBlankProbeWire,
   nodeTokenLength,
@@ -177,7 +177,7 @@ function focusAffinityFromNativeDomPoint(
   container: Node,
   offset: number
 ): HandoffNoteCaretAffinity | undefined {
-  if (!isCaretOnContentCharBeforeBreak(doc, focus)) {
+  if (!isCaretOnAmbiguousContentRowEndChar(doc, focus)) {
     return undefined;
   }
   if (container.nodeType !== Node.TEXT_NODE) {

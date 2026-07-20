@@ -141,9 +141,10 @@ export {
   collapsedSelectionCarryingAffinity,
   collapsedSelectionReconcilingAffinity,
   collapsedSelectionWithIntent,
-  docPosAfterContentCharBeforeBreak,
+  docPosAfterAmbiguousContentRowEndChar,
   focusAffinityIfAmbiguousBreak,
-  isCaretOnContentCharBeforeBreak,
+  isCaretOnAmbiguousContentRowEndChar,
+  isCaretOnContentCharBeforeNewline,
   resolveDirectionalUnitFocus,
   type DirectionalUnitFocus,
   type DocPosBias,
@@ -176,6 +177,7 @@ export {
 export {
   docTextNodeHasEmbeddedNewline,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
+  resolveRowChipLanding,
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
@@ -190,7 +192,6 @@ export {
   listVisualRowAnchorWires,
   resolveEmbeddedBlankBandDelete,
   resolveEmbeddedBlankBandEofLineBreakCaretWire,
-  handoffNoteCaretAtClearedContentRowEndBeforeProbe,
   embeddedBlankBandRowAboveProbeIsEmpty,
 } from "./handoff-model/note-doc/handoff-note-embedded-newlines.js";
 export {

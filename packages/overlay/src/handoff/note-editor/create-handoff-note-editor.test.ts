@@ -216,7 +216,8 @@ describe("createHandoffNoteEditor", () => {
       new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
     );
     expect(second).toBe(true);
-    expect(host.editor.getWire()).toBe(`@${agentA}`);
+    // Atomic remove leaves commit spacer for the next Delete (delete-intent authority).
+    expect(host.editor.getWire()).toBe(`@${agentA} `);
     expect(host.editor.getWire()).not.toContain(agentB);
   });
 

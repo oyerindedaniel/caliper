@@ -225,15 +225,23 @@ describe("insertMentionAt", () => {
     expect(docToWire(next)).toBe("Fix @caliper-abc123 ");
   });
 
+  it("pads commit space when @ abuts a sole residual \\n (newline is not a spacer)", () => {
+    const agent = "caliper-abc123";
+    const next = insertMentionAt(wireToDoc("x @\n"), agent, 2, 3);
+    expect(docToWire(next)).toBe(`x @${agent} \n`);
+  });
+
   it("inserts mention in empty doc", () => {
     const next = insertMentionAt(emptyHandoffNoteDoc(), "caliper-abc123", 0, 0);
     expect(docToWire(next)).toBe("@caliper-abc123 ");
   });
 
-  it("inserts mention between text nodes", () => {
+  it("inserts mention between text nodes reusing existing leading space as commit spacer", () => {
+    // "Hi  there" at offset 3 → right is " there". Commit spacer already present;
+    // must not double-pad (old /^\s$/ only skipped a sole whitespace char).
     const doc = wireToDoc("Hi  there");
     const next = insertMentionAt(doc, "caliper-abc123", 3, 3);
-    expect(docToWire(next)).toBe("Hi @caliper-abc123  there");
+    expect(docToWire(next)).toBe("Hi @caliper-abc123 there");
   });
 
   it("inserts a second mention before an existing pill when @query abuts it", () => {
