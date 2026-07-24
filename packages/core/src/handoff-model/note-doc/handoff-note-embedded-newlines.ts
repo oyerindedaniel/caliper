@@ -735,7 +735,12 @@ function substantiveRowStartBelowProbe(wire: string, afterProbeWire: number): nu
   return start;
 }
 
-/** After removing a band-edge blank, land on the next probe below or substantive visual start. */
+/**
+ * After removing a band-edge blank, land **downward**:
+ * next remaining blank (probe or empty line-start) still above content, else content start.
+ * Never band-head when that blank sits above the caret, and never skip a leftover blank
+ * below by walking all `\n` onto content in one stroke.
+ */
 function embeddedBlankBandDeleteEndLanding(
   nextDoc: HandoffNoteDoc,
   priorWire: string,
@@ -743,18 +748,24 @@ function embeddedBlankBandDeleteEndLanding(
   deletedProbeWire: number,
   group: EmbeddedBlankBandGroup
 ): number {
-  const range = embeddedBlankBandProbeRange(nextWire, group);
-  const remaining = listEmbeddedBlankBandProbeWires(nextDoc).filter(
-    (probe) => probe >= range.start && probe < range.end
-  );
-
   if (embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)) {
-    if (embeddedBlankBandHasSubstantiveContentAboveBand(priorWire, group.probes)) {
-      return substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+    const contentStart = substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
+    const blankBelow: number[] = [];
+    for (const probe of listEmbeddedBlankBandProbeWires(nextDoc)) {
+      if (probe >= deletedProbeWire && probe < contentStart) {
+        blankBelow.push(probe);
+      }
     }
-    if (remaining.length > 0) {
-      return remaining[0]!;
+    for (const stop of listBlankVisualLineStartWires(nextDoc)) {
+      if (stop >= deletedProbeWire && stop < contentStart) {
+        blankBelow.push(stop);
+      }
     }
+    blankBelow.sort((a, b) => a - b);
+    if (blankBelow.length > 0) {
+      return blankBelow[0]!;
+    }
+    return contentStart;
   }
 
   if (nextWire[deletedProbeWire] === "\n") {
@@ -804,12 +815,10 @@ function collapseBlankBandAdjacentProbeLanding(
     const targetProbe = group.probes[indexInGroup - 1]!;
     return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
   }
+  // Delete: only step to the next blank below. Last probe falls through to downward content land.
   if (direction === "delete" && indexInGroup < group.probes.length - 1) {
     const targetProbe = group.probes[indexInGroup + 1]!;
     return deletedProbeWire < targetProbe ? targetProbe - 1 : targetProbe;
-  }
-  if (direction === "delete" && indexInGroup > 0) {
-    return group.probes[indexInGroup - 1]!;
   }
   return null;
 }
@@ -928,18 +937,22 @@ export function listEmbeddedBlankBandProbeWires(doc: HandoffNoteDoc): number[] {
  * at `wire.length`) is one stop. Probe wires stay delete/paint docks and may differ
  * from these line-starts — do not use probes as a second caret identity for the same row.
  */
-export function listBlankVisualLineStartWires(doc: HandoffNoteDoc): number[] {
-  const wire = docToWire(doc);
+function blankVisualLineStartWiresFromWire(wire: string, lineStarts?: number[]): number[] {
   if (wire.length === 0) {
     return [0];
   }
+  const starts = lineStarts ?? wireLineStartOffsets(wire);
   const stops: number[] = [];
-  for (const lineStart of wireLineStartOffsets(wire)) {
+  for (const lineStart of starts) {
     if (isBlankBandSegment(lineSegmentAtLineStart(wire, lineStart))) {
       stops.push(lineStart);
     }
   }
   return stops;
+}
+
+export function listBlankVisualLineStartWires(doc: HandoffNoteDoc): number[] {
+  return blankVisualLineStartWiresFromWire(docToWire(doc));
 }
 
 export function docTextNodeHasEmbeddedNewline(doc: HandoffNoteDoc, nodeIndex: number): boolean {
@@ -1137,47 +1150,102 @@ export function docPosAtAtomicStartTextAlias(
  * Probe-coincident stops are not mapped here — {@link resolveBlankVisualLineStartCollapse}
  * refuses those so probe / empty-CRE paths own them.
  */
-function blankVisualLineStartToOpenProbeWire(doc: HandoffNoteDoc, stopWire: number): number | null {
-  if (!listBlankVisualLineStartWires(doc).includes(stopWire)) {
+function blankVisualLineStartToOpenProbeWire(
+  stopWire: number,
+  knownStops: number[],
+  knownProbes: number[]
+): number | null {
+  if (!knownStops.includes(stopWire)) {
     return null;
   }
-  if (isEmbeddedBlankBandProbeWire(doc, stopWire)) {
+  if (knownProbes.includes(stopWire)) {
     return null;
   }
-  if (stopWire > 0 && isEmbeddedBlankBandProbeWire(doc, stopWire - 1)) {
+  if (stopWire > 0 && knownProbes.includes(stopWire - 1)) {
     return stopWire - 1;
   }
   return null;
+}
+
+function wireHasSubstantiveContentBefore(
+  wire: string,
+  beforeWire: number,
+  lineStarts: number[]
+): boolean {
+  for (const start of lineStarts) {
+    if (start >= beforeWire) {
+      break;
+    }
+    if (isSubstantiveSegment(lineSegmentAtLineStart(wire, start))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Delete land after stop→opener collapse — owned by prior stop identity, not the opener
+ * probe's lander. Map the prior stop into the next wire, then take the next blank at/after
+ * that floor still above content; if that blank is a leftover **leading** band head (no
+ * substantive content above), continue to content start. Backspace does not use this.
+ *
+ * Caller supplies one next-wire snapshot (`nextWire` / `lineStarts` / `nextStops`) so land
+ * and stop remount do not rebuild those lists on the same keystroke.
+ */
+function blankStopDeleteLanding(
+  nextWire: string,
+  nextStops: number[],
+  lineStarts: number[],
+  priorStopWire: number,
+  openProbeWire: number
+): number {
+  const mappedStop = priorStopWire > openProbeWire ? priorStopWire - 1 : priorStopWire;
+  const contentStart = substantiveRowStartBelowProbe(nextWire, mappedStop);
+  const blanksAtOrBelow = nextStops.filter((stop) => stop >= mappedStop && stop < contentStart);
+  if (blanksAtOrBelow.length === 0) {
+    return contentStart;
+  }
+  const candidate = blanksAtOrBelow[0]!;
+  // Leading leftover only: mid-doc remaining empty under content stays.
+  if (
+    candidate === nextStops[0] &&
+    !wireHasSubstantiveContentBefore(nextWire, candidate, lineStarts)
+  ) {
+    return substantiveRowStartBelowProbe(nextWire, candidate);
+  }
+  return candidate;
 }
 
 /**
  * After blank-row collapse from a stop caret, prefer remaining empty line-start identity.
  * When the collapsed stop was the last blank stop (often EOF), do not keep a band-head
  * land while a higher empty line-start remains — that skips a blank row (live jump).
+ * Delete land is owned by {@link blankStopDeleteLanding} before this remount runs.
  */
 function blankStopLandCaretWire(
-  doc: HandoffNoteDoc,
   landWire: number,
   priorStopWire: number,
-  priorStops: number[]
+  priorStops: number[],
+  nextStops: number[],
+  nextProbes: number[]
 ): number {
-  const stops = listBlankVisualLineStartWires(doc);
   let caret = landWire;
-  if (stops.includes(caret)) {
+  if (nextStops.includes(caret)) {
     // keep stop identity
-  } else if (isEmbeddedBlankBandProbeWire(doc, caret) && stops.includes(caret + 1)) {
+  } else if (nextProbes.includes(caret) && nextStops.includes(caret + 1)) {
     caret = caret + 1;
   }
 
   const priorWasLastStop =
     priorStops.length > 0 && priorStopWire === priorStops[priorStops.length - 1];
-  if (priorWasLastStop && stops.length > 1) {
-    const first = stops[0]!;
-    const last = stops[stops.length - 1]!;
+  if (priorWasLastStop && nextStops.length > 1) {
+    const first = nextStops[0]!;
+    const last = nextStops[nextStops.length - 1]!;
     if (caret === first && last !== first) {
       return last;
     }
   }
+
   return caret;
 }
 
@@ -1185,9 +1253,17 @@ function withBlankStopLand(
   move: EmbeddedBlankBandCollapseMove,
   priorStopWire: number,
   priorStops: number[],
-  prior: { doc: HandoffNoteDoc; focus: HandoffNoteDocPos }
+  prior: { doc: HandoffNoteDoc; focus: HandoffNoteDocPos },
+  nextStops: number[],
+  nextProbes: number[]
 ): EmbeddedBlankBandCollapseMove {
-  const caretWire = blankStopLandCaretWire(move.doc, move.caretWire, priorStopWire, priorStops);
+  const caretWire = blankStopLandCaretWire(
+    move.caretWire,
+    priorStopWire,
+    priorStops,
+    nextStops,
+    nextProbes
+  );
   // Caret may remount off the inner probe land — re-derive focus once for the final wire.
   return withBlankBandCollapseFocus(
     {
@@ -1218,35 +1294,60 @@ export function resolveBlankVisualLineStartCollapse(
   if (!priorStops.includes(stopWire)) {
     return null;
   }
+  const priorProbes = listEmbeddedBlankBandProbeWires(doc);
   // Probe docks that share a stop wire are owned by probe / empty-CRE collapse.
-  if (isEmbeddedBlankBandProbeWire(doc, stopWire)) {
+  if (priorProbes.includes(stopWire)) {
     return null;
   }
 
-  const openProbe = blankVisualLineStartToOpenProbeWire(doc, stopWire);
+  const openProbe = blankVisualLineStartToOpenProbeWire(stopWire, priorStops, priorProbes);
   if (openProbe === null) {
     return null;
   }
   const probeFocus = wireOffsetToDocPos(doc, openProbe);
   const prior = { doc, focus: priorFocus };
-  const land = (move: EmbeddedBlankBandCollapseMove) =>
-    withBlankStopLand(move, stopWire, priorStops, prior);
+
+  const landWithNextLattice = (move: EmbeddedBlankBandCollapseMove) => {
+    const nextWire = docToWire(move.doc);
+    const lineStarts = wireLineStartOffsets(nextWire);
+    const nextStops = blankVisualLineStartWiresFromWire(nextWire, lineStarts);
+    const nextProbes = listEmbeddedBlankBandProbeWires(move.doc);
+    return withBlankStopLand(move, stopWire, priorStops, prior, nextStops, nextProbes);
+  };
 
   if (direction === "backspace") {
     const emptyRow = resolveBackspaceFromEmptyContentRowEnd(doc, openProbe, probeFocus);
     if (emptyRow) {
-      return land(emptyRow);
+      return landWithNextLattice(emptyRow);
     }
     const probeCollapse = resolveEmbeddedBlankBandCollapse(doc, openProbe, "backspace", probeFocus);
-    return probeCollapse ? land(probeCollapse) : null;
+    return probeCollapse ? landWithNextLattice(probeCollapse) : null;
   }
+
+  const landDelete = (move: EmbeddedBlankBandCollapseMove) => {
+    const nextWire = docToWire(move.doc);
+    const lineStarts = wireLineStartOffsets(nextWire);
+    const nextStops = blankVisualLineStartWiresFromWire(nextWire, lineStarts);
+    const nextProbes = listEmbeddedBlankBandProbeWires(move.doc);
+    return withBlankStopLand(
+      {
+        ...move,
+        caretWire: blankStopDeleteLanding(nextWire, nextStops, lineStarts, stopWire, openProbe),
+      },
+      stopWire,
+      priorStops,
+      prior,
+      nextStops,
+      nextProbes
+    );
+  };
 
   const emptyRow = resolveDeleteFromEmptyContentRowEnd(doc, openProbe, probeFocus);
   if (emptyRow.status === "move") {
-    return land(emptyRow.move);
+    return landDelete(emptyRow.move);
   }
   const probeCollapse = resolveEmbeddedBlankBandCollapse(doc, openProbe, "delete", probeFocus);
-  return probeCollapse ? land(probeCollapse) : null;
+  return probeCollapse ? landDelete(probeCollapse) : null;
 }
 
 /**

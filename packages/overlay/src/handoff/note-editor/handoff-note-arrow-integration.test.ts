@@ -2063,7 +2063,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       );
     });
 
-    it("delete on lower blank after arrow down lands at tail row start", () => {
+    it("delete on lower blank after arrow down lands remaining empty above tail", () => {
       const doc = wireToDoc(wire);
       const stops = blankNavStops(doc);
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
@@ -2083,12 +2083,14 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       const resultWire = host.editor.getWire();
       expect(resultWire).toBe(`header @${AGENT_COMPOSITE} \n\ntail @${AGENT_COMPOSITE} `);
+      const tailAt = resultWire.indexOf("tail");
       expectCaretParity(
         host.editor,
         host.root,
-        resultWire.indexOf("tail"),
-        "lower blank delete to tail row start"
+        tailAt - 1,
+        "lower blank delete lands remaining empty above tail"
       );
+      expect(resultWire[tailAt - 1]).toBe("\n");
     });
 
     it("keydown backspace at header row end nibbles trailing suffix text", () => {

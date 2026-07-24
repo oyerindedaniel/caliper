@@ -151,15 +151,19 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(host.editor.getWire()).toBe(`h\n\n${tail}`);
     });
 
-    it("delete at last probe when another blank remains lands at band head", () => {
+    it("delete at last probe when another blank remains lands remaining empty above content not band head", () => {
       const tail = "tail";
       const wire = `\n\n\n${tail}`;
       const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
       host.editor.setDocFromWire(wire, probes[1]!, { resetHistory: true });
 
       expect(pressDelete(host.editor)).toBe(true);
-      expect(host.editor.getWire()).toBe(`\n\n${tail}`);
-      expectCaretParity(host.editor, host.root, 0);
+      const next = host.editor.getWire();
+      expect(next).toBe(`\n\n${tail}`);
+      const contentAt = next.indexOf(tail);
+      expectCaretParity(host.editor, host.root, contentAt - 1);
+      expect(next[contentAt - 1]).toBe("\n");
+      expect(host.editor.getCursor()).not.toBe(0);
     });
   });
 

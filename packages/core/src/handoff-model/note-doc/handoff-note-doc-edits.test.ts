@@ -750,7 +750,7 @@ describe("embedded blank-band delete contract", () => {
       expect(docPosToWireOffset(collapsed.doc, collapsed.selection.focus)).toBe(0);
     });
 
-    it("chip-then-collapse ladder — each delete nip lands on remaining band head", () => {
+    it("chip-then-collapse ladder — each Delete nip lands downward on remaining blank or content", () => {
       const tail = "tail";
       let state = applyDocDelete(
         wireToDoc(`h\n\n\n${tail}`),
@@ -758,12 +758,17 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
 
-      const shapes = [`\n\n${tail}`, `\n${tail}`, tail] as const;
-      for (const expectedWire of shapes) {
+      // From band head, each Delete removes that blank; caret stays on remaining blank (wire 0).
+      const midShapes = [`\n\n${tail}`, `\n${tail}`] as const;
+      for (const expectedWire of midShapes) {
         state = applyDocDelete(state.doc, state.selection, "delete")!;
         expect(docToWire(state.doc)).toBe(expectedWire);
         expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(0);
       }
+      // Last blank before content → content visual start.
+      state = applyDocDelete(state.doc, state.selection, "delete")!;
+      expect(docToWire(state.doc)).toBe(tail);
+      expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(0);
     });
 
     it("backspace mirror — chip-then-collapse ladder lands on band head each nip", () => {
@@ -781,19 +786,45 @@ describe("embedded blank-band delete contract", () => {
       }
     });
 
-    it("delete at last probe when another blank remains lands at band head", () => {
+    it("delete at last leading probe before content lands remaining empty above content", () => {
       const tail = "tail";
       const doc = wireToDoc(`\n\n\n${tail}`);
       const probes = listEmbeddedBlankBandProbeWires(doc);
+      const lastProbe = probes.at(-1)!;
       const result = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, probes[1]!)),
+        collapsedSelection(wireOffsetToDocPos(doc, lastProbe)),
         "delete"
       )!;
-      expect(docToWire(result!.doc)).toBe(`\n\n${tail}`);
-      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(0);
+      const next = docToWire(result.doc);
+      const land = docPosToWireOffset(result.doc, result.selection.focus);
+      const contentAt = next.indexOf(tail);
+      expect(next).toBe(`\n\n${tail}`);
+      // Next blank below remains above content — not band head, not content yet.
+      expect(land).toBe(contentAt - 1);
+      expect(next[land]).toBe("\n");
+      expect(land).not.toBe(0);
     });
 
+    it("delete at second leading probe lands remaining empty above content", () => {
+      const tail = "tail";
+      const doc = wireToDoc(`\n\n\n${tail}`);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes.length).toBeGreaterThan(1);
+      const secondProbe = probes[1]!;
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, secondProbe)),
+        "delete"
+      )!;
+      const next = docToWire(result.doc);
+      const land = docPosToWireOffset(result.doc, result.selection.focus);
+      const contentAt = next.indexOf(tail);
+      expect(next).toBe(`\n\n${tail}`);
+      expect(land).toBe(contentAt - 1);
+      expect(next[land]).toBe("\n");
+      expect(land).not.toBe(0);
+    });
     it("delete at sole probe before substantive tail lands on line-start gate before content", () => {
       const tail = "tail";
       const doc = wireToDoc(`\n\n${tail}`);
@@ -1032,7 +1063,7 @@ describe("embedded blank-band delete contract", () => {
       expect(result!.selection.focusAffinity).toBe("after");
     });
 
-    it("delete on upper-band last blank stop before middle lands at middle visual start", () => {
+    it("delete on upper-band last blank stop before middle lands remaining empty above middle", () => {
       const wire = multiBandWire();
       const doc = wireToDoc(wire);
       const upperStops = listBlankVisualLineStartWires(doc).filter(
@@ -1048,12 +1079,14 @@ describe("embedded blank-band delete contract", () => {
       expect(result).not.toBeNull();
       const resultWire = docToWire(result!.doc);
       expect(resultWire).toBe(`header \n\nmiddle\n\n\nlower`);
-      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        resultWire.indexOf("middle")
-      );
+      const land = docPosToWireOffset(result!.doc, result!.selection.focus);
+      const middleAt = resultWire.indexOf("middle");
+      expect(land).toBe(middleAt - 1);
+      expect(resultWire[land]).toBe("\n");
+      expect(land).not.toBe(0);
     });
 
-    it("delete on lower-band last blank stop before lower lands at lower visual start", () => {
+    it("delete on lower-band last blank stop before lower lands remaining empty above lower", () => {
       const wire = multiBandWire();
       const doc = wireToDoc(wire);
       const lowerStops = listBlankVisualLineStartWires(doc).filter(
@@ -1069,9 +1102,11 @@ describe("embedded blank-band delete contract", () => {
       expect(result).not.toBeNull();
       const resultWire = docToWire(result!.doc);
       expect(resultWire).toBe(`header \n\n\nmiddle\n\nlower`);
-      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        resultWire.indexOf("lower")
-      );
+      const land = docPosToWireOffset(result!.doc, result!.selection.focus);
+      const lowerAt = resultWire.indexOf("lower");
+      expect(land).toBe(lowerAt - 1);
+      expect(resultWire[land]).toBe("\n");
+      expect(land).not.toBe(0);
     });
   });
 
@@ -1245,6 +1280,7 @@ describe("embedded blank-band delete contract", () => {
 
     it("delete at last leading probe (final wire char) collapses one blank", () => {
       // Probe path must own this — not blank-stop remapping to stop-1.
+      // Delete lands downward onto the remaining EOF empty line-start — not band head, not mid probe.
       const doc = wireToDoc("\n\n\n");
       const lastProbe = listEmbeddedBlankBandProbeWires(doc).at(-1)!;
       expect(lastProbe).toBe(2);
@@ -1255,7 +1291,9 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
       expect(docToWire(result.doc)).toBe("\n\n");
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(1);
+      const land = docPosToWireOffset(result.doc, result.selection.focus);
+      expect(land).not.toBe(0);
+      expect(land).toBe(listBlankVisualLineStartWires(result.doc).at(-1));
     });
 
     it("backspace at last leading probe collapses one blank without band-head skip", () => {
@@ -1317,7 +1355,7 @@ describe("embedded blank-band delete contract", () => {
       expect(focus).toBe(listBlankVisualLineStartWires(result.doc).at(-1));
     });
 
-    it("delete at last leading blank stop before content lands remaining higher stop", () => {
+    it("delete at last leading blank stop before content lands remaining empty above content", () => {
       const doc = wireToDoc("\n\n\ntail");
       const lastBlankStop = listBlankVisualLineStartWires(doc).at(-1)!;
 
@@ -1326,10 +1364,73 @@ describe("embedded blank-band delete contract", () => {
         collapsedSelection(wireOffsetToDocPos(doc, lastBlankStop)),
         "delete"
       )!;
-      expect(docToWire(result.doc)).toBe("\n\ntail");
+      const next = docToWire(result.doc);
       const focus = docPosToWireOffset(result.doc, result.selection.focus);
+      const contentAt = next.indexOf("tail");
+      expect(next).toBe("\n\ntail");
+      expect(focus).toBe(contentAt - 1);
+      expect(next[focus]).toBe("\n");
       expect(focus).not.toBe(0);
-      expect(focus).toBe(listBlankVisualLineStartWires(result.doc).at(-1));
+    });
+
+    it("delete on non-probe blank stop under leading blanks lands content not band head", () => {
+      const wire = "\n\nabc\ndef\n";
+      const doc = wireToDoc(wire);
+      const stop = 1;
+      expect(listBlankVisualLineStartWires(doc)).toContain(stop);
+      expect(listEmbeddedBlankBandProbeWires(doc).includes(stop)).toBe(false);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, stop)),
+        "delete"
+      )!;
+      const next = docToWire(result.doc);
+      const land = docPosToWireOffset(result.doc, result.selection.focus);
+      expect(next).toBe("\nabc\ndef\n");
+      expect(land).toBe(next.indexOf("abc"));
+      expect(land).not.toBe(0);
+    });
+
+    it("delete on blank stop immediately before content lands content visual start", () => {
+      const doc = wireToDoc("\n\ntail");
+      const stopBeforeTail = listBlankVisualLineStartWires(doc).at(-1)!;
+      expect(stopBeforeTail).toBe(1);
+      expect(listEmbeddedBlankBandProbeWires(doc).includes(stopBeforeTail)).toBe(false);
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, stopBeforeTail)),
+        "delete"
+      )!;
+      const next = docToWire(result.doc);
+      const land = docPosToWireOffset(result.doc, result.selection.focus);
+      expect(next).toBe("\ntail");
+      expect(land).toBe(next.indexOf("tail"));
+      expect(land).not.toBe(0);
+    });
+
+    it("delete blank-stop before lower under leading blanks + trailing lands remaining empty above lower", () => {
+      const afterEmptyMid = "\n\n\n\n\nlower\n\n";
+      const doc = wireToDoc(afterEmptyMid);
+      const lowerAt = afterEmptyMid.indexOf("lower");
+      const stopBeforeLower = listBlankVisualLineStartWires(doc)
+        .filter((stop) => stop < lowerAt)
+        .at(-1)!;
+
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, stopBeforeLower)),
+        "delete"
+      )!;
+      const next = docToWire(result.doc);
+      const land = docPosToWireOffset(result.doc, result.selection.focus);
+      const contentAt = next.indexOf("lower");
+      expect(next).toContain("lower");
+      // Still above lower — not trailing empties below content, not band head, not lower yet.
+      expect(land).toBe(contentAt - 1);
+      expect(next[land]).toBe("\n");
+      expect(land).not.toBe(0);
     });
 
     it("backspace at sandwiched line-start \\n before lower does not jump to wire 0", () => {
@@ -1368,8 +1469,9 @@ describe("embedded blank-band delete contract", () => {
     it("backspace on sandwiched single probe between filled rows lands at upper row end", () => {
       const wire = "header \n\n\nmiddle\n\ntail";
       const doc = wireToDoc(wire);
-      const sandwichedProbe = listEmbeddedBlankBandGroups(doc).find((g) => g.probes.length === 1)!
-        .probes[0]!;
+      const sandwichedProbe = listEmbeddedBlankBandGroups(doc).find(
+        (group) => group.probes.length === 1
+      )!.probes[0]!;
 
       const result = applyDocDelete(
         doc,
@@ -1403,7 +1505,7 @@ describe("embedded blank-band delete contract", () => {
       expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(nextBlank);
     });
 
-    it("on second blank before lower content removes blank-row newline and lands on lower row start", () => {
+    it("on second blank before lower content removes blank-row newline and lands remaining empty above tail", () => {
       const wire = blankBandSuffixWire();
       const doc = wireToDoc(wire);
       const stops = listBlankVisualLineStartWires(doc);
@@ -1417,16 +1519,19 @@ describe("embedded blank-band delete contract", () => {
       expect(result).not.toBeNull();
       const resultWire = docToWire(result!.doc);
       expect(resultWire).toBe(`header @${agent} \n\ntail`);
-      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        resultWire.indexOf("tail")
-      );
+      const land = docPosToWireOffset(result!.doc, result!.selection.focus);
+      const tailAt = resultWire.indexOf("tail");
+      expect(land).toBe(tailAt - 1);
+      expect(resultWire[land]).toBe("\n");
+      expect(land).not.toBe(0);
     });
 
     it("delete on sandwiched single probe between filled rows lands at lower row visual start", () => {
       const wire = "header \n\n\nmiddle\n\ntail";
       const doc = wireToDoc(wire);
-      const sandwichedProbe = listEmbeddedBlankBandGroups(doc).find((g) => g.probes.length === 1)!
-        .probes[0]!;
+      const sandwichedProbe = listEmbeddedBlankBandGroups(doc).find(
+        (group) => group.probes.length === 1
+      )!.probes[0]!;
 
       const result = applyDocDelete(
         doc,
@@ -1526,7 +1631,7 @@ describe("embedded blank-band delete contract", () => {
         return `upper @${agent} xx\n\n\nlower @${agent} `;
       }
 
-      it("delete at line-start \\n before lower content lands at lower visual start not wire 0", () => {
+      it("delete at line-start \\n before lower content lands remaining empty above lower", () => {
         const wire = sandwichedAfterMiddleRowCleared();
         const doc = wireToDoc(wire);
         const lineStartBeforeLower = wire.indexOf("lower") - 1;
@@ -1548,12 +1653,14 @@ describe("embedded blank-band delete contract", () => {
 
         const after = docToWire(result.doc);
         expect(after).toBe(`upper @${agent} xx\n\nlower @${agent} `);
+        const land = docPosToWireOffset(result.doc, result.selection.focus);
         const lowerStart = after.indexOf("lower");
-        expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(lowerStart);
-        expect(docPosToWireOffset(result.doc, result.selection.focus)).not.toBe(0);
+        expect(land).toBe(lowerStart - 1);
+        expect(after[land]).toBe("\n");
+        expect(land).not.toBe(0);
       });
 
-      it("delete on last blank stop lands at lower substantive visual start", () => {
+      it("delete on last blank stop lands remaining empty above lower", () => {
         const wire = sandwichedAfterMiddleRowCleared();
         const doc = wireToDoc(wire);
         const lastStop = listBlankVisualLineStartWires(doc).at(-1)!;
@@ -1565,7 +1672,11 @@ describe("embedded blank-band delete contract", () => {
         )!;
         const after = docToWire(result.doc);
         expect(after).toBe(`upper @${agent} xx\n\nlower @${agent} `);
-        expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(after.indexOf("lower"));
+        const land = docPosToWireOffset(result.doc, result.selection.focus);
+        const lowerStart = after.indexOf("lower");
+        expect(land).toBe(lowerStart - 1);
+        expect(after[land]).toBe("\n");
+        expect(land).not.toBe(0);
       });
 
       it("delete on line-start \\n of remaining sandwiched blank lands at lower visual start", () => {
@@ -1610,7 +1721,7 @@ describe("embedded blank-band delete contract", () => {
       expect(result.selection.focusAffinity).toBe("after");
     });
 
-    it("delete on second blank before mention tail lands at tail row start", () => {
+    it("delete on second blank before mention tail lands remaining empty above tail", () => {
       const doc = wireToDoc(compositeWire);
       const stops = listBlankVisualLineStartWires(doc);
 
@@ -1623,9 +1734,11 @@ describe("embedded blank-band delete contract", () => {
       expect(result).not.toBeNull();
       const resultWire = docToWire(result!.doc);
       expect(resultWire).toBe(`header @${agent} \n\ntail @${agent} `);
-      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        resultWire.indexOf("tail")
-      );
+      const land = docPosToWireOffset(result!.doc, result!.selection.focus);
+      const tailAt = resultWire.indexOf("tail");
+      expect(land).toBe(tailAt - 1);
+      expect(resultWire[land]).toBe("\n");
+      expect(land).not.toBe(0);
     });
   });
 });

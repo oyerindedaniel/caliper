@@ -510,7 +510,7 @@ describe("handoff note delete intent — contract authority before handler chain
       // omit on the remaining break; land content-row-end/`after` on `a` so next BS chips.
       const doc = wireToDoc("\n\ndna\n\n");
       const probes = listEmbeddedBlankBandProbeWires(doc);
-      const bandHeadUnderDna = probes.find((w) => w > 4)!;
+      const bandHeadUnderDna = probes.find((probe) => probe > 4)!;
       const once = applyDocDelete(
         doc,
         collapsedSelection(wireOffsetToDocPos(doc, bandHeadUnderDna)),
@@ -793,10 +793,12 @@ describe("handoff note delete intent — contract authority before handler chain
       );
       expect(intent?.kind).toBe("result");
       if (intent?.kind === "result") {
-        expect(docPosToWireOffset(intent.result.doc, intent.result.selection.focus)).toBe(
-          docToWire(intent.result.doc).indexOf("lower")
-        );
-        expect(docPosToWireOffset(intent.result.doc, intent.result.selection.focus)).not.toBe(0);
+        const after = docToWire(intent.result.doc);
+        const land = docPosToWireOffset(intent.result.doc, intent.result.selection.focus);
+        const lowerAt = after.indexOf("lower");
+        expect(land).toBe(lowerAt - 1);
+        expect(after[land]).toBe("\n");
+        expect(land).not.toBe(0);
       }
     });
   });
