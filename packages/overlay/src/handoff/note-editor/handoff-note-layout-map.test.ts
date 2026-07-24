@@ -1,15 +1,22 @@
-import { describe, expect, it, beforeEach } from "vitest";
+﻿import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
+  applyDocDelete,
   applyDocInsertText,
   collapsedSelection,
   docPosToWireOffset,
   docToWire,
+  isEmbeddedBlankBandCollapseProbeWire,
   listEmbeddedBlankBandProbeWires,
+  listBlankVisualLineStartWires,
   wireOffsetToDocPos,
   wireToDoc,
   type HandoffNoteDoc,
 } from "@caliper/core";
-import { renderHandoffNoteDoc } from "./handoff-note-dom.js";
+import {
+  renderHandoffNoteDoc,
+  HANDOFF_WIRE_BREAK_ATTR,
+  HANDOFF_LINE_PAD_ATTR,
+} from "./handoff-note-dom.js";
 import {
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
@@ -22,11 +29,17 @@ import {
   layoutContentRowEndWire,
   layoutContentRowStickyColumn,
   layoutRowForFocus,
+  layoutRowAtWireFocus,
   readHandoffNoteLayoutCacheKey,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
   type HandoffNoteLayoutRow,
 } from "./handoff-note-layout-map.js";
+import {
+  measureWireBreakCoord,
+  resolvePaintContext,
+  resolvePaintContextAtWire,
+} from "./handoff-note-dom-points.js";
 import { resolveDomVerticalArrowMove } from "./handoff-note-selection.js";
 import {
   setSelectionAtWire,
@@ -363,6 +376,220 @@ describe("handoff-note-layout-map", () => {
       expectStrictlyIncreasing(blankRows.map((row) => row.top));
     });
 
+    /**
+     * Leading-`\n` blank band: empty line slots include document-end.
+     * Epoch samples every empty line-start stop (acquire / stub authority).
+     */
+    it("pure trailing blank band includes document-end blank slot (not content invent)", () => {
+      const wire = "\n\n\n\n\n\n\n";
+      const doc = wireToDoc(wire);
+      const stops = listBlankVisualLineStartWires(doc);
+      const lineHeight = 18.2;
+      const blankLeft = 333.5;
+      const samples = stops.map((stopWire, index) => ({
+        wire: stopWire,
+        top: 74.6666669845581 + index * lineHeight,
+        left: blankLeft,
+      }));
+
+      const layout = buildLayoutMapFromSamples(samples, lineHeight, doc);
+      const contentRows = layout.rows.filter((row) => row.kind === "content");
+      const blankRows = layout.rows.filter((row) => row.kind === "blank");
+      const eofSample = layout.samples.find((sample) => sample.wire === wire.length);
+
+      expect(stops).toHaveLength(8);
+      expect(layout.visualRowCount).toBe(stops.length);
+      expect(blankRows).toHaveLength(stops.length);
+      expect(contentRows).toHaveLength(0);
+      expect(eofSample?.wire).toBe(wire.length);
+    });
+
+    /** Family: epoch must include every empty line-start stop, including document end. */
+    it("pure trailing blank band includes document-end blank slot when all stops are sampled", () => {
+      const wire = "\n\n\n";
+      const doc = wireToDoc(wire);
+      const stops = listBlankVisualLineStartWires(doc);
+      const lineHeight = 18;
+      const samples = stops.map((stopWire, index) => ({
+        wire: stopWire,
+        top: 80 + index * lineHeight,
+        left: 333.5,
+      }));
+      const layout = buildLayoutMapFromSamples(samples, lineHeight, doc);
+      expect(layout.visualRowCount).toBe(stops.length);
+      expect(layout.rows.every((row) => row.kind === "blank")).toBe(true);
+      expect(layout.samples.some((sample) => sample.wire === wire.length)).toBe(true);
+      const blankTops = layout.rows.map((row) => row.top);
+      for (let i = 1; i < blankTops.length; i++) {
+        expect((blankTops[i]! - blankTops[i - 1]!) / lineHeight).toBeLessThan(1.4);
+      }
+    });
+
+    /**
+     * EOF empty line-start and the prior empty line-start may share a break-probe dock.
+     * Navigable row identity stays on each stop sample — dock must not steal the earlier stop.
+     */
+    it("shared break-probe dock does not collapse two blank stops onto one row", () => {
+      const wire = "header \n\n\n";
+      const doc = wireToDoc(wire);
+      const stops = listBlankVisualLineStartWires(doc);
+      expect(stops).toEqual([8, 9, 10]);
+      const lineHeight = 18;
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: 80, left: 0 },
+          ...stops.map((stopWire, index) => ({
+            wire: stopWire,
+            top: 100 + index * lineHeight,
+            left: 0,
+          })),
+        ],
+        lineHeight,
+        doc
+      );
+      const rowForStop = (stopWire: number) =>
+        layout.rows.findIndex(
+          (row) => row.kind === "blank" && row.samples.some((sample) => sample.wire === stopWire)
+        );
+      const row9 = rowForStop(9);
+      const row10 = rowForStop(10);
+      expect(row9).toBeGreaterThanOrEqual(0);
+      expect(row10).toBeGreaterThanOrEqual(0);
+      expect(row9).not.toBe(row10);
+      expect(layout.rows[row9]!.breakProbeWire).toBe(9);
+      expect(layout.rows[row10]!.breakProbeWire).toBe(9);
+      expect(layoutRowAtWireFocus(doc, layout, 9)).toBe(row9);
+      expect(layoutRowAtWireFocus(doc, layout, 10)).toBe(row10);
+    });
+
+    /** Family: trailing blanks under a content floor still must not add left:0 EOF content. */
+    it("header + trailing blanks does not invent EOF content row at left 0", () => {
+      const wire = "header\n\n\n";
+      const doc = wireToDoc(wire);
+      const stops = listBlankVisualLineStartWires(doc);
+      const lineHeight = 16;
+      const layout = buildLayoutMapFromSamples([{ wire: 0, top: 80, left: 0 }], lineHeight, doc);
+      const eofContent = layout.rows.filter(
+        (row) =>
+          row.kind === "content" &&
+          row.samples.some((sample) => sample.wire === wire.length && sample.left === 0)
+      );
+      expect(eofContent).toHaveLength(0);
+      expect(layout.rows.filter((row) => row.kind === "blank")).toHaveLength(stops.length);
+    });
+
+    /**
+     * Last trailing probe is delete-probe (blank-anchor paint). Layout acquire must still
+     * measure that probe from its wire-break `<br>` — paint ZWSP is one band lower and
+     * produced the live 2lh blank skip after invent was removed.
+     */
+    it("delete-probe trailing blank measures wire-break Y not blank-anchor band", () => {
+      const lineHeight = 18;
+      const baseTop = 100;
+      const blankLeft = 333.5;
+      const cases = ["\n\n\n\n\n\n", "\n\n\n", "header\n\n\n"] as const;
+
+      for (const wire of cases) {
+        const doc = wireToDoc(wire);
+        const probes = listEmbeddedBlankBandProbeWires(doc);
+        const lastProbe = probes[probes.length - 1]!;
+        const surface = document.createElement("div");
+        surface.style.width = "480px";
+        document.body.appendChild(surface);
+        Object.defineProperty(surface, "clientWidth", { configurable: true, value: 480 });
+        renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+
+        const wireBreaks = [...surface.querySelectorAll(`br[${HANDOFF_WIRE_BREAK_ATTR}]`)];
+        const restores: Array<() => void> = [];
+        try {
+          for (const [i, br] of wireBreaks.entries()) {
+            const midY = baseTop + i * lineHeight;
+            const rect = {
+              top: midY - lineHeight / 2,
+              left: blankLeft,
+              right: blankLeft + 4,
+              bottom: midY + lineHeight / 2,
+              width: 4,
+              height: lineHeight,
+              x: blankLeft,
+              y: midY - lineHeight / 2,
+              toJSON: () => ({}),
+            } as DOMRect;
+            const prior = br.getBoundingClientRect.bind(br);
+            br.getBoundingClientRect = () => rect;
+            restores.push(() => {
+              br.getBoundingClientRect = prior;
+            });
+          }
+          const linePad = surface.querySelector(
+            `br[${HANDOFF_LINE_PAD_ATTR}]`
+          ) as HTMLBRElement | null;
+          if (linePad) {
+            const padMidY = baseTop + wireBreaks.length * lineHeight;
+            const padRect = {
+              top: padMidY - lineHeight / 2,
+              left: blankLeft,
+              right: blankLeft + 4,
+              bottom: padMidY + lineHeight / 2,
+              width: 4,
+              height: lineHeight,
+              x: blankLeft,
+              y: padMidY - lineHeight / 2,
+              toJSON: () => ({}),
+            } as DOMRect;
+            const priorPad = linePad.getBoundingClientRect.bind(linePad);
+            linePad.getBoundingClientRect = () => padRect;
+            restores.push(() => {
+              linePad.getBoundingClientRect = priorPad;
+            });
+          }
+          restores.push(
+            stubHandoffNoteAnchorRectAtWire(surface, doc, lastProbe, {
+              top: baseTop + wireBreaks.length * lineHeight,
+              left: blankLeft,
+              height: lineHeight,
+            })
+          );
+          // Paint stub also hits the preceding BR (measure authority). Re-assert BR lattice Y.
+          const lastBr = wireBreaks[wireBreaks.length - 1]!;
+          const lastBrY = baseTop + (wireBreaks.length - 1) * lineHeight;
+          const lastBrRect = {
+            top: lastBrY - lineHeight / 2,
+            left: blankLeft,
+            right: blankLeft + 4,
+            bottom: lastBrY + lineHeight / 2,
+            width: 4,
+            height: lineHeight,
+            x: blankLeft,
+            y: lastBrY - lineHeight / 2,
+            toJSON: () => ({}),
+          } as DOMRect;
+          const priorLastBr = lastBr.getBoundingClientRect.bind(lastBr);
+          lastBr.getBoundingClientRect = () => lastBrRect;
+          restores.push(() => {
+            lastBr.getBoundingClientRect = priorLastBr;
+          });
+
+          expect(
+            isEmbeddedBlankBandCollapseProbeWire(doc, lastProbe, wireOffsetToDocPos(doc, lastProbe))
+          ).toBe(true);
+          expect(measureWireBreakCoord(surface, doc, lastProbe)?.top).toBe(lastBrY);
+
+          invalidateHandoffNoteLayoutCache(surface);
+          const layout = buildHandoffNoteLayoutMap(surface, doc);
+          const stops = listBlankVisualLineStartWires(doc);
+          const blankTops = layout.rows.filter((row) => row.kind === "blank").map((row) => row.top);
+          expect(blankTops).toHaveLength(stops.length);
+          for (let i = 1; i < blankTops.length; i++) {
+            expect((blankTops[i]! - blankTops[i - 1]!) / lineHeight).toBeLessThan(1.4);
+          }
+        } finally {
+          while (restores.length) restores.pop()?.();
+          surface.remove();
+        }
+      }
+    });
+
     it("composite blank band places distinct rows below middle content", () => {
       const wire = `prefix @${AGENT} \n\n@${AGENT} tail\n\n\nbottom @${AGENT}\n`;
       const doc = wireToDoc(wire);
@@ -370,8 +597,8 @@ describe("handoff-note-layout-map", () => {
       const middleTop = 177;
       const middleRowTailEnd = middleRowLineStart + `@${AGENT} tail`.length;
       const bottomLineStart = wire.indexOf("bottom");
-      const blankRun = listEmbeddedBlankBandProbeWires(doc).filter(
-        (probe) => probe >= middleRowTailEnd && probe < bottomLineStart
+      const blankRun = listBlankVisualLineStartWires(doc).filter(
+        (stop) => stop >= middleRowTailEnd && stop < bottomLineStart
       );
       const surface = document.createElement("div");
       surface.style.width = "480px";
@@ -393,16 +620,9 @@ describe("handoff-note-layout-map", () => {
       samples.push({ wire: endOfLastMention, top: blankTop, left: 200 });
       setMeasuredSamplesCache(surface, wire, surface.clientWidth, samples);
 
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, endOfLastMention)
-      );
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const bandBlankRows = layout.rows.filter(
-        (row) =>
-          row.kind === "blank" &&
-          row.breakProbeWire !== undefined &&
-          blankRun.includes(row.breakProbeWire)
+        (row) => row.kind === "blank" && blankRun.includes(row.samples[0]?.wire ?? -1)
       );
       expect(bandBlankRows).toHaveLength(blankRun.length);
       for (const row of bandBlankRows) {
@@ -434,8 +654,8 @@ describe("handoff-note-layout-map", () => {
         { wire: tailWire, top: row2Top, left: 120 },
       ]);
 
-      const first = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailWire));
-      const second = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailWire));
+      const first = buildHandoffNoteLayoutMap(surface, doc);
+      const second = buildHandoffNoteLayoutMap(surface, doc);
 
       expect(roundedRowTops(second)).toEqual(roundedRowTops(first));
       expect(first.rows.filter((row) => row.kind === "blank").length).toBe(1);
@@ -443,7 +663,7 @@ describe("handoff-note-layout-map", () => {
     });
   });
 
-  describe("dom acquire path — suffix blank band", () => {
+  describe("dom acquire path â€” suffix blank band", () => {
     const suffixBlankBandWire = `header @${AGENT} \n\n\ntail @${AGENT} `;
 
     function mountSurface(): HTMLElement {
@@ -479,17 +699,31 @@ describe("handoff-note-layout-map", () => {
         monotonicMeasuredLayoutSamples(wire)
       );
       const focus = wireOffsetToDocPos(doc, endOfLastMention);
-      const layout = buildHandoffNoteLayoutMap(surface, doc, focus);
-      const contentRow = layout.rowIndexForWire(bottomLineStart);
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
+      const contentRow = layoutRowAtWireFocus(doc, layout, bottomLineStart);
       const blankProbeAfter = listEmbeddedBlankBandProbeWires(doc).find(
         (probe) => probe > endOfLastMention
       );
+      const trailingBlankStop = listBlankVisualLineStartWires(doc).find(
+        (stop) => stop > endOfLastMention
+      );
       expect(contentRow).toBeGreaterThanOrEqual(0);
-      expect(layout.rowIndexForWire(endOfLastMention)).toBe(contentRow);
+      expect(layoutRowAtWireFocus(doc, layout, endOfLastMention)).toBe(contentRow);
       expect(layoutRowForFocus(surface, doc, layout, focus)).toBe(contentRow);
+      // Trailing empty line-start is its own blank row below content. Same wire may
+      // alias mention-end ↔ break probe — do not use wire-only focus for blank ownership.
+      expect(trailingBlankStop).toBe(wire.length);
+      const trailingBlankRow = layout.rows.findIndex(
+        (row) =>
+          row.kind === "blank" && row.samples.some((sample) => sample.wire === trailingBlankStop)
+      );
+      expect(trailingBlankRow).toBeGreaterThan(contentRow);
       if (blankProbeAfter !== undefined) {
-        expect(layout.rowIndexForWire(blankProbeAfter)).not.toBe(contentRow);
+        expect(layout.rows[trailingBlankRow]!.breakProbeWire).toBe(blankProbeAfter);
       }
+      expect(
+        layoutRowForFocus(surface, doc, layout, wireOffsetToDocPos(doc, trailingBlankStop!))
+      ).toBe(trailingBlankRow);
       surface.remove();
     });
 
@@ -503,7 +737,7 @@ describe("handoff-note-layout-map", () => {
       expect(mentionNodeIndex).toBeGreaterThanOrEqual(0);
       const startPos = { nodeIndex: mentionNodeIndex, nodeOffset: 0 };
       const interiorPos = { nodeIndex: mentionNodeIndex, nodeOffset: 3 };
-      const layout = buildHandoffNoteLayoutMap(surface, doc, startPos);
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const startRow = layout.paintContextForDocPos(startPos)?.rowIndex;
       expect(startRow).toBeGreaterThanOrEqual(0);
       expect(layout.paintContextForDocPos(interiorPos)?.rowIndex).toBe(startRow);
@@ -517,66 +751,147 @@ describe("handoff-note-layout-map", () => {
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
       stubMentionRows(surface);
 
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, suffixBlankBandWire.length)
-      );
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       expect(layout.samples.length).toBeGreaterThan(0);
       expect(listEmbeddedBlankBandProbeWires(doc)).toHaveLength(2);
       expect(layout.rows.filter((row) => row.kind === "blank")).toHaveLength(2);
       surface.remove();
     });
 
-    it("dom acquire cache excludes blank-band probe wires", () => {
+    it("dom acquire cache includes blank line-start stops and break-probe docks", () => {
       const doc = wireToDoc(suffixBlankBandWire);
-      const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const stops = listBlankVisualLineStartWires(doc);
       const surface = mountSurface();
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
       stubMentionRows(surface);
-      invalidateHandoffNoteLayoutCache();
+      const lineHeight = 18;
+      const wireBreaks = [
+        ...surface.querySelectorAll(`br[${HANDOFF_WIRE_BREAK_ATTR}]`),
+      ] as HTMLBRElement[];
+      const restores: Array<() => void> = [];
+      try {
+        for (const [index, br] of wireBreaks.entries()) {
+          const midY = 160 + index * lineHeight;
+          const rect = {
+            top: midY - lineHeight / 2,
+            left: 40,
+            right: 44,
+            bottom: midY + lineHeight / 2,
+            width: 4,
+            height: lineHeight,
+            x: 40,
+            y: midY - lineHeight / 2,
+            toJSON: () => ({}),
+          } as DOMRect;
+          const prior = br.getBoundingClientRect.bind(br);
+          br.getBoundingClientRect = () => rect;
+          restores.push(() => {
+            br.getBoundingClientRect = prior;
+          });
+        }
+        invalidateHandoffNoteLayoutCache(surface);
 
-      buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 0));
+        buildHandoffNoteLayoutMap(surface, doc);
 
-      const cached = getCachedMeasuredSamples(surface, suffixBlankBandWire, surface.clientWidth);
-      expect(cached).not.toBeNull();
-      for (const sample of cached!) {
-        expect(probes.has(sample.wire)).toBe(false);
+        const cached = getCachedMeasuredSamples(surface, suffixBlankBandWire, surface.clientWidth);
+        expect(cached).not.toBeNull();
+        for (const probeWire of probes) {
+          expect(cached!.some((sample) => sample.wire === probeWire)).toBe(true);
+        }
+        for (const stopWire of stops) {
+          expect(cached!.some((sample) => sample.wire === stopWire)).toBe(true);
+        }
+      } finally {
+        while (restores.length) restores.pop()?.();
+        surface.remove();
+      }
+    });
+
+    it("blank row top matches acquire-epoch empty line-start measure", () => {
+      const doc = wireToDoc(suffixBlankBandWire);
+      const stops = listBlankVisualLineStartWires(doc);
+      const surface = mountSurface();
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      stubMentionRows(surface);
+      const stopTops = [168.5, 186.25];
+      // Epoch samples keyed by empty line-starts (navigable stops), not probe docks.
+      setMeasuredSamplesCache(surface, suffixBlankBandWire, surface.clientWidth, [
+        { wire: 0, top: 150, left: 0 },
+        { wire: stops[0]!, top: stopTops[0]!, left: 40 },
+        { wire: stops[1]!, top: stopTops[1]!, left: 40 },
+        { wire: suffixBlankBandWire.indexOf("tail"), top: 220, left: 0 },
+      ]);
+
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
+      const blankRows = layout.rows.filter((row) => row.kind === "blank");
+      expect(blankRows).toHaveLength(stops.length);
+      for (const [index, row] of blankRows.entries()) {
+        expect(Math.round(row.top * 100) / 100).toBe(stopTops[index]!);
       }
       surface.remove();
     });
 
-    it("blank row top matches wire-break DOM measure when root is available", () => {
-      const doc = wireToDoc(suffixBlankBandWire);
+    it("infer does not remasure blank Y against a cached content epoch", () => {
+      const wire = "header\n\n\ntail";
+      const doc = wireToDoc(wire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes).toHaveLength(2);
+      const headerTop = 100;
+      const tailTop = 154;
+      const driftedProbeTops = [200, 220];
       const surface = mountSurface();
-      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
-      stubMentionRows(surface);
-      const probeTops = [168.5, 186.25];
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
       for (const [index, probeWire] of probes.entries()) {
         stubHandoffNoteAnchorRectAtWire(surface, doc, probeWire, {
-          top: probeTops[index]!,
-          left: 40,
+          top: driftedProbeTops[index]!,
+          left: 0,
           height: 18,
         });
       }
+      // Content-only epoch. Drifted probe DOM must not be remasured on infer.
+      setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
+        { wire: 0, top: headerTop, left: 0 },
+        { wire: wire.indexOf("tail"), top: tailTop, left: 0 },
+      ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, probes[0]!));
-      const blankRows = layout.rows.filter((row) => row.kind === "blank");
-      expect(blankRows).toHaveLength(2);
-      for (const [index, row] of blankRows.entries()) {
-        expect(Math.round(row.top * 100) / 100).toBe(probeTops[index]!);
-      }
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
+      const blankTops = layout.rows
+        .filter((row) => row.kind === "blank")
+        .map((row) => Math.round(row.top * 100) / 100);
+      expect(blankTops).toHaveLength(2);
+      expect(blankTops.every((top) => top > headerTop && top < tailTop)).toBe(true);
+      expect(blankTops).not.toEqual(driftedProbeTops);
       surface.remove();
+    });
+
+    it("epoch blank samples drive blank row tops without live remasure", () => {
+      const agent = "caliper-aaaaaaa";
+      const wire = `header\n\n\ntail`;
+      const doc = wireToDoc(wire);
+      const stops = listBlankVisualLineStartWires(doc);
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: 100, left: 0 },
+          { wire: stops[0]!, top: 118, left: 0 },
+          { wire: stops[1]!, top: 136, left: 0 },
+          { wire: wire.indexOf("tail"), top: 154, left: 0 },
+        ],
+        18,
+        doc
+      );
+      const blankRows = layout.rows.filter((row) => row.kind === "blank");
+      expect(blankRows.map((row) => Math.round(row.top))).toEqual([118, 136]);
     });
 
     it("assigns text-led lower row after blank band to the content band below blanks", () => {
       const wire = `header @${AGENT} \n\n\nlower @${AGENT} `;
       const doc = wireToDoc(wire);
-      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const stops = listBlankVisualLineStartWires(doc);
       const lowerRowStart = wire.indexOf("lower");
       const exitNewlineWire = lowerRowStart - 1;
       const lowerMentionStart = wire.indexOf("@", lowerRowStart);
+      expect(stops).toContain(exitNewlineWire);
       const headerTop = 141.1;
       const blank1Top = 177.49;
       const blank2Top = 213.89;
@@ -592,16 +907,18 @@ describe("handoff-note-layout-map", () => {
       );
       setMeasuredSamplesCache(surface, wire, surface.clientWidth, [
         { wire: 0, top: headerTop, left: 0 },
-        { wire: probes[0]!, top: blank1Top, left: 0 },
-        { wire: probes[1]!, top: blank2Top, left: 0 },
+        { wire: stops[0]!, top: blank1Top, left: 0 },
+        { wire: stops[1]!, top: blank2Top, left: 0 },
         { wire: lowerMentionStart, top: contentTop, left: 0 },
         { wire: wire.length - 1, top: contentTop, left: 120 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, probes[1]!));
-      const contentRowIndex = layout.rowIndexForWire(lowerMentionStart);
-      expect(layout.rowIndexForWire(exitNewlineWire)).toBe(contentRowIndex);
-      expect(layout.rowIndexForWire(lowerRowStart)).toBe(contentRowIndex);
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
+      const contentRowIndex = layoutRowAtWireFocus(doc, layout, lowerMentionStart);
+      const exitRowIndex = layoutRowAtWireFocus(doc, layout, exitNewlineWire);
+      expect(layout.rows[exitRowIndex]?.kind).toBe("blank");
+      expect(exitRowIndex).not.toBe(contentRowIndex);
+      expect(layoutRowAtWireFocus(doc, layout, lowerRowStart)).toBe(contentRowIndex);
       surface.remove();
     });
 
@@ -622,13 +939,9 @@ describe("handoff-note-layout-map", () => {
       );
       invalidateHandoffNoteLayoutCache();
 
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, lowerLineStart)
-      );
-      const lowerRow = layout.rowIndexForWire(lowerLineStart);
-      expect(layout.rowIndexForWire(breakWire)).toBe(lowerRow);
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
+      const lowerRow = layoutRowAtWireFocus(doc, layout, lowerLineStart);
+      expect(layoutRowAtWireFocus(doc, layout, breakWire)).toBe(lowerRow);
       surface.remove();
     });
 
@@ -651,11 +964,7 @@ describe("handoff-note-layout-map", () => {
       stubHandoffNoteAnchorRectAtWire(surface, doc, lowerLineStart, { top: lowerTop, left: 0 });
       invalidateHandoffNoteLayoutCache();
 
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, wire.length - 1)
-      );
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
 
       expect(layout.visualRowCount).toBeGreaterThanOrEqual(4);
       const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
@@ -675,7 +984,7 @@ describe("handoff-note-layout-map", () => {
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
       invalidateHandoffNoteLayoutCache();
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, probes[1]!));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const blankRows = layout.rows.filter((row) => row.kind === "blank");
       expect(blankRows).toHaveLength(2);
       expectStrictlyIncreasing(blankRows.map((row) => row.top));
@@ -710,11 +1019,11 @@ describe("handoff-note-layout-map", () => {
         { wire: tailWire, top: row2Top, left: 520 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailWire));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
 
       expect(layout.visualRowCount).toBeGreaterThanOrEqual(2);
-      expect(layout.rowIndexForWire(tailWire)).toBeGreaterThan(0);
-      expect(layout.rowIndexForWire(prefixStart)).toBe(0);
+      expect(layoutRowAtWireFocus(doc, layout, tailWire)).toBeGreaterThan(0);
+      expect(layoutRowAtWireFocus(doc, layout, prefixStart)).toBe(0);
       surface.remove();
     });
 
@@ -745,12 +1054,61 @@ describe("handoff-note-layout-map", () => {
         { wire: tailStart, top: 140.67, left: 609.68 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
 
-      expect(layout.rowIndexForWire(tailStart - 1)).toBe(0);
-      expect(layout.rowIndexForWire(tailInterior)).toBe(1);
-      expect(layout.rowIndexForWire(tailPastEnd)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, tailStart - 1)).toBe(0);
+      expect(layoutRowAtWireFocus(doc, layout, tailInterior)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, tailPastEnd)).toBe(1);
       surface.remove();
+    });
+
+    it("keeps three post-mention measured soft-wrap bands as three visual rows", () => {
+      const wire = `meh @${AGENT} wrap mid band`;
+      const doc = wireToDoc(wire);
+      const postStart = wire.indexOf(" wrap");
+      const wrapW = postStart + 1;
+      const midStart = wire.indexOf("mid");
+      const bandStart = wire.indexOf("band");
+      const row0 = 140.67;
+      const row1 = 158.86;
+      const row2 = 177.06;
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: row0, left: 335.5 },
+          { wire: 4, top: row0, left: 356.46 },
+          { wire: postStart, top: row0, left: 606.55 },
+          { wire: wrapW, top: row1, left: 343.0 },
+          { wire: midStart, top: row1, left: 380.0 },
+          { wire: bandStart, top: row2, left: 335.5 },
+          { wire: wire.length, top: row2, left: 380.0 },
+        ],
+        18,
+        doc
+      );
+
+      expect(layout.visualRowCount).toBeGreaterThanOrEqual(3);
+      expect(layoutRowAtWireFocus(doc, layout, wrapW)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, bandStart)).toBe(2);
+      expect(layout.coordsForWire(wrapW)?.left).toBeCloseTo(343.0, 0);
+      expect(layout.coordsForWire(bandStart)?.top).toBeCloseTo(row2, 0);
+    });
+
+    it("keeps two-band post-mention soft wrap as two visual rows", () => {
+      const wire = `meh @${AGENT} wrap`;
+      const doc = wireToDoc(wire);
+      const wrapW = wire.indexOf("wrap");
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: 140.67, left: 335.5 },
+          { wire: wrapW - 1, top: 141.1, left: 606.55 },
+          { wire: wrapW, top: 158.86, left: 343.0 },
+          { wire: wire.length, top: 158.86, left: 380.0 },
+        ],
+        18,
+        doc
+      );
+      expect(layout.visualRowCount).toBe(2);
+      expect(layoutRowAtWireFocus(doc, layout, wrapW)).toBe(1);
     });
 
     it("keeps typed postfix interior on paint row when mention-end alias sample is on lower row", () => {
@@ -801,14 +1159,14 @@ describe("handoff-note-layout-map", () => {
         { wire: mistStart - 1, top: fx.row2Top, left: 526.77 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, interiorPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
 
-      expect(layout.rowIndexForWire(interiorWire)).toBe(1);
-      expect(layout.rowIndexForWire(interiorWire)).not.toBe(2);
+      expect(layoutRowAtWireFocus(fx.doc, layout, interiorWire)).toBe(1);
+      expect(layoutRowAtWireFocus(fx.doc, layout, interiorWire)).not.toBe(2);
       fx.root.remove();
     });
 
-    it("paintContextForWire maps cross-row spacer alias wire to row-1 text tail", () => {
+    it("paintContextForDocPos maps cross-row spacer alias wire to row-1 text tail", () => {
       const fx = mountThreeRowMentionSoftWrapFixture();
       applyThreeRowSpacerBrowserParityLayoutStubs(fx);
       const spacer = fx.doc.nodes[fx.postfixSpacerNode];
@@ -818,13 +1176,15 @@ describe("handoff-note-layout-map", () => {
         return;
       }
       const tailPos = { nodeIndex: fx.postfixSpacerNode, nodeOffset: spacer.text.length };
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
-      const paintCtx = layout.paintContextForWire(fx.fourthMentionStart);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
+      const paintCtx = layout.paintContextForDocPos(
+        resolvePaintContextAtWire(fx.doc, fx.fourthMentionStart).paintPos
+      );
       expect(paintCtx?.paintDocPos).toEqual(tailPos);
       expect(paintCtx?.rowIndex).toBe(1);
       expect(layout.paintContextForDocPos(tailPos)?.rowIndex).toBe(1);
       expect(layoutRowForFocus(fx.root, fx.doc, layout, tailPos)).toBe(1);
-      expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(1);
+      expect(layoutRowAtWireFocus(fx.doc, layout, fx.fourthMentionStart)).toBe(1);
       fx.root.remove();
     });
 
@@ -871,7 +1231,7 @@ describe("handoff-note-layout-map", () => {
         nodeIndex: fx.mentionNodes[3]!,
         nodeOffset: 0,
       });
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, interiorPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const cached = getCachedMeasuredSamples(fx.root, docToWire(fx.doc), fx.rootWidth);
       const nodeStartSample = cached?.find((sample) => sample.wire === nodeStartWire);
       const fourthMentionSample = cached?.find((sample) => sample.wire === fourthMentionStart);
@@ -881,9 +1241,9 @@ describe("handoff-note-layout-map", () => {
       expect(nodeStartSample!.top).not.toBeCloseTo(fx.row2Top, 0);
       expect(fourthMentionSample).toBeDefined();
       expect(fourthMentionSample!.top).toBeCloseTo(fx.row2Top, 0);
-      expect(layout.rowIndexForWire(interiorWire)).toBe(1);
-      expect(layout.rowIndexForWire(interiorWire)).not.toBe(2);
-      expect(layout.rowIndexForWire(fourthMentionStart)).toBe(2);
+      expect(layoutRowAtWireFocus(fx.doc, layout, interiorWire)).toBe(1);
+      expect(layoutRowAtWireFocus(fx.doc, layout, interiorWire)).not.toBe(2);
+      expect(layoutRowAtWireFocus(fx.doc, layout, fourthMentionStart)).toBe(2);
       fx.root.remove();
     });
 
@@ -915,11 +1275,11 @@ describe("handoff-note-layout-map", () => {
         { wire: tailPastEnd, top: row1Top, left: continuationLeft },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
 
-      expect(layout.rowIndexForWire(spacerWire)).toBe(0);
-      expect(layout.rowIndexForWire(tailStart)).toBe(1);
-      expect(layout.rowIndexForWire(tailInterior)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, spacerWire)).toBe(0);
+      expect(layoutRowAtWireFocus(doc, layout, tailStart)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, tailInterior)).toBe(1);
       surface.remove();
     });
 
@@ -961,13 +1321,9 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, tailStart + 2)
-        );
-        expect(layout.rowIndexForWire(spacerWire)).toBe(0);
-        expect(layout.rowIndexForWire(tailStart)).toBe(1);
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
+        expect(layoutRowAtWireFocus(doc, layout, spacerWire)).toBe(0);
+        expect(layoutRowAtWireFocus(doc, layout, tailStart)).toBe(1);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.some((sample) => sample.wire === spacerWire && sample.top === row0Top)).toBe(
           true
@@ -1018,18 +1374,14 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, line3Start + 2)
-        );
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
         expect(layout.visualRowCount).toBeGreaterThanOrEqual(3);
-        expect(layout.rowIndexForWire(line2Start - 1)).toBe(0);
-        expect(layout.rowIndexForWire(line2Start)).toBe(1);
-        expect(layout.rowIndexForWire(line3Start - 1)).toBe(1);
-        expect(layout.rowIndexForWire(line3Start)).toBe(2);
-        expect(layout.rowIndexForWire(line2Start + 2)).toBe(1);
-        expect(layout.rowIndexForWire(line3Start + 2)).toBe(2);
+        expect(layoutRowAtWireFocus(doc, layout, line2Start - 1)).toBe(0);
+        expect(layoutRowAtWireFocus(doc, layout, line2Start)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, line3Start - 1)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, line3Start)).toBe(2);
+        expect(layoutRowAtWireFocus(doc, layout, line2Start + 2)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, line3Start + 2)).toBe(2);
         expect(layout.rows[2]?.top).toBeCloseTo(row2Top, 0);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(
@@ -1094,19 +1446,15 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, interiorWire)
-        );
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === lineStartWire)?.top).toBe(row1Top);
         expect(cached?.find((sample) => sample.wire === interiorWire)?.top).toBe(row1Top);
 
-        const embeddedRow = layout.rowIndexForWire(lineStartWire);
-        expect(layout.rowIndexForWire(interiorWire)).toBe(embeddedRow);
+        const embeddedRow = layoutRowAtWireFocus(doc, layout, lineStartWire);
+        expect(layoutRowAtWireFocus(doc, layout, interiorWire)).toBe(embeddedRow);
         expect(layout.rows[embeddedRow]?.top).toBeCloseTo(row1Top, 0);
-        expect(layout.rowIndexForWire(0)).toBeLessThan(embeddedRow);
+        expect(layoutRowAtWireFocus(doc, layout, 0)).toBeLessThan(embeddedRow);
       } finally {
         restoreAcquire();
         surface.remove();
@@ -1156,13 +1504,9 @@ describe("handoff-note-layout-map", () => {
       ]);
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, wire.length - 1)
-        );
-        expect(layout.rowIndexForWire(lineStartWire)).toBe(1);
-        expect(layout.rowIndexForWire(firstMentionOnLine)).toBe(1);
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
+        expect(layoutRowAtWireFocus(doc, layout, lineStartWire)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, firstMentionOnLine)).toBe(1);
         expect(layout.coordsForWire(lineStartWire)?.left).toBe(visualStart);
       } finally {
         restoreLineStart();
@@ -1227,11 +1571,11 @@ describe("handoff-note-layout-map", () => {
         { wire: secondTextStart, top: row0Top - 0.43, left: 624.82 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, wire.length));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
 
-      expect(layout.rowIndexForWire(secondMentionStart)).toBe(0);
-      expect(layout.rowIndexForWire(secondPostStart)).toBe(0);
-      expect(layout.rowIndexForWire(secondTextStart)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, secondMentionStart)).toBe(0);
+      expect(layoutRowAtWireFocus(doc, layout, secondPostStart)).toBe(0);
+      expect(layoutRowAtWireFocus(doc, layout, secondTextStart)).toBe(1);
       expect(layout.coordsForWire(secondTextStart)?.left).toBeCloseTo(382.09, 1);
       surface.remove();
     });
@@ -1264,7 +1608,7 @@ describe("handoff-note-layout-map", () => {
         { wire: tailStart, top: 140.67, left: 609.68 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, tailInterior));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const coord = layout.coordsForWire(tailInterior);
 
       expect(coord).not.toBeNull();
@@ -1302,11 +1646,7 @@ describe("handoff-note-layout-map", () => {
         { wire: lowerPastEnd, top: row1Top, left: lowerStartLeft },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, lowerInterior)
-      );
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const coord = layout.coordsForWire(lowerInterior);
 
       expect(coord).not.toBeNull();
@@ -1341,11 +1681,7 @@ describe("handoff-note-layout-map", () => {
         { wire: tailPastEnd, top: row1Top, left: 370.02 },
         { wire: tailStart, top: 140.67, left: wideGoal },
       ]);
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, tailStart - 1)
-      );
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const wrapRow = layout.rows[1]!;
       const wrapRowMax = Math.max(...wrapRow.samples.map((sample) => sample.left));
       const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
@@ -1388,7 +1724,7 @@ describe("handoff-note-layout-map", () => {
         { wire: wire.length, top: row1Top, left: wrapRowStartColumn },
         { wire: tailStart, top: row1Top, left: wrapRowStartColumn },
       ]);
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 2));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const wrapRow = layout.rows[1]!;
       const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
       expect(
@@ -1430,11 +1766,7 @@ describe("handoff-note-layout-map", () => {
         },
         { wire: secondMentionEnd, top: row2Top, left: wideGoal },
       ]);
-      const layout = buildHandoffNoteLayoutMap(
-        surface,
-        doc,
-        wireOffsetToDocPos(doc, secondMentionEnd)
-      );
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const prefixRow = layout.rows[0]!;
       const prefixMax = Math.max(...prefixRow.samples.map((sample) => sample.left));
       const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
@@ -1510,7 +1842,7 @@ describe("handoff-note-layout-map", () => {
         { wire: wire.length, top: row1Top, left: wrapRowStartColumn },
         { wire: tailStart, top: row1Top, left: wrapRowStartColumn },
       ]);
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, 2));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
       const wrapRow = layout.rows[1]!;
       const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
       const stickyInput = {
@@ -1570,7 +1902,7 @@ describe("handoff-note-layout-map", () => {
     });
   });
 
-  describe("embedded-newline text node × soft-wrap acquire contract", () => {
+  describe("embedded-newline text node Ã— soft-wrap acquire contract", () => {
     const preWrapStart = 8;
     const postWrapBandWidth = 8;
 
@@ -1589,7 +1921,7 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, preWrapStart + 2));
+        buildHandoffNoteLayoutMap(surface, doc);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === preWrapStart - 1)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band0
@@ -1637,7 +1969,7 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, preLine3Start + 2));
+        buildHandoffNoteLayoutMap(surface, doc);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === preWrapStart - 1)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band0
@@ -1672,15 +2004,11 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, preInterior)
-        );
-        expect(layout.rowIndexForWire(preWrapStart - 1)).toBe(0);
-        expect(layout.rowIndexForWire(preWrapStart)).toBe(1);
-        expect(layout.rowIndexForWire(preInterior)).toBe(1);
-        expect(layout.rowIndexForWire(preLineEnd)).toBe(1);
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
+        expect(layoutRowAtWireFocus(doc, layout, preWrapStart - 1)).toBe(0);
+        expect(layoutRowAtWireFocus(doc, layout, preWrapStart)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, preInterior)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, preLineEnd)).toBe(1);
         expect(layout.rows[1]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band1, 0);
       } finally {
         restorePaint();
@@ -1727,11 +2055,7 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, postInterior)
-        );
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
         expect(cached?.find((sample) => sample.wire === postLineStart)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band2
@@ -1739,9 +2063,9 @@ describe("handoff-note-layout-map", () => {
         expect(cached?.find((sample) => sample.wire === postWrapStart)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band3
         );
-        expect(layout.rowIndexForWire(postLineStart)).toBe(0);
-        expect(layout.rowIndexForWire(postWrapStart)).toBe(1);
-        expect(layout.rowIndexForWire(postInterior)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, postLineStart)).toBe(0);
+        expect(layoutRowAtWireFocus(doc, layout, postWrapStart)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, postInterior)).toBe(1);
       } finally {
         restorePaint();
         surface.remove();
@@ -1772,16 +2096,12 @@ describe("handoff-note-layout-map", () => {
       invalidateHandoffNoteLayoutCache();
 
       try {
-        const layout = buildHandoffNoteLayoutMap(
-          surface,
-          doc,
-          wireOffsetToDocPos(doc, postInterior)
-        );
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
         const cached = getCachedMeasuredSamples(surface, wire, surface.clientWidth);
 
         expect(layout.visualRowCount).toBeGreaterThanOrEqual(4);
-        expect(layout.rowIndexForWire(preInterior)).toBe(1);
-        expect(layout.rowIndexForWire(postInterior)).toBe(3);
+        expect(layoutRowAtWireFocus(doc, layout, preInterior)).toBe(1);
+        expect(layoutRowAtWireFocus(doc, layout, postInterior)).toBe(3);
         expect(layout.rows[0]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band0, 0);
         expect(layout.rows[1]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band1, 0);
         expect(layout.rows[2]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band2, 0);
@@ -1792,8 +2112,8 @@ describe("handoff-note-layout-map", () => {
         expect(cached?.find((sample) => sample.wire === postWrapStart)?.top).toBe(
           EMBEDDED_SOFT_WRAP_ROWS.band3
         );
-        const preWrapRow = layout.rowIndexForWire(preInterior);
-        const postWrapRow = layout.rowIndexForWire(postInterior);
+        const preWrapRow = layoutRowAtWireFocus(doc, layout, preInterior);
+        const postWrapRow = layoutRowAtWireFocus(doc, layout, postInterior);
         expect(isSameWireSoftWrapBandCrossing(doc, preWrapRow, postWrapRow, layout.rows)).toBe(
           false
         );
@@ -1825,13 +2145,169 @@ describe("handoff-note-layout-map", () => {
         { wire: wire.length, top: EMBEDDED_SOFT_WRAP_ROWS.band3, left: 40 },
       ]);
 
-      const layout = buildHandoffNoteLayoutMap(surface, doc, wireOffsetToDocPos(doc, postInterior));
+      const layout = buildHandoffNoteLayoutMap(surface, doc);
 
-      expect(layout.rowIndexForWire(preInterior)).toBe(1);
-      expect(layout.rowIndexForWire(postInterior)).toBe(3);
+      expect(layoutRowAtWireFocus(doc, layout, preInterior)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, postInterior)).toBe(3);
       expect(layout.rows[1]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band1, 0);
       expect(layout.rows[3]?.top).toBeCloseTo(EMBEDDED_SOFT_WRAP_ROWS.band3, 0);
       surface.remove();
+    });
+  });
+
+  /**
+   * Root lock: after soft-wrap acquire, `alignEmbeddedNewlinePrefixAfterAtomicRows`
+   * must not flatten wrap-band tops onto the pill for the whole prefix-until-`\n`.
+   * Minimal post-atomic + embedded-`\n` shape — not the full session blank lattice.
+   * Contract: post-atomic prefix snap; soft wrap inside a wire line.
+   */
+  describe("post-atomic embedded-NL prefix snap vs soft-wrap acquire", () => {
+    afterEach(() => {
+      invalidateHandoffNoteLayoutCache();
+    });
+
+    const pillMidY = 177.49;
+    const wrapMidY = 186.59;
+    /** `@mention` + `" wrap \\n"` — first wire-line soft-wraps; later `\n` in same text node. */
+    const wire = `@${AGENT} wrap \n`;
+    const doc = wireToDoc(wire);
+    const textNodeIndex = 1;
+    const textNode = doc.nodes[textNodeIndex];
+    if (textNode?.type !== "text") {
+      throw new Error("expected post-mention text node");
+    }
+    const wrapLocal = textNode.text.indexOf("wrap");
+    const nlLocal = textNode.text.indexOf("\n");
+    const prefixWire = docPosToWireOffset(doc, { nodeIndex: textNodeIndex, nodeOffset: 0 });
+    const wrapWire = docPosToWireOffset(doc, {
+      nodeIndex: textNodeIndex,
+      nodeOffset: wrapLocal,
+    });
+    const wrapTailWire = docPosToWireOffset(doc, {
+      nodeIndex: textNodeIndex,
+      nodeOffset: nlLocal - 1,
+    });
+    const mentionStartWire = docPosToWireOffset(doc, { nodeIndex: 0, nodeOffset: 0 });
+
+    function stubPillAndTwoBandWrap(surface: HTMLElement): () => void {
+      stubHandoffNoteMentionLayoutCoords(surface, new Map([[0, { top: pillMidY, left: 400 }]]));
+      return stubTextNodeLineRects(
+        surface,
+        doc,
+        textNodeIndex,
+        [
+          { top: pillMidY - 9, left: 520, width: 16, height: 18 },
+          { top: wrapMidY - 9, left: 335.5, width: 48, height: 18 },
+        ],
+        {
+          // resolveOffsetRect.top is midY; fragment rect tops are box tops.
+          resolveOffsetRect: (nodeOffset) => {
+            if (nodeOffset < wrapLocal) {
+              return { top: pillMidY, left: 520 + nodeOffset * 4, width: 8, height: 18 };
+            }
+            if (nodeOffset < nlLocal) {
+              return {
+                top: wrapMidY,
+                left: 335.5 + (nodeOffset - wrapLocal) * 7,
+                width: 8,
+                height: 18,
+              };
+            }
+            return { top: wrapMidY + 18, left: 335.5, width: 8, height: 18 };
+          },
+        }
+      );
+    }
+
+    it("shape: wrap text sits in post-mention run that later contains \\n", () => {
+      const node = doc.nodes[textNodeIndex];
+      expect(node?.type).toBe("text");
+      if (node?.type !== "text") {
+        return;
+      }
+      expect(doc.nodes[0]?.type).toBe("mention");
+      expect(wrapLocal).toBeGreaterThan(0);
+      expect(nlLocal).toBeGreaterThan(wrapLocal);
+      expect(node.text.slice(0, nlLocal)).toContain("wrap");
+      expect(prefixWire).toBeLessThan(wrapWire);
+    });
+
+    it("acquire cache keeps wrap-band tops below pill (prefix snap does not flatten)", () => {
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const restore = stubPillAndTwoBandWrap(surface);
+      invalidateHandoffNoteLayoutCache(surface);
+
+      try {
+        buildHandoffNoteLayoutMap(surface, doc);
+        const cached = getCachedMeasuredSamples(surface, wire, 310) ?? [];
+        const prefix = cached.find((sample) => sample.wire === prefixWire);
+        const wrap = cached.find(
+          (sample) => sample.wire === wrapWire || sample.wire === wrapTailWire
+        );
+        const msg = `cached=${JSON.stringify(
+          cached.map((sample) => ({ wire: sample.wire, top: sample.top }))
+        )}`;
+
+        expect(prefix, msg).toBeTruthy();
+        expect(wrap, msg).toBeTruthy();
+        // Same-band prefix may snap to exact pill midY.
+        expect(prefix!.top, msg).toBeCloseTo(pillMidY, 1);
+        // Soft-wrap continuation must survive post-atomic prefix align.
+        expect(wrap!.top, msg).toBeGreaterThan(pillMidY + 4);
+        expect(wrap!.top, msg).toBeCloseTo(wrapMidY, 1);
+      } finally {
+        restore();
+        surface.remove();
+      }
+    });
+
+    it("infer: wrap wire is a distinct visual row below the mention band", () => {
+      const surface = document.createElement("div");
+      surface.style.width = "310px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
+      const restore = stubPillAndTwoBandWrap(surface);
+      invalidateHandoffNoteLayoutCache(surface);
+      const wrapMidCharWire = docPosToWireOffset(doc, {
+        nodeIndex: textNodeIndex,
+        nodeOffset: wrapLocal + 2,
+      });
+
+      try {
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
+        const mentionRow = layoutRowAtWireFocus(doc, layout, mentionStartWire, surface);
+        const wrapRow = layoutRowAtWireFocus(doc, layout, wrapWire, surface);
+        const wrapMidRow = layoutRowAtWireFocus(doc, layout, wrapMidCharWire, surface);
+        const wrapTailRow = layoutRowAtWireFocus(doc, layout, wrapTailWire, surface);
+        const cached = getCachedMeasuredSamples(surface, wire, 310) ?? [];
+        const msg = JSON.stringify({
+          tops: layout.rows.map((row) => `${row.kind}@${row.top.toFixed(2)}`),
+          rows: { mentionRow, wrapRow, wrapMidRow, wrapTailRow },
+          wires: { wrapWire, wrapMidCharWire, wrapTailWire },
+          samples: cached.map((sample) => ({
+            wire: sample.wire,
+            top: Number(sample.top.toFixed(2)),
+          })),
+          continuationProbe: layout.continuationAfterRowEndWire(prefixWire),
+        });
+        // Soft-wrap partition: unsampled wrap glyphs still share the continuation row.
+        expect(wrapRow, msg).toBeGreaterThan(mentionRow);
+        expect(wrapMidRow, msg).toBe(wrapRow);
+        expect(wrapTailRow, msg).toBe(wrapRow);
+        expect(layout.continuationAfterRowEndWire(prefixWire), msg).toBe(wrapWire);
+        expect(
+          layout.rows.some((row) => row.kind === "content" && Math.abs(row.top - wrapMidY) < 2),
+          msg
+        ).toBe(true);
+      } finally {
+        restore();
+        surface.remove();
+      }
     });
   });
 
@@ -1844,7 +2320,7 @@ describe("handoff-note-layout-map", () => {
       top: number,
       samples: { wire: number; left: number }[]
     ): HandoffNoteLayoutRow {
-      const mapped = samples.map((s) => ({ ...s, top }));
+      const mapped = samples.map((sample) => ({ ...sample, top }));
       const lefts = mapped.map((sample) => sample.left);
       return {
         kind: "content",
@@ -1890,6 +2366,77 @@ describe("handoff-note-layout-map", () => {
         ]),
       ];
       expect(isSameWireSoftWrapBandCrossing(doc, 1, 0, rows)).toBe(true);
+    });
+  });
+
+  describe("layout row authority — no public wire→row APIs", () => {
+    function mount(wire: string) {
+      const doc = wireToDoc(wire);
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#f00"]]),
+      });
+      return { root, doc };
+    }
+
+    function chippedMentionAbuttingBlank() {
+      const doc0 = wireToDoc(`header @${AGENT} \n\n\n`);
+      const spacerWire = listEmbeddedBlankBandProbeWires(doc0)[0]! - 1;
+      const chipped = applyDocDelete(
+        doc0,
+        collapsedSelection(wireOffsetToDocPos(doc0, spacerWire), "after"),
+        "backspace"
+      )!;
+      const mentionEnd = chipped.selection.focus;
+      const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+      expect(chipped.doc.nodes[mentionEnd.nodeIndex]?.type).toBe("mention");
+      expect(docPosToWireOffset(chipped.doc, mentionEnd)).toBe(probeWire);
+      return { wire: docToWire(chipped.doc), mentionEnd, probeWire };
+    }
+
+    it("layout map has no public wire paint/row APIs", () => {
+      const { root, doc } = mount("hello");
+      try {
+        const layout = buildHandoffNoteLayoutMap(root, doc);
+        expect(layout).not.toHaveProperty("rowIndexForWire");
+        expect(layout).not.toHaveProperty("paintContextForWire");
+        expect(typeof layout.paintContextForDocPos).toBe("function");
+      } finally {
+        root.remove();
+      }
+    });
+
+    it("mention-end ≡ probe — layoutRowAtWireFocus matches layoutRowForFocus(mentionEnd)", () => {
+      const { wire, mentionEnd, probeWire } = chippedMentionAbuttingBlank();
+      const { root, doc } = mount(wire);
+      try {
+        const layout = buildHandoffNoteLayoutMap(root, doc);
+        expect(layoutRowAtWireFocus(doc, layout, probeWire, root)).toBe(
+          layoutRowForFocus(root, doc, layout, mentionEnd)
+        );
+        const focusPaint = resolvePaintContext(doc, mentionEnd, { root });
+        const byDoc = layout.paintContextForDocPos(focusPaint.paintPos);
+        const atWirePaint = resolvePaintContextAtWire(doc, probeWire, { root });
+        expect(atWirePaint.focusPos).toEqual(mentionEnd);
+        expect(layout.paintContextForDocPos(atWirePaint.paintPos)?.rowIndex).toBe(byDoc?.rowIndex);
+      } finally {
+        root.remove();
+      }
+    });
+
+    it("ordinary interior text — wire-focus helper matches focus row", () => {
+      const { root, doc } = mount("hello world");
+      try {
+        const focus = wireOffsetToDocPos(doc, 3);
+        const layout = buildHandoffNoteLayoutMap(root, doc);
+        expect(layoutRowAtWireFocus(doc, layout, 3, root)).toBe(
+          layoutRowForFocus(root, doc, layout, focus)
+        );
+      } finally {
+        root.remove();
+      }
     });
   });
 });

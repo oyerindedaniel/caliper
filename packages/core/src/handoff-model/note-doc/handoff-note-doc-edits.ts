@@ -15,10 +15,7 @@ import {
   type HandoffNoteEdit,
 } from "./handoff-note-doc.js";
 import { resolveHandoffNoteDeleteIntent } from "./handoff-note-delete-intent.js";
-import {
-  insertDocPosAfterEmbeddedBlankProbe,
-  resolveEmbeddedBlankBandEofLineBreakCaretWire,
-} from "./handoff-note-embedded-newlines.js";
+import { insertDocPosAfterEmbeddedBlankProbe } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
   collapsedSelectionWithIntent,
@@ -27,6 +24,7 @@ import {
   docPosToWireOffset,
   expandSelectionFocusToDocEndIfNeeded,
   normalizeDocPos,
+  normalizeSelection,
   type HandoffNoteCaretAffinity,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
@@ -93,7 +91,11 @@ export function spliceDocSelection(
   const next = spliceDocWireRange(doc, start, end, insertion);
   const cursorWire = start + insertion.length;
   const nextFocus = normalizeDocPos(next, wireOffsetToDocPos(next, cursorWire));
-  return { doc: next, selection: collapsedSelection(nextFocus) };
+  // Collapsed land goes through normalizeSelection so CRE past-end becomes last char + after.
+  return {
+    doc: next,
+    selection: normalizeSelection(next, collapsedSelection(nextFocus)),
+  };
 }
 
 export function applyDocDelete(
@@ -156,16 +158,14 @@ export function applyDocInsertText(
   }
 
   const focus = normalizeDocPos(doc, selection.focus);
+
   const multilineQueryInsert = applyMentionQueryMultilineInsert(doc, selection, replacement);
   if (multilineQueryInsert) {
     return multilineQueryInsert;
   }
 
-  const insertFocus = insertDocPosAfterContentRowEndChar(
-    doc,
-    insertDocPosAfterEmbeddedBlankProbe(doc, focus),
-    selection.focusAffinity
-  );
+  const afterBlank = insertDocPosAfterEmbeddedBlankProbe(doc, focus);
+  const insertFocus = insertDocPosAfterContentRowEndChar(doc, afterBlank, selection.focusAffinity);
   const focusWire = docPosToWireOffset(doc, insertFocus);
   const boundary = describeHandoffNoteCursorContext(doc, focusWire);
 
@@ -468,6 +468,24 @@ function appendInPreMentionText(
   };
 }
 
+/**
+ * After Shift+Enter (or selection replace with `\n`), land on the new empty line slot.
+ * Insert advanced the caret by one wire unit past the break point.
+ */
+function selectionAfterLineBreak(
+  result: HandoffDocEditResult,
+  priorWire: number,
+  options?: { bias?: "end" }
+): HandoffDocEditResult {
+  const caretWire = priorWire + 1;
+  return {
+    doc: result.doc,
+    selection: collapsedSelection(
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire), options)
+    ),
+  };
+}
+
 function applyLineBreakCaretPolicy(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos
@@ -491,14 +509,7 @@ function applyLineBreakCaretPolicy(
 
   if (atContentEnd && hadNewlineSuffix && run.beforeMention && !run.afterMention && !inNewlineRun) {
     const insertPos = wireOffsetToDocPos(doc, run.suffixStartWire);
-    const result = spliceDocSelection(doc, insertPos, insertPos, "\n");
-    const resolvedWire = priorWire + 1;
-    return {
-      doc: result.doc,
-      selection: collapsedSelection(
-        normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolvedWire))
-      ),
-    };
+    return selectionAfterLineBreak(spliceDocSelection(doc, insertPos, insertPos, "\n"), priorWire);
   }
 
   if (atContentEnd && hadNewlineSuffix && run.afterMention && !inNewlineRun) {
@@ -512,61 +523,22 @@ function applyLineBreakCaretPolicy(
         resolvedWire,
         requestedWire: priorWire,
       });
-      return {
-        doc: result.doc,
-        selection: collapsedSelection(
-          normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolvedWire))
-        ),
-      };
+      return selectionAfterLineBreak(result, priorWire);
     }
   }
 
   const result = spliceDocSelection(doc, focus, focus, "\n");
 
   if (atContentEnd && !hadNewlineSuffix) {
-    const resolvedWire = priorWire + 1;
-    traceLineBreakCaretBoundary("line-break-content-end-blank", {
-      priorWire,
-      resolvedWire,
-      requestedWire: priorWire,
-      afterMention: run.afterMention,
-      beforeMention: run.beforeMention,
-    });
-    return {
-      doc: result.doc,
-      selection: collapsedSelection(
-        normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, resolvedWire))
-      ),
-    };
+    return selectionAfterLineBreak(result, priorWire);
   }
 
   if (inNewlineRun) {
     const nextTextNode = result.doc.nodes[normalized.nodeIndex];
     if (run.afterMention && nextTextNode?.type === "text") {
-      const caretWire = priorWire + 1;
-      return {
-        doc: result.doc,
-        selection: collapsedSelection(
-          normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire), { bias: "end" })
-        ),
-      };
+      return selectionAfterLineBreak(result, priorWire, { bias: "end" });
     }
-    if (run.beforeMention && nextTextNode?.type === "text") {
-      const caretWire = priorWire + 1;
-      return {
-        doc: result.doc,
-        selection: collapsedSelection(
-          normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire))
-        ),
-      };
-    }
-    const caretWire = priorWire + 1;
-    return {
-      doc: result.doc,
-      selection: collapsedSelection(
-        normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire))
-      ),
-    };
+    return selectionAfterLineBreak(result, priorWire);
   }
 
   return result;
@@ -594,7 +566,6 @@ function caretAfterMentionBoundaryLineBreak(
   return { nodeIndex: textNodeIndex, nodeOffset: priorText.length };
 }
 
-/** Phase 3 — enable with HANDOFF_NOTE_LINE_BREAK_TRACE=1 */
 function traceLineBreakDispatch(
   branch: string,
   priorWire: number,
@@ -603,12 +574,16 @@ function traceLineBreakDispatch(
   if (!isHandoffNoteEnvTraceEnabled("HANDOFF_NOTE_LINE_BREAK_TRACE")) {
     return;
   }
+  const resolvedWire = docPosToWireOffset(result.doc, result.selection.focus);
   console.log(
+    "[handoff-note] insert>>lineBreak.dispatch",
     JSON.stringify({
-      event: "lineBreak.dispatch",
       branch,
       priorWire,
-      resolvedWire: docPosToWireOffset(result.doc, result.selection.focus),
+      resolvedWire,
+      resultWire: docToWire(result.doc),
+      resultFocus: result.selection.focus,
+      resultAffinity: result.selection.focusAffinity ?? null,
     })
   );
 }
@@ -619,20 +594,7 @@ function finishLineBreak(
   result: HandoffDocEditResult
 ): HandoffDocEditResult {
   traceLineBreakDispatch(branch, priorWire, result);
-  const resolvedWire = docPosToWireOffset(result.doc, result.selection.focus);
-  if (resolveMentionQueryMultilineInsert(docToWire(result.doc), docToWire(result.doc).length)) {
-    return result;
-  }
-  const caretWire = resolveEmbeddedBlankBandEofLineBreakCaretWire(result.doc, resolvedWire);
-  if (caretWire === resolvedWire) {
-    return result;
-  }
-  return {
-    doc: result.doc,
-    selection: collapsedSelection(
-      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, caretWire))
-    ),
-  };
+  return result;
 }
 
 function applyMentionBoundaryLineBreak(

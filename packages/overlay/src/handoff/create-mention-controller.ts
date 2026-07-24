@@ -12,7 +12,6 @@ import {
   type HandoffNoteSelection,
 } from "@caliper/core";
 
-import { flattenHandoffNoteLog } from "./handoff-note-debug.js";
 import type { HandoffNoteEditorHost } from "./note-editor/create-handoff-note-editor.js";
 
 /** Doc end for an active `@query` token — always consumes the leading `@`. */
@@ -123,7 +122,7 @@ export function createMentionController(options: MentionControllerOptions) {
     const viewportMargin = 12;
     const maxWidth = Math.min(popoverWidth, viewport.width - viewportMargin * 2);
 
-    let top = anchor.top + margin;
+    let top = anchor.top + anchor.height + margin;
     let side: "top" | "bottom" = "bottom";
     if (top + popoverHeight > viewport.height - viewportMargin) {
       const above = anchor.top - popoverHeight - margin;
@@ -148,21 +147,10 @@ export function createMentionController(options: MentionControllerOptions) {
     const activeSession = { ...session };
     const doc = editor.getDoc();
     const selection = editor.getSelectionState();
-    const wire = editor.getWire();
     const replaceStart = activeSession.queryStart!;
     const replaceEnd = resolveActiveMentionReplaceEnd(activeSession, doc, selection.focus);
 
     editor.insertMentionAtomAt(agentId, replaceStart, replaceEnd);
-
-    flattenHandoffNoteLog("mention.insert", {
-      agentId,
-      wireBefore: wire,
-      wireAfter: editor.getWire(),
-      queryStart: docPosToWireOffset(doc, replaceStart),
-      replaceEnd: docPosToWireOffset(doc, replaceEnd),
-      liveCursorAtCommit: editor.getCursor(),
-      cursorAfter: editor.getCursor(),
-    });
 
     options.onNoteChange(editor.getWire());
 
@@ -190,8 +178,6 @@ export function createMentionController(options: MentionControllerOptions) {
     handleInput(editor: HandoffNoteEditorHost) {
       const doc = editor.getDoc();
       const selection = editor.getSelectionState();
-      const cursor = editor.getCursor();
-      const wire = editor.getWire();
       const wasOpen = session.open;
       const previousQuery = session.query;
 
@@ -206,28 +192,6 @@ export function createMentionController(options: MentionControllerOptions) {
         )
       ) {
         next = { ...CLOSED };
-      }
-
-      if (
-        next.open !== wasOpen ||
-        next.query !== previousQuery ||
-        (next.queryStart &&
-          session.queryStart &&
-          !docPosEqual(next.queryStart, session.queryStart)) ||
-        (next.queryStart && !session.queryStart) ||
-        (!next.queryStart && session.queryStart)
-      ) {
-        flattenHandoffNoteLog("mention.session", {
-          wire,
-          cursor,
-          wasOpen,
-          previousQuery,
-          next,
-          wireSlice:
-            next.open && next.queryStart
-              ? wire.slice(docPosToWireOffset(doc, next.queryStart), cursor)
-              : undefined,
-        });
       }
 
       session = next;

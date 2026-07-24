@@ -1,13 +1,16 @@
-﻿import {
+import {
+  collapsedSelection,
   describeHandoffNoteCursorContext,
+  docPosAfterAmbiguousContentRowEndChar,
   docPosEqual,
   docPosToWireOffset,
   docToWire,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
-  embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandSubstantiveContentAbutsProbe,
-  isEmbeddedBlankBandDeleteProbeWire,
+  isCaretOnAmbiguousContentRowEndChar,
   isEmbeddedBlankBandProbeWire,
+  isTrailingNewlinePastEndWire,
+  listBlankVisualLineStartWires,
   listEmbeddedBlankBandProbeWires,
   nodeTokenLength,
   normalizeDocPos,
@@ -17,6 +20,7 @@
   type HandoffNoteCursorContext,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
+  type HandoffNoteSelection,
   isAtomicNode,
 } from "@caliper/core";
 import {
@@ -31,18 +35,17 @@ import {
   iterWireTextDomSlots,
   mentionWireLength,
   wireOffsetAtTextBreak,
+  wireTextDomOptionsForDoc,
 } from "./handoff-note-dom.js";
 import { isCrossRowSpacerAndPillDom } from "./handoff-note-row-geometry.js";
-import { logHorArrow } from "../handoff-note-debug.js";
-
-/** Layout acquire sample shape (matches layout-map `MeasuredWireOffset`; not imported — cycle). */
+/** Layout acquire sample shape (matches layout-map `MeasuredWireOffset`; not imported ??? cycle). */
 type DomMeasuredWireOffset = { wire: number; top: number; left: number; right?: number };
 
 function isEditorNode(root: HTMLElement, node: Node): boolean {
   return node === root || root.contains(node);
 }
 
-/** `<br>` and collapsed ranges often report 0×0 while still carrying a paint position. */
+/** `<br>` and collapsed ranges often report 0??0 while still carrying a paint position. */
 export function hasPositionedDomRect(rect: DOMRect): boolean {
   return Number.isFinite(rect.top) && Number.isFinite(rect.left);
 }
@@ -71,7 +74,7 @@ function findMentionAncestor(root: HTMLElement, node: Node): HTMLSpanElement | n
   return null;
 }
 
-/** Browser trailing edge on a split wire-text part before the next `\n`. Contract: `handoff-note-arrow-contract.md` — click ingress, Rule 4 (text-node tail ownership). */
+/** Browser trailing edge on a split wire-text part before the next `\n`. Contract: `handoff-note-arrow-contract.md` ??? click ingress, Rule 4 (text-node tail ownership). */
 export function isContentTextNodeDomTailBeforeBreak(
   domOffset: number,
   part: string,
@@ -79,12 +82,12 @@ export function isContentTextNodeDomTailBeforeBreak(
   partCount: number
 ): boolean {
   // Insertion-point semantics: any non-empty part's text-node tail before a break is
-  // content row end (last character) — including sole-char and whitespace-only parts.
+  // content row end (last character) ??? including sole-char and whitespace-only parts.
   return domOffset === part.length && part.length > 0 && partIndex < partCount - 1;
 }
 
 /**
- * Rule 4 — read path (`handoff-note-arrow-contract.md`, click ingress): text-node tail belongs to
+ * Rule 4 ??? read path (`handoff-note-arrow-contract.md`, click ingress): text-node tail belongs to
  * content row end, not the following `\n`. Blank-band probe wires come only from blank
  * infrastructure DOM, not content text tails.
  */
@@ -102,55 +105,27 @@ export function docOffsetFromContentTextNodeDomPoint(
 }
 
 /**
- * Rule 4 — write path (`handoff-note-arrow-contract.md`, click ingress): content row end
- * focuses the last character and paints at the browser text-node tail (insertion point
- * after that character) — including sole-char and whitespace-only parts. The following
- * `\n` always paints via the break path, never as a text-tail stand-in.
+ * Rule 4 ??? write path (`handoff-note-arrow-contract.md`): content-row-end (`after`)
+ * focuses the last character and paints at the browser text-node tail. Omit and
+ * `before` paint on the character ??? never invent text-tail so DOM read cannot forge
+ * `after`. The following `\n` always paints via the break path.
+ *
+ * Split-part index/count are not needed here: affinity alone chooses on-char vs
+ * text-tail (read twin `isContentTextNodeDomTailBeforeBreak` still uses part geometry).
  */
 export function domOffsetForContentRowEndInSplitText(
   docOffsetInPart: number,
   part: string,
-  partIndex: number,
-  partCount: number,
   focusAffinity?: HandoffNoteCaretAffinity
 ): number {
-  // Deletion-point / visual-start: paint on the char.
-  if (focusAffinity === "before") {
-    return docOffsetInPart;
-  }
   if (docOffsetInPart !== part.length - 1 || part.length === 0) {
     return docOffsetInPart;
   }
-  // CRE text-tail: omit defaults CRE when a following part exists (`\n` split);
-  // explicit `after` also covers the last part / EOF row end.
-  if (partIndex < partCount - 1 || focusAffinity === "after") {
+  // Text-tail only for explicit content-row-end.
+  if (focusAffinity === "after") {
     return part.length;
   }
   return docOffsetInPart;
-}
-
-/**
- * Doc position owning the character at a wire index — text-node offset when the wire
- * maps to text, otherwise falls back to wireOffsetToDocPos (mention boundaries).
- * Click/layout row-end uses this instead of mention-boundary alias normalization.
- * Paint/selection landing at a wire uses `resolvePaintContextAtWire` instead.
- */
-export function docPosAtContentWire(doc: HandoffNoteDoc, wire: number): HandoffNoteDocPos {
-  const wireLen = docToWire(doc).length;
-  const clamped = Math.max(0, Math.min(wire, wireLen));
-  let offset = 0;
-  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    const node = doc.nodes[nodeIndex]!;
-    const length = node.type === "text" ? node.text.length : 1 + node.agentId.length;
-    if (clamped === offset) {
-      return { nodeIndex, nodeOffset: 0 };
-    }
-    if (node.type === "text" && clamped > offset && clamped <= offset + length) {
-      return { nodeIndex, nodeOffset: clamped - offset };
-    }
-    offset += length;
-  }
-  return wireOffsetToDocPos(doc, clamped);
 }
 
 function isLastRenderedDocNode(doc: HandoffNoteDoc, nodeIndex: number): boolean {
@@ -163,7 +138,7 @@ function isLastRenderedDocNode(doc: HandoffNoteDoc, nodeIndex: number): boolean 
   return false;
 }
 
-/** Caret before a committed atom, outside the atom — line-start ZWSP when row starts after a break. */
+/** Caret before a committed atom, outside the atom ??? line-start ZWSP when row starts after a break. */
 function paintOutsideAtomicStart(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -217,11 +192,13 @@ export function docPosToRenderedDomChildIndex(doc: HandoffNoteDoc, nodeIndex: nu
       return rendered;
     }
     if (node.type === "text") {
-      rendered += countWireTextDomChildren(node.text, {
-        wireBase: wireCursor,
-        blankProbeWires: probeWires,
-        lineStartBeforeAtomic: isAtomicNode(doc.nodes[index + 1]),
-      });
+      rendered += countWireTextDomChildren(
+        node.text,
+        wireTextDomOptionsForDoc(doc, wireCursor, {
+          blankProbeWires: probeWires,
+          lineStartBeforeAtomic: isAtomicNode(doc.nodes[index + 1]),
+        })
+      );
       wireCursor += node.text.length;
     } else if (isAtomicNode(node)) {
       rendered++;
@@ -232,45 +209,18 @@ export function docPosToRenderedDomChildIndex(doc: HandoffNoteDoc, nodeIndex: nu
 }
 
 /**
- * Caret on a wire-break — sole owner of probe / cleared-row / blank-anchor paint with focus.
- * Cleared content row end shares the blank-anchor ZWSP dock with delete-probe for selection
- * geom; CRE vs delete-probe remains focus classification (`emptyRowEnd` / delete-probe helpers).
+ * Caret on a wire-break — one probe → one dock.
+ * Emit already chose dock kind; paint follows DOM (ba sibling ⇒ ba, else bare BR).
  */
 function domPointAfterWireBreak(
   root: HTMLElement,
-  breakChildIdx: number,
-  options?: {
-    doc?: HandoffNoteDoc;
-    breakWire?: number;
-    /** Authority doc pos — required to disambiguate cleared sandwiched row end from delete-probe paint. */
-    focusDocPos?: HandoffNoteDocPos;
-  }
+  breakChildIdx: number
 ): { node: Node; offset: number } {
   const br = root.childNodes[breakChildIdx];
   if (!(br instanceof HTMLBRElement && isHandoffWireBreakElement(br))) {
     return { node: root, offset: breakChildIdx };
   }
   const anchor = root.childNodes[breakChildIdx + 1];
-  if (
-    isHandoffBlankAnchorElement(anchor) &&
-    options?.doc !== undefined &&
-    options.breakWire !== undefined
-  ) {
-    const doc = options.doc;
-    const breakWire = options.breakWire;
-    const focusDocPos = options.focusDocPos;
-    const emptyRowEnd = embeddedBlankBandAtEmptyContentRowEnd(doc, breakWire, focusDocPos);
-    const nonDeleteProbe =
-      focusDocPos !== undefined &&
-      isEmbeddedBlankBandProbeWire(doc, breakWire) &&
-      !isEmbeddedBlankBandDeleteProbeWire(doc, breakWire, focusDocPos);
-    // Bare `<br>` only for populated sole-char / non-delete-probe alias (content still on row).
-    // CRE and delete-probe both fall through to the blank-anchor ZWSP below (selection geom);
-    // focus classification keeps CRE vs delete-probe — paint does not invent meaning.
-    if (nonDeleteProbe && !emptyRowEnd) {
-      return { node: br, offset: 0 };
-    }
-  }
   if (isHandoffBlankAnchorElement(anchor)) {
     const text = anchor.firstChild;
     if (text?.nodeType === Node.TEXT_NODE) {
@@ -278,24 +228,8 @@ function domPointAfterWireBreak(
     }
   }
   // Row-start ZWSP is paint for atom-start (`paintOutsideAtomicStart`), not for the
-  // break wire itself — break focus stays on `<br>` (layout geom + live/authority parity).
+  // break wire itself — break focus stays on `<br>`.
   return { node: br, offset: 0 };
-}
-
-function domPointAfterTextWireBreak(
-  root: HTMLElement,
-  breakChildIdx: number,
-  text: string,
-  wireBase: number,
-  partIndex: number,
-  doc: HandoffNoteDoc,
-  focusDocPos: HandoffNoteDocPos
-): { node: Node; offset: number } {
-  return domPointAfterWireBreak(root, breakChildIdx, {
-    doc,
-    breakWire: wireOffsetAtTextBreak(text, wireBase, partIndex),
-    focusDocPos,
-  });
 }
 
 function advancePastWireBreakDom(root: HTMLElement, childIdx: number): number {
@@ -307,16 +241,26 @@ function advancePastWireBreakDom(root: HTMLElement, childIdx: number): number {
   return next;
 }
 
-function domPointAtTextNodeWireBreak(
-  root: HTMLElement,
-  childIdx: number,
-  text: string,
-  wireBase: number,
-  partIndex: number,
-  doc: HandoffNoteDoc,
-  focusDocPos: HandoffNoteDocPos
-): { node: Node; offset: number } {
-  return domPointAfterTextWireBreak(root, childIdx, text, wireBase, partIndex, doc, focusDocPos);
+/**
+ * Trailing empty line-start at `wire.length`: non-wire line-pad BR.
+ * Last probe paints the preceding bare wire-break (blank-anchor omitted before pad).
+ */
+function findTrailingLinePadElement(root: HTMLElement): HTMLBRElement | null {
+  for (let childIdx = root.childNodes.length - 1; childIdx >= 0; childIdx--) {
+    const child = root.childNodes[childIdx];
+    if (child instanceof HTMLBRElement && isHandoffLinePadElement(child)) {
+      return child;
+    }
+  }
+  return null;
+}
+
+function domPointAtTrailingEmptyLinePad(root: HTMLElement): { node: Node; offset: number } | null {
+  const pad = findTrailingLinePadElement(root);
+  if (!pad) {
+    return null;
+  }
+  return { node: pad, offset: 0 };
 }
 
 function resolveTextDomPointAtOffset(
@@ -359,38 +303,26 @@ function resolveTextDomPointAtOffset(
         if (domNode?.nodeType === Node.TEXT_NODE) {
           return {
             node: domNode,
-            offset: domOffsetForContentRowEndInSplitText(
-              remaining,
-              part,
-              partIndex,
-              parts.length,
-              options.focusAffinity
-            ),
+            offset: domOffsetForContentRowEndInSplitText(remaining, part, options.focusAffinity),
           };
         }
       }
-      const atWireBreak =
-        (remaining === part.length && partIndex < parts.length - 1) ||
-        (part === "" && remaining === 0);
+      const atWireBreak = remaining === part.length && partIndex < parts.length - 1;
       if (atWireBreak) {
         // Break wire always paints via domPointAfterWireBreak (BR / blank / line-start).
         // Rule 4 content-row-end is the last character of the part (branch above), not this `\n`.
+        // Empty mid-run parts (`""` between `\n\n`) also hit here — trailing empty after the
+        // final `\n` is last-part and falls through to EOF line-pad below / after the loop.
         if (remaining === part.length && part) {
           childIdx++;
         }
-        return domPointAtTextNodeWireBreak(
-          root,
-          childIdx,
-          text,
-          options.wireBase,
-          partIndex,
-          options.doc,
-          options.focusDocPos
-        );
+        return domPointAfterWireBreak(root, childIdx);
       }
       if (part && remaining === part.length) {
         const domNode = root.childNodes[childIdx];
         if (domNode?.nodeType === Node.TEXT_NODE) {
+          // Trailing edge of this part (text.length), including pre-atomic lands.
+          // CRE omit/before on the last char uses the branch above (remaining < length).
           return { node: domNode, offset: remaining };
         }
       }
@@ -404,15 +336,7 @@ function resolveTextDomPointAtOffset(
 
     if (partIndex < parts.length - 1) {
       if (remaining === 0) {
-        return domPointAtTextNodeWireBreak(
-          root,
-          childIdx,
-          text,
-          options.wireBase,
-          partIndex,
-          options.doc,
-          options.focusDocPos
-        );
+        return domPointAfterWireBreak(root, childIdx);
       }
       remaining -= 1;
       childIdx = advancePastWireBreakDom(root, childIdx);
@@ -420,26 +344,18 @@ function resolveTextDomPointAtOffset(
   }
 
   if (options.docEndsWithNewline && options.isLastRenderedNode && text.endsWith("\n")) {
-    const padChild = root.childNodes[root.childNodes.length - 1];
-    if (padChild instanceof HTMLBRElement && isHandoffLinePadElement(padChild)) {
-      return { node: padChild, offset: 0 };
+    const trailing = domPointAtTrailingEmptyLinePad(root);
+    if (trailing) {
+      return trailing;
     }
-    return domPointAfterWireBreak(root, root.childNodes.length - 1, {
-      doc: options.doc,
-      breakWire: options.wireBase + text.length - 1,
-      focusDocPos: options.focusDocPos,
-    });
+    return domPointAfterWireBreak(root, root.childNodes.length - 1);
   }
 
   const domNode = root.childNodes[childIdx - 1] ?? root.childNodes[domStartChildIndex];
   if (domNode?.nodeType === Node.TEXT_NODE) {
     return { node: domNode, offset: domNode.textContent?.length ?? 0 };
   }
-  return domPointAfterWireBreak(root, childIdx, {
-    doc: options.doc,
-    breakWire: options.wireBase + Math.max(0, clamped - 1),
-    focusDocPos: options.focusDocPos,
-  });
+  return domPointAfterWireBreak(root, childIdx);
 }
 
 function docPosAtPrecedingWireBreak(
@@ -455,10 +371,35 @@ function docPosAtPrecedingWireBreak(
     if (root.childNodes[childIdx] !== br) {
       continue;
     }
-    const atBreak = docPosFromRootDomChildIndex(root, doc, childIdx);
-    return atBreak;
+    return docPosFromRootDomChildIndex(root, doc, childIdx);
   }
   return null;
+}
+
+/** Blank-anchor is always after its wire-break — orphan docks must not soft-land at EOF or BOF. */
+function requireDocPosAtBlankAnchor(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  anchor: HTMLSpanElement
+): HandoffNoteDocPos {
+  const pos = docPosAtPrecedingWireBreak(root, doc, anchor);
+  if (!pos) {
+    throw new Error("handoff note: blank-anchor without preceding wire-break");
+  }
+  return pos;
+}
+
+/** Line-start anchor is always before its row-start atom — orphan docks must not soft-land at EOF or BOF. */
+function requireDocPosAtLineStartAnchor(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  anchor: HTMLSpanElement
+): HandoffNoteDocPos {
+  const pos = docPosAtLineStartAnchor(root, doc, anchor);
+  if (!pos) {
+    throw new Error("handoff note: line-start-anchor without following atom");
+  }
+  return pos;
 }
 
 function docPosAtProbeAliasWhenSubstantiveAbuts(
@@ -526,16 +467,13 @@ function docPosFromRootDomChildIndex(
         return alias;
       }
     }
-    return (
-      docPosAtPrecedingWireBreak(root, doc, targetNode) ??
-      wireOffsetToDocPos(doc, docToWire(doc).length)
-    );
+    return requireDocPosAtBlankAnchor(root, doc, targetNode);
   }
   if (isHandoffLineStartAnchorElement(targetNode)) {
-    return (
-      docPosAtLineStartAnchor(root, doc, targetNode) ??
-      wireOffsetToDocPos(doc, docToWire(doc).length)
-    );
+    return requireDocPosAtLineStartAnchor(root, doc, targetNode);
+  }
+  if (isHandoffLinePadElement(targetNode)) {
+    return wireOffsetToDocPos(doc, docToWire(doc).length);
   }
 
   const wire = docToWire(doc);
@@ -571,11 +509,10 @@ function docPosFromRootDomChildIndex(
     const text = node.text;
     const nodeWireBase = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
     const next = doc.nodes[nodeIndex + 1];
-    const wireTextOptions = {
-      wireBase: nodeWireBase,
+    const wireTextOptions = wireTextDomOptionsForDoc(doc, nodeWireBase, {
       blankProbeWires: probeWires,
       lineStartBeforeAtomic: isAtomicNode(next),
-    };
+    });
     if (!text.includes("\n")) {
       if (domIdx === targetChildIndex) {
         return { nodeIndex, nodeOffset: 0 };
@@ -592,7 +529,7 @@ function docPosFromRootDomChildIndex(
     domIdx += countWireTextDomChildren(text, wireTextOptions);
   }
 
-  if (docEndsWithNewline && domIdx === targetChildIndex) {
+  if (docEndsWithNewline && (targetChildIndex === domIdx || targetChildIndex === domIdx + 1)) {
     return wireOffsetToDocPos(doc, wire.length);
   }
 
@@ -642,20 +579,10 @@ export function domPointToDocPos(
 
     const blankAnchorParent = container.parentNode;
     if (isHandoffBlankAnchorElement(blankAnchorParent)) {
-      return (
-        docPosAtPrecedingWireBreak(root, doc, blankAnchorParent) ?? {
-          nodeIndex: 0,
-          nodeOffset: 0,
-        }
-      );
+      return requireDocPosAtBlankAnchor(root, doc, blankAnchorParent);
     }
     if (isHandoffLineStartAnchorElement(blankAnchorParent)) {
-      return (
-        docPosAtLineStartAnchor(root, doc, blankAnchorParent) ?? {
-          nodeIndex: 0,
-          nodeOffset: 0,
-        }
-      );
+      return requireDocPosAtLineStartAnchor(root, doc, blankAnchorParent);
     }
 
     const nodeIndex = domNodeToDocIndex(root, doc, container);
@@ -674,15 +601,14 @@ export function domPointToDocPos(
       };
     }
 
+    const next = doc.nodes[nodeIndex + 1];
     const domStart = docPosToRenderedDomChildIndex(doc, nodeIndex);
     const wireBase = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
     const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
-    const next = doc.nodes[nodeIndex + 1];
-    const wireTextOptions = {
-      wireBase,
+    const wireTextOptions = wireTextDomOptionsForDoc(doc, wireBase, {
       blankProbeWires: probeWires,
       lineStartBeforeAtomic: isAtomicNode(next),
-    };
+    });
     const partCount = node.text.split("\n").length;
     for (const slot of iterWireTextDomSlots(node.text, domStart, wireTextOptions)) {
       if (slot.kind === "text") {
@@ -709,12 +635,7 @@ export function domPointToDocPos(
       if (slot.kind === "line-start-anchor") {
         const anchorChild = root.childNodes[slot.domIdx];
         if (isHandoffLineStartAnchorElement(anchorChild) && anchorChild.contains(container)) {
-          return (
-            docPosAtLineStartAnchor(root, doc, anchorChild) ?? {
-              nodeIndex,
-              nodeOffset: slot.nodeOffset,
-            }
-          );
+          return requireDocPosAtLineStartAnchor(root, doc, anchorChild);
         }
       }
     }
@@ -754,26 +675,21 @@ export function domPointToDocPos(
   }
 
   if (isHandoffBlankAnchorElement(container)) {
-    return (
-      docPosAtPrecedingWireBreak(root, doc, container) ?? {
-        nodeIndex: 0,
-        nodeOffset: 0,
-      }
-    );
+    return requireDocPosAtBlankAnchor(root, doc, container);
   }
 
   return domPointToDocPos(root, doc, container.parentNode ?? root, 0);
 }
 
 export type DomPointReadOptions = {
-  /** Prior authority doc pos — wins at same-wire alias seams on passive selection read. */
+  /** Prior authority doc pos ??? wins at same-wire alias seams on passive selection read. */
   from?: HandoffNoteDocPos;
 };
 
 /** Passive DOM read: when wire matches authority but owner differs, trust authority doc pos.
  * Also: paint may place the caret on the content text tail while authority sits on the
  * following non-probe `\n` (insert after last char). Click-ingress read of that tail is
- * the last-char wire — with authority `from`, keep the `\n` so typing does not go live-behind.
+ * the last-char wire ??? with authority `from`, keep the `\n` so typing does not go live-behind.
  */
 export function resolveDomReadDocPos(
   doc: HandoffNoteDoc,
@@ -797,8 +713,8 @@ export function resolveDomReadDocPos(
   const authorityNode = doc.nodes[authority.nodeIndex];
   const readNode = doc.nodes[read.nodeIndex];
   if (
-    authorityNode?.type === "mention" &&
-    readNode?.type === "mention" &&
+    isAtomicNode(authorityNode) &&
+    isAtomicNode(readNode) &&
     authority.nodeIndex === read.nodeIndex
   ) {
     return authority;
@@ -841,6 +757,15 @@ function resolveCaretKindForPaintContext(
   if (focusNode?.type === "text") {
     return "text";
   }
+  if (isAtomicNode(focusNode)) {
+    // Focus owns caret kind at atomic end. Atomic start may paint on inter-atomic
+    // spacer text (cross-row) ? that paint owner is the caret kind.
+    const edge = atomicFocusEdge(doc, focusPos);
+    if (edge === "start" && doc.nodes[paintPos.nodeIndex]?.type === "text") {
+      return "text";
+    }
+    return edge === "interior" ? "mention-interior" : "mention-boundary";
+  }
   const paintNode = doc.nodes[paintPos.nodeIndex];
   if (paintNode?.type === "text") {
     return "text";
@@ -848,7 +773,48 @@ function resolveCaretKindForPaintContext(
   return describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, paintPos)).kind;
 }
 
-/** Canonical paint authority: focus doc pos, paint doc pos, and caret kind from paint wire. */
+function atomicFocusEdge(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos
+): "start" | "end" | "interior" | null {
+  const node = doc.nodes[focusPos.nodeIndex];
+  if (!isAtomicNode(node)) {
+    return null;
+  }
+  const end = atomicEndOffset(doc, focusPos.nodeIndex);
+  if (focusPos.nodeOffset <= 0) {
+    return "start";
+  }
+  if (focusPos.nodeOffset >= end) {
+    return "end";
+  }
+  return "interior";
+}
+
+function caretContextFromAtomicFocus(
+  doc: HandoffNoteDoc,
+  focusPos: HandoffNoteDocPos
+): HandoffNoteCursorContext {
+  const edge = atomicFocusEdge(doc, focusPos);
+  if (edge === null) {
+    return { kind: "text" };
+  }
+  const start = docPosToWireOffset(doc, { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 });
+  const end = start + atomicEndOffset(doc, focusPos.nodeIndex);
+  if (edge === "interior") {
+    const node = doc.nodes[focusPos.nodeIndex];
+    const agentId = node?.type === "mention" ? node.agentId : "";
+    return {
+      kind: "mention-interior",
+      start,
+      end,
+      agentId,
+    };
+  }
+  return { kind: "mention-boundary", start, end, edge };
+}
+
+/** Canonical paint authority: focus doc pos, paint doc pos, and caret kind from focus. */
 export function resolvePaintContext(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
@@ -864,13 +830,24 @@ export function resolvePaintContext(
   };
 }
 
-/** Cursor kind from focus doc pos — text-node focus is always text; mention uses paint path. */
+/** Cursor kind from focus doc pos ??? text focus is text; atomic focus keeps boundary/interior. */
 export function describeCaretContext(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   options?: { root?: HTMLElement }
 ): HandoffNoteCursorContext {
   const ctx = resolvePaintContext(doc, focus, options);
+  const focusNode = doc.nodes[ctx.focusPos.nodeIndex];
+  if (focusNode?.type === "text") {
+    return { kind: "text" };
+  }
+  if (isAtomicNode(focusNode)) {
+    const edge = atomicFocusEdge(doc, ctx.focusPos);
+    if (edge === "start" && doc.nodes[ctx.paintPos.nodeIndex]?.type === "text") {
+      return { kind: "text" };
+    }
+    return caretContextFromAtomicFocus(doc, ctx.focusPos);
+  }
   if (ctx.caretKind === "text") {
     return { kind: "text" };
   }
@@ -879,11 +856,11 @@ export function describeCaretContext(
 
 /**
  * Inter-atomic gap: leading atom | single-char spacer text | following atom.
- * Continuation is spacer offset 1 — same wire as following atomic start.
+ * Continuation is spacer offset 1 ??? same wire as following atomic start.
  */
 const INTER_ATOMIC_FOLLOWING_OFFSET = 2;
 
-/** Painted DOM element for an atomic node (mentions → pill span; other atoms extend here). */
+/** Painted DOM element for an atomic node (mentions ??? pill span; other atoms extend here). */
 export function atomicElement(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -970,9 +947,9 @@ function blankBandKeepsAtomicEndPaint(doc: HandoffNoteDoc): boolean {
 
 /**
  * Same-wire paint aliases from focus:
- * - atomic start → cross-row inter-atomic spacer tail (when spacer/atom on different rows)
- * - atomic end → following text offset 0, unless blank-band substantive content abuts a probe
- *   (DOM must paint atomic end off blank infrastructure — same gate as resolveDomPointAtDocPos)
+ * - atomic start ??? cross-row inter-atomic spacer tail (when spacer/atom on different rows)
+ * - atomic end ??? following text offset 0, unless blank-band substantive content abuts a probe
+ *   (DOM must paint atomic end off blank infrastructure ??? same gate as resolveDomPointAtDocPos)
  */
 function resolvePaintPosFromFocus(
   doc: HandoffNoteDoc,
@@ -1076,7 +1053,7 @@ function collectTextOwnersAtWire(doc: HandoffNoteDoc, wire: number): HandoffNote
 
 /**
  * Text tail between two adjacent atomic nodes on the same wire alias.
- * Gap text must stay on one storage line — newlines mean a new row prefix, not an inter-atomic gap.
+ * Gap text must stay on one storage line ??? newlines mean a new row prefix, not an inter-atomic gap.
  */
 function isInterAtomicTextTail(
   doc: HandoffNoteDoc,
@@ -1117,6 +1094,13 @@ function resolveCanonicalFocusAtWire(doc: HandoffNoteDoc, wire: number): Handoff
     }
   }
 
+  // Same-wire blank-probe alias: core landing owns mention-end / CRE ??? not blank text at offset 0.
+  // Only when landing stays on this wire (mention end ??? probe). Plain-text CRE is a different wire.
+  const blankProbeAlias = docPosAtEmbeddedBlankBandProbeAliasLanding(doc, wire);
+  if (blankProbeAlias && docPosToWireOffset(doc, blankProbeAlias) === wire) {
+    return blankProbeAlias;
+  }
+
   const ctx = describeHandoffNoteCursorContext(doc, wire);
   const textOwners = collectTextOwnersAtWire(doc, wire);
 
@@ -1153,7 +1137,7 @@ function resolveCanonicalFocusAtWire(doc: HandoffNoteDoc, wire: number): Handoff
   return wireOffsetToDocPos(doc, wire);
 }
 
-/** Paint/step focus at a wire — incoming/from authority wins; else canonical owner. */
+/** Paint/step focus at a wire ??? incoming/from authority wins; else canonical owner. */
 function resolveFocusAtWire(
   doc: HandoffNoteDoc,
   wire: number,
@@ -1182,7 +1166,7 @@ function predecessorTextBeforeAtomicStart(
   const endWire = docPosToWireOffset(doc, endPos);
   // Text end aliases atomic start.
   if (endWire === focusWire) {
-    // Inter-atomic gap: land on the gap tail (continuation) — same wire, doc owner change.
+    // Inter-atomic gap: land on the gap tail (continuation) ??? same wire, doc owner change.
     if (isInterAtomicTextTail(doc, atomicNodeIndex - 1, endPos)) {
       return endPos;
     }
@@ -1201,12 +1185,75 @@ function tryIntraTextHorizontalStep(
   if (node?.type !== "text") {
     return null;
   }
+  // CRE last content char: affinity owns before/after ??? do not step onto `\n` or EOF past-end.
+  if (isCaretOnAmbiguousContentRowEndChar(doc, focusPos)) {
+    return null;
+  }
   const delta = direction === "left" ? -1 : 1;
   const nextOffset = focusPos.nodeOffset + delta;
-  if (nextOffset >= 0 && nextOffset <= node.text.length) {
+
+  if (direction === "right" && nextOffset === node.text.length) {
+    // Pre-atomic / inter-atomic text tail remains a real same-wire land.
+    if (isAtomicNode(doc.nodes[focusPos.nodeIndex + 1])) {
+      return { nodeIndex: focusPos.nodeIndex, nodeOffset: nextOffset };
+    }
+    return null;
+  }
+
+  if (
+    direction === "left" &&
+    focusPos.nodeOffset === node.text.length &&
+    isAtomicNode(doc.nodes[focusPos.nodeIndex + 1]) &&
+    node.text.length > 0
+  ) {
+    return { nodeIndex: focusPos.nodeIndex, nodeOffset: node.text.length - 1 };
+  }
+
+  if (nextOffset >= 0 && nextOffset < node.text.length) {
     return { nodeIndex: focusPos.nodeIndex, nodeOffset: nextOffset };
   }
   return null;
+}
+
+/**
+ * Non-probe `\n` only starts the next substantive line ??? storage, not a horizontal stop.
+ * Blank-band probes stay visual stops (same classification as vertical).
+ */
+function isNonVisualLineStartBreak(doc: HandoffNoteDoc, wire: number): boolean {
+  const text = docToWire(doc);
+  if (wire < 0 || wire >= text.length || text[wire] !== "\n") {
+    return false;
+  }
+  // Navigable blank stops and probe docks are visual hops; only storage `\n`
+  // that starts a substantive row (neither) snaps through.
+  if (listBlankVisualLineStartWires(doc).includes(wire)) {
+    return false;
+  }
+  return !isEmbeddedBlankBandProbeWire(doc, wire);
+}
+
+/** Snap off non-visual line-start breaks in the travel direction. Keeps doc owner otherwise. */
+function snapHorizontalVisualLand(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  direction: HandoffNoteArrowDirection
+): HandoffNoteDocPos {
+  const text = docToWire(doc);
+  let wire = docPosToWireOffset(doc, pos);
+  if (!isNonVisualLineStartBreak(doc, wire)) {
+    return pos;
+  }
+  const delta = direction === "right" ? 1 : -1;
+  while (wire >= 0 && wire < text.length && isNonVisualLineStartBreak(doc, wire)) {
+    wire += delta;
+  }
+  if (wire < 0) {
+    return resolveCanonicalFocusAtWire(doc, 0);
+  }
+  if (wire >= text.length) {
+    return resolveCanonicalFocusAtWire(doc, Math.max(0, text.length - 1));
+  }
+  return resolveCanonicalFocusAtWire(doc, wire);
 }
 
 function resolveHorizontalDocSuccessor(
@@ -1215,23 +1262,21 @@ function resolveHorizontalDocSuccessor(
 ): HandoffNoteDocPos | null {
   const intra = tryIntraTextHorizontalStep(doc, focusPos, "right");
   if (intra && !docPosEqual(intra, focusPos)) {
-    return intra;
+    return snapHorizontalVisualLand(doc, intra, "right");
   }
 
   const node = doc.nodes[focusPos.nodeIndex];
   const wire = docPosToWireOffset(doc, focusPos);
-  const ctx = describeHandoffNoteCursorContext(doc, wire);
+  const edge = atomicFocusEdge(doc, focusPos);
 
-  if (isAtomicNode(node)) {
-    if (ctx.kind === "mention-interior") {
-      return docPosAfterNode(doc, focusPos.nodeIndex);
+  if (isAtomicNode(node) && edge !== null) {
+    if (edge === "interior") {
+      return snapHorizontalVisualLand(doc, docPosAfterNode(doc, focusPos.nodeIndex), "right");
     }
-    if (ctx.kind === "mention-boundary") {
-      if (ctx.edge === "start") {
-        return docPosAtAtomicEnd(doc, focusPos.nodeIndex);
-      }
-      return docPosAfterNode(doc, focusPos.nodeIndex);
+    if (edge === "start") {
+      return snapHorizontalVisualLand(doc, docPosAtAtomicEnd(doc, focusPos.nodeIndex), "right");
     }
+    return snapHorizontalVisualLand(doc, docPosAfterNode(doc, focusPos.nodeIndex), "right");
   }
 
   if (node?.type === "text") {
@@ -1239,26 +1284,42 @@ function resolveHorizontalDocSuccessor(
       const after = docPosAfterNode(doc, focusPos.nodeIndex);
       // Pill is one horizontal token: do not micro-stop at following atomic start (same wire).
       if (after && isAtomicNode(doc.nodes[after.nodeIndex]) && after.nodeOffset === 0) {
-        return docPosAfterNode(doc, after.nodeIndex) ?? docPosAtAtomicEnd(doc, after.nodeIndex);
+        return snapHorizontalVisualLand(
+          doc,
+          docPosAfterNode(doc, after.nodeIndex) ?? docPosAtAtomicEnd(doc, after.nodeIndex),
+          "right"
+        );
       }
-      return after;
+      return after ? snapHorizontalVisualLand(doc, after, "right") : null;
     }
     if (focusPos.nodeOffset === 0 && isAtomicNode(doc.nodes[focusPos.nodeIndex - 1])) {
       if (node.text.length > 0) {
-        return { nodeIndex: focusPos.nodeIndex, nodeOffset: 1 };
+        return snapHorizontalVisualLand(
+          doc,
+          { nodeIndex: focusPos.nodeIndex, nodeOffset: 1 },
+          "right"
+        );
       }
       const next = doc.nodes[focusPos.nodeIndex + 1];
       if (isAtomicNode(next)) {
-        return { nodeIndex: focusPos.nodeIndex + 1, nodeOffset: 0 };
+        return snapHorizontalVisualLand(
+          doc,
+          { nodeIndex: focusPos.nodeIndex + 1, nodeOffset: 0 },
+          "right"
+        );
       }
     }
   }
 
+  const text = docToWire(doc);
   const nextWire = wire + 1;
-  if (nextWire > docToWire(doc).length) {
+  if (nextWire > text.length) {
     return null;
   }
-  return resolveCanonicalFocusAtWire(doc, nextWire);
+  if (isTrailingNewlinePastEndWire(text, nextWire)) {
+    return null;
+  }
+  return snapHorizontalVisualLand(doc, resolveCanonicalFocusAtWire(doc, nextWire), "right");
 }
 
 function resolveHorizontalDocPredecessor(
@@ -1267,37 +1328,51 @@ function resolveHorizontalDocPredecessor(
 ): HandoffNoteDocPos | null {
   const intra = tryIntraTextHorizontalStep(doc, focusPos, "left");
   if (intra && !docPosEqual(intra, focusPos)) {
-    return intra;
+    return snapHorizontalVisualLand(doc, intra, "left");
   }
 
   const node = doc.nodes[focusPos.nodeIndex];
   const wire = docPosToWireOffset(doc, focusPos);
-  const ctx = describeHandoffNoteCursorContext(doc, wire);
+  const edge = atomicFocusEdge(doc, focusPos);
 
-  if (isAtomicNode(node)) {
-    if (ctx.kind === "mention-interior") {
-      return { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 };
+  if (isAtomicNode(node) && edge !== null) {
+    if (edge === "interior") {
+      return snapHorizontalVisualLand(
+        doc,
+        { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 },
+        "left"
+      );
     }
-    if (ctx.kind === "mention-boundary") {
-      if (ctx.edge === "end") {
-        return { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 };
-      }
-      return predecessorTextBeforeAtomicStart(doc, focusPos.nodeIndex);
+    if (edge === "end") {
+      return snapHorizontalVisualLand(
+        doc,
+        { nodeIndex: focusPos.nodeIndex, nodeOffset: 0 },
+        "left"
+      );
     }
+    return snapHorizontalVisualLand(
+      doc,
+      predecessorTextBeforeAtomicStart(doc, focusPos.nodeIndex),
+      "left"
+    );
   }
 
   if (node?.type === "text" && focusPos.nodeOffset === 0) {
     if (isAtomicNode(doc.nodes[focusPos.nodeIndex - 1])) {
-      return { nodeIndex: focusPos.nodeIndex - 1, nodeOffset: 0 };
+      return snapHorizontalVisualLand(
+        doc,
+        { nodeIndex: focusPos.nodeIndex - 1, nodeOffset: 0 },
+        "left"
+      );
     }
-    return docPosBeforeNode(doc, focusPos.nodeIndex);
+    return snapHorizontalVisualLand(doc, docPosBeforeNode(doc, focusPos.nodeIndex), "left");
   }
 
   const prevWire = wire - 1;
   if (prevWire < 0) {
     return null;
   }
-  return resolveCanonicalFocusAtWire(doc, prevWire);
+  return snapHorizontalVisualLand(doc, resolveCanonicalFocusAtWire(doc, prevWire), "left");
 }
 
 function resolveHorizontalDocStep(
@@ -1310,7 +1385,7 @@ function resolveHorizontalDocStep(
     : resolveHorizontalDocPredecessor(doc, focusPos);
 }
 
-/** Paint authority for a wire offset — focus and paint after alias seams. */
+/** Paint authority for a wire offset ??? focus and paint after alias seams. */
 export function resolvePaintContextAtWire(
   doc: HandoffNoteDoc,
   wire: number,
@@ -1320,81 +1395,78 @@ export function resolvePaintContextAtWire(
   return resolvePaintContext(doc, focusPos, options);
 }
 
-/** Thin alias of `resolvePaintContextAtWire(...).paintPos` for wire→paint import. */
-export function docPosAtPaintWire(
-  doc: HandoffNoteDoc,
-  wire: number,
-  options?: { root?: HTMLElement }
-): HandoffNoteDocPos {
-  return resolvePaintContextAtWire(doc, wire, options).paintPos;
-}
-
-function horPosSnapshot(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): Record<string, unknown> {
-  const node = doc.nodes[pos.nodeIndex];
-  const wire = docPosToWireOffset(doc, pos);
-  return {
-    nodeIndex: pos.nodeIndex,
-    nodeOffset: pos.nodeOffset,
-    nodeType: node?.type ?? "missing",
-    wire,
-    cursorKind: describeHandoffNoteCursorContext(doc, wire).kind,
-  };
-}
-
 export function resolvePaintHorizontalArrowMove(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
   direction: HandoffNoteArrowDirection,
-  options?: { root?: HTMLElement; from?: HandoffNoteDocPos }
-): { pos: HandoffNoteDocPos; handled: boolean } {
-  const paintCtx = resolvePaintContext(doc, focus, options);
-  const { focusPos, paintPos } = paintCtx;
+  options?: {
+    root?: HTMLElement;
+    from?: HandoffNoteDocPos;
+    focusAffinity?: HandoffNoteCaretAffinity;
+  }
+): { pos: HandoffNoteDocPos; selection: HandoffNoteSelection; handled: boolean } {
+  const focusIn = focus;
+  const affinityIn = options?.focusAffinity;
+
+  const paintCtx = resolvePaintContext(doc, focusIn, options);
+  const { focusPos } = paintCtx;
+
+  // Already on last content char of a row: flip deletion-point ??? content-row-end before leaving.
+  // Stepping *onto* that char from another unit does not stamp after ??? same-wire flip only.
+  if (isCaretOnAmbiguousContentRowEndChar(doc, focusPos)) {
+    if (direction === "right" && affinityIn !== "after") {
+      const selection = collapsedSelection(focusPos, "after");
+      return { pos: selection.focus, selection, handled: true };
+    }
+    if (direction === "left" && affinityIn === "after") {
+      const selection = collapsedSelection(focusPos, "before");
+      return { pos: selection.focus, selection, handled: true };
+    }
+    if (direction === "right" && affinityIn === "after") {
+      const past = docPosAfterAmbiguousContentRowEndChar(doc, focusPos);
+      const pastWire = docPosToWireOffset(doc, past);
+      if (pastWire >= docToWire(doc).length) {
+        return {
+          pos: focusPos,
+          selection: collapsedSelection(focusPos, "after"),
+          handled: false,
+        };
+      }
+      // Leave onto the next visual stop (blank probe or next content) ??? skip non-visual \n.
+      const visualPast = snapHorizontalVisualLand(doc, past, "right");
+      const pastPaint = resolvePaintContext(doc, visualPast, {
+        root: options?.root,
+        from: visualPast,
+      });
+      const selection = collapsedSelection(pastPaint.paintPos);
+      return { pos: selection.focus, selection, handled: true };
+    }
+  }
+
   const step = resolveHorizontalDocStep(doc, focusPos, direction);
   if (!step || docPosEqual(step, focusPos)) {
-    logHorArrow("step", {
-      direction,
+    return {
+      pos: focus,
+      selection: collapsedSelection(focus, affinityIn),
       handled: false,
-      reason: !step ? "nullStep" : "stepEqualsFocusPos",
-      focusIn: horPosSnapshot(doc, focus),
-      focusPos: horPosSnapshot(doc, focusPos),
-      paintPos: horPosSnapshot(doc, paintPos),
-    });
-    return { pos: focus, handled: false };
+    };
   }
   const landed = normalizeDocPos(doc, step, { from: step });
   const paintLanded = resolvePaintContext(doc, landed, {
     root: options?.root,
     from: landed,
   }).paintPos;
-  const selectionLand = normalizeDocPos(doc, paintLanded, { from: paintLanded });
-  if (docPosEqual(selectionLand, focus)) {
-    logHorArrow("step", {
-      direction,
+  const selectionLandPos = normalizeDocPos(doc, paintLanded, { from: paintLanded });
+  // Visual gap land only ??? content-row-end is established by same-wire Right, not stamped here.
+  const selection = collapsedSelection(selectionLandPos);
+  if (docPosEqual(selection.focus, focus) && selection.focusAffinity === affinityIn) {
+    return {
+      pos: focus,
+      selection: collapsedSelection(focus, affinityIn),
       handled: false,
-      reason: "paintLandEqualsFocusIn",
-      focusIn: horPosSnapshot(doc, focus),
-      focusPos: horPosSnapshot(doc, focusPos),
-      paintPos: horPosSnapshot(doc, paintPos),
-      step: horPosSnapshot(doc, step),
-      landed: horPosSnapshot(doc, landed),
-      selectionLand: horPosSnapshot(doc, selectionLand),
-    });
-    return { pos: focus, handled: false };
+    };
   }
-  const focusWire = docPosToWireOffset(doc, focusPos);
-  const landWire = docPosToWireOffset(doc, selectionLand);
-  logHorArrow("step", {
-    direction,
-    handled: true,
-    sameWire: focusWire === landWire,
-    focusIn: horPosSnapshot(doc, focus),
-    focusPos: horPosSnapshot(doc, focusPos),
-    paintPos: horPosSnapshot(doc, paintPos),
-    step: horPosSnapshot(doc, step),
-    landed: horPosSnapshot(doc, landed),
-    selectionLand: horPosSnapshot(doc, selectionLand),
-  });
-  return { pos: selectionLand, handled: true };
+  return { pos: selection.focus, selection, handled: true };
 }
 
 export function resolveDomPointAtDocPos(
@@ -1417,7 +1489,12 @@ export function resolveDomPointAtDocPos(
   const domNode = root.childNodes[renderedIndex];
   if (!domNode) {
     if (docWireEndsWithNewline(doc) && isLastRenderedDocNode(doc, paintPos.nodeIndex)) {
-      return { node: root, offset: root.childNodes.length - 1 };
+      return (
+        domPointAtTrailingEmptyLinePad(root) ?? {
+          node: root,
+          offset: Math.max(0, root.childNodes.length - 1),
+        }
+      );
     }
     return { node: root, offset: root.childNodes.length };
   }
@@ -1430,7 +1507,7 @@ export function resolveDomPointAtDocPos(
       (node.text.length === 0 || node.text.endsWith("\n"))
     ) {
       // Empty pre-atomic or row-start after trailing wire-breaks: line-start ZWSP dock.
-      // Mid-row spacer tails (`" "` before atom) do not end with `\n` — keep text paint.
+      // Mid-row spacer tails (`" "` before atom) do not end with `\n` ??? keep text paint.
       return paintOutsideAtomicStart(root, doc, paintPos.nodeIndex + 1);
     }
     return resolveTextDomPointAtOffset(root, node.text, paintPos.nodeOffset, renderedIndex, {
@@ -1492,18 +1569,88 @@ export function resolveDomPointAtDocPos(
   return { node: domNode, offset: 0 };
 }
 
-export function getDocAnchorRect(
-  root: HTMLElement,
-  doc: HandoffNoteDoc,
-  pos: HandoffNoteDocPos
-): DOMRect | null {
-  const point = resolveDomPointAtDocPos(root, doc, pos);
-  if (!point) {
-    return null;
+/**
+ * Usable painted client rects ordered by band (top, then left).
+ * Shared enumerate step ??? callers pick one or walk all.
+ */
+function listPaintedClientRects(rects: ArrayLike<DOMRect>): DOMRect[] {
+  const painted: DOMRect[] = [];
+  for (let i = 0; i < rects.length; i++) {
+    const rect = rects[i]!;
+    if (!hasPositionedDomRect(rect)) {
+      continue;
+    }
+    if (rect.width <= 0 && rect.height <= 0) {
+      continue;
+    }
+    painted.push(rect);
   }
+  painted.sort((left, right) => left.top - right.top || left.left - right.left);
+  return painted;
+}
 
-  if (point.node instanceof HTMLBRElement && isHandoffWireBreakElement(point.node)) {
-    const breakRect = point.node.getBoundingClientRect();
+/**
+ * Soft-wrap collapsed carets often list the previous fragment first (upper end),
+ * then the fragment that owns the caret. Prefer the lowest painted band.
+ */
+function pickCollapsedCaretClientRect(rects: ArrayLike<DOMRect>): DOMRect | null {
+  const painted = listPaintedClientRects(rects);
+  return painted.length > 0 ? painted[painted.length - 1]! : null;
+}
+
+/**
+ * `<br>` for caret geom — BR node, or root-offset onto a BR child.
+ * Live blank paint is often `root@idx` onto a plain `<br>` (not only wire-break attrs).
+ * Text nodes under root must not use char-offset as `root.childNodes[offset]` — that
+ * steals the preceding wire-break Y (`rectWrongBr`).
+ */
+function brElementAtDomPoint(
+  root: HTMLElement,
+  point: { node: Node; offset: number }
+): HTMLBRElement | null {
+  if (point.node instanceof HTMLBRElement) {
+    return point.node;
+  }
+  if (point.node === root) {
+    const child = root.childNodes[point.offset];
+    return child instanceof HTMLBRElement ? child : null;
+  }
+  return null;
+}
+
+/**
+ * Layout Y for a blank probe: wire-break BR owns measure.
+ * Paint may dock on the following blank-anchor ZWSP — walk back to the BR.
+ */
+function wireBreakElementForProbeMeasure(
+  root: HTMLElement,
+  point: { node: Node; offset: number }
+): HTMLBRElement | null {
+  const direct = brElementAtDomPoint(root, point);
+  if (direct && isHandoffWireBreakElement(direct)) {
+    return direct;
+  }
+  let node: Node | null = point.node;
+  if (node.nodeType === Node.TEXT_NODE) {
+    node = node.parentNode;
+  }
+  if (node && isHandoffBlankAnchorElement(node)) {
+    const prev = node.previousSibling;
+    if (prev instanceof HTMLBRElement && isHandoffWireBreakElement(prev)) {
+      return prev;
+    }
+  }
+  return null;
+}
+
+/** Collapsed caret rect at an already-resolved DOM paint point. */
+export function getDocAnchorRectAtDomPoint(
+  root: HTMLElement,
+  point: { node: Node; offset: number }
+): DOMRect | null {
+  const brEl = brElementAtDomPoint(root, point);
+  if (brEl) {
+    const breakRect = brEl.getBoundingClientRect();
     if (hasPositionedDomRect(breakRect)) {
       return breakRect;
     }
@@ -1514,12 +1661,9 @@ export function getDocAnchorRect(
   range.collapse(true);
 
   if (typeof range.getClientRects === "function") {
-    const rects = range.getClientRects();
-    if (rects.length > 0) {
-      const rect = rects[0]!;
-      if (hasPositionedDomRect(rect)) {
-        return rect;
-      }
+    const rect = pickCollapsedCaretClientRect(range.getClientRects());
+    if (rect) {
+      return rect;
     }
   }
 
@@ -1531,6 +1675,51 @@ export function getDocAnchorRect(
   }
 
   return root.getBoundingClientRect();
+}
+
+export function getDocAnchorRect(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos,
+  options?: { focusAffinity?: HandoffNoteCaretAffinity }
+): DOMRect | null {
+  const point = resolveDomPointAtDocPos(root, doc, pos, {
+    focusAffinity: options?.focusAffinity,
+  });
+  if (!point) {
+    return null;
+  }
+  return getDocAnchorRectAtDomPoint(root, point);
+}
+
+/**
+ * Keep the caret inside the editor?s visible scrollport when max-height overflow is active.
+ * Adjusts `root.scrollTop` only ? does not scroll the page. Returns whether scroll changed.
+ */
+export function ensureHandoffNoteCaretVisible(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos
+): boolean {
+  if (root.scrollHeight <= root.clientHeight + 0.5) {
+    return false;
+  }
+  const caret = getDocAnchorRect(root, doc, focus);
+  // Blank BR carets often paint as positioned 0x0; size is not required.
+  if (!caret || !hasPositionedDomRect(caret)) {
+    return false;
+  }
+  const rootRect = root.getBoundingClientRect();
+  const pad = 2;
+  const overflowTop = rootRect.top + pad - caret.top;
+  const overflowBottom = caret.bottom - (rootRect.bottom - pad);
+  const before = root.scrollTop;
+  if (overflowTop > 0) {
+    root.scrollTop = Math.max(0, before - overflowTop);
+  } else if (overflowBottom > 0) {
+    root.scrollTop = before + overflowBottom;
+  }
+  return root.scrollTop !== before;
 }
 
 /** Authoritative geometry for an embedded `\n` rendered as `<br data-handoff-wire-break>`. */
@@ -1545,22 +1734,8 @@ export function measureWireBreakCoord(
     return null;
   }
 
-  let element: Element | null = null;
-  if (domPoint.node === root) {
-    const child = root.childNodes[domPoint.offset];
-    if (child instanceof HTMLBRElement) {
-      element = child;
-    }
-  } else if (domPoint.node instanceof HTMLBRElement) {
-    element = domPoint.node;
-  } else if (domPoint.node.parentNode === root) {
-    const sibling = root.childNodes[domPoint.offset];
-    if (sibling instanceof HTMLBRElement) {
-      element = sibling;
-    }
-  }
-
-  if (element && isHandoffWireBreakElement(element)) {
+  const element = wireBreakElementForProbeMeasure(root, domPoint);
+  if (element) {
     const rect = element.getBoundingClientRect();
     if (hasPositionedDomRect(rect)) {
       return { wire, top: domRectAnchorMidY(rect), left: rect.left, right: rect.right };
@@ -1575,7 +1750,36 @@ export function measureWireBreakCoord(
 }
 
 /**
- * Pill atomicity by painted column: goal strictly inside pill bbox → left half start, right half end.
+ * Trailing empty line after a final wire `\n` — non-wire line-pad BR.
+ * Keys the sample at the empty line-start stop (`wire.length`), never at the prior probe.
+ */
+export function measureTrailingLinePadCoord(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  stopWire: number
+): DomMeasuredWireOffset | null {
+  const wire = docToWire(doc);
+  if (stopWire !== wire.length || !wire.endsWith("\n")) {
+    return null;
+  }
+  const pad = findTrailingLinePadElement(root);
+  if (!pad) {
+    return null;
+  }
+  const rect = pad.getBoundingClientRect();
+  if (!hasPositionedDomRect(rect)) {
+    return null;
+  }
+  const top = domRectAnchorMidY(rect);
+  const left = rect.left;
+  if (!isUsableMeasuredLayoutCoord({ top, left })) {
+    return null;
+  }
+  return { wire: stopWire, top, left, right: rect.right };
+}
+
+/**
+ * Pill atomicity by painted column: goal strictly inside pill bbox ??? left half start, right half end.
  * Same rule for vertical up and down.
  */
 export function wireOffsetForPillHalfSplitColumn(
@@ -1656,7 +1860,7 @@ export type ViewportCaretHitProbe = {
   caretKind: string | null;
 };
 
-/** Raw DOM caret at viewport (x, y) — layout sample paint without doc authority remap. */
+/** Raw DOM caret at viewport (x, y) ??? layout sample paint without doc authority remap. */
 export function probeDomPointAtViewport(
   root: HTMLElement,
   x: number,
@@ -2243,10 +2447,10 @@ function appendPaintedSoftWrapSamplesForTextSubrange(
     );
   }
 
-  const rects = typeof range.getClientRects === "function" ? [...range.getClientRects()] : [];
-  const visualRects = rects
-    .filter((rect) => rect.width > 0 || rect.height > 0)
-    .sort((left, right) => left.top - right.top || left.left - right.left);
+  const visualRects =
+    typeof range.getClientRects === "function"
+      ? listPaintedClientRects(range.getClientRects())
+      : [];
 
   if (visualRects.length > 0) {
     const bandSplitOffsets: Array<number | null> = [];
@@ -2401,11 +2605,13 @@ function shouldSkipPrefixFragmentColumnProbe(
   if (isLastFragment) {
     return false;
   }
-  if (column.kind === "right") {
+  // Prefix-band midY must not stamp continuation wires. Without a known split offset,
+  // column probes on non-last fragments are unsafe (hit wrap glyphs at prefix Y).
+  if (bandSplitOffset === null || bandSplitOffset <= 0) {
     return true;
   }
-  if (bandSplitOffset === null || bandSplitOffset <= 0) {
-    return false;
+  if (column.kind === "right") {
+    return true;
   }
   const pos = wireOffsetToDocPos(doc, probedWire);
   if (pos.nodeIndex !== nodeIndex) {

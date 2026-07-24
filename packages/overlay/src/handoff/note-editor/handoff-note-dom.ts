@@ -1,5 +1,6 @@
 import {
   docToWire,
+  embeddedBlankBandProbeEmitsBlankAnchor,
   formatHandoffAgentIdPill,
   isAtomicNode,
   listEmbeddedBlankBandProbeWires,
@@ -83,7 +84,49 @@ export type WireTextDomOptions = {
   blankProbeWires?: ReadonlySet<number>;
   /** When set, trailing empty segment after the last `\n` gets a line-start caret dock before the following atom. */
   lineStartBeforeAtomic?: boolean;
+  /**
+   * Probe break wires that emit a blank-anchor (one probe → one dock).
+   * Must match core dock kind: emit only when paint docks blank-anchor.
+   */
+  emitBlankAnchorWires?: ReadonlySet<number>;
 };
+
+/** Wire offset of the final `\n` when the document ends with a newline (EOF pad follows). */
+export function eofPadPrecedingBreakWire(doc: HandoffNoteDoc): number | undefined {
+  const wire = docToWire(doc);
+  if (!wire.endsWith("\n")) {
+    return undefined;
+  }
+  return wire.length - 1;
+}
+
+/** Probe wires that emit blank-anchor — shared emit authority with paint. */
+export function blankAnchorEmitWiresForDoc(doc: HandoffNoteDoc): Set<number> {
+  const emit = new Set<number>();
+  for (const breakWire of listEmbeddedBlankBandProbeWires(doc)) {
+    if (embeddedBlankBandProbeEmitsBlankAnchor(doc, breakWire)) {
+      emit.add(breakWire);
+    }
+  }
+  return emit;
+}
+
+/** Canonical wire-split DOM options — emit blank-anchor only for probes whose dock kind is ba. */
+export function wireTextDomOptionsForDoc(
+  doc: HandoffNoteDoc,
+  wireBase: number,
+  options?: {
+    blankProbeWires?: ReadonlySet<number>;
+    lineStartBeforeAtomic?: boolean;
+  }
+): WireTextDomOptions {
+  return {
+    wireBase,
+    blankProbeWires: options?.blankProbeWires,
+    lineStartBeforeAtomic: options?.lineStartBeforeAtomic,
+    emitBlankAnchorWires: blankAnchorEmitWiresForDoc(doc),
+  };
+}
 
 export function readMentionAgentId(element: HTMLSpanElement): string {
   return element.getAttribute(HANDOFF_AGENT_ID_ATTR) ?? "";
@@ -112,11 +155,7 @@ export function countWireTextDomChildren(text: string, options?: WireTextDomOpti
   if (!text.includes("\n")) {
     return text ? 1 : 0;
   }
-  let count = 0;
-  for (const _slot of iterWireTextDomSlots(text, 0, options)) {
-    count++;
-  }
-  return count;
+  return Array.from(iterWireTextDomSlots(text, 0, options)).length;
 }
 
 export type WireTextDomSlotKind = "text" | "break" | "blank-anchor" | "line-start-anchor";
@@ -157,8 +196,11 @@ export function* iterWireTextDomSlots(
       domIdx++;
       nodeOffset += 1;
       if (probeWires?.has(breakWire)) {
-        yield { kind: "blank-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
-        domIdx++;
+        // One probe → one dock: emit ba only when core dock kind is blank-anchor.
+        if (options?.emitBlankAnchorWires?.has(breakWire)) {
+          yield { kind: "blank-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
+          domIdx++;
+        }
       } else if (
         options?.lineStartBeforeAtomic &&
         partIndex === parts.length - 2 &&
@@ -175,6 +217,7 @@ export function* iterWireTextDomSlots(
 /** Rendered DOM child count including wire breaks, blank-band anchors, and optional EOF line-pad. */
 export function renderedDomChildCount(doc: HandoffNoteDoc): number {
   const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+  const emitBlankAnchorWires = blankAnchorEmitWiresForDoc(doc);
   let count = 0;
   let wireCursor = 0;
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
@@ -193,12 +236,13 @@ export function renderedDomChildCount(doc: HandoffNoteDoc): number {
         wireBase: wireCursor,
         blankProbeWires: probeWires,
         lineStartBeforeAtomic: isAtomicNode(next),
+        emitBlankAnchorWires,
       });
       wireCursor += node.text.length;
       continue;
     }
   }
-  if (docToWire(doc).endsWith("\n")) {
+  if (docWireEndsWithNewline(doc)) {
     count++;
   }
   return count;
@@ -270,14 +314,20 @@ export function appendWireTextToDom(
       parent.appendChild(createLineStartAnchorElement());
       continue;
     }
-    parent.appendChild(createBlankAnchorElement());
+    if (slot.kind === "blank-anchor") {
+      parent.appendChild(createBlankAnchorElement());
+      continue;
+    }
   }
 }
 
 function appendDocLinePadIfNeeded(root: HTMLElement, doc: HandoffNoteDoc): void {
-  if (docWireEndsWithNewline(doc)) {
-    root.appendChild(createLinePadElement());
+  if (!docWireEndsWithNewline(doc)) {
+    return;
   }
+  // Non-wire pad opens the trailing empty line. Last probe paints the bare wire-break
+  // (no blank-anchor before pad — those collocated in the browser).
+  root.appendChild(createLinePadElement());
 }
 
 function lastNonEmptyTextNodeIndex(doc: HandoffNoteDoc): number {
@@ -314,11 +364,17 @@ export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
       continue;
     }
     const next = doc.nodes[nodeIndex + 1];
-    for (const _slot of iterWireTextDomSlots(text, 0, {
-      wireBase: wireCursor,
-      blankProbeWires: probeWires,
-      lineStartBeforeAtomic: isAtomicNode(next),
-    })) {
+    const slotCount = Array.from(
+      iterWireTextDomSlots(
+        text,
+        0,
+        wireTextDomOptionsForDoc(doc, wireCursor, {
+          blankProbeWires: probeWires,
+          lineStartBeforeAtomic: isAtomicNode(next),
+        })
+      )
+    ).length;
+    for (let i = 0; i < slotCount; i++) {
       map.push(nodeIndex);
     }
     wireCursor += text.length;
@@ -393,7 +449,8 @@ function fullRebuildDocDom(
   options: HandoffNotePresentationOptions
 ): void {
   root.replaceChildren();
-  if (doc.nodes.length === 0) {
+  if (doc.nodes.length === 0 || docToWire(doc) === "") {
+    // Empty open: no wire children — root box is CSS min-height/padding, not a blank band.
     return;
   }
 
@@ -404,11 +461,14 @@ function fullRebuildDocDom(
     if (node.type === "text") {
       if (node.text) {
         const next = doc.nodes[nodeIndex + 1];
-        appendWireTextToDom(root, node.text, {
-          wireBase: wireCursor,
-          blankProbeWires: probeWires,
-          lineStartBeforeAtomic: isAtomicNode(next),
-        });
+        appendWireTextToDom(
+          root,
+          node.text,
+          wireTextDomOptionsForDoc(doc, wireCursor, {
+            blankProbeWires: probeWires,
+            lineStartBeforeAtomic: isAtomicNode(next),
+          })
+        );
         wireCursor += node.text.length;
       }
       continue;

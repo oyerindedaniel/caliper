@@ -4,6 +4,7 @@
  * Overlay ingress: handoff-note-arrow-contract.md (blank-band delete)
  */
 import {
+  collapsedSelection,
   collapsedSelectionWithIntent,
   describeHandoffNoteCursorContext,
   docPosToWireOffset,
@@ -129,9 +130,23 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       }
     });
 
-    it("setDocFromWire sole prefix paints CRE — Delete collapses blank first (keeps h)", () => {
+    it("setDocFromWire sole prefix omits CRE — Delete nips the char not blank", () => {
       const tail = "tail";
       host.editor.setDocFromWire(`h\n\n\n${tail}`, 0, { resetHistory: true });
+      expect(host.editor.getSelectionState().focusAffinity).toBeUndefined();
+      expect(pressDelete(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe(`\n\n\n${tail}`);
+    });
+
+    it("explicit content-row-end on sole prefix — Delete collapses blank first (keeps h)", () => {
+      const tail = "tail";
+      const wire = `h\n\n\n${tail}`;
+      const doc = wireToDoc(wire);
+      host.editor.applyDoc(
+        doc,
+        collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 0), "content-row-end")
+      );
+      expect(host.editor.getSelectionState().focusAffinity).toBe("after");
       expect(pressDelete(host.editor)).toBe(true);
       expect(host.editor.getWire()).toBe(`h\n\n${tail}`);
     });
@@ -411,6 +426,43 @@ describe("handoff note delete integration (keydown + ingress)", () => {
     });
   });
 
+  describe("trailing-only blank collapse — CRE after remount", () => {
+    it("keydown: first collapse under content remounts after; next chips", () => {
+      host.editor.setDocFromWire("\n\ndna\n\n");
+      const doc = host.editor.getDoc();
+      const head = listEmbeddedBlankBandProbeWires(doc).find((w) => w > 4)!;
+      host.editor.applyDoc(doc, collapsedSelection(wireOffsetToDocPos(doc, head)));
+
+      expect(pressBackspace(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe("\n\ndna\n");
+      expect(host.editor.getWire()[host.editor.getCursor()]).toBe("a");
+      expect(host.editor.getSelectionState().focusAffinity).toBe("after");
+
+      expect(pressBackspace(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe("\n\ndn\n");
+    });
+
+    it("keydown: chip emptied lower row then collapse remounts after on upper", () => {
+      host.editor.setDocFromWire("\n\ndna\nwet\n");
+      const doc = host.editor.getDoc();
+      const tWire = host.editor.getWire().lastIndexOf("t");
+      host.editor.applyDoc(
+        doc,
+        collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, tWire), "content-row-end")
+      );
+      for (let i = 0; i < 3; i++) {
+        expect(pressBackspace(host.editor)).toBe(true);
+      }
+      expect(host.editor.getWire()).toBe("\n\ndna\n\n");
+      expect(pressBackspace(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe("\n\ndna\n");
+      expect(host.editor.getWire()[host.editor.getCursor()]).toBe("a");
+      expect(host.editor.getSelectionState().focusAffinity).toBe("after");
+      expect(pressBackspace(host.editor)).toBe(true);
+      expect(host.editor.getWire()).toBe("\n\ndn\n");
+    });
+  });
+
   describe("postfix chip before trailing blank band — DOM paint", () => {
     function prefixMentionPostfixBeforeBand(postfix = "x") {
       return `header @${AGENT_A} ${postfix}\n\n\n`;
@@ -422,7 +474,11 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       const [probe] = listEmbeddedBlankBandProbeWires(doc);
       const rowEnd = probe! - 1;
 
-      host.editor.setDocFromWire(wire, rowEnd, { resetHistory: true });
+      // Chip requires established CRE (`after`); omit is on-char / unit-behind.
+      host.editor.applyDoc(
+        doc,
+        collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, rowEnd), "content-row-end")
+      );
       expect(pressBackspace(host.editor)).toBe(true);
 
       expect(host.editor.getWire()).toBe(`header @${AGENT_A} \n\n\n`);
@@ -432,15 +488,17 @@ describe("handoff note delete integration (keydown + ingress)", () => {
         "mention-boundary"
       );
       expect(readDomWireCursor(host.root, chippedDoc)).toBe(authorityWire);
+      expect(host.editor.getSelectionState().focusAffinity).toBe("after");
 
       const point = resolveDomPointAtDocPos(
         host.root,
         chippedDoc,
-        wireOffsetToDocPos(chippedDoc, authorityWire)
+        wireOffsetToDocPos(chippedDoc, authorityWire),
+        { focusAffinity: "after" }
       );
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
       expect(point?.node.textContent?.[0]).toBe(" ");
-      // Sole spacer paints text-tail (insertion point); following break owns break paint.
+      // Sole spacer CRE paints text-tail; following break owns break paint.
       expect(point?.offset).toBe(1);
       const mentionEl = host.root.querySelector("[data-handoff-mention]");
       expect(mentionEl?.contains(point!.node) ?? false).toBe(false);

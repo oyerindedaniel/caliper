@@ -1,13 +1,17 @@
-import {
+﻿import {
   collapsedSelection,
   docPosToWireOffset,
-  docToWire,
+  isAtomicNode,
+  isInlineSuffixBlankProbeWire,
+  listBlankVisualLineStartWires,
   listEmbeddedBlankBandProbeWires,
+  nodeTokenLength,
   normalizeDocPos,
   wireOffsetToDocPos,
   wireToDoc,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
+  type HandoffNoteCaretAffinity,
   type HandoffNoteVerticalArrowDirection,
 } from "@caliper/core";
 import {
@@ -26,12 +30,14 @@ import {
   isHandoffWireBreakElement,
   iterWireTextDomSlots,
   renderHandoffNoteDoc,
+  wireTextDomOptionsForDoc,
 } from "./handoff-note-dom.js";
 import {
   buildHandoffNoteLayoutMap,
   buildLayoutMapFromSamples,
   invalidateHandoffNoteLayoutCache,
   layoutRowForFocus,
+  layoutRowAtWireFocus,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
   type MeasuredWireOffset,
@@ -55,7 +61,7 @@ type StubLayoutCoord = {
   width?: number;
 };
 
-/** Test/layout helper only — no editor root, so landing uses sparse row-edge fallback when DOM probe is unavailable. */
+/** Test helper — builds a layout from samples and runs layout vertical move (DOM probe needs a root). */
 export function resolveMeasuredVerticalArrowMoveForTests(
   doc: HandoffNoteDoc,
   focus: HandoffNoteDocPos,
@@ -168,7 +174,11 @@ export function setSelectionAtWire(
   doc: HandoffNoteDoc,
   start: number,
   end = start,
-  options?: { fromOffset?: number; source?: string }
+  options?: {
+    fromOffset?: number;
+    /** Content-row-end click / land — paints text-tail so ingress recovers `after`. */
+    focusAffinity?: HandoffNoteCaretAffinity;
+  }
 ): void {
   const from =
     options?.fromOffset !== undefined ? wireOffsetToDocPos(doc, options.fromOffset) : undefined;
@@ -178,8 +188,9 @@ export function setSelectionAtWire(
     {
       anchor: normalizeDocPos(doc, wireOffsetToDocPos(doc, start), { from }),
       focus: normalizeDocPos(doc, wireOffsetToDocPos(doc, end), { from }),
+      focusAffinity: options?.focusAffinity,
     },
-    { from, source: options?.source }
+    { from }
   );
 }
 
@@ -219,7 +230,7 @@ export function readHandoffNoteLayoutRowIndexForTests(
   wire: number,
   focus = wireOffsetToDocPos(doc, wire)
 ): number {
-  const layout = buildHandoffNoteLayoutMap(root, doc, focus);
+  const layout = buildHandoffNoteLayoutMap(root, doc);
   return layoutRowForFocus(root, doc, layout, focus);
 }
 
@@ -249,22 +260,21 @@ export function monotonicMeasuredLayoutSamples(
   const baseTop = options?.baseTop ?? 100;
   const stride = options?.stride ?? 36;
   const doc = wireToDoc(wire);
-  const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
-  type Anchor = { wire: number; kind: "line-start" | "blank-probe" };
-  const anchors: Anchor[] = [{ wire: 0, kind: "line-start" }];
-  for (const probeWire of probes) {
-    anchors.push({ wire: probeWire, kind: "blank-probe" });
-  }
+  const blankStops = listBlankVisualLineStartWires(doc);
+  const blankStopSet = new Set(blankStops);
+  type Anchor = { wire: number; kind: "content" | "blank-stop" };
+  const anchors: Anchor[] = [];
+
   for (const lineStart of wireLineStartOffsets(wire)) {
-    if (lineStart === 0 || probes.has(lineStart)) {
+    if (blankStopSet.has(lineStart)) {
       continue;
     }
-    if (!isSubstantiveWireLineSegment(wire, lineStart)) {
-      continue;
+    if (lineStart === 0 || isSubstantiveWireLineSegment(wire, lineStart)) {
+      anchors.push({ wire: lineStart, kind: "content" });
     }
-    if (!anchors.some((anchor) => anchor.wire === lineStart)) {
-      anchors.push({ wire: lineStart, kind: "line-start" });
-    }
+  }
+  for (const stopWire of blankStops) {
+    anchors.push({ wire: stopWire, kind: "blank-stop" });
   }
   anchors.sort((left, right) => left.wire - right.wire);
 
@@ -273,26 +283,81 @@ export function monotonicMeasuredLayoutSamples(
   let inlineBlankPending = false;
 
   for (const anchor of anchors) {
-    if (anchor.wire === 0) {
-      byWire.set(0, { wire: 0, top: rowTop, left: 0 });
-      inlineBlankPending = true;
+    if (byWire.size === 0) {
+      byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
+      inlineBlankPending = anchor.kind === "content";
       continue;
     }
-    if (anchor.kind === "blank-probe" && inlineBlankPending) {
+
+    const inlineDock =
+      anchor.kind === "blank-stop" ? blankStopInlineDockWire(doc, wire, anchor.wire) : undefined;
+    if (
+      inlineDock !== undefined &&
+      inlineBlankPending &&
+      isInlineSuffixBlankProbeWire(doc, inlineDock)
+    ) {
       byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
       inlineBlankPending = false;
       continue;
     }
+
     rowTop += stride;
-    if (anchor.kind === "blank-probe") {
-      byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
-    } else {
-      byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
-      inlineBlankPending = true;
+    byWire.set(anchor.wire, { wire: anchor.wire, top: rowTop, left: 0 });
+    inlineBlankPending = anchor.kind === "content";
+  }
+
+  // Atom boundaries share their content line's top so mention-end does not bracket
+  // onto a following blank stop when the epoch is seed-only.
+  let wireCursor = 0;
+  for (const node of doc.nodes) {
+    const start = wireCursor;
+    const end = start + nodeTokenLength(node);
+    wireCursor = end;
+    if (!isAtomicNode(node)) {
+      continue;
+    }
+    const lineStart = start === 0 ? 0 : wire.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const lineSample =
+      byWire.get(lineStart) ?? [...byWire.values()].filter((sample) => sample.wire <= start).at(-1);
+    if (!lineSample || blankStopSet.has(lineSample.wire)) {
+      continue;
+    }
+    if (!byWire.has(start)) {
+      byWire.set(start, { wire: start, top: lineSample.top, left: 0 });
+    }
+    // Do not plant atom-end on a blank-band probe wire — that wire's row identity is
+    // the blank stop (paint/delete dock), while mention-end focus shares the wire alias.
+    if (
+      !byWire.has(end) &&
+      !blankStopSet.has(end) &&
+      !listEmbeddedBlankBandProbeWires(doc).includes(end)
+    ) {
+      byWire.set(end, { wire: end, top: lineSample.top, left: 0 });
     }
   }
 
   return [...byWire.values()].sort((left, right) => left.wire - right.wire);
+}
+
+/** Paint/delete dock for an empty line-start — mirrors layout-map, test-seed only. */
+function blankStopInlineDockWire(
+  doc: HandoffNoteDoc,
+  wire: string,
+  lineStart: number
+): number | undefined {
+  if (wire.length === 0 && lineStart === 0) {
+    return undefined;
+  }
+  if (lineStart < wire.length && wire[lineStart] === "\n") {
+    return lineStart;
+  }
+  if (lineStart > 0 && wire[lineStart - 1] === "\n") {
+    return lineStart - 1;
+  }
+  if (lineStart === wire.length && wire.endsWith("\n")) {
+    return wire.length - 1;
+  }
+  return undefined;
 }
 
 export function seedMonotonicMeasuredLayout(
@@ -400,21 +465,23 @@ export function refreshHandoffNoteEditorLayoutGeometry(
     baseTop: options.baseTop ?? 141,
     stride: options.stride ?? 36,
   });
+  const blankStops = new Set(listBlankVisualLineStartWires(doc));
   const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
 
   for (const sample of samples) {
+    if (blankStops.has(sample.wire)) {
+      patchLayoutGeometryAtWire(root, doc, sample.wire, sample);
+      continue;
+    }
     if (probes.has(sample.wire)) {
       patchLayoutGeometryAtWire(root, doc, sample.wire, sample);
       continue;
     }
-    if (sample.wire > 0 && wire[sample.wire - 1] === "\n") {
-      patchLayoutGeometryAtWire(root, doc, sample.wire - 1, sample);
-    }
-    if (sample.wire === 0) {
-      patchLayoutGeometryAtWire(root, doc, 0, sample);
-    }
+    // Content line-start: paint at the line start. Do not stamp prior blank-stop wires.
+    patchLayoutGeometryAtWire(root, doc, sample.wire, sample);
   }
   invalidateHandoffNoteLayoutCache(root);
+  setMeasuredSamplesCache(root, wire, root.clientWidth, samples);
 }
 
 /** Test-only: stub caretPositionFromPoint for visual column probe on a target band. */
@@ -517,7 +584,7 @@ export function stubHandoffNoteAnchorRectAtWire(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   wire: number,
-  rect: StubLayoutCoord
+  rect: StubLayoutCoord | StubLayoutCoord[]
 ): () => void {
   return stubHandoffNoteAnchorRectAtDomPoint(
     root,
@@ -531,33 +598,34 @@ export function stubHandoffNoteAnchorRectAtDocPos(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
-  rect: StubLayoutCoord
+  rect: StubLayoutCoord | StubLayoutCoord[],
+  options?: { focusAffinity?: HandoffNoteCaretAffinity }
 ): () => void {
-  return stubHandoffNoteAnchorRectAtDomPoint(root, resolveDomPointAtDocPos(root, doc, pos), rect);
+  return stubHandoffNoteAnchorRectAtDomPoint(
+    root,
+    resolveDomPointAtDocPos(root, doc, pos, { focusAffinity: options?.focusAffinity }),
+    rect
+  );
 }
 
+/**
+ * Collapsed-range anchor stub. `top` is midY (same as layout samples).
+ * Pass multiple coords for soft-wrap multi-fragment getClientRects (upper end first);
+ * getBoundingClientRect stays the first fragment so caret must prefer getClientRects.
+ */
 function stubHandoffNoteAnchorRectAtDomPoint(
   root: HTMLElement,
   point: { node: Node; offset: number } | null,
-  rect: StubLayoutCoord
+  rect: StubLayoutCoord | StubLayoutCoord[]
 ): () => void {
   if (!point) {
     throw new Error("stubHandoffNoteAnchorRectAtDomPoint: could not resolve DOM point");
   }
-  const height = rect.height ?? 18;
-  const width = rect.width ?? 4;
-  const midY = rect.top;
-  const stubRect = {
-    top: midY - height / 2,
-    left: rect.left,
-    right: rect.left + width,
-    bottom: midY + height / 2,
-    width,
-    height,
-    x: rect.left,
-    y: midY - height / 2,
-    toJSON: () => ({}),
-  } as DOMRect;
+  const stubRects = flattenStubCoords(rect).map((coord) => stubRectForCoord(coord));
+  if (stubRects.length === 0) {
+    throw new Error("stubHandoffNoteAnchorRectAtDomPoint: expected at least one rect");
+  }
+  const boundingRect = stubRects[0]!;
   const docApi = root.ownerDocument;
   const priorCreateRange = docApi.createRange.bind(docApi);
 
@@ -567,16 +635,43 @@ function stubHandoffNoteAnchorRectAtDomPoint(
     range.setStart = (node: Node, offset: number) => {
       priorSetStart(node, offset);
       if (node === point.node && offset === point.offset) {
-        range.getClientRects = () => [stubRect] as unknown as DOMRectList;
-        range.getBoundingClientRect = () => stubRect;
+        range.getClientRects = () => stubRects as unknown as DOMRectList;
+        range.getBoundingClientRect = () => boundingRect;
       }
       return undefined;
     };
     return range;
   };
 
+  // getDocAnchorRect prefers live BR getBoundingClientRect before range paint.
+  // Blank-probe layout measure (`measureWireBreakCoord`) also prefers the wire-break BR
+  // when caret paint docks on the blank-anchor — stub that BR too.
+  const restores: Array<() => void> = [];
+  const breakEls: HTMLBRElement[] = [];
+  if (point.node instanceof HTMLBRElement) {
+    breakEls.push(point.node);
+  } else {
+    const anchor = isHandoffBlankAnchorElement(point.node)
+      ? point.node
+      : isHandoffBlankAnchorElement(point.node.parentNode)
+        ? point.node.parentNode
+        : null;
+    const prev = anchor?.previousSibling;
+    if (prev instanceof HTMLBRElement && isHandoffWireBreakElement(prev)) {
+      breakEls.push(prev);
+    }
+  }
+  for (const breakEl of breakEls) {
+    const priorBreakRect = breakEl.getBoundingClientRect.bind(breakEl);
+    breakEl.getBoundingClientRect = () => boundingRect;
+    restores.push(() => {
+      breakEl.getBoundingClientRect = priorBreakRect;
+    });
+  }
+
   invalidateHandoffNoteLayoutCache(root);
   return () => {
+    while (restores.length) restores.pop()?.();
     docApi.createRange = priorCreateRange;
   };
 }
@@ -667,10 +762,11 @@ export function stubTextNodeLineRects(
     const renderedStart = docPosToRenderedDomChildIndex(doc, nodeIndex);
     const wireBase = docPosToWireOffset(doc, { nodeIndex, nodeOffset: 0 });
     const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
-    for (const slot of iterWireTextDomSlots(docTextNode.text, renderedStart, {
-      wireBase,
-      blankProbeWires: probeWires,
-    })) {
+    for (const slot of iterWireTextDomSlots(
+      docTextNode.text,
+      renderedStart,
+      wireTextDomOptionsForDoc(doc, wireBase, { blankProbeWires: probeWires })
+    )) {
       if (slot.kind !== "text") {
         continue;
       }
@@ -1015,7 +1111,7 @@ export function stubWireRangeRects(
 export type VerticalColumnProbeFixture = {
   root: HTMLElement;
   doc: HandoffNoteDoc;
-  /** Cache key — must match `docToWire(doc)` (use `editor.getWire()` in integration tests). */
+  /** Cache key â€” must match `docToWire(doc)` (use `editor.getWire()` in integration tests). */
   wire: string;
   fromWire: number;
   goalColumn: number;
@@ -1047,10 +1143,10 @@ export function prepareVerticalColumnProbe(fixture: VerticalColumnProbeFixture):
   const probePos = wireOffsetToDocPos(fixture.doc, fixture.probeTargetWire);
 
   setMeasuredSamplesCache(fixture.root, fixture.wire, width, fixture.samples);
-  let layout = buildHandoffNoteLayoutMap(fixture.root, fixture.doc, fromPos);
+  let layout = buildHandoffNoteLayoutMap(fixture.root, fixture.doc);
 
-  const sourceRowIdx = layout.rowIndexForWire(fixture.fromWire);
-  const targetRowIdx = layout.rowIndexForWire(fixture.probeTargetWire);
+  const sourceRowIdx = layoutRowAtWireFocus(fixture.doc, layout, fixture.fromWire);
+  const targetRowIdx = layoutRowAtWireFocus(fixture.doc, layout, fixture.probeTargetWire);
   if (sourceRowIdx < 0 || targetRowIdx < 0) {
     throw new Error(
       `prepareVerticalColumnProbe: missing layout row for from=${fixture.fromWire} probe=${fixture.probeTargetWire}`
@@ -1078,8 +1174,9 @@ export function prepareVerticalColumnProbe(fixture: VerticalColumnProbeFixture):
   );
 
   setMeasuredSamplesCache(fixture.root, fixture.wire, width, fixture.samples);
-  layout = buildHandoffNoteLayoutMap(fixture.root, fixture.doc, fromPos);
-  const targetRowTop = layout.rows[layout.rowIndexForWire(fixture.probeTargetWire)]!.top;
+  layout = buildHandoffNoteLayoutMap(fixture.root, fixture.doc);
+  const targetRowTop =
+    layout.rows[layoutRowAtWireFocus(fixture.doc, layout, fixture.probeTargetWire)]!.top;
 
   const restoreProbe = stubCaretProbeAtDocPos(
     fixture.root,
@@ -1105,9 +1202,9 @@ const MULTI_MENTION_SOFT_WRAP_ROW0 = 141.1;
 const MULTI_MENTION_SOFT_WRAP_ROW1 = 159.3;
 const MULTI_MENTION_SOFT_WRAP_ROW2 = 177.49;
 const MULTI_MENTION_SOFT_WRAP_ROOT_W = 310;
-/** 3-char prefix — same length as session `ddm`. */
+/** 3-char prefix â€” same length as session `ddm`. */
 const MULTI_MENTION_SOFT_WRAP_PREFIX = "pre";
-/** 8-char mid chunk — same length as session `danidhhd`. */
+/** 8-char mid chunk â€” same length as session `danidhhd`. */
 const MULTI_MENTION_SOFT_WRAP_MID = "wraptext";
 
 export function buildMultiMentionSoftWrapWire(): string {

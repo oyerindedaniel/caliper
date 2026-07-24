@@ -117,6 +117,31 @@ export function docPosAfterAmbiguousContentRowEndChar(
 }
 
 /**
+ * Collapsed-caret only: `text.length` that is smuggling content-row-end after the last
+ * content char → that char + `after`. Not for range ends (half-open extent) and not for
+ * inter-atomic / pre-atomic tails (`text.length` abutting the following atom).
+ *
+ * Owned by collapsed caret constructors / `normalizeSelection` — not horizontal paint.
+ */
+function crePastEndAsLastCharAfter(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): { focus: HandoffNoteDocPos; focusAffinity: "after" } | null {
+  const node = doc.nodes[pos.nodeIndex];
+  if (node?.type !== "text" || node.text.length === 0 || pos.nodeOffset !== node.text.length) {
+    return null;
+  }
+  if (isAtomicNode(doc.nodes[pos.nodeIndex + 1])) {
+    return null;
+  }
+  const lastChar = { nodeIndex: pos.nodeIndex, nodeOffset: node.text.length - 1 };
+  if (!isCaretOnAmbiguousContentRowEndChar(doc, lastChar)) {
+    return null;
+  }
+  return { focus: lastChar, focusAffinity: "after" };
+}
+
+/**
  * Affinity gate shared by Backspace (unit behind) and Delete (unit ahead) on the
  * ambiguous last content char of a row (`\n` or EOF).
  *
@@ -399,12 +424,24 @@ export function normalizeSelection(
   options?: { from?: HandoffNoteDocPos }
 ): HandoffNoteSelection {
   const fromOpt = options?.from ? { from: options.from } : undefined;
-  const focus = normalizeDocPos(doc, selection.focus, fromOpt);
+  let focus = normalizeDocPos(doc, selection.focus, fromOpt);
+  let anchor = normalizeDocPos(doc, selection.anchor, fromOpt);
+  let incomingAffinity = selection.focusAffinity;
+  // Collapsed only: CRE past-end → last char + after (keep anchor===focus).
+  // Range ends keep past-end (half-open).
+  if (docPosEqual(anchor, focus)) {
+    const cre = crePastEndAsLastCharAfter(doc, focus);
+    if (cre) {
+      focus = cre.focus;
+      anchor = cre.focus;
+      incomingAffinity = cre.focusAffinity;
+    }
+  }
   const normalized: HandoffNoteSelection = {
-    anchor: normalizeDocPos(doc, selection.anchor, fromOpt),
+    anchor,
     focus,
   };
-  const focusAffinity = focusAffinityIfAmbiguousBreak(doc, focus, selection.focusAffinity);
+  const focusAffinity = focusAffinityIfAmbiguousBreak(doc, focus, incomingAffinity);
   if (focusAffinity !== undefined) {
     normalized.focusAffinity = focusAffinity;
   }
@@ -417,8 +454,11 @@ export function wireOffsetToCollapsedSelection(
   fromOffset?: number
 ): HandoffNoteSelection {
   const from = fromOffset !== undefined ? wireOffsetToDocPos(doc, fromOffset) : undefined;
-  const focus = normalizeDocPos(doc, wireOffsetToDocPos(doc, offset), { from });
-  return collapsedSelection(focus);
+  return normalizeSelection(
+    doc,
+    collapsedSelection(wireOffsetToDocPos(doc, offset)),
+    from ? { from } : undefined
+  );
 }
 
 export function docSelectionToWireRange(

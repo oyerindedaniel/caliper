@@ -7,16 +7,16 @@ import {
   docPosToWireOffset,
   docToWire,
   describeHandoffNoteCursorContext,
-  isEmbeddedBlankBandDeleteProbeWire,
+  isEmbeddedBlankBandCollapseProbeWire,
   isEmbeddedBlankBandProbeWire,
   listEmbeddedBlankBandProbeWires,
+  listBlankVisualLineStartWires,
   normalizeHandoffNoteDoc,
   wireOffsetToDocPos,
   wireToDoc,
 } from "@caliper/core";
 import {
   docOffsetFromContentTextNodeDomPoint,
-  docPosAtContentWire,
   domOffsetForContentRowEndInSplitText,
   domPointToDocPos,
   isContentTextNodeDomTailBeforeBreak,
@@ -26,7 +26,6 @@ import {
   resolvePaintContext,
   resolvePaintContextAtWire,
   resolvePaintHorizontalArrowMove,
-  docPosAtPaintWire,
   describeCaretContext,
 } from "./handoff-note-dom-points.js";
 import {
@@ -40,6 +39,7 @@ import {
   tryPatchDocDom,
   isHandoffMentionElement,
   isHandoffBlankAnchorElement,
+  isHandoffLinePadElement,
   isHandoffLineStartAnchorElement,
   isHandoffWireBreakElement,
   sameRenderedDocStructure,
@@ -177,7 +177,7 @@ describe("handoff-note-dom", () => {
     ).toBe("#f00");
     const normalizedDoc = wireToDoc(parseHandoffNoteDom(root));
     expect(root.childNodes.length).toBe(renderedDomChildCount(normalizedDoc));
-    setSelectionAtWire(root, normalizedDoc, 12, 12, { source: "reconcile" });
+    setSelectionAtWire(root, normalizedDoc, 12, 12);
     expect(readDomWireCursor(root, normalizedDoc)).toBe(12);
   });
 
@@ -379,12 +379,16 @@ describe("handoff-note-dom", () => {
   });
 
   describe("wire newline line box", () => {
-    it("EOF wire newline renders wire-break plus layout-only line-pad", () => {
+    it("EOF wire newline renders bare last wire-break then layout-only line-pad (no blank-anchor before pad)", () => {
       const wire = "header \n";
       renderHandoffNoteDoc(root, wireToDoc(wire), { colorByAgentId: new Map() });
       expect(parseHandoffNoteDom(root)).toBe(wire);
-      expect(root.querySelector(`br[${HANDOFF_WIRE_BREAK_ATTR}]`)).not.toBeNull();
-      expect(root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)).not.toBeNull();
+      const wireBreak = root.querySelector(`br[${HANDOFF_WIRE_BREAK_ATTR}]`)!;
+      const pad = root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)!;
+      expect(wireBreak).not.toBeNull();
+      expect(pad).not.toBeNull();
+      expect(wireBreak.nextSibling).toBe(pad);
+      expect(root.querySelector(`span[${HANDOFF_BLANK_ANCHOR_ATTR}]`)).toBeNull();
     });
 
     it("mid-doc newline does not add line-pad before following text", () => {
@@ -395,17 +399,80 @@ describe("handoff-note-dom", () => {
       expect(root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)).toBeNull();
     });
 
-    it("caret after EOF newline lands before line-pad", () => {
+    it("requesting past-end after EOF newline paints trailing line-pad (not prior probe)", () => {
       const wire = "header \n";
       const doc = wireToDoc(wire);
+      const lastProbe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const eofStop = listBlankVisualLineStartWires(doc).find((stop) => stop === wire.length);
+      expect(eofStop).toBe(wire.length);
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
       setSelectionAtWire(root, doc, wire.length);
       expect(root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)).not.toBeNull();
       const selection = root.ownerDocument.getSelection()!;
       const range = selection.getRangeAt(0);
-      expect(range.startContainer).toBe(root);
-      expect(range.startOffset).toBe(root.childNodes.length - 1);
+      expect(isHandoffLinePadElement(range.startContainer)).toBe(true);
+      expect(isHandoffBlankAnchorElement(range.startContainer.parentNode)).toBe(false);
       expect(readDomWireCursor(root, doc)).toBe(wire.length);
+      expect(readDomWireCursor(root, doc)).not.toBe(lastProbe);
+    });
+
+    it("last probe bare wire-break and trailing line-pad are distinct paint docks", () => {
+      // One probe → one dock: emptied probes omit ba; last probe bare BR; EOF paints pad.
+      const wire = "\n\n\n\n";
+      const doc = wireToDoc(wire);
+      const stops = listBlankVisualLineStartWires(doc);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(stops).toEqual([0, 1, 2, 3, 4]);
+      expect(probes).toEqual([0, 1, 2, 3]);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+      const lastProbe = probes[probes.length - 1]!;
+      const eofStop = wire.length;
+      const lastProbePoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, lastProbe));
+      const eofPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, eofStop));
+      expect(lastProbePoint).not.toBeNull();
+      expect(eofPoint).not.toBeNull();
+      expect(isHandoffWireBreakElement(lastProbePoint!.node)).toBe(true);
+      expect(isHandoffLinePadElement(eofPoint!.node)).toBe(true);
+      expect(lastProbePoint!.node).not.toBe(eofPoint!.node);
+
+      const pad = root.querySelector(`br[${HANDOFF_LINE_PAD_ATTR}]`)!;
+      expect(root.querySelectorAll(`span[${HANDOFF_BLANK_ANCHOR_ATTR}]`)).toHaveLength(0);
+      expect(lastProbePoint!.node.nextSibling).toBe(pad);
+
+      for (const probe of probes) {
+        const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, probe));
+        expect(isHandoffWireBreakElement(point!.node)).toBe(true);
+        expect(isHandoffBlankAnchorElement(point!.node.nextSibling)).toBe(false);
+      }
+    });
+
+    it("orphan blank-anchor without preceding wire-break refuses EOF/BOF soft remap", () => {
+      const doc = wireToDoc("hello");
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const orphan = document.createElement("span");
+      orphan.setAttribute(HANDOFF_BLANK_ANCHOR_ATTR, "true");
+      orphan.appendChild(document.createTextNode("\u200b"));
+      root.appendChild(orphan);
+      const zwsp = orphan.firstChild!;
+      expect(() => domPointToDocPos(root, doc, zwsp, 0)).toThrow(
+        /blank-anchor without preceding wire-break/
+      );
+      expect(() => domPointToDocPos(root, doc, orphan, 0)).toThrow(
+        /blank-anchor without preceding wire-break/
+      );
+    });
+
+    it("orphan line-start-anchor without following atom refuses EOF/BOF soft remap", () => {
+      const doc = wireToDoc("hello");
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const orphan = document.createElement("span");
+      orphan.setAttribute("data-handoff-line-start-anchor", "true");
+      orphan.appendChild(document.createTextNode("\u200b"));
+      root.appendChild(orphan);
+      expect(() => domPointToDocPos(root, doc, orphan.firstChild!, 0)).toThrow(
+        /line-start-anchor without following atom/
+      );
     });
   });
 
@@ -449,9 +516,8 @@ describe("handoff-note-dom", () => {
       }
     });
 
-    it("prefix-only leading blank probes paint blank-anchor ZWSP when dock exists", () => {
-      // Leading blank probes are delete infrastructure — same selection dock as sandwiched
-      // probes. Bare BR is not a caret dock when a blank-anchor sibling is rendered.
+    it("prefix-only leading blank probes paint bare wire-break (emptied empty CRE)", () => {
+      // Prefix-only / emptied empty CRE: empty row above → first-line bare BR, not blank ZWSP.
       for (const wire of [`\n`, `\n\n`, `\n\n\ntail`, `\n\ntail`]) {
         const doc = wireToDoc(wire);
         const probes = listEmbeddedBlankBandProbeWires(doc);
@@ -464,8 +530,11 @@ describe("handoff-note-dom", () => {
 
         const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, focusWire));
         expect(point, wire).not.toBeNull();
-        expect(point?.node.nodeType, wire).toBe(Node.TEXT_NODE);
-        expect(isHandoffBlankAnchorElement(point?.node.parentNode), wire).toBe(true);
+        expect(
+          point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node),
+          wire
+        ).toBe(true);
+        expect(isHandoffBlankAnchorElement(point?.node.parentNode), wire).toBe(false);
         const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
         expect(docPosToWireOffset(doc, roundTrip)).toBe(focusWire);
       }
@@ -482,7 +551,31 @@ describe("handoff-note-dom", () => {
       expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
     });
 
-    it("cleared content row end at interior probe paints blank-anchor ZWSP not bare BR", () => {
+    it("multi-char EOF blank probe before pad paints bare BR (pad owns trailing stop)", () => {
+      // Pad-preceding probe is always bare — typing stop is the line-pad, not a ba sibling.
+      const doc = wireToDoc("sh\n");
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const focus = wireOffsetToDocPos(doc, probe);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const point = resolveDomPointAtDocPos(root, doc, focus);
+      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+        true
+      );
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
+      expect(root.querySelector(`span[${HANDOFF_BLANK_ANCHOR_ATTR}]`)).toBeNull();
+    });
+
+    it("multi-char mid-doc blank probe emits and paints blank-anchor", () => {
+      const doc = wireToDoc("sh\n\ntail");
+      const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const focus = wireOffsetToDocPos(doc, probe);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      const point = resolveDomPointAtDocPos(root, doc, focus);
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(true);
+    });
+
+    it("cleared content row end at interior probe paints bare wire-break not blank-anchor", () => {
       const wire = `header \n\n\nmiddle\n\n\nd\n\n\nlower`;
       const doc = wireToDoc(wire);
       const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
@@ -495,21 +588,22 @@ describe("handoff-note-dom", () => {
       expect(docToWire(chipped.doc)).toBe("header \n\n\nmiddle\n\n\n\n\n\nlower");
       const focusWire = docPosToWireOffset(chipped.doc, chipped.selection.focus);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(chipped.doc, focusWire, chipped.selection.focus)
+        isEmbeddedBlankBandCollapseProbeWire(chipped.doc, focusWire, chipped.selection.focus)
       ).toBe(false);
 
       renderHandoffNoteDoc(root, chipped.doc, { colorByAgentId: new Map() });
 
       const point = resolveDomPointAtDocPos(root, chipped.doc, chipped.selection.focus);
       expect(point).not.toBeNull();
-      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(true);
-      expect(point?.node instanceof HTMLBRElement).toBe(false);
+      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+        true
+      );
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
       const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
       expect(docPosToWireOffset(chipped.doc, roundTrip)).toBe(focusWire);
     });
 
-    it("Delete leftover pad between fused bands paints blank-anchor; intent stays off delete-probe", () => {
+    it("Delete leftover pad between fused bands paints bare wire-break; intent stays off delete-probe", () => {
       const wire = `upper @${AGENT} \n\n\n \n\n\nlower`;
       const doc = wireToDoc(wire);
       const padWire = wire.indexOf(" \n\n\nlower");
@@ -522,13 +616,15 @@ describe("handoff-note-dom", () => {
       expect(docToWire(cleared.doc)).toBe(`upper @${AGENT} \n\n\n\n\n\nlower`);
       const focusWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(cleared.doc, focusWire, cleared.selection.focus)
+        isEmbeddedBlankBandCollapseProbeWire(cleared.doc, focusWire, cleared.selection.focus)
       ).toBe(false);
 
       renderHandoffNoteDoc(root, cleared.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
       const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus)!;
-      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(true);
+      expect(point.node instanceof HTMLBRElement && isHandoffWireBreakElement(point.node)).toBe(
+        true
+      );
+      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(false);
       expect(
         docPosToWireOffset(
           cleared.doc,
@@ -537,7 +633,7 @@ describe("handoff-note-dom", () => {
       ).toBe(focusWire);
     });
 
-    it("Delete sole leftover space before band paints blank-anchor off delete-probe", () => {
+    it("Delete sole leftover space before band paints bare wire-break off delete-probe", () => {
       const doc = wireToDoc(" \n\nmd");
       const cleared = applyDocDelete(
         doc,
@@ -547,13 +643,15 @@ describe("handoff-note-dom", () => {
       expect(docToWire(cleared.doc)).toBe("\n\nmd");
       const focusWire = docPosToWireOffset(cleared.doc, cleared.selection.focus);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(cleared.doc, focusWire, cleared.selection.focus)
+        isEmbeddedBlankBandCollapseProbeWire(cleared.doc, focusWire, cleared.selection.focus)
       ).toBe(false);
 
       renderHandoffNoteDoc(root, cleared.doc, { colorByAgentId: new Map() });
       const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus)!;
-      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
-      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(true);
+      expect(point.node instanceof HTMLBRElement && isHandoffWireBreakElement(point.node)).toBe(
+        true
+      );
+      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(false);
     });
 
     it("sandwiched blank probe still resolves to blank-band anchor without chip provenance", () => {
@@ -651,8 +749,12 @@ describe("handoff-note-dom", () => {
     it("soft-wrap postfix alias and continuation paint distinct DOM offsets", () => {
       const fx = mountMultiMentionSoftWrapFixture();
       try {
-        const posAlias = docPosAtContentWire(fx.doc, fx.secondPostStart);
-        const posCont = docPosAtContentWire(fx.doc, fx.continuationWire);
+        const posAlias = resolvePaintContextAtWire(fx.doc, fx.secondPostStart, {
+          root: fx.root,
+        }).focusPos;
+        const posCont = resolvePaintContextAtWire(fx.doc, fx.continuationWire, {
+          root: fx.root,
+        }).focusPos;
         const paintAlias = resolveDomPointAtDocPos(fx.root, fx.doc, posAlias, { from: posAlias })!;
         const paintCont = resolveDomPointAtDocPos(fx.root, fx.doc, posCont, { from: posCont })!;
 
@@ -724,7 +826,9 @@ describe("handoff-note-dom", () => {
       const headerEnd = probes[0]! - 1;
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
 
-      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, headerEnd));
+      const point = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, headerEnd), {
+        focusAffinity: "after",
+      });
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
       expect(point?.offset).toBe("hello".length);
       const roundTrip = domPointToDocPos(root, doc, point!.node, point!.offset);
@@ -741,7 +845,10 @@ describe("handoff-note-dom", () => {
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
       const charFocus = wireOffsetToDocPos(doc, charWire);
-      const charPoint = resolveDomPointAtDocPos(root, doc, charFocus, { from: charFocus });
+      const charPoint = resolveDomPointAtDocPos(root, doc, charFocus, {
+        from: charFocus,
+        focusAffinity: "after",
+      });
       expect(charPoint).not.toBeNull();
       expect(charPoint!.node.nodeType).toBe(Node.TEXT_NODE);
       expect(charPoint!.node.textContent).toContain("m");
@@ -792,7 +899,7 @@ describe("handoff-note-dom", () => {
       const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
       expect(roundTrip).toEqual(focus);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(
+        isEmbeddedBlankBandCollapseProbeWire(
           chipped.doc,
           docPosToWireOffset(chipped.doc, roundTrip),
           roundTrip
@@ -830,7 +937,7 @@ describe("handoff-note-dom", () => {
 
       renderHandoffNoteDoc(root, chipped, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
 
-      const point = resolveDomPointAtDocPos(root, chipped, focus);
+      const point = resolveDomPointAtDocPos(root, chipped, focus, { focusAffinity: "after" });
       expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
       expect(point?.node.textContent?.[0]).toBe(" ");
       // Content row end of sole postfix spacer: text-tail (insertion point), still on spacer text.
@@ -975,7 +1082,7 @@ describe("handoff-note-dom", () => {
       )!;
       expect(removed.selection.focusAffinity).toBe("before");
       renderHandoffNoteDoc(root, removed.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
-      setDocSelection(root, removed.doc, removed.selection, { source: "test" });
+      setDocSelection(root, removed.doc, removed.selection);
       const live = readDocSelection(root, removed.doc);
       expect(live.focusAffinity).toBe("before");
       expect(docToWire(applyDocInsertText(removed.doc, live, "x").doc)).toBe(`whe\n\nx \nmean`);
@@ -992,7 +1099,7 @@ describe("handoff-note-dom", () => {
       expect(afterChip.selection.focusAffinity).toBe("after");
 
       renderHandoffNoteDoc(root, afterChip.doc, { colorByAgentId: new Map() });
-      setDocSelection(root, afterChip.doc, afterChip.selection, { source: "test" });
+      setDocSelection(root, afterChip.doc, afterChip.selection);
       const live = readDocSelection(root, afterChip.doc);
       expect(live.focusAffinity).toBe("after");
       expect(docToWire(applyDocDelete(afterChip.doc, live, "delete")!.doc)).toBe("whe\nm");
@@ -1002,7 +1109,7 @@ describe("handoff-note-dom", () => {
       const doc = wireToDoc("whe\n\nm");
       const cre = collapsedSelectionWithIntent(doc, wireOffsetToDocPos(doc, 2), "content-row-end");
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
-      setDocSelection(root, doc, cre, { source: "test" });
+      setDocSelection(root, doc, cre);
       const live = readDocSelection(root, doc);
       expect(live.focusAffinity).toBe("after");
       expect(docToWire(applyDocDelete(doc, live, "delete")!.doc)).toBe("whe\nm");
@@ -1021,7 +1128,10 @@ describe("handoff-note-dom", () => {
         colorByAgentId: new Map([[AGENT, "#06f"]]),
       });
       const focus = inserted.selection.focus;
-      const point = resolveDomPointAtDocPos(root, inserted.doc, focus, { from: focus })!;
+      const point = resolveDomPointAtDocPos(root, inserted.doc, focus, {
+        from: focus,
+        focusAffinity: inserted.selection.focusAffinity ?? "after",
+      })!;
       expect(point.node.textContent).toBe("w");
       expect(point.offset).toBe(1);
     });
@@ -1198,11 +1308,10 @@ describe("handoff-note-dom", () => {
       ).toBe(continuationWire);
     });
 
-    it("docPosAtPaintWire prefers continuation at alias wire", () => {
+    it("resolvePaintContextAtWire prefers continuation paint at alias wire", () => {
       const doc = sandwichDoc();
       const { continuationWire } = sandwichAliasAndContinuationWires(doc);
       const spacerCont = { nodeIndex: 2, nodeOffset: 1 };
-      expect(docPosAtPaintWire(doc, continuationWire)).toEqual(spacerCont);
       expect(resolvePaintContextAtWire(doc, continuationWire)).toEqual({
         focusPos: spacerCont,
         paintPos: spacerCont,
@@ -1218,14 +1327,17 @@ describe("handoff-note-dom", () => {
       pos = { nodeIndex: 1, nodeOffset: 1 + SANDWICH_AGENT.length };
 
       const step1 = resolvePaintHorizontalArrowMove(doc, pos, "right");
-      expect(step1).toEqual({ pos: { nodeIndex: 2, nodeOffset: 0 }, handled: true });
+      expect(step1.handled).toBe(true);
+      expect(step1.pos).toEqual({ nodeIndex: 2, nodeOffset: 0 });
       pos = step1.pos;
       const step2 = resolvePaintHorizontalArrowMove(doc, pos, "right");
-      expect(step2).toEqual({ pos: { nodeIndex: 2, nodeOffset: 1 }, handled: true });
+      expect(step2.handled).toBe(true);
+      expect(step2.pos).toEqual({ nodeIndex: 2, nodeOffset: 1 });
       pos = step2.pos;
       // Pill is one token: spacer continuation Right crosses the following mention (no start micro-stop).
       const step3 = resolvePaintHorizontalArrowMove(doc, pos, "right");
-      expect(step3).toEqual({ pos: { nodeIndex: 4, nodeOffset: 0 }, handled: true });
+      expect(step3.handled).toBe(true);
+      expect(step3.pos).toEqual({ nodeIndex: 4, nodeOffset: 0 });
       expect(doc.nodes[3]?.type).toBe("mention");
       expect(doc.nodes[4]?.type).toBe("text");
     });
@@ -1292,6 +1404,221 @@ describe("handoff-note-dom", () => {
     });
   });
 
+  describe("blank-probe wire alias — mention end owns same wire", () => {
+    const AGENT = "caliper-aaaaaaa";
+
+    function chippedMentionAbuttingBlank() {
+      const doc0 = wireToDoc(`header @${AGENT} \n\n\n`);
+      const spacerWire = listEmbeddedBlankBandProbeWires(doc0)[0]! - 1;
+      const chipped = applyDocDelete(
+        doc0,
+        collapsedSelection(wireOffsetToDocPos(doc0, spacerWire), "after"),
+        "backspace"
+      )!;
+      const mentionEnd = chipped.selection.focus;
+      const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+      expect(chipped.doc.nodes[mentionEnd.nodeIndex]?.type).toBe("mention");
+      expect(docPosToWireOffset(chipped.doc, mentionEnd)).toBe(probeWire);
+      return { doc: chipped.doc, mentionEnd, probeWire };
+    }
+
+    it("wire ingress must not prefer blank text over mention end", () => {
+      const { doc, mentionEnd, probeWire } = chippedMentionAbuttingBlank();
+      expect(describeHandoffNoteCursorContext(doc, probeWire)).toEqual(
+        expect.objectContaining({ kind: "mention-boundary", edge: "end" })
+      );
+      const atWire = resolvePaintContextAtWire(doc, probeWire);
+      expect(doc.nodes[atWire.focusPos.nodeIndex]?.type).toBe("mention");
+      expect(atWire.focusPos).toEqual(mentionEnd);
+      expect(atWire.caretKind).toBe("mention-boundary");
+    });
+
+    it("resolvePaintContext(mentionEnd) matches atWire without from", () => {
+      const { doc, mentionEnd, probeWire } = chippedMentionAbuttingBlank();
+      const fromFocus = resolvePaintContext(doc, mentionEnd);
+      const atWire = resolvePaintContextAtWire(doc, probeWire);
+      expect(fromFocus.focusPos).toEqual(mentionEnd);
+      expect(atWire.focusPos).toEqual(fromFocus.focusPos);
+    });
+  });
+
+  describe("row-edge wire landing — paint focus owns aliases", () => {
+    const AGENT = "caliper-aaaaaaa";
+
+    it("mention after line break: wire lands on mention start not prior text past-end", () => {
+      const doc = wireToDoc(`upper\n@${AGENT} `);
+      const rowStartWire = "upper\n".length;
+      const atWire = resolvePaintContextAtWire(doc, rowStartWire);
+      expect(doc.nodes[atWire.focusPos.nodeIndex]?.type).toBe("mention");
+      expect(atWire.focusPos.nodeOffset).toBe(0);
+      expect(docPosToWireOffset(doc, atWire.focusPos)).toBe(rowStartWire);
+    });
+
+    it("soft-wrap postfix spacer: wire lands on text owner", () => {
+      const fx = mountMultiMentionSoftWrapFixture();
+      try {
+        const atWire = resolvePaintContextAtWire(fx.doc, fx.secondPostStart, {
+          root: fx.root,
+        });
+        expect(fx.doc.nodes[atWire.focusPos.nodeIndex]?.type).toBe("text");
+        expect(docPosToWireOffset(fx.doc, atWire.focusPos)).toBe(fx.secondPostStart);
+      } finally {
+        fx.root.remove();
+      }
+    });
+  });
+
+  describe("horizontal CRE — last char + affinity, not past-end", () => {
+    it("Right from EOF last char lands same char with after, not text.length", () => {
+      const doc = wireToDoc("hello");
+      const last = { nodeIndex: 0, nodeOffset: 4 };
+      const moved = resolvePaintHorizontalArrowMove(doc, last, "right");
+      expect(moved.handled).toBe(true);
+      expect(moved.pos).toEqual(last);
+      expect(moved.selection.focusAffinity).toBe("after");
+    });
+
+    it("Right from last char before break lands same char with after, not onto \\n", () => {
+      const doc = wireToDoc("ab\n");
+      const last = { nodeIndex: 0, nodeOffset: 1 };
+      const moved = resolvePaintHorizontalArrowMove(doc, last, "right");
+      expect(moved.handled).toBe(true);
+      expect(moved.pos).toEqual(last);
+      expect(moved.selection.focusAffinity).toBe("after");
+      expect(docToWire(doc)[docPosToWireOffset(doc, moved.pos)]).toBe("b");
+    });
+
+    it("Left from CRE after returns before on the same char", () => {
+      const doc = wireToDoc("hello");
+      const last = { nodeIndex: 0, nodeOffset: 4 };
+      const moved = resolvePaintHorizontalArrowMove(doc, last, "left", {
+        focusAffinity: "after",
+      });
+      expect(moved.handled).toBe(true);
+      expect(moved.pos).toEqual(last);
+      expect(moved.selection.focusAffinity).toBe("before");
+    });
+
+    it("Right from CRE after at EOF is unhandled (no past-end invent)", () => {
+      const doc = wireToDoc("hello");
+      const last = { nodeIndex: 0, nodeOffset: 4 };
+      const moved = resolvePaintHorizontalArrowMove(doc, last, "right", {
+        focusAffinity: "after",
+      });
+      expect(moved.handled).toBe(false);
+    });
+
+    it("Right from last char before mention still uses text-length tail alias", () => {
+      const doc = wireToDoc("pre @caliper-aaaaaaa ");
+      const pre = doc.nodes[0];
+      if (pre?.type !== "text") throw new Error("expected text");
+      const last = { nodeIndex: 0, nodeOffset: pre.text.length - 1 };
+      const moved = resolvePaintHorizontalArrowMove(doc, last, "right");
+      expect(moved.handled).toBe(true);
+      expect(moved.pos).toEqual({ nodeIndex: 0, nodeOffset: pre.text.length });
+    });
+
+    it("inter-atomic spacer Right still lands text.length continuation", () => {
+      const doc = wireToDoc("@caliper-aaaaaaa @caliper-bbbbbbb ");
+      const spacerIdx = doc.nodes.findIndex(
+        (n, i) => n.type === "text" && n.text === " " && doc.nodes[i - 1]?.type === "mention"
+      );
+      const moved = resolvePaintHorizontalArrowMove(
+        doc,
+        { nodeIndex: spacerIdx, nodeOffset: 0 },
+        "right"
+      );
+      expect(moved.handled).toBe(true);
+      expect(moved.pos).toEqual({ nodeIndex: spacerIdx, nodeOffset: 1 });
+    });
+
+    it("Right from previous onto last-before-break does not stamp CRE after", () => {
+      const doc = wireToDoc("abcdef\nghij");
+      const lastBeforeBreak = wireOffsetToDocPos(doc, "abcdef".length - 1);
+      const moved = resolvePaintHorizontalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, "abcdef".length - 2),
+        "right"
+      );
+      expect(moved.handled).toBe(true);
+      expect(moved.pos).toEqual(lastBeforeBreak);
+      expect(moved.selection.focusAffinity).not.toBe("after");
+    });
+
+    it("trailing space before blank is a real hop (not CRE after on first land)", () => {
+      const doc = wireToDoc("whedg \n\ndhhd ");
+      const moved = resolvePaintHorizontalArrowMove(doc, wireOffsetToDocPos(doc, 4), "right");
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(5);
+      expect(docToWire(doc)[5]).toBe(" ");
+      expect(moved.selection.focusAffinity).not.toBe("after");
+    });
+
+    it("Right from blank stop lands next content start", () => {
+      const doc = wireToDoc("whedg \n\ndhhd ");
+      const blankStop = listBlankVisualLineStartWires(doc)[0]!;
+      expect(blankStop).toBe(7);
+      const moved = resolvePaintHorizontalArrowMove(
+        doc,
+        wireOffsetToDocPos(doc, blankStop),
+        "right"
+      );
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(8);
+    });
+
+    it("Left from content start enters blank stop in one hop", () => {
+      const doc = wireToDoc("whedg \n\ndhhd ");
+      const blankStop = listBlankVisualLineStartWires(doc)[0]!;
+      const moved = resolvePaintHorizontalArrowMove(doc, wireOffsetToDocPos(doc, 8), "left");
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(blankStop);
+    });
+
+    it("Right from CRE after on ordinary break lands next content (not the \\n)", () => {
+      const doc = wireToDoc("abcdef\nghij");
+      const last = "abcdef".length - 1;
+      const moved = resolvePaintHorizontalArrowMove(doc, wireOffsetToDocPos(doc, last), "right", {
+        focusAffinity: "after",
+      });
+      expect(moved.handled).toBe(true);
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(last + 2);
+    });
+  });
+
+  describe("caret kind authority — focus vs wire", () => {
+    const AGENT = "caliper-aaaaaaa";
+
+    it("same wire — text focus is text; mention-end focus stays mention-boundary", () => {
+      const doc = wireToDoc(`pre @${AGENT} mid`);
+      const mentionIdx = doc.nodes.findIndex((n) => n.type === "mention");
+      const mention = doc.nodes[mentionIdx]!;
+      if (mention.type !== "mention") throw new Error("expected mention");
+      const mentionEnd = {
+        nodeIndex: mentionIdx,
+        nodeOffset: 1 + mention.agentId.length,
+      };
+      const textAtAlias = { nodeIndex: mentionIdx + 1, nodeOffset: 0 };
+      const aliasWire = docPosToWireOffset(doc, mentionEnd);
+      expect(docPosToWireOffset(doc, textAtAlias)).toBe(aliasWire);
+
+      expect(describeHandoffNoteCursorContext(doc, aliasWire)).toEqual(
+        expect.objectContaining({ kind: "mention-boundary", edge: "end" })
+      );
+      expect(describeCaretContext(doc, textAtAlias).kind).toBe("text");
+      expect(describeCaretContext(doc, mentionEnd)).toEqual(
+        expect.objectContaining({ kind: "mention-boundary", edge: "end" })
+      );
+    });
+
+    it("ordinary text wire and focus agree on text", () => {
+      const doc = wireToDoc("hello");
+      const focus = { nodeIndex: 0, nodeOffset: 2 };
+      expect(describeHandoffNoteCursorContext(doc, 2).kind).toBe("text");
+      expect(describeCaretContext(doc, focus).kind).toBe("text");
+    });
+  });
+
   describe("text-node boundary ownership primitives (Rule 4 — handoff-note-arrow-contract.md)", () => {
     it("detects browser text-node tail before a wire break", () => {
       expect(isContentTextNodeDomTailBeforeBreak(5, "hello", 0, 4)).toBe(true);
@@ -1316,23 +1643,28 @@ describe("handoff-note-dom", () => {
       expect(resolveDomReadDocPos(doc, read, authority)).toEqual(authority);
     });
 
-    it("maps content row end to text-node tail on write", () => {
-      expect(domOffsetForContentRowEndInSplitText(4, "hello", 0, 4)).toBe(5);
-      expect(domOffsetForContentRowEndInSplitText(3, "hello", 0, 4)).toBe(3);
-      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4)).toBe(1);
-      expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4)).toBe(1);
+    it("maps content row end to text-node tail only for explicit after", () => {
+      expect(domOffsetForContentRowEndInSplitText(4, "hello", "after")).toBe(5);
+      expect(domOffsetForContentRowEndInSplitText(4, "hello")).toBe(4);
+      expect(domOffsetForContentRowEndInSplitText(3, "hello")).toBe(3);
+      expect(domOffsetForContentRowEndInSplitText(0, " ")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, "h")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", "after")).toBe(1);
+      expect(domOffsetForContentRowEndInSplitText(0, "h", "after")).toBe(1);
     });
 
     it("deletion-point affinity keeps sole-char write at visual start not text-tail", () => {
-      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4, "before")).toBe(0);
-      expect(domOffsetForContentRowEndInSplitText(0, "h", 0, 4, "before")).toBe(0);
-      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 4, "after")).toBe(1);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", "before")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, "h", "before")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", "after")).toBe(1);
     });
 
-    it("EOF last part: after paints text-tail; omit does not invent CRE on last part", () => {
-      expect(domOffsetForContentRowEndInSplitText(0, "o", 3, 4, "after")).toBe(1);
-      expect(domOffsetForContentRowEndInSplitText(0, "o", 3, 4)).toBe(0);
-      expect(domOffsetForContentRowEndInSplitText(0, " ", 0, 1, "after")).toBe(1);
+    it("EOF last part: after paints text-tail; omit/before stay on-char", () => {
+      expect(domOffsetForContentRowEndInSplitText(0, "o", "after")).toBe(1);
+      expect(domOffsetForContentRowEndInSplitText(0, "o")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, "o", "before")).toBe(0);
+      expect(domOffsetForContentRowEndInSplitText(0, " ", "after")).toBe(1);
+      expect(domOffsetForContentRowEndInSplitText(0, " ")).toBe(0);
     });
 
     it("maps whitespace-only tail before break on read", () => {
@@ -1355,7 +1687,9 @@ describe("handoff-note-dom", () => {
       expect(wire[spacerWire]).toBe(" ");
       expect(wire[breakWire]).toBe("\n");
 
-      const spacerPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, spacerWire));
+      const spacerPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, spacerWire), {
+        focusAffinity: "after",
+      });
       expect(spacerPoint?.node.nodeType).toBe(Node.TEXT_NODE);
       expect((spacerPoint?.node as Text).data).toBe(" ");
       expect(spacerPoint?.offset).toBe(1);

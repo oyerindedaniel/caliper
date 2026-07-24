@@ -21,11 +21,12 @@ const REGISTRY_ITEM = {
   fingerprint: { selector: "caliper-abc123", tag: "button", timestamp: 0, text: "Submit" },
 } as unknown as HandoffRegistryItem;
 
+/** Typed `@` session before a committed pill — spaced (`@ @pill`), never glued `@@pill`. */
 function embeddedBlankMentionQueryFixture() {
   const agentId = "caliper-aaaaaaa";
-  const wire = `head \n\n\n\nbodyxx\n\n\n@@${agentId} `;
+  const wire = `head \n\n\n\nbodyxx\n\n\n@ @${agentId} `;
   const doc = wireToDoc(wire);
-  const queryWire = wire.indexOf("@@");
+  const queryWire = wire.indexOf("@ @");
   return { wire, doc, agentId, queryWire };
 }
 
@@ -120,7 +121,8 @@ describe("createMentionController mention session", () => {
       onHighlight: () => {},
     });
 
-    controller.handleInput(mockEditor(wire, queryWire + 1));
+    // Session owns the typed `@` text; caret on mention-start must not open a session.
+    controller.handleInput(mockEditor(wire, queryWire));
     expect(controller.isOpen()).toBe(true);
 
     controller.commitMention(editor, REGISTRY_ITEM.agentId);
@@ -179,7 +181,8 @@ describe("createMentionController mention session", () => {
     expect(controller.isOpen()).toBe(false);
   });
 
-  it("reopens mention session when filter typing resumes after blank lines", () => {
+  it("after collapsing trailing blanks under @ session is already active; typing extends query", () => {
+    // One blank collapse remounts CRE after `@` — further BS would chip `@`.
     const controller = createMentionController({
       getItems: () => [REGISTRY_ITEM],
       onNoteChange: () => {},
@@ -192,31 +195,24 @@ describe("createMentionController mention session", () => {
     for (let i = 0; i < 3; i++) {
       state = applyDocLineBreak(state.doc, state.selection);
     }
-    for (let i = 0; i < 3; i++) {
-      state = applyDocDelete(state.doc, state.selection, "backspace")!;
-    }
+    state = applyDocDelete(state.doc, state.selection, "backspace")!;
 
-    controller.handleInput({
+    const editorFromState = () => ({
       getWire: () => docToWire(state.doc),
-      getCursor: () => docToWire(state.doc).length,
+      getCursor: () => docPosToWireOffset(state.doc, state.selection.focus),
       getDoc: () => state.doc,
       getSelectionState: () => state.selection,
       insertMentionAtomAt: () => {},
       focus: () => {},
       getAnchorRectAtOffset: () => null,
     });
-    expect(controller.isOpen()).toBe(false);
+
+    controller.handleInput(editorFromState());
+    expect(controller.isOpen()).toBe(true);
+    expect(controller.getSession().query).toBe("");
 
     state = applyDocInsertText(state.doc, state.selection, "d");
-    controller.handleInput({
-      getWire: () => docToWire(state.doc),
-      getCursor: () => docToWire(state.doc).length,
-      getDoc: () => state.doc,
-      getSelectionState: () => state.selection,
-      insertMentionAtomAt: () => {},
-      focus: () => {},
-      getAnchorRectAtOffset: () => null,
-    });
+    controller.handleInput(editorFromState());
 
     expect(controller.isOpen()).toBe(true);
     expect(controller.getSession().query).toBe("d");
@@ -297,5 +293,24 @@ describe("mention list keyboard ownership", () => {
     expect(controller.handleKeyDown(mockEditor(wire, wire.length), up)).toBe(false);
     expect(up.defaultPrevented).toBe(false);
     expect(controller.isOpen()).toBe(false);
+  });
+});
+
+describe("mention popover placement", () => {
+  it("places below using caret bottom (top + height), not caret top alone", () => {
+    const controller = createMentionController({
+      getItems: () => [REGISTRY_ITEM],
+      onNoteChange: () => {},
+      onHighlight: () => {},
+    });
+    const position = controller.resolveMentionPopoverPosition(
+      { top: 100, left: 40, height: 18 },
+      { width: 800, height: 600 },
+      280,
+      120
+    );
+    expect(position.side).toBe("bottom");
+    expect(position.top).toBe(100 + 18 + 6);
+    expect(position.left).toBe(40);
   });
 });

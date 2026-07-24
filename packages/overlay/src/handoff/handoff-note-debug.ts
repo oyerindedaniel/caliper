@@ -2,15 +2,37 @@
 import {
   docPosToWireOffset,
   docToWire,
-  isEmbeddedBlankBandDeleteProbeWire,
+  isEmbeddedBlankBandCollapseProbeWire,
   isEmbeddedBlankBandProbeWire,
+  listBlankVisualLineStartWires,
   listEmbeddedBlankBandProbeWires,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
-import { describeCaretContext } from "./note-editor/handoff-note-dom-points.js";
+import {
+  describeCaretContext,
+  resolveDomPointAtDocPos,
+  resolvePaintContext,
+} from "./note-editor/handoff-note-dom-points.js";
+import {
+  isHandoffBlankAnchorElement,
+  isHandoffLinePadElement,
+  isHandoffLineStartAnchorElement,
+  isHandoffWireBreakElement,
+} from "./note-editor/handoff-note-dom.js";
 
 const LOG_PREFIX = "[handoff-note]";
+
+/** Opt-in only (`HANDOFF_NOTE_DEBUG=1`) — unset skips stringify + console. */
+function isHandoffNoteDebugLogEnabled(): boolean {
+  // return typeof process !== "undefined" && process.env.HANDOFF_NOTE_DEBUG === "1";
+  return true;
+}
+
+/** Public gate for callers that skip expensive debug snapshots when unset. */
+export function isHandoffNoteDebugEnabled(): boolean {
+  return isHandoffNoteDebugLogEnabled();
+}
 
 /** Collapse identical back-to-back lines (duplicate sync, repair paint storms). */
 let lastDedupKey = "";
@@ -18,6 +40,9 @@ let dedupSuppressed = 0;
 
 /** Skip repeated repair.authority paint lines with the same wire + DOM target. */
 let lastRepairAuthorityPaintKey = "";
+
+/** Layout row dump once per identical row snapshot (rebuilds must not re-spam). */
+let lastLoggedLayoutEpoch: string | null = null;
 
 function escapeWireChar(char: string | undefined): string | null {
   if (char === undefined) {
@@ -89,6 +114,62 @@ function snapshotDocPos(
   };
 }
 
+/** Lean doc pos for logs — prefer this over wire alone (wire can alias seams). */
+export function snapshotDocPosForLog(
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): { nodeIndex: number; nodeOffset: number; nodeType: string } {
+  return snapshotDocPos(doc, pos);
+}
+
+/**
+ * What left the wire between before→after (LCP/LCS span).
+ * Prefer this for delete forensics over guessing from caret alone.
+ */
+export function describeWireRemoval(
+  beforeWire: string,
+  afterWire: string
+): {
+  removed: string | null;
+  removedLen: number;
+  removedStartWire: number | null;
+  removedEndWire: number | null;
+} {
+  if (beforeWire === afterWire) {
+    return {
+      removed: null,
+      removedLen: 0,
+      removedStartWire: null,
+      removedEndWire: null,
+    };
+  }
+  let prefix = 0;
+  while (
+    prefix < beforeWire.length &&
+    prefix < afterWire.length &&
+    beforeWire[prefix] === afterWire[prefix]
+  ) {
+    prefix++;
+  }
+  let beforeEnd = beforeWire.length;
+  let afterEnd = afterWire.length;
+  while (
+    beforeEnd > prefix &&
+    afterEnd > prefix &&
+    beforeWire[beforeEnd - 1] === afterWire[afterEnd - 1]
+  ) {
+    beforeEnd--;
+    afterEnd--;
+  }
+  const removed = beforeWire.slice(prefix, beforeEnd);
+  return {
+    removed: escapeWireForLog(removed),
+    removedLen: removed.length,
+    removedStartWire: prefix,
+    removedEndWire: beforeEnd,
+  };
+}
+
 function caretOnMentionNodeEnd(doc: HandoffNoteDoc, pos: HandoffNoteDocPos): boolean {
   const node = doc.nodes[pos.nodeIndex];
   return node?.type === "mention" && pos.nodeOffset >= 1 + node.agentId.length;
@@ -123,11 +204,11 @@ export function buildCaretStateSnapshot(options: CaretSnapshotOptions): Record<s
       : undefined;
   const focusWire = activeWire ?? authorityWire ?? 0;
   const atProbe = isEmbeddedBlankBandProbeWire(options.doc, focusWire);
-  const atDeleteProbe = isEmbeddedBlankBandDeleteProbeWire(
-    options.doc,
-    focusWire,
-    options.authorityFocus ?? options.activeFocus
-  );
+  const focusForProbe = options.authorityFocus ?? options.activeFocus;
+  const atDeleteProbe =
+    focusForProbe !== undefined
+      ? isEmbeddedBlankBandCollapseProbeWire(options.doc, focusWire, focusForProbe)
+      : false;
   const probeIndex = atProbe ? probes.indexOf(focusWire) : -1;
   const verbose = options.verbose === true;
   const authorityDrift =
@@ -214,18 +295,21 @@ export function logEditStateTrace(phase: string, data: Record<string, unknown> =
 }
 
 /**
- * Console filters: `state>>` edit ingress, `caret>>setDoc>>` paint, `caret>>repair` authority,
- * `caret>>ingress>>` pointer click forensics (`ingress>>firstTouch`, `click.ingress`, `repair.click`, `repair.strand`),
- * `caret>>ver>>` layout (arrow only), `caret>>hor>>` horizontal Left/Right (keydown/bail/step/apply/writeFinal/geom),
- * `caret>>click.ingress` + firstTouch for click-vs-arrow spacer geometry (`geom` field).
- * Empty-geom BR paint: `paintPoint` on `setDoc>>` / `ingress>>firstTouch` (elementRect vs
- * probeRangeRect vs rootOffsetProbe — which selection target has non-empty client rects).
+ * Lean console filters (noise trimmed):
+ * `caret>>selection.map>>` click pick (doc pos + wire + affinity + row),
+ * `caret>>ver>>` / `caret>>hor>>` arrow land (from/to doc pos + wire + affinity),
+ * `delete>>` Backspace/Delete (from/to doc pos + removed wire slice),
+ * `layout>>rows` once per identical row snapshot (count + wires per row).
+ * Opt-in: `HANDOFF_NOTE_DEBUG=1`.
  */
 export function flattenHandoffNoteLog(
   event: string,
   data: Record<string, unknown> = {},
   level: "log" | "warn" = "log"
 ): void {
+  if (!isHandoffNoteDebugLogEnabled()) {
+    return;
+  }
   const dedupKey = `${event}|${JSON.stringify(data)}`;
   if (level === "log" && dedupKey === lastDedupKey) {
     dedupSuppressed++;
@@ -265,9 +349,367 @@ export function logVerArrow(source: string, data: Record<string, unknown> = {}):
   flattenHandoffNoteLog(`caret>>ver>>${source}`, data);
 }
 
+/** Backspace / Delete intent — filter `delete>>`. */
+export function logDelete(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`delete>>${source}`, data);
+}
+
+/** Insert / beforeInput typing — filter `insert>>`. */
+export function logInsert(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`insert>>${source}`, data);
+}
+
+/** DOM render / paint docks — filter `dom>>`. */
+export function logDom(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`dom>>${source}`, data);
+}
+
 /** Horizontal Left/Right only — distinct from `caret>>ver>>` and bleed. */
 export function logHorArrow(source: string, data: Record<string, unknown> = {}): void {
   flattenHandoffNoteLog(`caret>>hor>>${source}`, data);
+}
+
+/** Layout row summary — filter `layout>>rows`. Deduped on identical row snapshot. */
+export function logLayout(source: string, data: Record<string, unknown> = {}): void {
+  if (source === "rows") {
+    const epoch = JSON.stringify(data.rows ?? data);
+    if (epoch === lastLoggedLayoutEpoch) {
+      return;
+    }
+    lastLoggedLayoutEpoch = epoch;
+  }
+  flattenHandoffNoteLog(`layout>>${source}`, data);
+}
+
+/**
+ * Selection / caret mapping: focus → paint → wire → layout row.
+ * Filter `caret>>selection.map`.
+ */
+export function logSelectionMap(source: string, data: Record<string, unknown> = {}): void {
+  flattenHandoffNoteLog(`caret>>selection.map>>${source}`, data);
+}
+
+function paintDockKind(node: Node | null | undefined): string {
+  if (!node) {
+    return "null";
+  }
+  if (node instanceof HTMLBRElement && isHandoffLinePadElement(node)) {
+    return "line-pad";
+  }
+  if (node instanceof HTMLBRElement && isHandoffWireBreakElement(node)) {
+    return "wire-break";
+  }
+  if (node instanceof HTMLBRElement) {
+    return "br-plain";
+  }
+  if (isHandoffBlankAnchorElement(node) || isHandoffBlankAnchorElement(node.parentNode)) {
+    return "blank-anchor";
+  }
+  if (isHandoffLineStartAnchorElement(node) || isHandoffLineStartAnchorElement(node.parentNode)) {
+    return "line-start-anchor";
+  }
+  if (node.nodeType === Node.TEXT_NODE) {
+    return "text";
+  }
+  return node.nodeName.toLowerCase();
+}
+
+function paintDockElement(point: { node: Node; offset: number } | null): Element | null {
+  if (!point) {
+    return null;
+  }
+  const { node, offset } = point;
+  if (node.nodeType === Node.TEXT_NODE) {
+    return node.parentElement;
+  }
+  if (node instanceof Element) {
+    if (offset >= 0 && offset < node.childNodes.length) {
+      const child = node.childNodes[offset]!;
+      if (child instanceof Element) {
+        return child;
+      }
+      if (child?.nodeType === Node.TEXT_NODE) {
+        return child.parentElement;
+      }
+    }
+    return node;
+  }
+  return null;
+}
+
+function rectBox(rect: DOMRect | null | undefined): Record<string, number> | null {
+  if (!rect) {
+    return null;
+  }
+  return {
+    top: rect.top,
+    bottom: rect.bottom,
+    left: rect.left,
+    right: rect.right,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function siblingDockSnapshot(root: HTMLElement, childIndex: number | null, side: "prev" | "next") {
+  if (childIndex === null) {
+    return null;
+  }
+  const idx = side === "prev" ? childIndex - 1 : childIndex + 1;
+  if (idx < 0 || idx >= root.childNodes.length) {
+    return null;
+  }
+  const node = root.childNodes[idx]!;
+  const el = node instanceof Element ? node : null;
+  const kind = paintDockKind(el ?? node);
+  const own = el ? rectBox(el.getBoundingClientRect()) : null;
+  return { childIndex: idx, dockKind: kind, dockId: `${kind}@${idx}`, ownRect: own };
+}
+
+/**
+ * Same decision order as getDocAnchorRectAtDomPoint — logs which branch produced the top.
+ * Diagnosis only; does not change paint.
+ */
+function diagnoseAnchorRectAtDomPoint(
+  root: HTMLElement,
+  point: { node: Node; offset: number }
+): {
+  rect: DOMRect | null;
+  rectSource:
+    | "brElement.getBoundingClientRect"
+    | "range.getClientRects"
+    | "range.getBoundingClientRect"
+    | "root.getBoundingClientRect"
+    | "null";
+  brKind: string | null;
+  brChildIndex: number | null;
+} {
+  let brEl: HTMLBRElement | null = null;
+  if (point.node instanceof HTMLBRElement) {
+    brEl = point.node;
+  } else if (point.node === root) {
+    const child = root.childNodes[point.offset];
+    brEl = child instanceof HTMLBRElement ? child : null;
+  }
+  // Text (or other non-root) points: never treat char-offset as root.childNodes[offset].
+  if (brEl) {
+    const breakRect = brEl.getBoundingClientRect();
+    if (
+      breakRect.width > 0 ||
+      breakRect.height > 0 ||
+      breakRect.top !== 0 ||
+      breakRect.left !== 0
+    ) {
+      const brChildIndex =
+        brEl.parentNode === root ? Array.prototype.indexOf.call(root.childNodes, brEl) : null;
+      return {
+        rect: breakRect,
+        rectSource: "brElement.getBoundingClientRect",
+        brKind: paintDockKind(brEl),
+        brChildIndex,
+      };
+    }
+  }
+
+  const range = root.ownerDocument.createRange();
+  range.setStart(point.node, point.offset);
+  range.collapse(true);
+  if (typeof range.getClientRects === "function") {
+    const rects = range.getClientRects();
+    // Match pickCollapsedCaretClientRect: prefer lowest band.
+    let lowest: DOMRect | null = null;
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i]!;
+      if (r.width <= 0 && r.height <= 0) {
+        continue;
+      }
+      if (r.top === 0 && r.left === 0 && r.width === 0 && r.height === 0) {
+        continue;
+      }
+      if (!lowest || r.top > lowest.top || (r.top === lowest.top && r.left >= lowest.left)) {
+        lowest = r;
+      }
+    }
+    if (lowest) {
+      return {
+        rect: lowest,
+        rectSource: "range.getClientRects",
+        brKind: null,
+        brChildIndex: null,
+      };
+    }
+  }
+  if (typeof range.getBoundingClientRect === "function") {
+    const rect = range.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0 || rect.top !== 0 || rect.left !== 0) {
+      return {
+        rect,
+        rectSource: "range.getBoundingClientRect",
+        brKind: null,
+        brChildIndex: null,
+      };
+    }
+  }
+  return {
+    rect: root.getBoundingClientRect(),
+    rectSource: "root.getBoundingClientRect",
+    brKind: null,
+    brChildIndex: null,
+  };
+}
+
+/** Classify paint vs live dock mismatch for authority pins (called at each layer). */
+export function classifyPaintLiveDockPin(args: {
+  layer: string;
+  paint: Record<string, unknown>;
+  live: Record<string, unknown>;
+  memoryWire?: number | null;
+  liveWire?: number | null;
+}): string {
+  const paintKind = String(args.paint.dockKind ?? "none");
+  const liveKind = String(args.live.dockKind ?? (args.live.live === false ? "none" : "none"));
+  const paintId = String(args.paint.dockId ?? "na");
+  const liveId = String(args.live.dockId ?? "na");
+  const paintTop = typeof args.paint.top === "number" ? args.paint.top : null;
+  const liveTop = typeof args.live.top === "number" ? args.live.top : null;
+  const topDelta = paintTop !== null && liveTop !== null ? Math.abs(paintTop - liveTop) : null;
+  const sameWire =
+    args.memoryWire != null && args.liveWire != null && args.memoryWire === args.liveWire;
+  const wireMismatch =
+    args.memoryWire != null && args.liveWire != null && args.memoryWire !== args.liveWire;
+
+  if (paintKind === "wire-break" && liveKind === "blank-anchor") {
+    return sameWire
+      ? `AUTH.${args.layer}.dualDock.chromeDrift — paint=wire-break live=blank-anchor sameWire=${String(args.memoryWire)} (insert/memory uses this wire; caret on ba)`
+      : `AUTH.${args.layer}.dualDock.chromeDrift — paint=wire-break live=blank-anchor memoryWire=${String(args.memoryWire)} liveWire=${String(args.liveWire)}`;
+  }
+  if (paintId !== liveId && topDelta !== null && topDelta > 8) {
+    return `AUTH.${args.layer}.dockYMismatch — paint=${paintId}@${paintTop} live=${liveId}@${liveTop} Δ=${topDelta}`;
+  }
+  if (wireMismatch) {
+    return `AUTH.${args.layer}.wireMismatch — memoryWire=${String(args.memoryWire)} liveWire=${String(args.liveWire)} paint=${paintId} live=${liveId}`;
+  }
+  if (paintId === liveId) {
+    return `AUTH.${args.layer}.ok — paint===live ${paintId}`;
+  }
+  return `AUTH.${args.layer}.dockIdMismatch — paint=${paintId} live=${liveId} sameWire=${String(sameWire)}`;
+}
+
+export function snapshotHandoffNotePaintDock(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  pos: HandoffNoteDocPos
+): Record<string, unknown> {
+  const focusWire = docPosToWireOffset(doc, pos);
+  const { paintPos } = resolvePaintContext(doc, pos, { root });
+  const paintWire = docPosToWireOffset(doc, paintPos);
+  const point = resolveDomPointAtDocPos(root, doc, pos);
+  const el = paintDockElement(point);
+  const kind = paintDockKind(el ?? point?.node);
+  let childIndex: number | null = null;
+  if (el && el.parentNode === root) {
+    childIndex = Array.prototype.indexOf.call(root.childNodes, el);
+  } else if (point && point.node === root) {
+    childIndex = point.offset;
+  } else if (point?.node.parentNode === root) {
+    childIndex = Array.prototype.indexOf.call(root.childNodes, point.node);
+  }
+  const diagnosed = point
+    ? diagnoseAnchorRectAtDomPoint(root, point)
+    : {
+        rect: null,
+        rectSource: "null" as const,
+        brKind: null,
+        brChildIndex: null,
+      };
+  const ownRect = el ? rectBox(el.getBoundingClientRect()) : null;
+  const stops = listBlankVisualLineStartWires(doc);
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  const ownTop = ownRect?.top;
+  const reportedTop = diagnosed.rect?.top;
+  return {
+    focusWire,
+    paintWire,
+    paintOwnerDiffersFromFocus: paintWire !== focusWire,
+    dockKind: kind,
+    dockChildIndex: childIndex,
+    dockId: `${kind}@${childIndex ?? "na"}`,
+    top: diagnosed.rect?.top ?? null,
+    left: diagnosed.rect?.left ?? null,
+    reportedRect: rectBox(diagnosed.rect),
+    rectSource: diagnosed.rectSource,
+    rectViaBrKind: diagnosed.brKind,
+    rectViaBrChildIndex: diagnosed.brChildIndex,
+    elementOwnRect: ownRect,
+    ownTopEqualsReported:
+      typeof ownTop === "number" && typeof reportedTop === "number"
+        ? Math.abs(ownTop - reportedTop) < 0.5
+        : null,
+    prevSibling: siblingDockSnapshot(root, childIndex, "prev"),
+    nextSibling: siblingDockSnapshot(root, childIndex, "next"),
+    pointNode:
+      point == null
+        ? null
+        : {
+            nodeType: point.node.nodeType,
+            offset: point.offset,
+            isText: point.node.nodeType === Node.TEXT_NODE,
+            parentKind: paintDockKind(point.node.parentNode as Node | null),
+          },
+    focusIsStop: stops.includes(focusWire),
+    focusIsProbe: probes.includes(focusWire),
+    paintIsStop: stops.includes(paintWire),
+    paintIsProbe: probes.includes(paintWire),
+  };
+}
+
+/** Live browser selection dock after write — independent of requested doc pos. */
+export function snapshotLiveDomSelectionDock(root: HTMLElement): Record<string, unknown> {
+  const sel = root.ownerDocument.getSelection();
+  if (!sel || sel.rangeCount === 0) {
+    return { live: false };
+  }
+  const anchor = sel.anchorNode;
+  const el =
+    anchor?.nodeType === Node.TEXT_NODE
+      ? anchor.parentElement
+      : anchor instanceof Element
+        ? anchor
+        : null;
+  const kind = paintDockKind(el ?? anchor);
+  let childIndex: number | null = null;
+  if (el && el.parentNode === root) {
+    childIndex = Array.prototype.indexOf.call(root.childNodes, el);
+  } else if (anchor === root) {
+    childIndex = sel.anchorOffset;
+  } else if (anchor?.parentNode === root) {
+    childIndex = Array.prototype.indexOf.call(root.childNodes, anchor);
+  }
+  const elementOwnRect = el ? rectBox(el.getBoundingClientRect()) : null;
+  let rangeRect: ReturnType<typeof rectBox> | null = null;
+  try {
+    rangeRect = rectBox(sel.getRangeAt(0).getBoundingClientRect());
+  } catch {
+    rangeRect = null;
+  }
+  const elementTop = elementOwnRect?.top;
+  const rangeTop = rangeRect?.top;
+  return {
+    live: true,
+    dockKind: kind,
+    dockChildIndex: childIndex,
+    dockId: `${kind}@${childIndex ?? "na"}`,
+    top: elementTop ?? null,
+    left: elementOwnRect?.left ?? null,
+    elementOwnRect,
+    rangeRect,
+    rangeTopEqualsElementTop:
+      typeof elementTop === "number" && typeof rangeTop === "number"
+        ? Math.abs(elementTop - rangeTop) < 0.5
+        : null,
+    anchorOffset: sel.anchorOffset,
+    anchorNodeType: anchor?.nodeType ?? null,
+  };
 }
 
 export function handoffNoteDomSnapshot(

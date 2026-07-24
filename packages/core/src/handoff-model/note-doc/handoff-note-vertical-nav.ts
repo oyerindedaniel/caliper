@@ -4,6 +4,7 @@ import {
   type HandoffNoteDoc,
 } from "./handoff-note-doc.js";
 import {
+  listBlankVisualLineStartWires,
   listEmbeddedBlankBandProbeWires,
   listVisualRowAnchorWires,
 } from "./handoff-note-embedded-newlines.js";
@@ -155,7 +156,7 @@ function visualRowAnchorIndexForOffset(anchors: readonly number[], offset: numbe
 function visualRowIndexForOffset(doc: HandoffNoteDoc, offset: number): number {
   const wire = docToWire(doc);
   const anchors = listVisualRowAnchorWires(doc);
-  const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
+  const blankStops = new Set(listBlankVisualLineStartWires(doc));
   if (anchors.length === 0) {
     return 0;
   }
@@ -166,15 +167,15 @@ function visualRowIndexForOffset(doc: HandoffNoteDoc, offset: number): number {
   if (nextAnchor === undefined) {
     return index;
   }
-  // Caret on the storage `\n` immediately before substantive content below a probe row
-  // belongs to the lower visual row, not the blank-band anchor row above it.
+  // Caret on a `\n` between a blank line-start and the next substantive row start belongs
+  // to the lower content row (that `\n` is line-start storage for content, not an extra blank).
   if (
-    probes.has(anchor) &&
+    blankStops.has(anchor) &&
     offset > anchor &&
     offset < nextAnchor &&
     wire[offset] === "\n" &&
     nextAnchor === offset + 1 &&
-    !probes.has(nextAnchor)
+    !blankStops.has(nextAnchor)
   ) {
     return index + 1;
   }
@@ -210,9 +211,10 @@ export function resolveEmbeddedBlankBandVerticalMove(
   }
 
   const probeSet = new Set(probes);
+  const blankStops = new Set(listBlankVisualLineStartWires(doc));
   const rowIndex = visualRowIndexForOffset(doc, offset);
   const targetRowIndex = direction === "up" ? rowIndex - 1 : rowIndex + 1;
-  const goalColumn = probeSet.has(offset) ? 0 : column;
+  const goalColumn = blankStops.has(offset) ? 0 : column;
 
   if (targetRowIndex < 0 || targetRowIndex >= anchors.length) {
     const bleedDirection = direction === "up" ? "left" : "right";
@@ -223,12 +225,15 @@ export function resolveEmbeddedBlankBandVerticalMove(
   const nextAnchor = anchors[targetRowIndex + 1];
   const targetLineEnd = visualRowSpanEnd(wire, targetAnchor, nextAnchor);
 
-  if (probeSet.has(targetAnchor)) {
+  if (blankStops.has(targetAnchor)) {
     const snapped = snapMentionInterior(doc, targetAnchor, direction);
     if (snapped === offset) {
       return null;
     }
-    return { offset: snapped, branch: "blank-band-probe-row" };
+    return {
+      offset: snapped,
+      branch: probeSet.has(targetAnchor) ? "blank-band-probe-row" : "blank-line-slot",
+    };
   }
 
   const targetOffset = preserveColumnOnTargetLine(

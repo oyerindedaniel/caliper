@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+﻿import { describe, expect, it, beforeEach } from "vitest";
 import {
   applyDocDelete,
   applyDocInsertText,
@@ -15,7 +15,6 @@ import {
   type HandoffNoteDocPos,
 } from "@caliper/core";
 import {
-  docPosAtContentWire,
   resolveDomPointAtDocPos,
   resolvePaintContext,
   resolvePaintContextAtWire,
@@ -28,6 +27,7 @@ import {
   resolveClickIngressSelection,
   resolveDomVerticalArrowMove,
   resolveLayoutVerticalArrowMove,
+  resolveSelectedMentionArrowExit,
   resolveVerticalTargetLineIndex,
   setDocSelection,
 } from "./handoff-note-selection.js";
@@ -41,6 +41,7 @@ import {
   layoutContentRowStickyColumn,
   layoutContentRowContentExtentRight,
   layoutRowForFocus,
+  layoutRowAtWireFocus,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
   type HandoffNoteLayoutRow,
@@ -68,6 +69,7 @@ import {
   stubHandoffNoteAnchorRectAtWire,
   stubHandoffNoteMentionLayoutCoords,
   seedMonotonicMeasuredLayout,
+  monotonicMeasuredLayoutSamples,
   stubTextNodeLineRects,
 } from "./handoff-note-test-helpers.js";
 import { domPointInMentionPill } from "../handoff-note-debug.js";
@@ -196,9 +198,7 @@ describe("handoff-note-selection", () => {
     const authorityWire = docPosToWireOffset(suffixDoc, mentionLastInterior);
     const { root: bandRoot, doc: bandDoc } = mountEditor(suffixWire);
 
-    setDocSelection(bandRoot, bandDoc, collapsedSelection(mentionLastInterior), {
-      source: "test.authority",
-    });
+    setDocSelection(bandRoot, bandDoc, collapsedSelection(mentionLastInterior));
 
     setSelectionAtWire(bandRoot, bandDoc, probes[0]!, probes[0]!);
     expect(readDomWireCursor(bandRoot, bandDoc)).toBe(probes[0]!);
@@ -219,7 +219,7 @@ describe("handoff-note-selection", () => {
     const interior = wireOffsetToDocPos(doc, interiorWire);
     const { root } = mountEditor(wire);
 
-    setDocSelection(root, doc, collapsedSelection(interior), { source: "test.authority" });
+    setDocSelection(root, doc, collapsedSelection(interior));
     expect(readDomWireCursor(root, doc)).toBe(interiorWire);
 
     const repaired = repairDocSelectionIfNeeded(root, doc, interior, { mode: "full" });
@@ -228,19 +228,21 @@ describe("handoff-note-selection", () => {
   });
 
   it("strand-only repair skips authority restore for valid boundary moves", () => {
+    // Collapsed EOF CRE: last content char + after (not wire.length past-end).
+    const eofCre = NOTE.length - 1;
     setSelectionAtWire(root, doc, NOTE.length);
-    const authority = NOTE.length;
     setSelectionAtWire(root, doc, MENTION_START);
-    const strandOnly = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, authority), {
+    const strandOnly = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, NOTE.length), {
       mode: "strand-only",
     });
     expect(docPosToWireOffset(doc, strandOnly)).toBe(MENTION_START);
 
-    const full = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, authority), {
+    const full = repairDocSelectionIfNeeded(root, doc, wireOffsetToDocPos(doc, NOTE.length), {
       mode: "full",
     });
-    expect(docPosToWireOffset(doc, full)).toBe(authority);
-    expect(readDomWireCursor(root, doc)).toBe(authority);
+    expect(docPosToWireOffset(doc, full)).toBe(NOTE.length);
+    expect(readDomWireCursor(root, doc)).toBe(eofCre);
+    expect(readDocSelection(root, doc).focusAffinity).toBe("after");
   });
 
   it("accepts valid DOM text without probe snap when prior was on row interior", () => {
@@ -301,16 +303,19 @@ describe("handoff-note-selection", () => {
     const wire = `header @${agent} \n\n\n`;
     const doc = wireToDoc(wire);
     const spacerWire = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
+    // Spacer chip requires content-row-end affinity (`after`); bare pos deletes the mention.
     const chipped = applyDocDelete(
       doc,
-      collapsedSelection(wireOffsetToDocPos(doc, spacerWire)),
+      collapsedSelection(wireOffsetToDocPos(doc, spacerWire), "after"),
       "backspace"
     )!;
     const authority = chipped.selection.focus;
     const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+    expect(chipped.doc.nodes[authority.nodeIndex]?.type).toBe("mention");
+    expect(docPosToWireOffset(chipped.doc, authority)).toBe(probeWire);
     const { root: bandRoot, doc: bandDoc } = mountEditor(docToWire(chipped.doc));
 
-    setDocSelection(bandRoot, bandDoc, collapsedSelection(authority), { source: "test.authority" });
+    setDocSelection(bandRoot, bandDoc, collapsedSelection(authority));
     setSelectionAtWire(bandRoot, bandDoc, probeWire, probeWire);
 
     const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, authority, { mode: "full" });
@@ -323,16 +328,19 @@ describe("handoff-note-selection", () => {
     const wire = `header @${agent} \n\n\n`;
     const doc = wireToDoc(wire);
     const spacerWire = listEmbeddedBlankBandProbeWires(doc)[0]! - 1;
+    // Spacer chip requires content-row-end affinity (`after`); bare pos deletes the mention.
     const chipped = applyDocDelete(
       doc,
-      collapsedSelection(wireOffsetToDocPos(doc, spacerWire)),
+      collapsedSelection(wireOffsetToDocPos(doc, spacerWire), "after"),
       "backspace"
     )!;
     const authority = chipped.selection.focus;
     const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+    expect(chipped.doc.nodes[authority.nodeIndex]?.type).toBe("mention");
+    expect(docPosToWireOffset(chipped.doc, authority)).toBe(probeWire);
     const { root: bandRoot, doc: bandDoc } = mountEditor(docToWire(chipped.doc));
 
-    setDocSelection(bandRoot, bandDoc, collapsedSelection(authority), { source: "test.authority" });
+    setDocSelection(bandRoot, bandDoc, collapsedSelection(authority));
     setSelectionAtWire(bandRoot, bandDoc, probeWire, probeWire);
 
     const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, authority, {
@@ -350,7 +358,8 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(root, doc)).toBe(MENTION_END);
 
     setSelectionAtWire(root, doc, NOTE.length);
-    expect(readDomWireCursor(root, doc)).toBe(NOTE.length);
+    expect(readDomWireCursor(root, doc)).toBe(NOTE.length - 1);
+    expect(readDocSelection(root, doc).focusAffinity).toBe("after");
   });
 
   it("round-trips mention-interior wire offsets and snaps with boundary from hints", () => {
@@ -372,12 +381,14 @@ describe("handoff-note-selection", () => {
   it("measures anchor rect without moving the caret", () => {
     const wire = "query @";
     const { root: mentionRoot, doc: mentionDoc } = mountEditor(wire);
+    const eofCre = wire.length - 1;
     setSelectionAtWire(mentionRoot, mentionDoc, wire.length, wire.length);
-    expect(readDomWireCursor(mentionRoot, mentionDoc)).toBe(wire.length);
+    expect(readDomWireCursor(mentionRoot, mentionDoc)).toBe(eofCre);
+    expect(readDocSelection(mentionRoot, mentionDoc).focusAffinity).toBe("after");
 
-    getAnchorRectAtWire(mentionRoot, mentionDoc, wire.length - 1);
+    getAnchorRectAtWire(mentionRoot, mentionDoc, eofCre);
 
-    expect(readDomWireCursor(mentionRoot, mentionDoc)).toBe(wire.length);
+    expect(readDomWireCursor(mentionRoot, mentionDoc)).toBe(eofCre);
   });
 
   it("round-trips wire offsets on the boundary between adjacent mention pills", () => {
@@ -423,7 +434,6 @@ describe("handoff-note-selection", () => {
 
     setSelectionAtWire(glued, gluedDoc, move.cursor, move.cursor, {
       fromOffset: 62,
-      source: "arrowKey",
     });
     expect(readDomWireCursor(glued, gluedDoc)).toBe(45);
   });
@@ -469,7 +479,8 @@ describe("handoff-note-selection", () => {
 
     const repaired = repairDocSelectionIfNeeded(surface, docWithMention, authority);
     expect(docPosToWireOffset(docWithMention, repaired)).toBe(wire.length);
-    expect(readDomWireCursor(surface, docWithMention)).toBe(wire.length);
+    expect(readDomWireCursor(surface, docWithMention)).toBe(wire.length - 1);
+    expect(readDocSelection(surface, docWithMention).focusAffinity).toBe("after");
   });
 
   it("restores from authority when DOM caret regressed to an earlier text trailing edge", () => {
@@ -487,7 +498,8 @@ describe("handoff-note-selection", () => {
 
     const repaired = repairDocSelectionIfNeeded(surface, docWithMention, authority);
     expect(docPosToWireOffset(docWithMention, repaired)).toBe(wire.length);
-    expect(readDomWireCursor(surface, docWithMention)).toBe(wire.length);
+    expect(readDomWireCursor(surface, docWithMention)).toBe(wire.length - 1);
+    expect(readDocSelection(surface, docWithMention).focusAffinity).toBe("after");
   });
 
   it("readDocSelection returns normalized anchor and focus", () => {
@@ -514,7 +526,7 @@ function buildMentionTailDoc(
 }
 
 /**
- * Oracle: three mentions on one wire line at ~310px — two visual rows (soft wrap).
+ * Oracle: three mentions on one wire line at ~310px â€” two visual rows (soft wrap).
  * Constants ROW1_TOP / ROW2_TOP are measured layout Y bands, not row ordinals.
  */
 describe("soft-wrap vertical navigation on a single wire line", () => {
@@ -574,7 +586,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     invalidateHandoffNoteLayoutCache();
   });
 
-  describe("vertical — cross visual row on soft-wrapped wire line", () => {
+  describe("vertical â€” cross visual row on soft-wrapped wire line", () => {
     it("measured-only interior up/down is no-op", () => {
       const wire = "abcdef\nghijkl";
       const doc = wireToDoc(wire);
@@ -682,35 +694,67 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         { wire: wrappedBandStart, top: 24, left: 0 },
         { wire: wire.length - 1, top: 24, left: 220 },
       ];
-
-      const movedUp = resolveMeasuredVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[agent, "#06f"]]),
+      });
+      const upProbe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, wrappedBandStart),
-        "up",
+        wire,
+        fromWire: wrappedBandStart,
+        goalColumn: 0,
+        probeTargetWire: 0,
         samples,
-        0,
-        16
-      );
+        expectMinVisualRows: 2,
+      });
+      try {
+        const movedUp = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, wrappedBandStart),
+          "up",
+          { stickyGoalColumn: 0 }
+        );
+        expect(movedUp.handled).toBe(true);
+        expect(movedUp.branch).toMatch(/^dom-/);
+        expect(docPosToWireOffset(doc, movedUp.pos)).toBe(0);
+        expect(docPosToWireOffset(doc, movedUp.pos)).not.toBe(firstBandTail);
+      } finally {
+        upProbe.restore();
+      }
 
-      expect(movedUp.handled).toBe(true);
-      expect(docPosToWireOffset(doc, movedUp.pos)).toBe(0);
-      expect(docPosToWireOffset(doc, movedUp.pos)).not.toBe(firstBandTail);
-
-      const movedDown = resolveMeasuredVerticalArrowMove(
+      const downProbe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, 0),
-        "down",
+        wire,
+        fromWire: 0,
+        goalColumn: 0,
+        probeTargetWire: wrappedBandStart,
         samples,
-        0,
-        16
-      );
-
-      expect(movedDown.handled).toBe(true);
-      expect(docPosToWireOffset(doc, movedDown.pos)).toBe(wrappedBandStart);
+        expectMinVisualRows: 2,
+      });
+      try {
+        const movedDown = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, 0),
+          "down",
+          { stickyGoalColumn: 0 }
+        );
+        expect(movedDown.handled).toBe(true);
+        expect(movedDown.branch).toMatch(/^dom-/);
+        expect(docPosToWireOffset(doc, movedDown.pos)).toBe(wrappedBandStart);
+      } finally {
+        downProbe.restore();
+        root.remove();
+      }
     });
   });
 
-  describe("vertical — visual boundary bleed on soft-wrapped wire line", () => {
+  describe("vertical â€” visual boundary bleed on soft-wrapped wire line", () => {
     it("first visual row extreme bleeds horizontally on TRIPLE_MENTION wire", () => {
       const { root, doc } = mountWrapEditor();
       assertVerticalMove(root, doc, 19, -1, 18);
@@ -720,7 +764,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     it("last visual row extreme bleeds horizontally on TRIPLE_MENTION wire", () => {
       const { root, doc } = mountWrapEditor();
       const lastRowExtreme = TRIPLE_MENTION_WIRE.length - 1;
-      assertVerticalMove(root, doc, lastRowExtreme, 1, TRIPLE_MENTION_WIRE.length);
+      // Down→Right at EOF last content char flips to content-row-end on that char (same wire),
+      // not a past-end land at wire.length.
+      assertVerticalMove(root, doc, lastRowExtreme, 1, lastRowExtreme);
       root.remove();
     });
   });
@@ -739,10 +785,11 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       ];
 
       const layout = buildLayoutMapFromSamples(samples, 18);
+      const stubDoc = wireToDoc("x".repeat(60));
 
       expect(layout.visualRowCount).toBe(2);
-      expect(layout.rowIndexForWire(56)).toBe(1);
-      expect(layout.rowIndexForWire(0)).toBe(0);
+      expect(layoutRowAtWireFocus(stubDoc, layout, 56)).toBe(1);
+      expect(layoutRowAtWireFocus(stubDoc, layout, 0)).toBe(0);
     });
 
     it("assigns wrapped-band mention start to the continuation visual row index", () => {
@@ -790,10 +837,10 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       );
 
       expect(layout.visualRowCount).toBeGreaterThanOrEqual(3);
-      expect(layout.rowIndexForWire(lowerPillStartWire)).toBeGreaterThan(
-        layout.rowIndexForWire(firstSuffixBlankWire)
+      expect(layoutRowAtWireFocus(doc, layout, lowerPillStartWire)).toBeGreaterThan(
+        layoutRowAtWireFocus(doc, layout, firstSuffixBlankWire)
       );
-      expect(layout.rowIndexForWire(firstSuffixBlankWire)).toBeGreaterThan(0);
+      expect(layoutRowAtWireFocus(doc, layout, firstSuffixBlankWire)).toBeGreaterThan(0);
     });
   });
 
@@ -943,7 +990,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — crosses previous visual row from inline mention on wrapped band", () => {
+  describe("vertical â€” crosses previous visual row from inline mention on wrapped band", () => {
     const INLINE_AGENT = "caliper-midwrap01";
 
     function buildInlineMentionMidWrapDoc(agent: string): {
@@ -1011,7 +1058,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — crosses previous visual row from unsampled tail", () => {
+  describe("vertical â€” crosses previous visual row from unsampled tail", () => {
     it("trailing text on wrapped band without full samples", () => {
       const agent = "caliper-aaaaaaa";
       const { doc, focus: tailPos } = buildMentionTailDoc(agent, "tailcontent");
@@ -1029,7 +1076,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — unsampled interior on soft-wrapped wire line", () => {
+  describe("vertical â€” unsampled interior on soft-wrapped wire line", () => {
     const AGENT = "caliper-aaaaaaa";
     const WIRE = `prefix @${AGENT}  tail @${AGENT} `;
     const ROW1_TOP = 141.09897422790527;
@@ -1099,7 +1146,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — unsampled interior on plain soft-wrapped text", () => {
+  describe("vertical â€” unsampled interior on plain soft-wrapped text", () => {
     const WIRE = `${"abcdefgh ".repeat(12)}end`;
     const ROW1_TOP = 100;
     const ROW2_TOP = 118;
@@ -1146,7 +1193,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — pill half-split on DOM column landings", () => {
+  describe("vertical â€” pill half-split on DOM column landings", () => {
     const AGENT = "caliper-aaaaaaa";
     const ROW1_TOP = 100;
     const ROW2_TOP = 136;
@@ -1256,7 +1303,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — mention end and post-mention text on soft-wrapped wire line", () => {
+  describe("vertical â€” mention end and post-mention text on soft-wrapped wire line", () => {
     const AGENT = "caliper-aaaaaaaaaaa";
     const WIRE = `header @${AGENT} tail @${AGENT} `;
     const doc = wireToDoc(WIRE);
@@ -1283,73 +1330,126 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
 
     it("control: prefix and second mention end occupy distinct visual rows", () => {
       const layout = buildLayoutMapFromSamples([...layoutSamples], LINE_HEIGHT, doc);
-      expect(layout.rowIndexForWire(0)).toBe(0);
-      expect(layout.rowIndexForWire(secondMentionEnd)).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, 0)).toBe(0);
+      expect(layoutRowAtWireFocus(doc, layout, secondMentionEnd)).toBe(1);
     });
 
     it("mention end and immediately following text share one visual row", () => {
       const layout = buildLayoutMapFromSamples([...layoutSamples], LINE_HEIGHT, doc);
-      expect(layout.rowIndexForWire(firstMentionEnd)).toBe(
-        layout.rowIndexForWire(postMentionStart)
+      expect(layoutRowAtWireFocus(doc, layout, firstMentionEnd)).toBe(
+        layoutRowAtWireFocus(doc, layout, postMentionStart)
       );
     });
 
     it("up from second mention end lands on upper row tail at clamped column", () => {
-      const moved = resolveMeasuredVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const probe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, secondMentionEnd),
-        "up",
-        [...layoutSamples],
-        GOAL_COLUMN,
-        LINE_HEIGHT
-      );
-
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(postMentionStart);
-      expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
-      expect(
-        buildLayoutMapFromSamples([...layoutSamples], LINE_HEIGHT, doc).rowIndexForWire(
-          docPosToWireOffset(doc, moved.pos)
-        )
-      ).toBe(0);
+        wire: WIRE,
+        fromWire: secondMentionEnd,
+        goalColumn: GOAL_COLUMN,
+        probeTargetWire: postMentionStart,
+        samples: [...layoutSamples],
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, secondMentionEnd),
+          "up",
+          { stickyGoalColumn: GOAL_COLUMN }
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(postMentionStart);
+        expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
+        expect(
+          layoutRowAtWireFocus(
+            doc,
+            buildLayoutMapFromSamples([...layoutSamples], LINE_HEIGHT, doc),
+            docPosToWireOffset(doc, moved.pos)
+          )
+        ).toBe(0);
+      } finally {
+        probe.restore();
+        root.remove();
+      }
     });
 
     it("down after up from second mention end returns to lower row without ping-pong", () => {
-      const up = resolveMeasuredVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const upProbe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, secondMentionEnd),
-        "up",
-        [...layoutSamples],
-        GOAL_COLUMN,
-        LINE_HEIGHT
-      );
-      expect(docPosToWireOffset(doc, up.pos)).toBe(postMentionStart);
+        wire: WIRE,
+        fromWire: secondMentionEnd,
+        goalColumn: GOAL_COLUMN,
+        probeTargetWire: postMentionStart,
+        samples: [...layoutSamples],
+        expectMinVisualRows: 2,
+      });
+      let landPos = wireOffsetToDocPos(doc, secondMentionEnd);
+      try {
+        const up = resolveDomVerticalArrowMove(root, doc, landPos, "up", {
+          stickyGoalColumn: GOAL_COLUMN,
+        });
+        expect(docPosToWireOffset(doc, up.pos)).toBe(postMentionStart);
+        landPos = up.pos;
+      } finally {
+        upProbe.restore();
+      }
 
-      const down = resolveMeasuredVerticalArrowMove(
+      const downProbe = prepareVerticalColumnProbe({
+        root,
         doc,
-        up.pos,
-        "down",
-        [...layoutSamples],
-        GOAL_COLUMN,
-        LINE_HEIGHT
-      );
+        wire: WIRE,
+        fromWire: postMentionStart,
+        goalColumn: GOAL_COLUMN,
+        probeTargetWire: secondMentionEnd,
+        samples: [...layoutSamples],
+        expectMinVisualRows: 2,
+      });
+      try {
+        const down = resolveDomVerticalArrowMove(root, doc, landPos, "down", {
+          stickyGoalColumn: GOAL_COLUMN,
+        });
+        expect(down.handled).toBe(true);
+        expect(docPosToWireOffset(doc, down.pos)).toBe(secondMentionEnd);
+      } finally {
+        downProbe.restore();
+      }
 
-      expect(down.handled).toBe(true);
-      expect(docPosToWireOffset(doc, down.pos)).toBe(secondMentionEnd);
-
-      const downAgain = resolveMeasuredVerticalArrowMove(
-        doc,
-        down.pos,
-        "down",
-        [...layoutSamples],
-        GOAL_COLUMN,
-        LINE_HEIGHT
-      );
-      expect(downAgain.handled).toBe(false);
+      try {
+        const downAgain = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, secondMentionEnd),
+          "down",
+          { stickyGoalColumn: GOAL_COLUMN }
+        );
+        expect(docPosToWireOffset(doc, downAgain.pos)).not.toBe(postMentionStart);
+        if (downAgain.handled) {
+          expect(downAgain.branch).toBe("boundary-bleed");
+        }
+      } finally {
+        root.remove();
+      }
     });
   });
 
-  describe("vertical — post-mention spacer at soft-wrap boundary", () => {
+  describe("vertical â€” post-mention spacer at soft-wrap boundary", () => {
     const AGENT = "caliper-nnz77a8nq";
     const WIRE = `pre @${AGENT} x @${AGENT} line @${AGENT} @${AGENT} `;
     const doc = wireToDoc(WIRE);
@@ -1402,35 +1502,77 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     ] as const;
 
     it("up from lower row end lands at the upper row end, not the second pill start", () => {
-      const moved = resolveMeasuredVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const fromWire = Math.max(0, EOF_WIRE - 1);
+      const probe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, EOF_WIRE),
-        "up",
-        [...samples],
-        RIGHT_EDGE_COLUMN,
-        LINE_HEIGHT
-      );
-
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(secondPostStart);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondMentionStart);
-      expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
+        wire: WIRE,
+        fromWire,
+        goalColumn: RIGHT_EDGE_COLUMN,
+        probeTargetWire: secondPostStart,
+        samples: [...samples],
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, fromWire),
+          "up",
+          { stickyGoalColumn: RIGHT_EDGE_COLUMN }
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(secondPostStart);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondMentionStart);
+        expect(doc.nodes[moved.pos.nodeIndex]?.type).toBe("text");
+      } finally {
+        probe.restore();
+        root.remove();
+      }
     });
 
     it("down from upper row end moves to lower row end, not row start", () => {
-      const moved = resolveMeasuredVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const lowerCre = WIRE.length - 1;
+      const probe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, secondPostStart),
-        "down",
-        [...samples],
-        624.82,
-        LINE_HEIGHT
-      );
-
-      expect(moved.handled).toBe(true);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(WIRE.length - 1);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondTextStart);
-      expect(docPosToWireOffset(doc, moved.pos)).not.toBe(EOF_WIRE);
+        wire: WIRE,
+        fromWire: secondPostStart,
+        goalColumn: 624.82,
+        probeTargetWire: lowerCre,
+        samples: [...samples],
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, secondPostStart),
+          "down",
+          { stickyGoalColumn: 624.82 }
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerCre);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(secondTextStart);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(EOF_WIRE);
+      } finally {
+        probe.restore();
+        root.remove();
+      }
     });
 
     it("measured-only up is no-op when segment text does not match", () => {
@@ -1611,7 +1753,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("click ingress — soft-wrap row restore", () => {
+  describe("click ingress â€” soft-wrap row restore", () => {
     it("post-mention spacer wire aliases mention-boundary end at same offset", () => {
       const fx = mountMultiMentionSoftWrapFixture();
       expect(describeHandoffNoteCursorContext(fx.doc, fx.secondPostStart)).toEqual(
@@ -1656,9 +1798,11 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     it("row-0 sticky click keeps stale live when viewport probe aliases continuation", () => {
       const fx = mountMultiMentionSoftWrapFixture();
       const priorFocus = wireOffsetToDocPos(fx.doc, fx.wire.length);
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, priorFocus);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const row0EndWire = layoutContentRowEndWire(layout, fx.doc, 0)!;
-      const authorityPos = docPosAtContentWire(fx.doc, row0EndWire);
+      const authorityPos = resolvePaintContextAtWire(fx.doc, row0EndWire, {
+        root: fx.root,
+      }).focusPos;
       const clickX = layoutContentRowStickyColumn(layout, fx.doc, 0)!;
       const restoreProbe = stubCaretProbeHits(fx.root, fx.doc, [
         { column: clickX, rowTop: fx.row0Top, pos: authorityPos },
@@ -1679,11 +1823,11 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
 
     it("row-0 far-right click accepts soft-wrap continuation live via row agreement", () => {
       const fx = mountMultiMentionSoftWrapFixture();
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const row0EndWire = layoutContentRowEndWire(layout, fx.doc, 0)!;
       expect(row0EndWire).toBe(fx.secondPostStart);
       expect(docToWire(fx.doc)[row0EndWire]).toBe(" ");
-      expect(layout.rowIndexForWire(fx.continuationWire)).not.toBe(0);
+      expect(layoutRowAtWireFocus(fx.doc, layout, fx.continuationWire)).not.toBe(0);
 
       const livePos = wireOffsetToDocPos(fx.doc, fx.continuationWire);
       const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
@@ -1710,9 +1854,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       fx.root.remove();
     });
 
-    it("live session case A — row-0 click at 629 keeps continuation wire", () => {
+    it("live session case A â€” row-0 click at 629 keeps continuation wire", () => {
       const fx = mountMultiMentionSoftWrapFixture();
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const extentRight = layoutContentRowContentExtentRight(layout, fx.doc, 0)!;
       expect(extentRight).toBeGreaterThan(624);
       expect(extentRight).toBeLessThan(629);
@@ -1729,9 +1873,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       fx.root.remove();
     });
 
-    it("live session case A — row-0 click past sticky keeps continuation wire 44", () => {
+    it("live session case A â€” row-0 click past sticky keeps continuation wire 44", () => {
       const fx = mountMultiMentionSoftWrapFixture();
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const sticky = layoutContentRowStickyColumn(layout, fx.doc, 0)!;
       expect(sticky).toBeGreaterThan(620);
       const livePos = fx.continuationTextPos;
@@ -1751,7 +1895,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       const fx = mountMultiMentionSoftWrapFixture();
       reapplyMultiMentionSoftWrapStubs(fx);
 
-      // Click may land continuation — click ingress owns that; horizontal does not skip stops.
+      // Click may land continuation â€” click ingress owns that; horizontal does not skip stops.
       const click = resolveClickIngressSelection(
         fx.root,
         fx.doc,
@@ -1817,10 +1961,10 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         nodeIndex: fx.postfixSpacerNode,
         nodeOffset: spacer.text.length,
       };
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const row1EndWire = layoutContentRowEndWire(layout, fx.doc, 1)!;
       expect(docPosToWireOffset(fx.doc, tailPos)).toBe(fx.fourthMentionStart);
-      // Alias wire is row-1 content end — paint authority maps it to row 1, not pill row 2.
+      // Alias wire is row-1 content end â€” paint authority maps it to row 1, not pill row 2.
       expect(row1EndWire).toBe(fx.fourthMentionStart);
       expect(layoutRowForFocus(fx.root, fx.doc, layout, tailPos)).toBe(1);
 
@@ -1850,7 +1994,6 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       };
       setDocSelection(fx.root, fx.doc, collapsedSelection(tailPos), {
         from: tailPos,
-        source: "test.authority",
       });
       const authorityRead = readDocSelection(fx.root, fx.doc, { from: tailPos });
       expect(authorityRead.focus).toEqual(tailPos);
@@ -1893,7 +2036,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       fx.root.remove();
     });
 
-    it("live session case B — row-1 click past sticky keeps postfix alias wire", () => {
+    it("live session case B â€” row-1 click past sticky keeps postfix alias wire", () => {
       const fx = mountThreeRowMentionSoftWrapFixture();
       const spacer = fx.doc.nodes[fx.postfixSpacerNode];
       expect(spacer?.type).toBe("text");
@@ -1905,10 +2048,10 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         nodeIndex: fx.postfixSpacerNode,
         nodeOffset: spacer.text.length,
       };
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const sticky = layoutContentRowStickyColumn(layout, fx.doc, 1)!;
       expect(sticky).toBeGreaterThan(520);
-      expect(layout.rowIndexForWire(fx.fourthMentionStart)).toBe(2);
+      expect(layoutRowAtWireFocus(fx.doc, layout, fx.fourthMentionStart)).toBe(2);
 
       const resolved = resolveClickIngressSelection(fx.root, fx.doc, tailPos, undefined, {
         clientX: 546,
@@ -1933,7 +2076,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         nodeIndex: fx.postfixSpacerNode,
         nodeOffset: spacer.text.length,
       };
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const row1EndSample = layoutContentRowEndSample(layout, fx.doc, 1)!;
       const restore = stubCaretProbeHits(fx.root, fx.doc, [
         {
@@ -1952,7 +2095,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
 
       expect(resolved.resolution).toBe("nativeSelection");
       expect(resolved.focus).toEqual(tailPos);
-      // Click paint authority is resolvePaintContext.paintPos — not layout paintContextForWire(liveWire).
+      // Click paint authority is resolvePaintContext.paintPos â€” not layout paintContextForWire(liveWire).
       expect(resolved.focus).toEqual(
         resolvePaintContext(fx.doc, liveMentionStart, { root: fx.root }).paintPos
       );
@@ -1965,7 +2108,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       const fx = mountThreeRowMentionSoftWrapFixture();
       applyThreeRowSpacerBrowserParityLayoutStubs(fx);
       const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       expect(
         layout.continuationAfterRowEndWire(layoutContentRowEndWire(layout, fx.doc, 1)!)
       ).toBeNull();
@@ -1987,7 +2130,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       const fx = mountThreeRowMentionSoftWrapFixture();
       applyThreeRowSpacerBrowserParityLayoutStubs(fx);
       const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       expect(
         layout.continuationAfterRowEndWire(layoutContentRowEndWire(layout, fx.doc, 1)!)
       ).toBeNull();
@@ -2008,7 +2151,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     it("row-1 sticky click keeps stale live when viewport misses", () => {
       const fx = mountThreeRowMentionSoftWrapFixture();
       const livePos = wireOffsetToDocPos(fx.doc, fx.fourthMentionStart);
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const sticky = layoutContentRowStickyColumn(layout, fx.doc, 1)!;
 
       const resolved = resolveClickIngressSelection(fx.root, fx.doc, livePos, undefined, {
@@ -2035,7 +2178,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         nodeIndex: fx.postfixSpacerNode,
         nodeOffset: spacer.text.length,
       };
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, tailPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const sticky = layoutContentRowStickyColumn(layout, fx.doc, 1)!;
       const paintPoint = resolveDomPointAtDocPos(fx.root, fx.doc, tailPos)!;
       const restoreProbe = stubCaretProbeHits(fx.root, fx.doc, [
@@ -2048,9 +2191,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       });
       expect(resolved.resolution).toBe("nativeSelection");
       expect(resolved.focus).toEqual(tailPos);
-      setDocSelection(fx.root, fx.doc, collapsedSelection(resolved.focus), {
-        source: "test.viewportSticky",
-      });
+      setDocSelection(fx.root, fx.doc, collapsedSelection(resolved.focus));
 
       const range = fx.root.ownerDocument.getSelection()!.getRangeAt(0);
       expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(fx.fourthMentionStart);
@@ -2063,7 +2204,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
 
     it("row-0 sticky click with live at row-end paints outside mention pill", () => {
       const fx = mountMultiMentionSoftWrapFixture();
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, fx.continuationTextPos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const row0EndWire = layoutContentRowEndWire(layout, fx.doc, 0)!;
       expect(row0EndWire).toBe(fx.secondPostStart);
       expect(docToWire(fx.doc)[row0EndWire]).toBe(" ");
@@ -2071,7 +2212,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         expect.objectContaining({ kind: "mention-boundary", edge: "end" })
       );
 
-      const authorityPos = docPosAtContentWire(fx.doc, row0EndWire);
+      const authorityPos = resolvePaintContextAtWire(fx.doc, row0EndWire, {
+        root: fx.root,
+      }).focusPos;
       expect(fx.doc.nodes[authorityPos.nodeIndex]?.type).toBe("text");
       expect(authorityPos.nodeIndex).toBe(fx.middleTextNode);
 
@@ -2087,9 +2230,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         clientY: fx.row0Top,
       });
       expect(resolved.resolution).toBe("nativeSelection");
-      setDocSelection(fx.root, fx.doc, collapsedSelection(resolved.focus), {
-        source: "test.stickyRowEndLive",
-      });
+      setDocSelection(fx.root, fx.doc, collapsedSelection(resolved.focus));
 
       const range = fx.root.ownerDocument.getSelection()!.getRangeAt(0);
       expect(docPosToWireOffset(fx.doc, resolved.focus)).toBe(row0EndWire);
@@ -2105,14 +2246,9 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       const fourthMentionNode = fx.mentionNodes[3]!;
       const livePos: HandoffNoteDocPos = { nodeIndex: fourthMentionNode, nodeOffset: 3 };
       expect(
-        layoutRowForFocus(
-          fx.root,
-          fx.doc,
-          buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos),
-          livePos
-        )
+        layoutRowForFocus(fx.root, fx.doc, buildHandoffNoteLayoutMap(fx.root, fx.doc), livePos)
       ).toBe(2);
-      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc, livePos);
+      const layout = buildHandoffNoteLayoutMap(fx.root, fx.doc);
       const row1EndSample = layoutContentRowEndSample(layout, fx.doc, 1)!;
       const restore = stubCaretProbeHits(fx.root, fx.doc, [
         {
@@ -2178,11 +2314,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       ];
       setMeasuredSamplesCache(root, wire, 200, samples);
 
-      const layout = buildHandoffNoteLayoutMap(
-        root,
-        doc,
-        wireOffsetToDocPos(doc, continuationWire)
-      );
+      const layout = buildHandoffNoteLayoutMap(root, doc);
       const row0End = layoutContentRowEndWire(layout, doc, 0)!;
       expect(layout.continuationAfterRowEndWire(row0End)).toBe(continuationWire);
 
@@ -2201,7 +2333,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — wire newline cross sparse column fallback", () => {
+  describe("vertical — wire newline cross wide column via DOM probe", () => {
     const AGENT = "caliper-aaaaaaa";
     const ROW0_TOP = 141.1;
     const ROW1_TOP = 177.49;
@@ -2233,7 +2365,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       ];
     }
 
-    it("sparse layout path brackets to upper row end not mention interior", () => {
+    it("up from lower eof wide goal lands upper row end not mention interior", () => {
       const wire = wireNewlineWire();
       const doc = wireToDoc(wire);
       const lowerEof = wire.length - 1;
@@ -2244,50 +2376,77 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       renderHandoffNoteDoc(root, doc, {
         colorByAgentId: new Map([[AGENT, "#06f"]]),
       });
-      setMeasuredSamplesCache(root, wire, root.clientWidth, wireNewlineSamples(wire));
-      const layout = buildHandoffNoteLayoutMap(root, doc, wireOffsetToDocPos(doc, lowerEof));
-
+      const probe = prepareVerticalColumnProbe({
+        root,
+        doc,
+        wire,
+        fromWire: lowerEof,
+        goalColumn: GOAL_COLUMN,
+        probeTargetWire: row0EndBeforeBreak,
+        samples: wireNewlineSamples(wire),
+        expectMinVisualRows: 2,
+      });
       try {
-        const moved = resolveLayoutVerticalArrowMove(
+        const moved = resolveDomVerticalArrowMove(
+          root,
           doc,
           wireOffsetToDocPos(doc, lowerEof),
           "up",
-          layout,
-          GOAL_COLUMN
+          { stickyGoalColumn: GOAL_COLUMN }
         );
-
         expect(moved.handled).toBe(true);
-        expect(moved.branch).toMatch(/^sparse-row-end/);
+        expect(moved.branch).toBe("dom-column-probe");
         expect(docPosToWireOffset(doc, moved.pos)).toBe(row0EndBeforeBreak);
         expect(docPosToWireOffset(doc, moved.pos)).not.toBe(62);
       } finally {
+        probe.restore();
         root.remove();
       }
     });
 
-    it("Down wide upper row end lands lower EOF not mention interior", () => {
+    it("down from wide upper row end lands lower EOF not mention interior", () => {
       const wire = wireNewlineWire();
       const doc = wireToDoc(wire);
       const row0EndBeforeBreak = wire.indexOf("\n");
       const lowerEof = wire.length - 1;
-      const moved = resolveMeasuredVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const probe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, row0EndBeforeBreak),
-        "down",
-        wireNewlineSamples(wire),
-        GOAL_COLUMN,
-        18.2
-      );
-      expect(moved.handled).toBe(true);
-      expect(moved.branch).toMatch(/^sparse-row-end/);
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerEof);
-      expect(
-        describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
-      ).not.toBe("mention-interior");
+        wire,
+        fromWire: row0EndBeforeBreak,
+        goalColumn: GOAL_COLUMN,
+        probeTargetWire: lowerEof,
+        samples: wireNewlineSamples(wire),
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, row0EndBeforeBreak),
+          "down",
+          { stickyGoalColumn: GOAL_COLUMN }
+        );
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerEof);
+        expect(
+          describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
+        ).not.toBe("mention-interior");
+      } finally {
+        probe.restore();
+        root.remove();
+      }
     });
   });
 
-  describe("vertical — same-wire soft-wrap pill half-split", () => {
+  describe("vertical â€” same-wire soft-wrap pill half-split", () => {
     const AGENT = "caliper-aaaaaaa";
     const ROW0_TOP = 141.1;
     const ROW1_TOP = 159.3;
@@ -2344,7 +2503,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
         ])
       );
       setMeasuredSamplesCache(root, wire, root.clientWidth, samples);
-      const layout = buildHandoffNoteLayoutMap(root, doc, wireOffsetToDocPos(doc, mentionEnd));
+      const layout = buildHandoffNoteLayoutMap(root, doc);
 
       try {
         const moved = resolveLayoutVerticalArrowMove(
@@ -2364,26 +2523,44 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       }
     });
 
-    it("down from prefix uses bracket or DOM column probe not pill snap override", () => {
+    it("down from prefix uses DOM column probe not pill snap override", () => {
       const wire = softWrapTwoPillRowWire();
-      const { doc, samples } = softWrapTwoPillRowLandmarks(wire);
-      const moved = resolveMeasuredVerticalArrowMove(
+      const { doc, samples, tailStart } = softWrapTwoPillRowLandmarks(wire);
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[AGENT, "#06f"]]),
+      });
+      const goalColumn = 361.11;
+      const probe = prepareVerticalColumnProbe({
+        root,
         doc,
-        wireOffsetToDocPos(doc, 2),
-        "down",
+        wire,
+        fromWire: 2,
+        goalColumn,
+        probeTargetWire: tailStart,
         samples,
-        361.11,
-        18.2
-      );
-      expect(moved.handled).toBe(true);
-      expect(moved.branch).not.toBe("pill-column-snap");
-      expect(
-        describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
-      ).not.toBe("mention-interior");
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, 2), "down", {
+          stickyGoalColumn: goalColumn,
+        });
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(moved.branch).not.toBe("pill-column-snap");
+        expect(
+          describeHandoffNoteCursorContext(doc, docPosToWireOffset(doc, moved.pos)).kind
+        ).not.toBe("mention-interior");
+      } finally {
+        probe.restore();
+        root.remove();
+      }
     });
   });
 
-  describe("vertical — paint authority landing", () => {
+  describe("vertical â€” paint authority landing", () => {
     it("multiline up lands first mention on target row (visual-row-start, not second pill)", () => {
       const agentA = "caliper-aaaaaaa";
       const agentB = "caliper-bbbbbbb";
@@ -2401,10 +2578,30 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           [agentB, "#f06"],
         ]),
       });
-      seedMonotonicMeasuredLayout(root, wire);
+      const samples = monotonicMeasuredLayoutSamples(wire);
+      const probe = prepareVerticalColumnProbe({
+        root,
+        doc,
+        wire,
+        fromWire: line3Mention,
+        goalColumn: 0,
+        probeTargetWire: line2Mention,
+        samples,
+        expectMinVisualRows: 3,
+      });
       try {
-        assertVerticalMove(root, doc, line3Mention, -1, line2Mention, line2SecondMention);
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, line3Mention),
+          "up",
+          { stickyGoalColumn: 0 }
+        );
+        expect(moved.handled).toBe(true);
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(line2Mention);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(line2SecondMention);
       } finally {
+        probe.restore();
         root.remove();
       }
     });
@@ -2528,6 +2725,198 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       }
     });
 
+    it("sticky-unset Up from wrap uses live caret X not layout wire-0 left", () => {
+      const agent = "caliper-aaaaaaaaa";
+      const wire = `meh @${agent} w`;
+      const doc = wireToDoc(wire);
+      const wrapW = wire.length - 1;
+      const postSpacer = wrapW - 1;
+      const row0 = 141.1;
+      const row1 = 158.86;
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      const samples = [
+        { wire: 0, top: 140.67, left: 335.5 },
+        { wire: 4, top: row0, left: 356.46 },
+        { wire: postSpacer, top: row0, left: 606.55 },
+        { wire: wrapW, top: row1, left: 343.0 },
+        { wire: wire.length, top: row1, left: 347.0 },
+      ];
+      setMeasuredSamplesCache(root, wire, 310, samples);
+      const restore = stubHandoffNoteAnchorRectAtWire(root, doc, wrapW, {
+        top: row1,
+        left: 343.0,
+      });
+      setMeasuredSamplesCache(root, wire, 310, samples);
+      const restoreProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        343.0,
+        row0,
+        wireOffsetToDocPos(doc, 4)
+      );
+      try {
+        const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, wrapW), "up", {
+          stickyGoalColumn: null,
+        });
+        expect(moved.handled).toBe(true);
+        expect(moved.goalColumn).toBeCloseTo(343.0, 0);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(0);
+      } finally {
+        restoreProbe();
+        restore();
+        root.remove();
+      }
+    });
+
+    it("Up from soft-wrap continuation uses lowest multi-rect caret fragment for measured goal", () => {
+      const agent = "caliper-aaaaaaaaa";
+      const wire = `shs @${agent} d @${agent} d`;
+      const doc = wireToDoc(wire);
+      const wrapD = wire.length - 1;
+      const upperRowEndSpacer = wrapD - 1;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+
+      const m1 = wire.indexOf("@");
+      const m2 = wire.indexOf("@", m1 + 1);
+      const samples = [
+        { wire: 0, top: 140.67, left: 335.5 },
+        { wire: 4, top: row0Top, left: 356.46 },
+        { wire: m1 + `@${agent}`.length, top: row0Top, left: 473.61 },
+        { wire: m2, top: row0Top, left: 489.4 },
+        { wire: upperRowEndSpacer, top: row0Top, left: 606.55 },
+        { wire: wire.length, top: row1Top, left: 341.15 },
+        { wire: wrapD, top: row1Top, left: 337.33 },
+      ];
+      setMeasuredSamplesCache(root, wire, 310, samples);
+      const restoreAnchor = stubHandoffNoteAnchorRectAtWire(root, doc, wrapD, [
+        { top: row0Top, left: 610.1 },
+        { top: row1Top, left: 337.33 },
+      ]);
+      setMeasuredSamplesCache(root, wire, 310, samples);
+      const restoreProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        337.33,
+        row0Top,
+        wireOffsetToDocPos(doc, 4)
+      );
+      try {
+        const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, wrapD), "up", {
+          stickyGoalColumn: null,
+        });
+        expect(moved.handled).toBe(true);
+        expect(docPosToWireOffset(doc, moved.pos)).not.toBe(upperRowEndSpacer);
+        expect(moved.goalColumn).toBeCloseTo(337.33, 1);
+      } finally {
+        restoreProbe();
+        restoreAnchor();
+        root.remove();
+      }
+    });
+
+    it("Down from soft-wrap continuation uses lowest multi-rect caret fragment for measured goal", () => {
+      const agent = "caliper-aaaaaaaaa";
+      const wire = `shs @${agent} d @${agent} d\nnext`;
+      const doc = wireToDoc(wire);
+      const wrapD = wire.indexOf(" d\n") + 1;
+      const upperRowEndSpacer = wrapD - 1;
+      const nextStart = wire.indexOf("next");
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+      const row2Top = 177.06;
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      const samples = [
+        { wire: 0, top: row0Top, left: 335.5 },
+        { wire: upperRowEndSpacer, top: row0Top, left: 606.55 },
+        { wire: wrapD, top: row1Top, left: 337.33 },
+        { wire: nextStart, top: row2Top, left: 335.5 },
+        { wire: wire.length, top: row2Top, left: 360 },
+      ];
+      setMeasuredSamplesCache(root, wire, 310, samples);
+      const restoreAnchor = stubHandoffNoteAnchorRectAtWire(root, doc, wrapD, [
+        { top: row0Top, left: 610.1 },
+        { top: row1Top, left: 337.33 },
+      ]);
+      setMeasuredSamplesCache(root, wire, 310, samples);
+      const restoreProbe = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        337.33,
+        row2Top,
+        wireOffsetToDocPos(doc, nextStart)
+      );
+      try {
+        const moved = resolveDomVerticalArrowMove(
+          root,
+          doc,
+          wireOffsetToDocPos(doc, wrapD),
+          "down",
+          { stickyGoalColumn: null }
+        );
+        expect(moved.handled).toBe(true);
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(nextStart);
+        expect(moved.goalColumn).toBeCloseTo(337.33, 1);
+      } finally {
+        restoreProbe();
+        restoreAnchor();
+        root.remove();
+      }
+    });
+
+    it("explicit sticky past upper content still clamps to row end (falsifier)", () => {
+      const agent = "caliper-aaaaaaaaa";
+      const wire = `shs @${agent} d @${agent} d`;
+      const doc = wireToDoc(wire);
+      const wrapD = wire.length - 1;
+      const upperRowEndSpacer = wrapD - 1;
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[agent, "#06f"]]) });
+      const samples = [
+        { wire: 0, top: 140.67, left: 335.5 },
+        { wire: upperRowEndSpacer, top: 141.1, left: 606.55 },
+        { wire: wrapD, top: 158.86, left: 337.33 },
+        { wire: wire.length, top: 158.86, left: 341.15 },
+      ];
+      const probe = prepareVerticalColumnProbe({
+        root,
+        doc,
+        wire,
+        fromWire: wrapD,
+        goalColumn: 610.1,
+        probeTargetWire: upperRowEndSpacer,
+        samples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        const moved = resolveDomVerticalArrowMove(root, doc, wireOffsetToDocPos(doc, wrapD), "up", {
+          stickyGoalColumn: 610.1,
+        });
+        expect(moved.handled).toBe(true);
+        expect(moved.branch).toBe("dom-column-probe");
+        expect(docPosToWireOffset(doc, moved.pos)).toBe(upperRowEndSpacer);
+      } finally {
+        probe.restore();
+        root.remove();
+      }
+    });
+
     it("click ingress keeps spacer text-tail doc pos (not wire-scan owner)", () => {
       const fx = mountThreeRowMentionSoftWrapFixture();
       applyThreeRowSpacerBrowserParityLayoutStubs(fx);
@@ -2555,7 +2944,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("vertical — blank-band goal authority", () => {
+  describe("vertical â€” blank-band goal authority", () => {
     it("entering a blank row resets sticky goal to that blank row's measured start", () => {
       const doc = wireToDoc("x\n\ntail");
       const blankLeft = 12;
@@ -2573,7 +2962,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           minLeft: blankLeft,
           maxLeft: blankLeft,
           breakProbeWire: 1,
-          samples: [{ wire: 1, top: 118, left: blankLeft }],
+          samples: [{ wire: 2, top: 118, left: blankLeft }],
         },
         {
           kind: "content",
@@ -2589,12 +2978,12 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: (wire) => {
-            if (wire === 1) return 1;
+          sampleRowIndexForWire: (wire: number) => {
+            if (wire === 2) return 1;
             if (wire >= 3) return 2;
             return 0;
           },
-          coordsForWire: (wire) =>
+          coordsForWire: (wire: number) =>
             rows.flatMap((row) => row.samples).find((sample) => sample.wire === wire) ?? null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -2611,8 +3000,8 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       );
 
       expect(moved.handled).toBe(true);
-      expect(moved.branch).toBe("blank-band-break-probe");
-      expect(docPosToWireOffset(doc, moved.pos)).toBe(1);
+      expect(moved.branch).toBe("blank-line-slot");
+      expect(docPosToWireOffset(doc, moved.pos)).toBe(2);
       expect(moved.goalColumn).toBe(blankLeft);
       expect(moved.goalColumn).not.toBe(80);
     });
@@ -2664,13 +3053,13 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: (w) => {
+          sampleRowIndexForWire: (w: number) => {
             if (w === probe) return 2;
             if (w >= tailStart && w < probe) return 1;
             if (w >= wire.length - 1) return 3;
             return 0;
           },
-          coordsForWire: (w) =>
+          coordsForWire: (w: number) =>
             rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -2689,7 +3078,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(moved.handled).toBe(true);
       expect(moved.branch).toBe("blank-exit-visual-row-start");
       expect(docPosToWireOffset(doc, moved.pos)).toBe(tailStart);
-      expect(layout.rowIndexForWire(docPosToWireOffset(doc, moved.pos))).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, docPosToWireOffset(doc, moved.pos))).toBe(1);
       expect(moved.goalColumn).toBe(visualStart);
     });
 
@@ -2745,13 +3134,13 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: (w) => {
+          sampleRowIndexForWire: (w: number) => {
             if (w === probe) return 2;
             if (w >= docLineStartWire && w < probe) return 1;
             if (w >= wire.length - 4) return 3;
             return 0;
           },
-          coordsForWire: (w) =>
+          coordsForWire: (w: number) =>
             rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -2826,13 +3215,13 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: (w) => {
+          sampleRowIndexForWire: (w: number) => {
             if (w === probe) return 2;
             if (w >= middleRowStartWire && w < probe) return 1;
             if (w >= 94) return 3;
             return 0;
           },
-          coordsForWire: (w) =>
+          coordsForWire: (w: number) =>
             rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -2851,7 +3240,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(moved.handled).toBe(true);
       expect(docPosToWireOffset(doc, moved.pos)).toBe(middleRowStartWire);
       expect(docPosToWireOffset(doc, moved.pos)).not.toBe(docLineStartWire);
-      expect(layout.rowIndexForWire(docPosToWireOffset(doc, moved.pos))).toBe(1);
+      expect(layoutRowAtWireFocus(doc, layout, docPosToWireOffset(doc, moved.pos))).toBe(1);
       expect(moved.goalColumn).toBe(visualStart);
     });
 
@@ -2902,13 +3291,13 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: (w) => {
+          sampleRowIndexForWire: (w: number) => {
             if (w === probe) return 2;
             if (w >= tailStart && w < probe) return 1;
             if (w >= wire.length - 1) return 3;
             return 0;
           },
-          coordsForWire: (w) =>
+          coordsForWire: (w: number) =>
             rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -2936,15 +3325,33 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(docPosToWireOffset(doc, toWrap.pos)).toBe(tailStart);
       expect(toWrap.goalColumn).toBe(visualStart);
 
-      const toPrefix = resolveLayoutVerticalArrowMove(
+      const root = document.createElement("div");
+      document.body.appendChild(root);
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 310 });
+      renderHandoffNoteDoc(root, doc, {
+        colorByAgentId: new Map([[agent, "#06f"]]),
+      });
+      const samples = rows.flatMap((row) => row.samples);
+      const prefixProbe = prepareVerticalColumnProbe({
+        root,
         doc,
-        toWrap.pos,
-        "up",
-        layout,
-        toWrap.goalColumn ?? visualStart
-      );
-      expect(docPosToWireOffset(doc, toPrefix.pos)).toBe(0);
-      expect(layout.rowIndexForWire(docPosToWireOffset(doc, toPrefix.pos))).toBe(0);
+        wire,
+        fromWire: tailStart,
+        goalColumn: visualStart,
+        probeTargetWire: 0,
+        samples,
+        expectMinVisualRows: 2,
+      });
+      try {
+        const toPrefix = resolveDomVerticalArrowMove(root, doc, toWrap.pos, "up", {
+          stickyGoalColumn: toWrap.goalColumn ?? visualStart,
+        });
+        expect(docPosToWireOffset(doc, toPrefix.pos)).toBe(0);
+        expect(layoutRowAtWireFocus(doc, layout, docPosToWireOffset(doc, toPrefix.pos))).toBe(0);
+      } finally {
+        prefixProbe.restore();
+        root.remove();
+      }
     });
 
     it("down from blank below soft-wrap lands lower content row visual start", () => {
@@ -2995,13 +3402,13 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: (w) => {
+          sampleRowIndexForWire: (w: number) => {
             if (w === probe) return 2;
             if (w >= lowerStart) return 3;
             if (w >= tailStart && w < probe) return 1;
             return 0;
           },
-          coordsForWire: (w) =>
+          coordsForWire: (w: number) =>
             rows.flatMap((row) => row.samples).find((sample) => sample.wire === w) ?? null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -3020,11 +3427,11 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(moved.handled).toBe(true);
       expect(moved.branch).toBe("blank-exit-visual-row-start");
       expect(docPosToWireOffset(doc, moved.pos)).toBeGreaterThanOrEqual(lowerStart);
-      expect(layout.rowIndexForWire(docPosToWireOffset(doc, moved.pos))).toBe(3);
+      expect(layoutRowAtWireFocus(doc, layout, docPosToWireOffset(doc, moved.pos))).toBe(3);
     });
   });
 
-  describe("vertical target line — down co-top inline blank skip", () => {
+  describe("vertical target line â€” down co-top inline blank skip", () => {
     const doc = wireToDoc("row\nbelow");
 
     function layoutWithRows(rows: HandoffNoteLayoutRow[]): HandoffNoteLayoutMap {
@@ -3034,7 +3441,7 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
           rows,
           lineHeight: 18,
           visualRowCount: rows.length,
-          rowIndexForWire: () => -1,
+          sampleRowIndexForWire: () => -1,
           coordsForWire: () => null,
           continuationAfterRowEndWire: () => null,
           shouldPreserveGoalColumnOnShorterRowLanding: () => false,
@@ -3152,5 +3559,31 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
       expect(moved.handled).toBe(true);
       expect(docPosToWireOffset(doc, moved.pos)).toBe(lowerStart);
     });
+  });
+});
+
+describe("resolveSelectedMentionArrowExit", () => {
+  const agent = "caliper-aaaaaaa";
+
+  it("vertical exit lands on the mention row start", () => {
+    const wire = `notes here\n@${agent} tail\nbelow`;
+    const doc = wireToDoc(wire);
+    const mentionNode = doc.nodes.findIndex((node) => node.type === "mention");
+    const rowStart = wire.indexOf("\n") + 1;
+    const expected = wireOffsetToDocPos(doc, rowStart);
+
+    expect(resolveSelectedMentionArrowExit(doc, mentionNode, "down")).toEqual(expected);
+    expect(resolveSelectedMentionArrowExit(doc, mentionNode, "up")).toEqual(expected);
+  });
+
+  it("horizontal exit lands on the pill end", () => {
+    const wire = `@${agent} tail`;
+    const doc = wireToDoc(wire);
+    const pillEnd = wire.indexOf("@") + `@${agent}`.length;
+    for (const direction of ["left", "right"] as const) {
+      const exit = resolveSelectedMentionArrowExit(doc, 0, direction);
+      expect(exit).not.toBeNull();
+      expect(docPosToWireOffset(doc, exit!)).toBe(pillEnd);
+    }
   });
 });

@@ -12,7 +12,6 @@ import { PREFIX } from "../../css/styles.js";
 import { createCssAnimationPulse } from "../../handoff/create-css-animation-pulse.js";
 import { createHandoffFocusTrap } from "../../handoff/create-handoff-focus-trap.js";
 import { createMentionController } from "../../handoff/create-mention-controller.js";
-import { flattenHandoffNoteLog } from "../../handoff/handoff-note-debug.js";
 import { type HandoffNoteEditor } from "../../handoff/note-editor/create-handoff-note-editor.js";
 import { HandoffNoteEditor as HandoffNoteEditorView } from "../../handoff/note-editor/handoff-note-editor.jsx";
 import { PresenceHost } from "../../handoff/presence-host.jsx";
@@ -272,13 +271,6 @@ export function HandoffPanel(props: HandoffPanelProps) {
     if (!currentEditor) {
       return;
     }
-    const session = mentionController.getSession();
-    flattenHandoffNoteLog("panel.selectMention", {
-      agentId,
-      wire: currentEditor.getWire(),
-      session,
-      cursor: currentEditor.getCursor(),
-    });
     if (!mentionController.commitMention(currentEditor, agentId)) {
       return;
     }
@@ -394,6 +386,11 @@ export function HandoffPanel(props: HandoffPanelProps) {
               handleEditorInput();
             }}
             onResize={syncPanelLayoutHeight}
+            onScroll={() => {
+              if (mentionOpen()) {
+                setMentionAnchorTick((tick) => tick + 1);
+              }
+            }}
             onEditorReady={setEditor}
             onKeyDown={(event, currentEditor) => {
               if (mentionController.handleKeyDown(currentEditor, event)) {

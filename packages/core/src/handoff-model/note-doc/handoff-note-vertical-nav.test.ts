@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listEmbeddedBlankBandProbeWires } from "./handoff-note-embedded-newlines.js";
+import { listBlankVisualLineStartWires } from "./handoff-note-embedded-newlines.js";
 import { wireToDoc } from "./handoff-note-doc.js";
 import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 import {
@@ -250,15 +250,15 @@ describe("resolveVerticalArrowMinWireLineStart", () => {
 });
 
 describe("resolveEmbeddedBlankBandVerticalMove", () => {
-  it("treats caret on storage newline before substantive row as lower visual row", () => {
+  it("up from blank line-start before substantive row lands content line start (not content break probe)", () => {
     const wire = "header\n\ntail";
     const doc = wireToDoc(wire);
-    const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
-    const bridgingNewline = probe + 1;
-    expect(wire[bridgingNewline]).toBe("\n");
+    const blankStart = listBlankVisualLineStartWires(doc)[0]!;
+    expect(blankStart).toBe(7);
+    expect(wire[blankStart]).toBe("\n");
 
-    const up = resolveEmbeddedBlankBandVerticalMove(doc, bridgingNewline, "up", 0);
-    expect(up).toEqual({ offset: probe, branch: "blank-band-probe-row" });
+    const up = resolveEmbeddedBlankBandVerticalMove(doc, blankStart, "up", 0);
+    expect(up).toEqual({ offset: 0, branch: "visual-row-column" });
   });
 });
 

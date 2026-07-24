@@ -16,7 +16,7 @@ import {
   resolveHandoffNoteDeleteIntent,
 } from "./handoff-note-delete-intent.js";
 import {
-  isEmbeddedBlankBandDeleteProbeWire,
+  isEmbeddedBlankBandCollapseProbeWire,
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
 } from "./handoff-note-embedded-newlines.js";
@@ -103,7 +103,7 @@ describe("handoff note delete intent — contract authority before handler chain
       const chipped = chipGluedPostfixAtContentCaret(gluedPostfixUpperBandWire());
       expect(handoffNoteCaretOnAtomicNodeEnd(chipped.doc, chipped.selection.focus)).toBe(true);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(
+        isEmbeddedBlankBandCollapseProbeWire(
           chipped.doc,
           docPosToWireOffset(chipped.doc, chipped.selection.focus),
           chipped.selection.focus
@@ -117,7 +117,7 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(docToWire(deleted.doc)).toBe(`note @${agent}\n\n`);
       expect(handoffNoteCaretOnAtomicNodeEnd(deleted.doc, deleted.selection.focus)).toBe(true);
       expect(
-        isEmbeddedBlankBandDeleteProbeWire(
+        isEmbeddedBlankBandCollapseProbeWire(
           deleted.doc,
           docPosToWireOffset(deleted.doc, deleted.selection.focus),
           deleted.selection.focus
@@ -505,32 +505,49 @@ describe("handoff note delete intent — contract authority before handler chain
   });
 
   describe("blank-band collapse — CRE landing affinity (progressive trash)", () => {
-    it("last blank collapse onto CRE above substantive join keeps after", () => {
-      // Exhaust sandwiched blanks → residual ordinary `\n` (not a blank probe).
-      // Affinity must stay CRE/after so paint is text-tail and next BS removes the char.
-      let doc = wireToDoc("whe\n\n\ndb");
-      let selection = collapsedSelection(
-        wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc).at(-1)!)
+    it("trailing-only under content remounts CRE after on first blank collapse", () => {
+      // Emptied lower row / extra trailing blank: `\n\ndna\n\n` — Backspace must not park
+      // omit on the remaining break; land content-row-end/`after` on `a` so next BS chips.
+      const doc = wireToDoc("\n\ndna\n\n");
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const bandHeadUnderDna = probes.find((w) => w > 4)!;
+      const once = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, bandHeadUnderDna)),
+        "backspace"
+      )!;
+      expect(docToWire(once.doc)).toBe("\n\ndna\n");
+      expect(docToWire(once.doc)[docPosToWireOffset(once.doc, once.selection.focus)]).toBe("a");
+      expect(once.selection.focusAffinity).toBe("after");
+      const chipped = applyDocDelete(once.doc, once.selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe("\n\ndn\n");
+    });
+
+    it("emptied lower content row — chip wet then collapse remounts after on upper", () => {
+      let doc = wireToDoc("\n\ndna\nwet\n");
+      let selection = collapsedSelectionWithIntent(
+        doc,
+        wireOffsetToDocPos(doc, docToWire(doc).lastIndexOf("t")),
+        "content-row-end"
       );
-      for (let i = 0; i < 5; i++) {
-        const probes = listEmbeddedBlankBandProbeWires(doc);
-        if (probes.length === 0) break;
-        const focusWire = docPosToWireOffset(doc, selection.focus);
-        if (!isEmbeddedBlankBandDeleteProbeWire(doc, focusWire)) break;
+      for (let i = 0; i < 3; i++) {
         const next = applyDocDelete(doc, selection, "backspace")!;
         doc = next.doc;
         selection = next.selection;
       }
-      expect(docToWire(doc)).toBe("whe\ndb");
-      const land = docPosToWireOffset(doc, selection.focus);
-      expect(docToWire(doc)[land]).toBe("e");
-      expect(selection.focusAffinity).toBe("after");
-      const chipped = applyDocDelete(doc, selection, "backspace")!;
-      expect(docToWire(chipped.doc)).toBe("wh\ndb");
+      expect(docToWire(doc)).toBe("\n\ndna\n\n");
+      const collapsed = applyDocDelete(doc, selection, "backspace")!;
+      expect(docToWire(collapsed.doc)).toBe("\n\ndna\n");
+      expect(
+        docToWire(collapsed.doc)[docPosToWireOffset(collapsed.doc, collapsed.selection.focus)]
+      ).toBe("a");
+      expect(collapsed.selection.focusAffinity).toBe("after");
+      const chipped = applyDocDelete(collapsed.doc, collapsed.selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe("\n\ndn\n");
     });
 
-    it("band-head CRE nips remaining blank first; exhaustion lands CRE above with after", () => {
-      // Leading blank under content is CRE (click = chip): first BS stays in-band.
+    it("sandwiched blank collapse remounts CRE after on upper; next chips", () => {
+      // Same rule as trailing-only: content above → remount after; leftover empties stay.
       const doc = wireToDoc("whe\n\n\ndb");
       const once = applyDocDelete(
         doc,
@@ -538,21 +555,24 @@ describe("handoff note delete intent — contract authority before handler chain
         "backspace"
       )!;
       expect(docToWire(once.doc)).toBe("whe\n\ndb");
-      expect(docToWire(once.doc)[docPosToWireOffset(once.doc, once.selection.focus)]).toBe("\n");
-      expect(
-        isEmbeddedBlankBandDeleteProbeWire(
-          once.doc,
-          docPosToWireOffset(once.doc, once.selection.focus),
-          once.selection.focus
-        )
-      ).toBe(false);
-      // Exhaustion: progressive trash lands content-row-end above with after.
-      const twice = applyDocDelete(once.doc, once.selection, "backspace")!;
-      expect(docToWire(twice.doc)).toBe("whe\ndb");
-      expect(docToWire(twice.doc)[docPosToWireOffset(twice.doc, twice.selection.focus)]).toBe("e");
-      expect(twice.selection.focusAffinity).toBe("after");
-      const chipped = applyDocDelete(twice.doc, twice.selection, "backspace")!;
-      expect(docToWire(chipped.doc)).toBe("wh\ndb");
+      expect(docToWire(once.doc)[docPosToWireOffset(once.doc, once.selection.focus)]).toBe("e");
+      expect(once.selection.focusAffinity).toBe("after");
+      const chipped = applyDocDelete(once.doc, once.selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe("wh\n\ndb");
+    });
+
+    it("sandwiched collapse from last probe also remounts CRE after on upper", () => {
+      const doc = wireToDoc("whe\n\n\ndb");
+      const once = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc).at(-1)!)),
+        "backspace"
+      )!;
+      expect(docToWire(once.doc)).toBe("whe\n\ndb");
+      expect(docToWire(once.doc)[docPosToWireOffset(once.doc, once.selection.focus)]).toBe("e");
+      expect(once.selection.focusAffinity).toBe("after");
+      const chipped = applyDocDelete(once.doc, once.selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe("wh\n\ndb");
     });
 
     it("leading sole-char row a\\nb lands visual start without after", () => {
@@ -598,7 +618,7 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(docToWire(next.doc)).toBe("hell");
     });
 
-    it("multi-char trailing blank collapses blank; sole-char probe wire aliases CRE", () => {
+    it("multi-char trailing blank collapses blank; sole-char probe collapse lands CRE on char", () => {
       const xyDoc = wireToDoc("xy\n");
       const xy = applyDocDelete(
         xyDoc,
@@ -607,14 +627,16 @@ describe("handoff note delete intent — contract authority before handler chain
       )!;
       expect(docToWire(xy.doc)).toBe("xy");
       expect(xy.selection.focusAffinity).toBe("after");
-      // Sole-char: wireOffsetToDocPos(probe) is CRE text-tail alias, not blank infrastructure.
+      // Sole-char above blank: collapse lands on the char (CRE), not chip via probe alias.
       const soleDoc = wireToDoc("x\n");
       const sole = applyDocDelete(
         soleDoc,
         collapsedSelection(wireOffsetToDocPos(soleDoc, 1)),
         "backspace"
       )!;
-      expect(docToWire(sole.doc)).toBe("\n");
+      expect(docToWire(sole.doc)).toBe("x");
+      expect(sole.selection.focusAffinity).toBe("after");
+      expect(docPosToWireOffset(sole.doc, sole.selection.focus)).toBe(0);
     });
 
     it("Delete last blank lands lower visual start without after", () => {

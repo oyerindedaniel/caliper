@@ -9,18 +9,19 @@ import {
   isInlineSuffixBlankProbeWire,
   isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
   listEmbeddedBlankBandProbeWires,
+  listBlankVisualLineStartWires,
   nodeTokenLength,
   wireOffsetToDocPos,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
 } from "@caliper/core";
-import { logVerArrow } from "../handoff-note-debug.js";
 import {
   atomicElement,
   appendSoftWrapLineSamples,
   getDocAnchorRect,
   isFiniteMeasuredLayoutCoord,
   isUsableMeasuredLayoutCoord,
+  measureTrailingLinePadCoord,
   measureWireBreakCoord,
   resolvePaintContext,
   resolvePaintContextAtWire,
@@ -33,6 +34,7 @@ import {
   pillElementMidY,
   sharesVisualRowBand,
 } from "./handoff-note-row-geometry.js";
+import { isHandoffNoteDebugEnabled, logLayout } from "../handoff-note-debug.js";
 
 export type MeasuredWireOffset = {
   wire: number;
@@ -48,11 +50,11 @@ export type WirePaintContext = {
   top: number;
 };
 
-/** Layout map before paint-index attachment (row lookup without paint context accessors). */
-export type LayoutMapWithoutPaintIndex = Omit<
-  HandoffNoteLayoutMap,
-  "paintContextForWire" | "paintContextForDocPos"
->;
+/** Layout map before paint-index attachment. */
+export type LayoutMapWithoutPaintIndex = Omit<HandoffNoteLayoutMap, "paintContextForDocPos"> & {
+  /** Builder-only sample row bracket; stripped when paint index attaches. */
+  sampleRowIndexForWire(wire: number): number;
+};
 
 /** Attach doc-primary paint index to a sparse layout stub (tests) or rematerialize indexes. */
 export function attachPaintIndexToLayoutMap(
@@ -210,14 +212,27 @@ export type HandoffNoteLayoutMap = {
   rows: HandoffNoteLayoutRow[];
   lineHeight: number;
   visualRowCount: number;
-  rowIndexForWire(wire: number): number;
   coordsForWire(wire: number): MeasuredWireOffset | null;
+  /** Row/paint authority: focus → paint doc pos → this index. Never keyed by bare wire. */
   paintContextForDocPos(pos: HandoffNoteDocPos): WirePaintContext | null;
-  paintContextForWire(wire: number): WirePaintContext | null;
   /** When row-tail wire is a soft-wrap prefix end, first wire on the continuation band. */
   continuationAfterRowEndWire(rowEndWire: number): number | null;
   shouldPreserveGoalColumnOnShorterRowLanding(input: ShorterRowStickyGoalInput): boolean;
 };
+
+/** Private sample clustering / bracket — not caret authority (wire is measure transport only). */
+const layoutSampleRowIndexByMap = new WeakMap<HandoffNoteLayoutMap, (wire: number) => number>();
+
+function registerLayoutSampleRowIndex(
+  layout: HandoffNoteLayoutMap,
+  sampleRowIndex: (wire: number) => number
+): void {
+  layoutSampleRowIndexByMap.set(layout, sampleRowIndex);
+}
+
+function sampleRowIndexForLayoutWire(layout: HandoffNoteLayoutMap, wire: number): number {
+  return layoutSampleRowIndexByMap.get(layout)?.(wire) ?? -1;
+}
 
 /** Row-top / column-edge slop for nav, sticky eval, and blank adjacency. Clustering uses half via `rowClusterTolerance`. */
 export function layoutRowTopTolerance(lineHeight: number): number {
@@ -242,6 +257,23 @@ export function invalidateHandoffNoteLayoutCache(root?: HTMLElement): void {
     return;
   }
   measuredCacheGeneration++;
+}
+
+/** Lean row dump for console: count + what wires sit in each row. */
+function snapshotLayoutRowsForLog(rows: HandoffNoteLayoutRow[]): Array<Record<string, unknown>> {
+  return rows.map((row, index) => ({
+    index,
+    kind: row.kind,
+    wires: row.samples.map((sample) => sample.wire),
+    ...(row.kind === "blank" ? { breakProbe: row.breakProbeWire ?? null } : {}),
+  }));
+}
+
+function snapshotLayoutMapForLog(layout: HandoffNoteLayoutMap): Record<string, unknown> {
+  return {
+    visualRowCount: layout.visualRowCount,
+    rows: snapshotLayoutRowsForLog(layout.rows),
+  };
 }
 
 export function readHandoffNoteLayoutCacheKey(root: HTMLElement): {
@@ -288,60 +320,6 @@ export function setMeasuredSamplesCache(
     rootWidth,
     measured: cloneMeasuredSamples(measured),
     generation: measuredCacheGeneration,
-  });
-  logVerArrow("layout.cacheInject", {
-    wireLen: wire.length,
-    rootWidth,
-    sampleCount: measured.length,
-    samples: measured.map((sample) => ({
-      wire: sample.wire,
-      top: Math.round(sample.top * 100) / 100,
-      left: Math.round(sample.left * 100) / 100,
-      ...(sample.right !== undefined ? { right: Math.round(sample.right * 100) / 100 } : {}),
-    })),
-  });
-}
-
-function layoutRowsForLog(rows: HandoffNoteLayoutRow[]): Array<Record<string, unknown>> {
-  return rows.map((row, index) => ({
-    index,
-    kind: row.kind,
-    top: Math.round(row.top * 100) / 100,
-    breakProbeWire: row.breakProbeWire ?? null,
-    sampleWires: row.samples.map((sample) => sample.wire),
-  }));
-}
-
-/** Contract debug: which visual row each wire offset maps to (probes, EOF caret, focus). */
-function logLayoutWireRowAssignments(
-  layout: HandoffNoteLayoutMap,
-  doc: HandoffNoteDoc,
-  wires: number[],
-  wire = docToWire(doc)
-): void {
-  const probes = listEmbeddedBlankBandProbeWires(doc);
-  const unique = [...new Set(wires.filter((offset) => offset >= 0 && offset <= wire.length))].sort(
-    (left, right) => left - right
-  );
-  logVerArrow("layout.rowAssign", {
-    contractProbes: probes,
-    eofWire: wire.length,
-    assignments: unique.map((offset) => {
-      const rowIndex = layout.rowIndexForWire(offset);
-      const row = rowIndex >= 0 ? layout.rows[rowIndex] : undefined;
-      const char =
-        offset < wire.length ? (wire[offset] === "\n" ? "\\n" : wire[offset]) : "(past-end)";
-      return {
-        wire: offset,
-        char,
-        rowIndex,
-        rowKind: row?.kind ?? null,
-        rowTop: row ? Math.round(row.top * 100) / 100 : null,
-        breakProbeWire: row?.breakProbeWire ?? null,
-        isBlankProbe: probes.includes(offset),
-        isEofCaret: offset === wire.length,
-      };
-    }),
   });
 }
 
@@ -499,7 +477,8 @@ function buildLayoutPaintIndexes(
  *
  * Seed is only a measured sample at atom start (and never a blank-probe wire). No
  * line-start fallback — soft-wrap can put the atom on a lower visual row than line start.
- * Unsampled atoms rely on rowIndexForWire (content→blank bracket rule) instead.
+ * Unsampled atoms rely on sample-row bracket (content→blank) via paint wire fallback
+ * inside layoutRowIndexForDocPos — not a public wire→row caret API.
  */
 function stampAtomicInteriorPaintKeys(
   doc: HandoffNoteDoc,
@@ -539,23 +518,16 @@ function attachLayoutPaintIndex(
   layout: HandoffNoteLayoutMapBase,
   paintIndexes: LayoutPaintIndexes
 ): HandoffNoteLayoutMap {
-  const { byWire, byDocPos } = paintIndexes;
-  return {
-    ...layout,
+  const { byDocPos } = paintIndexes;
+  const { sampleRowIndexForWire, ...rest } = layout;
+  const map: HandoffNoteLayoutMap = {
+    ...rest,
     paintContextForDocPos(pos: HandoffNoteDocPos) {
       return byDocPos.get(docPosLayoutKey(pos)) ?? null;
     },
-    paintContextForWire(wireOffset: number) {
-      return byWire.get(wireOffset) ?? null;
-    },
-    rowIndexForWire(wireOffset: number) {
-      const paintCtx = byWire.get(wireOffset);
-      if (paintCtx && paintCtx.rowIndex >= 0) {
-        return paintCtx.rowIndex;
-      }
-      return layout.rowIndexForWire(wireOffset);
-    },
   };
+  registerLayoutSampleRowIndex(map, sampleRowIndexForWire);
+  return map;
 }
 
 /** Measure geometry for a paint doc pos; wire on the sample is export projection only. */
@@ -833,11 +805,6 @@ function ensureSubstantiveContentLineStartSamples(
             const textMidY = rect ? rect.top + rect.height / 2 : midY;
             if (sharesVisualRowBand(textMidY, midY)) {
               upsertMeasuredSample(measured, { wire: lineStartWire, top: midY, left: 0 });
-              logVerArrow("layout.contentLineStart", {
-                lineStartWire,
-                action: "atomicBand",
-                top: Math.round(midY * 100) / 100,
-              });
               continue;
             }
           }
@@ -848,22 +815,20 @@ function ensureSubstantiveContentLineStartSamples(
     if (needsStructuralSeed) {
       const top = structuralTopForContentLineStart(index, lineStarts, probes, lineHeight);
       upsertMeasuredSample(measured, { wire: lineStartWire, top, left: 0 });
-      logVerArrow("layout.contentLineStart", {
-        lineStartWire,
-        action: "structural",
-        top: Math.round(top * 100) / 100,
-      });
     }
   }
 }
 
-/** Content geometry only — blank probe wires never bracket the ladder. */
+/** Content geometry only — blank stop / probe wires never bracket the ladder. */
 function contentSamplesForBlankLadder(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[]
 ): MeasuredWireOffset[] {
-  const probes = new Set(listEmbeddedBlankBandProbeWires(doc));
-  return measured.filter((sample) => !probes.has(sample.wire));
+  const blankWires = new Set([
+    ...listEmbeddedBlankBandProbeWires(doc),
+    ...listBlankVisualLineStartWires(doc),
+  ]);
+  return measured.filter((sample) => !blankWires.has(sample.wire));
 }
 
 type BlankProbeBandBounds = {
@@ -871,29 +836,33 @@ type BlankProbeBandBounds = {
   ceiling: number | null;
 };
 
-/** Blank-band probes must not sort above earlier content on the same wire line. */
-function blankProbeBandBounds(
+/** Content brackets around a blank navigable stop (empty line-start). */
+function blankStopBandBounds(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
-  probeWire: number,
+  stopWire: number,
   wire: string
 ): BlankProbeBandBounds {
-  const lineStart = wire.lastIndexOf("\n", probeWire - 1) + 1;
+  const blankWires = new Set([
+    ...listEmbeddedBlankBandProbeWires(doc),
+    ...listBlankVisualLineStartWires(doc),
+  ]);
+  const lineStart = stopWire === 0 ? 0 : wire.lastIndexOf("\n", Math.max(0, stopWire - 1)) + 1;
   let lineMaxTop = -Infinity;
   let priorMaxTop = -Infinity;
   let minTopBelow = Infinity;
   for (const sample of measured) {
-    if (isEmbeddedBlankBandProbeWire(doc, sample.wire)) {
+    if (blankWires.has(sample.wire)) {
       continue;
     }
-    if (sample.wire < probeWire) {
+    if (sample.wire < stopWire) {
       priorMaxTop = Math.max(priorMaxTop, sample.top);
       if (sample.wire >= lineStart) {
         lineMaxTop = Math.max(lineMaxTop, sample.top);
       }
       continue;
     }
-    if (sample.wire > probeWire) {
+    if (sample.wire > stopWire) {
       minTopBelow = Math.min(minTopBelow, sample.top);
     }
   }
@@ -906,62 +875,47 @@ function blankProbeBandBounds(
   return { floor, ceiling };
 }
 
-function buildBlankProbeBandBoundsMap(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  probes: readonly number[],
-  wire: string
-): Map<number, BlankProbeBandBounds> {
-  const boundsByProbe = new Map<number, BlankProbeBandBounds>();
-  for (const probeWire of probes) {
-    boundsByProbe.set(probeWire, blankProbeBandBounds(doc, measured, probeWire, wire));
-  }
-  return boundsByProbe;
-}
-
-function blankProbesInSameBand(
-  probes: readonly number[],
-  probeWire: number,
-  boundsByProbe: ReadonlyMap<number, BlankProbeBandBounds>
+function blankStopsInSameBand(
+  stops: readonly number[],
+  stopWire: number,
+  boundsByStop: ReadonlyMap<number, BlankProbeBandBounds>
 ): number[] {
-  const target = boundsByProbe.get(probeWire);
+  const target = boundsByStop.get(stopWire);
   if (!target) {
-    return [probeWire];
+    return [stopWire];
   }
-  return probes.filter((candidate) => {
-    const bounds = boundsByProbe.get(candidate);
+  return stops.filter((candidate) => {
+    const bounds = boundsByStop.get(candidate);
     return (
       bounds !== undefined && bounds.floor === target.floor && bounds.ceiling === target.ceiling
     );
   });
 }
 
-type BlankBandPlacementKind =
-  | "inline"
-  | "between"
-  | "trailing"
-  | "leading"
-  | "lattice"
-  | "wireBreak";
+type BlankBandPlacementKind = "inline" | "between" | "trailing" | "leading" | "lattice" | "epoch";
 
 /**
- * Blank row top from DOM wire-break / blank-anchor measure when available.
- * Content-band ladder is fallback only (no root or missing geometry).
+ * Structural tops when the geometry epoch has no sample for this empty line-start
+ * (sample-only builds with content brackets, or acquire truly omitted the slot).
+ * Index is by stop within the band — never by shared probe dock.
+ * Does not invent Y from sibling blank samples; missing blank Y belongs in the
+ * acquire epoch (measure / test stub), not here.
  */
-function placeBlankProbeOnContentLadder(
+function placeBlankStopOnContentLadder(
   doc: HandoffNoteDoc,
-  probeWire: number,
+  stopWire: number,
   lineHeight: number,
   bounds: BlankProbeBandBounds,
-  bandProbes: readonly number[]
+  bandStops: readonly number[],
+  breakProbeWire: number | undefined
 ): { top: number; kind: BlankBandPlacementKind } {
-  if (isInlineSuffixBlankProbeWire(doc, probeWire)) {
+  if (breakProbeWire !== undefined && isInlineSuffixBlankProbeWire(doc, breakProbeWire)) {
     return { top: bounds.floor ?? 0, kind: "inline" };
   }
 
+  const indexInBand = Math.max(0, bandStops.indexOf(stopWire));
   const { floor, ceiling } = bounds;
-  const indexInBand = Math.max(0, bandProbes.indexOf(probeWire));
-  const slotCount = bandProbes.length + 1;
+  const slotCount = bandStops.length + 1;
 
   if (floor !== null && ceiling !== null && ceiling > floor + lineHeight * 0.5) {
     const step = (ceiling - floor) / slotCount;
@@ -980,69 +934,101 @@ function placeBlankProbeOnContentLadder(
   return { top: lineHeight * (indexInBand + 1), kind: "lattice" };
 }
 
-function leftBeforeProbeWire(measured: MeasuredWireOffset[], probeWire: number): number {
+function leftBeforeWire(measured: MeasuredWireOffset[], wireOffset: number): number {
   let left = 0;
   for (const sample of measured) {
-    if (sample.wire < probeWire) {
+    if (sample.wire < wireOffset) {
       left = sample.left;
     }
   }
   return left;
 }
 
-function blankPlacementMetric(coord: MeasuredWireOffset | null): {
-  ok: boolean;
-  top: number | null;
-  left: number | null;
-} {
-  if (!coord) {
-    return { ok: false, top: null, left: null };
+/** Paint/delete dock for an empty line-start — not a second navigable identity. */
+function breakProbeWireForBlankLineStart(
+  doc: HandoffNoteDoc,
+  wire: string,
+  lineStart: number
+): number | undefined {
+  if (wire.length === 0 && lineStart === 0) {
+    return undefined;
   }
-  return {
-    ok: true,
-    top: Math.round(coord.top * 100) / 100,
-    left: Math.round(coord.left * 100) / 100,
-  };
+  if (
+    lineStart < wire.length &&
+    wire[lineStart] === "\n" &&
+    isEmbeddedBlankBandProbeWire(doc, lineStart)
+  ) {
+    return lineStart;
+  }
+  if (
+    lineStart > 0 &&
+    wire[lineStart - 1] === "\n" &&
+    isEmbeddedBlankBandProbeWire(doc, lineStart - 1)
+  ) {
+    return lineStart - 1;
+  }
+  if (lineStart === wire.length && wire.endsWith("\n")) {
+    const prev = wire.length - 1;
+    return prev >= 0 && isEmbeddedBlankBandProbeWire(doc, prev) ? prev : undefined;
+  }
+  return undefined;
 }
 
 /**
- * Phase 1: one blank row per contract probe (existence from structure).
- * Phase 2: top from wire-break DOM when measured; ladder fallback when not.
+ * One blank visual row per empty line-slot stop (`listBlankVisualLineStartWires`).
+ * Tops come from the geometry epoch (`measured`) when present; otherwise the
+ * content-bracket ladder indexed by stop-within-band. Infer never remasures DOM.
  */
 function buildSemanticBlankLayoutRows(
   doc: HandoffNoteDoc,
   measured: MeasuredWireOffset[],
   lineHeight: number,
-  root: HTMLElement | undefined,
   wire: string
 ): HandoffNoteLayoutRow[] {
-  const probes = listEmbeddedBlankBandProbeWires(doc);
+  const lineStarts = listBlankVisualLineStartWires(doc);
   const rows: HandoffNoteLayoutRow[] = [];
   /** Frozen for the whole pass — infer mutations and blank upserts must not shift brackets mid-loop. */
   const ladderBasis = contentSamplesForBlankLadder(doc, measured);
-  const boundsByProbe = buildBlankProbeBandBoundsMap(doc, ladderBasis, probes, wire);
+  const boundsByStop = new Map<number, BlankProbeBandBounds>();
+  for (const stopWire of lineStarts) {
+    boundsByStop.set(stopWire, blankStopBandBounds(doc, ladderBasis, stopWire, wire));
+  }
 
-  for (const probeWire of probes) {
-    const wireBreakCoord = root ? measureWireBreakCoord(root, doc, probeWire) : null;
-    const bounds = boundsByProbe.get(probeWire)!;
-    const bandProbes = blankProbesInSameBand(probes, probeWire, boundsByProbe);
-    const ladderPlacement = placeBlankProbeOnContentLadder(
-      doc,
-      probeWire,
-      lineHeight,
-      bounds,
-      bandProbes
-    );
-    const wireBreakTop =
-      wireBreakCoord !== null && isUsableMeasuredLayoutCoord(wireBreakCoord)
-        ? wireBreakCoord.top
-        : null;
-    const top = wireBreakTop ?? ladderPlacement.top;
-    const placementKind = wireBreakTop !== null ? "wireBreak" : ladderPlacement.kind;
+  for (const lineStart of lineStarts) {
+    const isEmptyDoc = wire.length === 0 && lineStart === 0;
+    const probeWire = breakProbeWireForBlankLineStart(doc, wire, lineStart);
+
+    let top: number;
+    let left: number;
+
+    if (isEmptyDoc) {
+      top = lineHeight;
+      left = 0;
+    } else {
+      const epochSample = measured.find((sample) => sample.wire === lineStart);
+      if (epochSample && isUsableMeasuredLayoutCoord(epochSample)) {
+        top = epochSample.top;
+        left = epochSample.left;
+      } else {
+        const bounds = boundsByStop.get(lineStart)!;
+        const bandStops = blankStopsInSameBand(lineStarts, lineStart, boundsByStop);
+        const ladderPlacement = placeBlankStopOnContentLadder(
+          doc,
+          lineStart,
+          lineHeight,
+          bounds,
+          bandStops,
+          probeWire
+        );
+        top = ladderPlacement.top;
+        left = leftBeforeWire(ladderBasis, lineStart);
+      }
+    }
+
     const sample: MeasuredWireOffset = {
-      wire: probeWire,
+      wire: lineStart,
       top,
-      left: wireBreakCoord?.left ?? leftBeforeProbeWire(ladderBasis, probeWire),
+      left,
     };
     upsertMeasuredSample(measured, sample);
     rows.push({
@@ -1053,32 +1039,6 @@ function buildSemanticBlankLayoutRows(
       maxLeft: sample.left,
       maxRight: measuredSampleRight(sample),
       samples: [sample],
-    });
-
-    logVerArrow("layout.blankPlace", {
-      probeWire,
-      chosen: placementKind,
-      inlineSuffix: isInlineSuffixBlankProbeWire(doc, probeWire),
-      ladder: {
-        floor: bounds.floor === null ? null : Math.round(bounds.floor * 100) / 100,
-        ceiling: bounds.ceiling === null ? null : Math.round(bounds.ceiling * 100) / 100,
-        bandProbes,
-        indexInBand: bandProbes.indexOf(probeWire),
-        contentSampleCount: ladderBasis.length,
-      },
-      wireBreak: blankPlacementMetric(wireBreakCoord),
-      final: {
-        top: Math.round(top * 100) / 100,
-        left: Math.round(sample.left * 100) / 100,
-      },
-    });
-
-    logVerArrow("layout.blankRow", {
-      probeWire,
-      top: Math.round(top * 100) / 100,
-      left: Math.round(sample.left * 100) / 100,
-      inlineSuffix: isInlineSuffixBlankProbeWire(doc, probeWire),
-      source: placementKind,
     });
   }
 
@@ -1116,7 +1076,15 @@ function buildDocOrderedLayoutMap(
   blankRows: HandoffNoteLayoutRow[],
   wrapSpans: Map<number, TextSoftWrapSpan> = new Map()
 ): HandoffNoteLayoutMap {
-  const probeWires = new Set(blankRows.map((row) => row.breakProbeWire!));
+  const probeWires = new Set(
+    blankRows.flatMap((row) => {
+      const wires = row.samples.map((sample) => sample.wire);
+      if (row.breakProbeWire !== undefined) {
+        wires.push(row.breakProbeWire);
+      }
+      return wires;
+    })
+  );
   const contentMeasured = measured.filter((sample) => !probeWires.has(sample.wire));
   const rowSeedTops = resolveVisualRowSeedTops(pillMidYs, contentMeasured, lineHeight);
   const contentLayout = buildMapFromMeasured(contentMeasured, rowSeedTops, lineHeight, doc);
@@ -1144,7 +1112,7 @@ function buildDocOrderedLayoutMap(
       rows,
       lineHeight: resolvedLineHeight,
       visualRowCount: rows.length,
-      rowIndexForWire: baseRowIndexForWire,
+      sampleRowIndexForWire: baseRowIndexForWire,
       coordsForWire(wireOffset: number) {
         let rowIndex = rowByWire.get(wireOffset);
         if (rowIndex === undefined) {
@@ -1281,6 +1249,10 @@ function pickFarApartDuplicateSample(
   rowClusterTol: number
 ): MeasuredWireOffset {
   const wire = samples[0]!.wire;
+  // Blank-band probes are not soft-wrap content — never run text-node peer dedupe on them.
+  if (isEmbeddedBlankBandProbeWire(doc, wire)) {
+    return pickBlankProbeEpochSample(doc, samples, measured, rowClusterTol);
+  }
   const sampleByWire = new Map<number, MeasuredWireOffset>();
   for (const sample of measured) {
     sampleByWire.set(sample.wire, sample);
@@ -1335,6 +1307,27 @@ function pickFarApartDuplicateSample(
     rowClusterTol,
     wire
   );
+}
+
+/** Prefer a blank-probe top that sits between content samples, not a co-banded content alias. */
+function pickBlankProbeEpochSample(
+  doc: HandoffNoteDoc,
+  samples: MeasuredWireOffset[],
+  measured: MeasuredWireOffset[],
+  rowClusterTol: number
+): MeasuredWireOffset {
+  const contentTops = measured
+    .filter((sample) => !isEmbeddedBlankBandProbeWire(doc, sample.wire))
+    .map((sample) => sample.top);
+  const between = samples.filter(
+    (sample) =>
+      contentTops.some((top) => top < sample.top - rowClusterTol) &&
+      contentTops.some((top) => top > sample.top + rowClusterTol)
+  );
+  if (between.length > 0) {
+    return between[0]!;
+  }
+  return samples[0]!;
 }
 
 function dedupeMeasuredSamplesForInfer(
@@ -1445,6 +1438,11 @@ function alignTextBeforeAtomicRows(
   }
 }
 
+/**
+ * Snap same-row post-atomic prefix samples onto the atomic pill midY.
+ * Soft wrap may paint a lower band inside the first wire-line (before `\n`);
+ * those measured tops must not be collapsed onto the pill band.
+ */
 function alignEmbeddedNewlinePrefixAfterAtomicRows(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -1472,9 +1470,14 @@ function alignEmbeddedNewlinePrefixAfterAtomicRows(
       continue;
     }
     for (const sample of measured) {
-      if (sample.wire >= nodeStartWire && sample.wire < prefixEndWire) {
-        sample.top = midY;
+      if (sample.wire < nodeStartWire || sample.wire >= prefixEndWire) {
+        continue;
       }
+      // Soft-wrap continuation below the atomic band keeps its acquired top.
+      if (sample.top > midY + 1) {
+        continue;
+      }
+      sample.top = midY;
     }
   }
 }
@@ -1564,6 +1567,69 @@ type TextSoftWrapSpan = {
   tailSamples: MeasuredWireOffset[];
   visualBands: TextSoftWrapVisualBand[];
 };
+
+/**
+ * Soft wrap is per wire-line segment (between `\n`), not per text node.
+ * Leading segment after an atom: [0, first `\n`) or the whole node when no `\n`.
+ */
+function textNodeLeadingWireLineSegmentEnd(
+  doc: HandoffNoteDoc,
+  textNodeIndex: number
+): { localEndExclusive: number; endWire: number } | null {
+  const node = doc.nodes[textNodeIndex];
+  if (node?.type !== "text" || node.text.length === 0) {
+    return null;
+  }
+  const nl = node.text.indexOf("\n");
+  const localEndExclusive = nl === -1 ? node.text.length : nl;
+  if (localEndExclusive <= 0) {
+    return null;
+  }
+  const leading = node.text.slice(0, localEndExclusive);
+  if (/^\s*$/.test(leading)) {
+    return null;
+  }
+  return {
+    localEndExclusive,
+    endWire: docPosToWireOffset(doc, {
+      nodeIndex: textNodeIndex,
+      nodeOffset: localEndExclusive,
+    }),
+  };
+}
+
+/** Substantive wire-line segments inside a text node (empty `\n\n` segments omitted). */
+function* iterTextNodeSubstantiveWireLineSegments(
+  doc: HandoffNoteDoc,
+  textNodeIndex: number
+): Generator<{
+  localStart: number;
+  localEndExclusive: number;
+  startWire: number;
+  endWire: number;
+}> {
+  const node = doc.nodes[textNodeIndex];
+  if (node?.type !== "text" || node.text.length === 0) {
+    return;
+  }
+  let localStart = 0;
+  for (let local = 0; local <= node.text.length; local++) {
+    const atEnd = local === node.text.length;
+    const atBreak = !atEnd && node.text[local] === "\n";
+    if (!atEnd && !atBreak) {
+      continue;
+    }
+    if (local > localStart && !/^\s*$/.test(node.text.slice(localStart, local))) {
+      yield {
+        localStart,
+        localEndExclusive: local,
+        startWire: docPosToWireOffset(doc, { nodeIndex: textNodeIndex, nodeOffset: localStart }),
+        endWire: docPosToWireOffset(doc, { nodeIndex: textNodeIndex, nodeOffset: local }),
+      };
+    }
+    localStart = local + 1;
+  }
+}
 
 function rowTopMatchesContinuationRow(
   row: HandoffNoteLayoutRow,
@@ -1728,7 +1794,7 @@ function rowIndexForTextSoftWrapWire(
 ): number | null {
   const pos = wireOffsetToDocPos(doc, wire);
   const node = doc.nodes[pos.nodeIndex];
-  if (node?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, pos.nodeIndex)) {
+  if (node?.type !== "text") {
     return null;
   }
   const span = wrapSpans.get(pos.nodeIndex);
@@ -1907,11 +1973,6 @@ function resolveRowIndexForDocWire(
 
   const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(doc, wire, measured, rowCenters);
   if (lowerRow !== null) {
-    logVerArrow("resolve.rowAssign", {
-      wire,
-      branch: "embedded-text-led-lower-row",
-      rowIndex: lowerRow,
-    });
     return lowerRow;
   }
 
@@ -1920,14 +1981,7 @@ function resolveRowIndexForDocWire(
   if (node?.type === "text") {
     const coord = measureWireCoord(root, doc, wire);
     if (coord !== null && rowCenters.length > 0) {
-      const rowIndex = nearestRowCenterIndex(coord.top, rowCenters);
-      logVerArrow("resolve.rowAssign", {
-        wire,
-        branch: "text-measure-coord",
-        top: coord.top,
-        rowIndex,
-      });
-      return rowIndex;
+      return nearestRowCenterIndex(coord.top, rowCenters);
     }
     return -1;
   }
@@ -2051,10 +2105,11 @@ function resolveMeasuredSoftWrapSplit(
   }
 
   const continuationTop = minSampleField(lowerSamples, (sample) => sample.top)!;
+  // First lower band only — deeper soft-wrap bands must not own continuationStartLeft.
   const continuationBandSamples = nodeSamples.filter(
     (sample) =>
       !postStartSampleContradictsPrefixInteriorPaint(sample) &&
-      (Math.abs(sample.top - continuationTop) <= rowClusterTol || sample.top > lowerTopFloor)
+      Math.abs(sample.top - continuationTop) <= rowClusterTol
   );
 
   const interiorForTrailing = pastEndSample !== undefined ? interiorSamples : nodeSamples;
@@ -2084,8 +2139,11 @@ function resolveMeasuredSoftWrapSplit(
     lowerLeftContinuationStart !== null &&
     lowerLeftContinuationStart > trailingPrefixEnd
   ) {
+    // Last measured prefix wire owns the upper band. Sparse acquire may omit
+    // continuation glyphs before the first lower sample — those wires still
+    // belong on the continuation band (soft-wrap partition has no gaps).
     prefixEndWire = trailingPrefixEnd;
-    continuationStartWire = lowerLeftContinuationStart;
+    continuationStartWire = prefixEndWire + 1;
   } else if (lowerLeftContinuationStart !== null) {
     continuationStartWire = lowerLeftContinuationStart;
     prefixEndWire = Math.max(nodeStartWire - 1, continuationStartWire - 1);
@@ -2133,6 +2191,7 @@ function buildVisualBandsFromMeasured(
   const bands: TextSoftWrapVisualBand[] = [];
   let bandTop = nodeSamples[0]!.top;
   let bandStart = nodeStartWire;
+  let lastWireOnBand = nodeSamples[0]!.wire;
 
   const startLeftForBand = (startWire: number, endWire: number, top: number): number => {
     const onBand = nodeSamples.filter(
@@ -2157,16 +2216,20 @@ function buildVisualBandsFromMeasured(
 
   for (const sample of nodeSamples) {
     if (Math.abs(sample.top - bandTop) <= rowClusterTol) {
+      lastWireOnBand = Math.max(lastWireOnBand, sample.wire);
       continue;
     }
+    // Close the upper band at its last measured wire. Wires after that and before
+    // the next sample are unsampled continuation (soft wrap), not prefix.
     bands.push({
       startWire: bandStart,
-      endWire: sample.wire - 1,
+      endWire: lastWireOnBand,
       top: bandTop,
-      startLeft: startLeftForBand(bandStart, sample.wire - 1, bandTop),
+      startLeft: startLeftForBand(bandStart, lastWireOnBand, bandTop),
     });
-    bandStart = sample.wire;
+    bandStart = lastWireOnBand + 1;
     bandTop = sample.top;
+    lastWireOnBand = sample.wire;
   }
 
   bands.push({
@@ -2317,23 +2380,21 @@ function buildPostAtomicSoftWrapSpan(
   rowClusterTol: number
 ): TextSoftWrapSpan | null {
   const node = doc.nodes[textNodeIndex];
-  if (node?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
+  if (node?.type !== "text") {
     return null;
   }
-  if (/^\s+$/.test(node.text)) {
+  const leading = textNodeLeadingWireLineSegmentEnd(doc, textNodeIndex);
+  if (!leading) {
     return null;
   }
-  const nodeEndWire = docPosToWireOffset(doc, {
-    nodeIndex: textNodeIndex,
-    nodeOffset: node.text.length,
-  });
+  const segmentEndWire = leading.endWire;
   const atomicBandTop = atomicBandTopForPostAtomic(
     doc,
     atomicNodeIndex,
     postAtomicStartWire,
     sampleByWire,
     rowClusterTol,
-    { nodeEndWire, measured }
+    { nodeEndWire: segmentEndWire, measured }
   );
   if (atomicBandTop === undefined) {
     return null;
@@ -2341,7 +2402,7 @@ function buildPostAtomicSoftWrapSpan(
 
   return assembleTextSoftWrapSpan(
     postAtomicStartWire,
-    nodeEndWire,
+    segmentEndWire,
     atomicBandTop,
     measured,
     rowClusterTol
@@ -2368,10 +2429,15 @@ function applyPostAtomicStructuralSamplePins(
     }
     const textNodeIndex = nodeIndex + 1;
     const textNode = doc.nodes[textNodeIndex];
-    if (textNode?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, textNodeIndex)) {
+    if (textNode?.type !== "text") {
       continue;
     }
     if (crossRowInterAtomicSpacers.has(textNodeIndex)) {
+      continue;
+    }
+
+    const leading = textNodeLeadingWireLineSegmentEnd(doc, textNodeIndex);
+    if (!leading) {
       continue;
     }
 
@@ -2396,10 +2462,10 @@ function applyPostAtomicStructuralSamplePins(
       continue;
     }
 
-    const nodeEndWire = nodeWireEnd(doc, wireIndex, textNodeIndex);
+    const segmentEndWire = leading.endWire;
     const bandTop =
       atomicBandTopForPostAtomic(doc, nodeIndex, postAtomicStartWire, sampleByWire, rowClusterTol, {
-        nodeEndWire,
+        nodeEndWire: segmentEndWire,
         measured,
       }) ?? Math.max(endSample?.top ?? -Infinity, postSample?.top ?? -Infinity);
     if (endSample) {
@@ -2410,7 +2476,7 @@ function applyPostAtomicStructuralSamplePins(
       for (const sample of measured) {
         if (
           sample.wire >= postAtomicStartWire &&
-          sample.wire < nodeEndWire &&
+          sample.wire < segmentEndWire &&
           sample.top < bandTop &&
           bandTop - sample.top <= rowClusterTol
         ) {
@@ -2434,25 +2500,22 @@ function applyPostAtomicStructuralSamplePins(
 
     if (span) {
       for (const sample of span.tailSamples) {
-        sample.top = span.continuationTop;
-        if (Math.abs(sample.left - span.continuationStartLeft) > rowClusterTol) {
-          sample.left = span.continuationStartLeft;
+        // Deeper soft-wrap bands keep measured geometry (3+ painted rows).
+        if (sample.top > span.continuationTop + rowClusterTol) {
+          continue;
+        }
+        const stillAboveContinuation = sample.top < span.continuationTop - rowClusterTol;
+        const stillOnPrefix = sample.top <= span.prefixTop + rowClusterTol;
+        const needsTopPromote = stillAboveContinuation || stillOnPrefix;
+        if (needsTopPromote) {
+          sample.top = span.continuationTop;
+          // Mis-rowed wrap-start aliases often keep the previous row's trailing X.
+          if (sample.left > span.continuationStartLeft + rowClusterTol) {
+            sample.left = span.continuationStartLeft;
+          }
         }
       }
-      logVerArrow("layout.softWrapTailPromote", {
-        postAtomicStartWire,
-        continuationStartWire: span.continuationStartWire,
-        continuationTop: span.continuationTop,
-        continuationStartLeft: span.continuationStartLeft,
-      });
     }
-
-    logVerArrow("layout.atomicAdjacentAlign", {
-      atomicEndWire,
-      postAtomicStartWire,
-      bandTop,
-      wrapTailTop,
-    });
   }
 
   return wrapSpans;
@@ -2528,12 +2591,6 @@ function alignContinuationBandToFollowingMention(
       }
       sample.top = bandTop;
     }
-    logVerArrow("layout.continuationMentionCoBand", {
-      textNodeIndex,
-      mentionStartWire,
-      bandTop: Math.round(bandTop * 100) / 100,
-      continuationStartWire: span.continuationStartWire,
-    });
   }
 }
 
@@ -2545,40 +2602,33 @@ function applyPlainTextSoftWrapSpans(
   wrapSpans: Map<number, TextSoftWrapSpan>
 ): void {
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    if (doc.nodes[nodeIndex]?.type !== "text" || docTextNodeHasEmbeddedNewline(doc, nodeIndex)) {
+    if (doc.nodes[nodeIndex]?.type !== "text") {
       continue;
     }
     if (wrapSpans.has(nodeIndex)) {
       continue;
     }
-    const nodeStartWire = wireIndex.nodeStartWires[nodeIndex]!;
-    const nodeEndWire = nodeWireEnd(doc, wireIndex, nodeIndex);
-    const prefixBandTop = resolvePrefixBandTopForTextNode(
-      nodeStartWire,
-      nodeEndWire,
-      measured,
-      rowClusterTol
-    );
-    if (prefixBandTop === null) {
-      continue;
-    }
-    const span = assembleTextSoftWrapSpan(
-      nodeStartWire,
-      nodeEndWire,
-      prefixBandTop,
-      measured,
-      rowClusterTol
-    );
-    if (span) {
-      wrapSpans.set(nodeIndex, span);
-      logVerArrow("layout.textSoftWrapSpan", {
-        textNodeIndex: nodeIndex,
-        nodeStartWire,
-        prefixEndWire: span.prefixEndWire,
-        continuationStartWire: span.continuationStartWire,
-        prefixTop: span.prefixTop,
-        continuationTop: span.continuationTop,
-      });
+    for (const segment of iterTextNodeSubstantiveWireLineSegments(doc, nodeIndex)) {
+      const prefixBandTop = resolvePrefixBandTopForTextNode(
+        segment.startWire,
+        segment.endWire,
+        measured,
+        rowClusterTol
+      );
+      if (prefixBandTop === null) {
+        continue;
+      }
+      const span = assembleTextSoftWrapSpan(
+        segment.startWire,
+        segment.endWire,
+        prefixBandTop,
+        measured,
+        rowClusterTol
+      );
+      if (span) {
+        wrapSpans.set(nodeIndex, span);
+        break;
+      }
     }
   }
 }
@@ -2652,15 +2702,24 @@ function assignRows(measured: MeasuredWireOffset[], rowCenters: number[]): Hando
   return rows.filter((row) => row.samples.length > 0);
 }
 
+/**
+ * Wire → visual row. Blank **stop samples** own their line-start wires first.
+ * `breakProbeWire` is only a paint/delete dock: register it when that wire is not
+ * already a navigable blank stop (two stops must not collapse onto one row via a
+ * shared dock — e.g. empty line-start on `\n` vs trailing EOF stop after it).
+ */
 function buildRowIndexLookup(rows: HandoffNoteLayoutRow[]): Map<number, number> {
   const lookup = new Map<number, number>();
   for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
     const row = rows[rowIndex]!;
-    if (row.breakProbeWire !== undefined) {
-      lookup.set(row.breakProbeWire, rowIndex);
-    }
     for (const sample of row.samples) {
       lookup.set(sample.wire, rowIndex);
+    }
+  }
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const row = rows[rowIndex]!;
+    if (row.breakProbeWire !== undefined && !lookup.has(row.breakProbeWire)) {
+      lookup.set(row.breakProbeWire, rowIndex);
     }
   }
   return lookup;
@@ -2697,7 +2756,7 @@ function buildMapFromMeasured(
       rows,
       lineHeight: resolvedLineHeight,
       visualRowCount: rows.length,
-      rowIndexForWire: baseRowIndexForWire,
+      sampleRowIndexForWire: baseRowIndexForWire,
       coordsForWire(wireOffset: number) {
         return resolveCoordFromBracketingSamples(wireOffset, measured);
       },
@@ -2723,40 +2782,6 @@ function applyDomAcquireSamplePins(
   alignTextBeforeAtomicRows(doc, measured, wireIndex, hint);
   pinMentionSampleRows(root, doc, measured, wireIndex, hint);
   pinAdjacentTextSampleRows(root, doc, measured, wireIndex, hint, lineHeight);
-}
-
-/** EOF caret on a trailing-only blank band sits on the visual row below the last probe. */
-function isEofOnlyTrailingBlankBand(doc: HandoffNoteDoc, wire: string): boolean {
-  const probes = listEmbeddedBlankBandProbeWires(doc);
-  if (probes.length === 0) {
-    return false;
-  }
-  const lastProbe = probes[probes.length - 1]!;
-  return !substantiveContentLineStartWires(doc, wire).some((lineStart) => lineStart > lastProbe);
-}
-
-function materializeEofTrailingCaretSample(
-  doc: HandoffNoteDoc,
-  measured: MeasuredWireOffset[],
-  blankRows: HandoffNoteLayoutRow[],
-  lineHeight: number,
-  wire: string
-): void {
-  if (!isEofOnlyTrailingBlankBand(doc, wire)) {
-    return;
-  }
-  const eofWire = wire.length;
-  const lastBlankRow = blankRows[blankRows.length - 1];
-  if (!lastBlankRow) {
-    return;
-  }
-  const top = lastBlankRow.top + lineHeight;
-  upsertMeasuredSample(measured, { wire: eofWire, top, left: 0 });
-  logVerArrow("layout.eofTrailingCaret", {
-    eofWire,
-    top: Math.round(top * 100) / 100,
-    lastProbeWire: lastBlankRow.breakProbeWire ?? null,
-  });
 }
 
 function applyStructuralSamplePins(
@@ -2811,11 +2836,12 @@ type InferLayoutFromMeasuredOptions = {
 
 /**
  * Layout inference pipeline (runs on every build):
- * 1. clone DOM cache → working copy (infer never mutates cached snapshot)
+ * 1. clone geometry epoch → working copy (infer never mutates the cached array)
  * 2. structuralPins (dedupe → post-atomic spans → plain-text spans → visual bands)
- * 3. blankMaterialize → clusterSort → row lookup
+ * 3. blankMaterialize from epoch samples / content ladder → clusterSort → row lookup
  *
  * Blank ladder brackets read a frozen content-only snapshot, never prior blank upserts.
+ * Blank Y is never remasured against a cached content epoch.
  */
 function inferLayoutFromMeasured(
   doc: HandoffNoteDoc | undefined,
@@ -2828,24 +2854,9 @@ function inferLayoutFromMeasured(
 
   if (doc) {
     const wireIndex = wireIndexOption ?? buildLayoutWireIndex(doc);
-    const probes = listEmbeddedBlankBandProbeWires(doc);
-    logVerArrow("layout.infer", {
-      probeCount: probes.length,
-      contractProbes: probes,
-      sampleCountBefore: working.length,
-      hasRoot: root !== undefined,
-    });
     const wrapSpans = applyStructuralSamplePins(doc, working, root, lineHeight, wireIndex);
 
-    const blankRows = buildSemanticBlankLayoutRows(doc, working, lineHeight, root, wireIndex.wire);
-
-    logVerArrow("layout.infer.blankRows", {
-      materialized: blankRows.length,
-      expectedProbes: probes.length,
-      breakProbeWires: blankRows.map((row) => row.breakProbeWire),
-    });
-
-    materializeEofTrailingCaretSample(doc, working, blankRows, lineHeight, wireIndex.wire);
+    const blankRows = buildSemanticBlankLayoutRows(doc, working, lineHeight, wireIndex.wire);
 
     if (root || blankRows.length > 0) {
       return buildDocOrderedLayoutMap(doc, working, pillMidYs, lineHeight, blankRows, wrapSpans);
@@ -2864,8 +2875,76 @@ function inferLayoutFromMeasured(
 }
 
 /**
+ * Measure blank navigable line-starts (and remaining break-probe docks) into the
+ * same acquire snapshot as content. Call only on cache miss — never from infer.
+ * Epoch keys are empty line-start stops; probe wires remain paint/delete docks.
+ */
+function appendBlankLineStartAcquireSamples(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  measured: MeasuredWireOffset[]
+): void {
+  const wire = docToWire(doc);
+  for (const stopWire of listBlankVisualLineStartWires(doc)) {
+    const existing = measured.find((sample) => sample.wire === stopWire);
+    if (existing && isUsableMeasuredLayoutCoord(existing)) {
+      continue;
+    }
+    const coord = measureBlankLineStartAcquireCoord(root, doc, wire, stopWire);
+    if (coord && isUsableMeasuredLayoutCoord(coord)) {
+      pushAcquiredMeasuredSample(measured, {
+        wire: stopWire,
+        top: coord.top,
+        left: coord.left,
+      });
+    }
+  }
+  // Break docks that are not themselves empty line-starts still belong in the epoch
+  // (paint / delete-probe geometry) without becoming a second navigable stop identity.
+  for (const probeWire of listEmbeddedBlankBandProbeWires(doc)) {
+    const existing = measured.find((sample) => sample.wire === probeWire);
+    if (existing && isUsableMeasuredLayoutCoord(existing)) {
+      continue;
+    }
+    const coord = measureWireBreakCoord(root, doc, probeWire);
+    if (coord && isUsableMeasuredLayoutCoord(coord)) {
+      pushAcquiredMeasuredSample(measured, {
+        wire: probeWire,
+        top: coord.top,
+        left: coord.left,
+      });
+    }
+  }
+}
+
+function measureBlankLineStartAcquireCoord(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  wire: string,
+  stopWire: number
+): { top: number; left: number } | null {
+  if (wire.length === 0 && stopWire === 0) {
+    return null;
+  }
+  if (stopWire === wire.length && wire.endsWith("\n")) {
+    const pad = measureTrailingLinePadCoord(root, doc, stopWire);
+    if (pad && isUsableMeasuredLayoutCoord(pad)) {
+      return pad;
+    }
+    return null;
+  }
+  if (stopWire < wire.length && wire[stopWire] === "\n") {
+    const breakCoord = measureWireBreakCoord(root, doc, stopWire);
+    if (breakCoord && isUsableMeasuredLayoutCoord(breakCoord)) {
+      return breakCoord;
+    }
+  }
+  return null;
+}
+
+/**
  * DOM acquire pipeline (cache miss only):
- * measure boundary wires → domAcquirePins → appendSoftWrap → cache immutable snapshot.
+ * content wires → acquire pins → soft wrap → blank line-starts / break docks → one epoch.
  * Returns a working copy; infer never mutates the cached array.
  */
 function acquireDomMeasuredSamples(
@@ -2877,12 +2956,6 @@ function acquireDomMeasuredSamples(
   const wire = wireIndex.wire;
   const cached = getCachedMeasuredSamples(root, wire, rootWidth);
   if (cached) {
-    logVerArrow("layout.acquire", {
-      source: "cache",
-      wireLen: wire.length,
-      rootWidth,
-      sampleCount: cached.length,
-    });
     return cloneMeasuredSamples(cached);
   }
 
@@ -2893,18 +2966,8 @@ function acquireDomMeasuredSamples(
   applyDomAcquireSamplePins(root, doc, measured, wireIndex);
   appendSoftWrapLineSamples(root, doc, measured);
   alignEmbeddedNewlinePrefixAfterAtomicRows(root, doc, measured, wireIndex);
+  appendBlankLineStartAcquireSamples(root, doc, measured);
   setMeasuredSamplesCache(root, wire, rootWidth, measured);
-  logVerArrow("layout.acquire", {
-    source: "dom",
-    wireLen: wire.length,
-    rootWidth,
-    sampleCount: measured.length,
-    samples: measured.map((sample) => ({
-      wire: sample.wire,
-      top: Math.round(sample.top * 100) / 100,
-      left: Math.round(sample.left * 100) / 100,
-    })),
-  });
   return cloneMeasuredSamples(measured);
 }
 
@@ -2924,44 +2987,34 @@ function withDomRowResolutionOverrides(
   rowCenters: number[],
   rowByWire: Map<number, number>
 ): HandoffNoteLayoutMap {
-  /** Wire shim → paint doc pos → paint index (alias seams must not trust raw wire alone). */
-  const paintContextForWire = (wireOffset: number) => {
-    const paintPos = resolvePaintContextAtWire(doc, wireOffset, { root }).paintPos;
-    return baseLayout.paintContextForDocPos(paintPos);
-  };
-  return {
+  const map: HandoffNoteLayoutMap = {
     ...baseLayout,
-    paintContextForWire,
-    rowIndexForWire(wireOffset: number) {
-      const paintCtx = paintContextForWire(wireOffset);
-      if (paintCtx && paintCtx.rowIndex >= 0) {
-        return paintCtx.rowIndex;
-      }
-      const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(
-        doc,
-        wireOffset,
-        measured,
-        rowCenters
-      );
-      if (lowerRow !== null) {
-        return lowerRow;
-      }
-      const direct = baseLayout.rowIndexForWire(wireOffset);
-      if (direct >= 0) {
-        return direct;
-      }
-      return resolveRowIndexForDocWire(doc, root, wireOffset, rowByWire, rowCenters, measured);
-    },
     coordsForWire(wireOffset: number) {
       return baseLayout.coordsForWire(wireOffset) ?? measureWireCoord(root, doc, wireOffset);
     },
   };
+  registerLayoutSampleRowIndex(map, (wireOffset: number) => {
+    const paintPos = resolvePaintContextAtWire(doc, wireOffset, { root }).paintPos;
+    const paintCtx = baseLayout.paintContextForDocPos(paintPos);
+    if (paintCtx && paintCtx.rowIndex >= 0) {
+      return paintCtx.rowIndex;
+    }
+    const lowerRow = rowIndexForEmbeddedTextLedLowerRowWire(doc, wireOffset, measured, rowCenters);
+    if (lowerRow !== null) {
+      return lowerRow;
+    }
+    const direct = sampleRowIndexForLayoutWire(baseLayout, wireOffset);
+    if (direct >= 0) {
+      return direct;
+    }
+    return resolveRowIndexForDocWire(doc, root, wireOffset, rowByWire, rowCenters, measured);
+  });
+  return map;
 }
 
 export function buildHandoffNoteLayoutMap(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  focus?: HandoffNoteDocPos,
   options?: { wire?: string }
 ): HandoffNoteLayoutMap {
   const wire = options?.wire ?? docToWire(doc);
@@ -2989,24 +3042,9 @@ export function buildHandoffNoteLayoutMap(
     rowByWire
   );
 
-  const focusWire = focus !== undefined ? docPosToWireOffset(doc, focus) : null;
-  const probes = listEmbeddedBlankBandProbeWires(doc);
-  logVerArrow("layout.build", {
-    sampleCount: measured.length,
-    visualRowCount: layout.visualRowCount,
-    lineHeight: layout.lineHeight,
-    focusWire,
-    contractProbes: probes,
-    eofWire: wire.length,
-    rowTops: layout.rows.map((row) => Math.round(row.top * 100) / 100),
-    rows: layoutRowsForLog(layout.rows),
-  });
-  logLayoutWireRowAssignments(
-    layout,
-    doc,
-    [...(focusWire !== null ? [focusWire] : []), ...probes, wire.length],
-    wire
-  );
+  if (isHandoffNoteDebugEnabled()) {
+    logLayout("rows", snapshotLayoutMapForLog(layout));
+  }
 
   return layout;
 }
@@ -3030,19 +3068,19 @@ export function layoutRowIndexForDocPos(
   pos: HandoffNoteDocPos
 ): number {
   const { paintPos } = resolvePaintContext(doc, pos, { root });
+  const paintWire = docPosToWireOffset(doc, paintPos);
   const paintCtx = layout.paintContextForDocPos(paintPos);
   if (paintCtx && paintCtx.rowIndex >= 0) {
     return paintCtx.rowIndex;
   }
-  const paintWire = docPosToWireOffset(doc, paintPos);
-  const directRow = layout.rowIndexForWire(paintWire);
+  const directRow = sampleRowIndexForLayoutWire(layout, paintWire);
   const node = doc.nodes[paintPos.nodeIndex];
   if (node?.type !== "text" || !/^\s+$/.test(node.text) || directRow < 0) {
     return directRow;
   }
   const next = doc.nodes[paintPos.nodeIndex + 1];
   if (!isAtomicNode(next)) {
-    return layout.rowIndexForWire(paintWire);
+    return sampleRowIndexForLayoutWire(layout, paintWire);
   }
   const nodeStartWire = docPosToWireOffset(doc, { nodeIndex: paintPos.nodeIndex, nodeOffset: 0 });
   const coord = layout.coordsForWire(nodeStartWire) ?? measureWireCoord(root, doc, nodeStartWire);
@@ -3056,10 +3094,32 @@ export function layoutRowIndexForDocPos(
   ) {
     return nearestRowCenterIndex(
       coord.top,
-      layout.rows.map((row) => row.top)
+      layout.rows.map((rowCenter) => rowCenter.top)
     );
   }
   return directRow;
+}
+
+/**
+ * Row for canonical focus at a wire (wire → focus → paint → row).
+ * Test/fixture transport only — not a substitute for calling with a known focus.
+ */
+export function layoutRowAtWireFocus(
+  doc: HandoffNoteDoc,
+  layout: HandoffNoteLayoutMap,
+  wire: number,
+  root?: HTMLElement
+): number {
+  const focus = resolvePaintContextAtWire(doc, wire, root ? { root } : undefined).focusPos;
+  if (root) {
+    return layoutRowForFocus(root, doc, layout, focus);
+  }
+  const paintPos = resolvePaintContext(doc, focus).paintPos;
+  const paintCtx = layout.paintContextForDocPos(paintPos);
+  if (paintCtx && paintCtx.rowIndex >= 0) {
+    return paintCtx.rowIndex;
+  }
+  return sampleRowIndexForLayoutWire(layout, docPosToWireOffset(doc, paintPos));
 }
 
 /** Canonical row lookup from focus doc pos — paint authority via `paintContextForDocPos`. */
@@ -3197,10 +3257,15 @@ export function layoutContentRowEndSample(
 
 export function isAtLayoutRowStart(
   layout: HandoffNoteLayoutMap,
-  wire: number,
-  goalColumn: number
+  doc: HandoffNoteDoc,
+  focus: HandoffNoteDocPos,
+  goalColumn: number,
+  root?: HTMLElement
 ): boolean {
-  const rowIndex = layout.rowIndexForWire(wire);
+  const rowIndex =
+    root !== undefined
+      ? layoutRowForFocus(root, doc, layout, focus)
+      : layoutRowAtWireFocus(doc, layout, docPosToWireOffset(doc, focus));
   if (rowIndex < 0) {
     return false;
   }
@@ -3208,6 +3273,7 @@ export function isAtLayoutRowStart(
   if (!row) {
     return false;
   }
+  const wire = docPosToWireOffset(doc, focus);
   const edgeTolerance = layoutRowTopTolerance(layout.lineHeight);
   const rowStartColumn = layoutVisualRowStartColumn(row);
   const columnAtEdge = Math.abs(goalColumn - rowStartColumn) <= edgeTolerance;

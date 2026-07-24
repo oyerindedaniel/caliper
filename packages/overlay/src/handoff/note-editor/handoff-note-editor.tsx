@@ -13,6 +13,7 @@ export type HandoffNoteEditorProps = {
   isMentionPopoverOpen?: Accessor<boolean>;
   onWireChange: (wire: string) => void;
   onResize?: () => void;
+  onScroll?: () => void;
   onEditorReady?: (editor: HandoffNoteEditor) => void;
   onKeyDown?: (event: KeyboardEvent, editor: HandoffNoteEditor) => void;
   onMentionPress?: (agentId: string) => void;
@@ -32,6 +33,7 @@ export function HandoffNoteEditor(props: HandoffNoteEditorProps) {
       props.onWireChange(wire);
     },
     onResize: () => props.onResize?.(),
+    onScroll: () => props.onScroll?.(),
   });
 
   onMount(() => {

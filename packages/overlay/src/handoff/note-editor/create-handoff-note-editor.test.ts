@@ -1,22 +1,29 @@
 ﻿import {
   collapsedSelection,
   describeHandoffNoteCursorContext,
-  isEmbeddedBlankBandDeleteProbeWire,
+  docPosToWireOffset,
+  isEmbeddedBlankBandCollapseProbeWire,
+  listBlankVisualLineStartWires,
   listEmbeddedBlankBandProbeWires,
   wireOffsetToDocPos,
   wireToDoc,
 } from "@caliper/core";
 import { describe, expect, it, beforeEach } from "vitest";
-import { describeCaretContext } from "./handoff-note-dom-points.js";
+import {
+  describeCaretContext,
+  ensureHandoffNoteCaretVisible,
+  resolvePaintHorizontalArrowMove,
+} from "./handoff-note-dom-points.js";
 import { createHandoffNoteEditor } from "./create-handoff-note-editor.js";
 import { handoffNoteSelectionSnapshot } from "../handoff-note-debug.js";
-import { readMentionNodeIndex } from "./handoff-note-dom.js";
+import { readMentionNodeIndex, renderHandoffNoteDoc } from "./handoff-note-dom.js";
 import {
   dispatchSelectionChange,
   mountMultiMentionSoftWrapFixture,
   mountThreeRowMentionSoftWrapFixture,
   reapplyThreeRowMentionSoftWrapStubs,
   applyThreeRowSpacerBrowserParityLayoutStubs,
+  prepareVerticalColumnProbe,
   readDomWireCursor,
   reapplyMultiMentionSoftWrapStubs,
   selectionAtWire,
@@ -258,7 +265,8 @@ describe("createHandoffNoteEditor", () => {
 
     expect(host.editor.isComposing()).toBe(false);
     expect(host.editor.getWire()).toBe("hello\nworld");
-    expect(host.editor.getCursor()).toBe("hello\nworld".length);
+    expect(host.editor.getCursor()).toBe("hello\nworld".length - 1);
+    expect(host.editor.getSelectionState().focusAffinity).toBe("after");
     expect(host.changes).toEqual(["hello\nworld"]);
   });
 
@@ -273,7 +281,8 @@ describe("createHandoffNoteEditor", () => {
     const wire = "prefix @";
     host.editor.setDocFromWire(wire, wire.length);
     host.editor.refreshPresentation();
-    expect(host.editor.getCursor()).toBe(wire.length);
+    expect(host.editor.getCursor()).toBe(wire.length - 1);
+    expect(host.editor.getSelectionState().focusAffinity).toBe("after");
   });
 
   it("doc-first insert does not let refreshPresentation steal caret after @", () => {
@@ -300,7 +309,8 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(editor.getWire()).toBe("label @");
-    expect(editor.getCursor()).toBe(7);
+    expect(editor.getCursor()).toBe(6);
+    expect(editor.getSelectionState().focusAffinity).toBe("after");
   });
 
   it("resizes the editor host when beforeInput applies a doc insert without an input event", () => {
@@ -374,7 +384,8 @@ describe("createHandoffNoteEditor", () => {
       })
     );
     expect(host.editor.getWire()).toBe("hello!");
-    expect(host.editor.getCursor()).toBe(6);
+    expect(host.editor.getCursor()).toBe(5);
+    expect(host.editor.getSelectionState().focusAffinity).toBe("after");
   });
 
   it("advances caret when line breaking before a later atomic mention", () => {
@@ -453,13 +464,13 @@ describe("createHandoffNoteEditor", () => {
 
     host.editor.handleBeforeInput(lineBreak());
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    const firstProbes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
-    expect(host.editor.getCursor()).toBe(firstProbes[firstProbes.length - 1]!);
+    const firstStops = listBlankVisualLineStartWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(firstStops[firstStops.length - 1]!);
 
     host.editor.handleBeforeInput(lineBreak());
     expect(host.editor.getWire()).toBe(`${wire}\n\n`);
-    const secondProbes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
-    expect(host.editor.getCursor()).toBe(secondProbes[secondProbes.length - 1]!);
+    const secondStops = listBlankVisualLineStartWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(secondStops[secondStops.length - 1]!);
   });
 
   it("first line break after single mention with substantive post-pill text lands on blank", () => {
@@ -476,8 +487,8 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
-    expect(host.editor.getCursor()).toBe(probes[probes.length - 1]!);
+    const stops = listBlankVisualLineStartWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(stops[stops.length - 1]!);
   });
 
   it("first line break after mention with whitespace-only post-pill tail lands on blank", () => {
@@ -494,8 +505,8 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(host.editor.getWire()).toBe(`${wire}\n`);
-    const probes = listEmbeddedBlankBandProbeWires(host.editor.getDoc());
-    expect(host.editor.getCursor()).toBe(probes[probes.length - 1]!);
+    const stops = listBlankVisualLineStartWires(host.editor.getDoc());
+    expect(host.editor.getCursor()).toBe(stops[stops.length - 1]!);
   });
 
   it("consecutive line breaks at later mention with substantive inter-pill gap land on new blank", () => {
@@ -595,7 +606,8 @@ describe("createHandoffNoteEditor", () => {
     );
 
     expect(host.editor.getWire()).toBe("ab @caliper-abc123 cdx");
-    expect(host.editor.getCursor()).toBe("ab @caliper-abc123 cdx".length);
+    expect(host.editor.getCursor()).toBe("ab @caliper-abc123 cdx".length - 1);
+    expect(host.editor.getSelectionState().focusAffinity).toBe("after");
   });
 
   it("inserts second mention after multiline via doc model", () => {
@@ -627,6 +639,7 @@ describe("createHandoffNoteEditor", () => {
     const agentId = "caliper-ia61v9wf0";
     const multilineWire = `hhshhs \n\n\n\n\n@${agentId} `;
     const mentionStart = multilineWire.indexOf("@");
+    const lastBlank = listBlankVisualLineStartWires(wireToDoc(multilineWire)).at(-1)!;
 
     host.editor.setDocFromWire(multilineWire, mentionStart);
     expect(
@@ -634,17 +647,20 @@ describe("createHandoffNoteEditor", () => {
         new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true })
       )
     ).toBe(true);
-    expect(host.editor.getCursor()).toBe(mentionStart - 1);
+    // Empty line-start stop before @ — not the prior probe dock.
+    expect(host.editor.getCursor()).toBe(lastBlank);
 
     strandSelectionInMentionPill(host.root);
     dispatchSelectionChange(host.root);
-    expect(host.editor.getCursor()).toBe(mentionStart - 1);
+    expect(host.editor.getCursor()).toBe(lastBlank);
 
     // prefixEnd is the trailing space before the blank band (`hhshhs␠\\n…`).
-    // Rule 4 / insertDocPosAfterContentRowEndChar: focus on that last content char
-    // inserts *after* it (before the break) — `hhshhs x\\n…`, not before the space.
+    // Rule 4 / insertDocPosAfterContentRowEndChar: established CRE (`after`) inserts
+    // *after* that char — `hhshhs x\\n…`, not before the space.
     const prefixEnd = "hhshhs ".length - 1;
-    setSelectionAtWire(host.root, host.editor.getDoc(), prefixEnd, prefixEnd);
+    setSelectionAtWire(host.root, host.editor.getDoc(), prefixEnd, prefixEnd, {
+      focusAffinity: "after",
+    });
     host.editor.insertDocText("x");
     expect(host.editor.getWire()).toBe(`hhshhs x\n\n\n\n\n@${agentId} `);
     expect(host.editor.getCursor()).toBe(prefixEnd + 1);
@@ -690,7 +706,8 @@ describe("createHandoffNoteEditor", () => {
       })
     );
     const cursorAfterEdit = host.editor.getCursor();
-    expect(cursorAfterEdit).toBe(6);
+    expect(cursorAfterEdit).toBe(5);
+    expect(host.editor.getSelectionState().focusAffinity).toBe("after");
 
     host.editor.handleInput();
     expect(host.editor.getCursor()).toBe(cursorAfterEdit);
@@ -896,9 +913,11 @@ describe("createHandoffNoteEditor", () => {
         const lastProbe = probes[probes.length - 1]!;
 
         host.editor.setDocFromWire(wire, lastProbe, { resetHistory: true });
-        setSelectionAtWire(host.root, doc, spacerWire, spacerWire);
+        // Content-row-end click: text-tail + after (omit on-char is not established CRE).
+        setSelectionAtWire(host.root, doc, spacerWire, spacerWire, { focusAffinity: "after" });
         dispatchSelectionChange(host.root);
         expect(host.editor.getCursor()).toBe(spacerWire);
+        expect(host.editor.getSelectionState().focusAffinity).toBe("after");
 
         const handled = host.editor.handleKeyDown(
           new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
@@ -906,7 +925,7 @@ describe("createHandoffNoteEditor", () => {
         expect(handled).toBe(true);
         expect(host.editor.getWire()).toBe(expectedWireAfter);
         expect(
-          isEmbeddedBlankBandDeleteProbeWire(
+          isEmbeddedBlankBandCollapseProbeWire(
             host.editor.getDoc(),
             host.editor.getCursor(),
             host.editor.getSelectionState().focus
@@ -959,8 +978,9 @@ describe("createHandoffNoteEditor", () => {
         const lastProbe = probes[probes.length - 1]!;
 
         host.editor.setDocFromWire(wire, lastProbe, { resetHistory: true });
-        setSelectionAtWire(host.root, doc, spacerWire, spacerWire);
+        setSelectionAtWire(host.root, doc, spacerWire, spacerWire, { focusAffinity: "after" });
         dispatchSelectionChange(host.root);
+        expect(host.editor.getSelectionState().focusAffinity).toBe("after");
 
         expect(
           host.editor.handleKeyDown(
@@ -1057,16 +1077,10 @@ describe("createHandoffNoteEditor", () => {
 });
 
 describe("vertical goal column authority (editor state)", () => {
-  const LIVE_SESSION_SAMPLES = [
-    { wire: 0, top: 140.67, left: 349.5 },
-    { wire: 52, top: 159.3, left: 398.7 },
-    { wire: 70, top: 159.3, left: 515.85 },
-    { wire: 97, top: 177.06, left: 482.45 },
-    { wire: 99, top: 177.49, left: 499.24 },
-    { wire: 44, top: 158.86, left: 349.5 },
-    { wire: 51, top: 158.86, left: 395.7 },
-    { wire: 77, top: 159.3, left: 524.02 },
-  ] as const;
+  /** Pill-column sticky used by the three-row soft-wrap fixture (selection-layer sibling). */
+  const PILL_STICKY = 484.23;
+  /** Visual-start-ish column — away from the row-1 mention pill band. */
+  const ROW_START_STICKY = 349.5;
 
   function pressArrow(
     editor: ReturnType<typeof createHandoffNoteEditor>,
@@ -1077,114 +1091,338 @@ describe("vertical goal column authority (editor state)", () => {
     );
   }
 
-  it("click ingress clears sticky so Down uses row-0 column not prior pill column", () => {
+  function mountStickyEditor() {
     const fx = mountThreeRowMentionSoftWrapFixture();
     const editor = createHandoffNoteEditor({
       getColorByAgentId: () => new Map([[fx.agent, "#06f"]]),
       onWireChange: () => {},
     });
     editor.setRoot(fx.root);
-    editor.setDocFromWire(fx.wire, 97, { resetHistory: true });
-    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+    const fromWire = fx.wire.length;
+    editor.setDocFromWire(fx.wire, fromWire, { resetHistory: true });
     reapplyThreeRowMentionSoftWrapStubs(fx);
-
-    const sticky = 484.22918701171875;
-    const row1PillSnapWire = 70;
-    // Anchor stubs invalidate the layout cache — reseed LIVE samples after each stub
-    // (same contract as prepareVerticalColumnProbe). Interior focus @97 needs the row-2 band.
-    const restoreRow2Anchor = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
-      top: 177.06,
-      left: sticky,
+    setMeasuredSamplesCache(fx.root, editor.getWire(), fx.rootWidth, fx.samples);
+    const thirdMentionNode = fx.mentionNodes[2]!;
+    const thirdMentionStart = docPosToWireOffset(editor.getDoc(), {
+      nodeIndex: thirdMentionNode,
+      nodeOffset: 0,
     });
-    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+    const thirdMentionEnd = docPosToWireOffset(editor.getDoc(), {
+      nodeIndex: thirdMentionNode,
+      nodeOffset: 1 + fx.agent.length,
+    });
+    return { fx, editor, fromWire, thirdMentionStart, thirdMentionEnd };
+  }
 
+  function seedFixtureLayout(
+    fx: ReturnType<typeof mountThreeRowMentionSoftWrapFixture>,
+    editor: ReturnType<typeof createHandoffNoteEditor>
+  ): void {
+    reapplyThreeRowMentionSoftWrapStubs(fx);
+    setMeasuredSamplesCache(fx.root, editor.getWire(), fx.rootWidth, fx.samples);
+  }
+
+  it("click ingress sets sticky to click caret column for next vertical", () => {
+    const { fx, editor, fromWire, thirdMentionStart, thirdMentionEnd } = mountStickyEditor();
+    const up = prepareVerticalColumnProbe({
+      root: fx.root,
+      doc: editor.getDoc(),
+      wire: editor.getWire(),
+      fromWire,
+      goalColumn: PILL_STICKY,
+      probeTargetWire: thirdMentionStart,
+      samples: [...fx.samples],
+      rootWidth: fx.rootWidth,
+      expectMinVisualRows: 3,
+    });
     try {
       expect(pressArrow(editor, "ArrowUp")).toBe(true);
+      expect(editor.getCursor()).toBe(thirdMentionEnd);
+      up.restore();
 
+      seedFixtureLayout(fx, editor);
+      const restoreClickAnchor = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 0, {
+        top: fx.row0Top,
+        left: ROW_START_STICKY,
+      });
+      setMeasuredSamplesCache(fx.root, editor.getWire(), fx.rootWidth, fx.samples);
       fx.root.dispatchEvent(
-        new MouseEvent("mousedown", { bubbles: true, clientX: 348, clientY: fx.row0Top })
+        new MouseEvent("mousedown", {
+          bubbles: true,
+          clientX: ROW_START_STICKY,
+          clientY: fx.row0Top,
+        })
       );
       setSelectionAtWire(fx.root, editor.getDoc(), 0, 0);
       dispatchSelectionChange(fx.root);
+      restoreClickAnchor();
 
-      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
-      reapplyThreeRowMentionSoftWrapStubs(fx);
-      stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 0, {
-        top: 140.67,
-        left: 349.5,
+      seedFixtureLayout(fx, editor);
+      const down = prepareVerticalColumnProbe({
+        root: fx.root,
+        doc: editor.getDoc(),
+        wire: editor.getWire(),
+        fromWire: 0,
+        goalColumn: ROW_START_STICKY,
+        probeTargetWire: fx.wrapRowStartWire,
+        samples: [...fx.samples],
+        rootWidth: fx.rootWidth,
+        expectMinVisualRows: 3,
       });
-      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
-
-      expect(pressArrow(editor, "ArrowDown")).toBe(true);
-      expect(editor.getCursor()).not.toBe(row1PillSnapWire);
+      try {
+        expect(pressArrow(editor, "ArrowDown")).toBe(true);
+        expect(editor.getCursor()).not.toBe(thirdMentionEnd);
+        expect(editor.getCursor()).not.toBe(thirdMentionStart);
+      } finally {
+        down.restore();
+      }
     } finally {
-      restoreRow2Anchor();
       fx.root.remove();
     }
   });
 
   it("programmatic caret move without click keeps sticky across vertical arrows", () => {
-    const fx = mountThreeRowMentionSoftWrapFixture();
-    const editor = createHandoffNoteEditor({
-      getColorByAgentId: () => new Map([[fx.agent, "#06f"]]),
-      onWireChange: () => {},
+    const { fx, editor, fromWire, thirdMentionStart, thirdMentionEnd } = mountStickyEditor();
+    const up = prepareVerticalColumnProbe({
+      root: fx.root,
+      doc: editor.getDoc(),
+      wire: editor.getWire(),
+      fromWire,
+      goalColumn: PILL_STICKY,
+      probeTargetWire: thirdMentionStart,
+      samples: [...fx.samples],
+      rootWidth: fx.rootWidth,
+      expectMinVisualRows: 3,
     });
-    editor.setRoot(fx.root);
-    editor.setDocFromWire(fx.wire, 97, { resetHistory: true });
-    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
-    reapplyThreeRowMentionSoftWrapStubs(fx);
-
-    const sticky = 484.22918701171875;
-    const restore = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
-      top: 177.06,
-      left: sticky,
-    });
-    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
     try {
       expect(pressArrow(editor, "ArrowUp")).toBe(true);
-      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
-      reapplyThreeRowMentionSoftWrapStubs(fx);
+      expect(editor.getCursor()).toBe(thirdMentionEnd);
+      up.restore();
+
+      seedFixtureLayout(fx, editor);
       setSelectionAtWire(fx.root, editor.getDoc(), 0, 0);
-      expect(pressArrow(editor, "ArrowDown")).toBe(true);
-      expect(editor.getCursor()).toBe(77);
+
+      const down = prepareVerticalColumnProbe({
+        root: fx.root,
+        doc: editor.getDoc(),
+        wire: editor.getWire(),
+        fromWire: 0,
+        goalColumn: PILL_STICKY,
+        probeTargetWire: thirdMentionStart,
+        samples: [...fx.samples],
+        rootWidth: fx.rootWidth,
+        expectMinVisualRows: 3,
+      });
+      try {
+        expect(pressArrow(editor, "ArrowDown")).toBe(true);
+        expect(editor.getCursor()).toBe(thirdMentionEnd);
+      } finally {
+        down.restore();
+      }
     } finally {
-      restore();
       fx.root.remove();
     }
   });
 
-  it("horizontal arrow clears sticky before next vertical move", () => {
-    const fx = mountThreeRowMentionSoftWrapFixture();
-    const editor = createHandoffNoteEditor({
-      getColorByAgentId: () => new Map([[fx.agent, "#06f"]]),
-      onWireChange: () => {},
+  it("horizontal arrow sets sticky to landing caret column before next vertical", () => {
+    const { fx, editor, fromWire, thirdMentionStart, thirdMentionEnd } = mountStickyEditor();
+    const up = prepareVerticalColumnProbe({
+      root: fx.root,
+      doc: editor.getDoc(),
+      wire: editor.getWire(),
+      fromWire,
+      goalColumn: PILL_STICKY,
+      probeTargetWire: thirdMentionStart,
+      samples: [...fx.samples],
+      rootWidth: fx.rootWidth,
+      expectMinVisualRows: 3,
     });
-    editor.setRoot(fx.root);
-    editor.setDocFromWire(fx.wire, 97, { resetHistory: true });
-    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
-    reapplyThreeRowMentionSoftWrapStubs(fx);
-
-    const sticky = 484.22918701171875;
-    const restore = stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), 97, {
-      top: 177.06,
-      left: sticky,
-    });
-    setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
     try {
       expect(pressArrow(editor, "ArrowUp")).toBe(true);
-      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
-      reapplyThreeRowMentionSoftWrapStubs(fx);
-      stubHandoffNoteAnchorRectAtWire(fx.root, editor.getDoc(), editor.getCursor(), {
-        top: fx.row0Top,
-        left: 349.5,
+      expect(editor.getCursor()).toBe(thirdMentionEnd);
+      up.restore();
+
+      seedFixtureLayout(fx, editor);
+      const focus = editor.getSelectionState().focus;
+      const leftMove = resolvePaintHorizontalArrowMove(editor.getDoc(), focus, "left", {
+        root: fx.root,
+        focusAffinity: editor.getSelectionState().focusAffinity,
       });
-      setMeasuredSamplesCache(fx.root, fx.wire, fx.rootWidth, [...LIVE_SESSION_SAMPLES]);
+      expect(leftMove.handled).toBe(true);
+      const leftLandWire = docPosToWireOffset(editor.getDoc(), leftMove.selection.focus);
+      const restoreLeftAnchor = stubHandoffNoteAnchorRectAtWire(
+        fx.root,
+        editor.getDoc(),
+        leftLandWire,
+        { top: fx.row1Top, left: ROW_START_STICKY }
+      );
+      setMeasuredSamplesCache(fx.root, editor.getWire(), fx.rootWidth, fx.samples);
       expect(pressArrow(editor, "ArrowLeft")).toBe(true);
+      expect(editor.getCursor()).toBe(leftLandWire);
+      restoreLeftAnchor();
+
+      seedFixtureLayout(fx, editor);
+      const down = prepareVerticalColumnProbe({
+        root: fx.root,
+        doc: editor.getDoc(),
+        wire: editor.getWire(),
+        fromWire: leftLandWire,
+        goalColumn: ROW_START_STICKY,
+        probeTargetWire: editor.getWire().length,
+        samples: [...fx.samples],
+        rootWidth: fx.rootWidth,
+        expectMinVisualRows: 3,
+      });
+      try {
+        expect(pressArrow(editor, "ArrowDown")).toBe(true);
+        expect(editor.getCursor()).not.toBe(thirdMentionEnd);
+      } finally {
+        down.restore();
+      }
+    } finally {
+      fx.root.remove();
+    }
+  });
+
+  it("insert mutation sets sticky from post-edit caret so next vertical drops prior column", async () => {
+    const row0 = "aaaaaaaaaa";
+    const row1 = "bbbbbbbbbb";
+    const wire = `${row0}\n${row1}`;
+    const row0Top = 100;
+    const row1Top = 136;
+    const rightCol = 200;
+    const leftCol = 40;
+    const row0Left = 1;
+    const row0Right = row0.length - 1;
+    const row1Start = row0.length + 1;
+    const row1Right = wire.length - 1;
+    const rootWidth = 400;
+    const samples = [
+      { wire: 0, top: row0Top, left: 0 },
+      { wire: row0Left, top: row0Top, left: leftCol },
+      { wire: row0Right, top: row0Top, left: rightCol },
+      { wire: row1Start, top: row1Top, left: 0 },
+      { wire: row1Start + 1, top: row1Top, left: leftCol },
+      { wire: row1Right, top: row1Top, left: rightCol },
+    ];
+
+    const root = document.createElement("div");
+    root.contentEditable = "true";
+    document.body.appendChild(root);
+    Object.defineProperty(root, "clientWidth", { configurable: true, value: rootWidth });
+    const editor = createHandoffNoteEditor({
+      getColorByAgentId: () => new Map(),
+      onWireChange: () => {},
+    });
+    editor.setRoot(root);
+    editor.setDocFromWire(wire, row0Right, { resetHistory: true });
+    setMeasuredSamplesCache(root, editor.getWire(), rootWidth, samples);
+
+    const down = prepareVerticalColumnProbe({
+      root,
+      doc: editor.getDoc(),
+      wire: editor.getWire(),
+      fromWire: row0Right,
+      goalColumn: rightCol,
+      probeTargetWire: row1Right,
+      samples,
+      rootWidth,
+      expectMinVisualRows: 2,
+    });
+    try {
       expect(pressArrow(editor, "ArrowDown")).toBe(true);
-      expect(editor.getCursor()).not.toBe(77);
+      expect(editor.getCursor()).toBe(row1Right);
+      down.restore();
+
+      editor.insertDocText("x");
+      const afterInsert = editor.getCursor();
+      const newWire = editor.getWire();
+      const newDoc = editor.getDoc();
+      const samplesAfter = [
+        { wire: 0, top: row0Top, left: 0 },
+        { wire: row0Left, top: row0Top, left: leftCol },
+        { wire: row0Right, top: row0Top, left: rightCol },
+        { wire: row1Start, top: row1Top, left: 0 },
+        { wire: row1Start + 1, top: row1Top, left: leftCol },
+        { wire: afterInsert, top: row1Top, left: leftCol },
+        { wire: newWire.length, top: row1Top, left: rightCol },
+      ];
+      setMeasuredSamplesCache(root, newWire, rootWidth, samplesAfter);
+      const restoreInsertAnchor = stubHandoffNoteAnchorRectAtWire(root, newDoc, afterInsert, {
+        top: row1Top,
+        left: leftCol,
+      });
+      setMeasuredSamplesCache(root, newWire, rootWidth, samplesAfter);
+      await Promise.resolve();
+      restoreInsertAnchor();
+
+      const up = prepareVerticalColumnProbe({
+        root,
+        doc: editor.getDoc(),
+        wire: editor.getWire(),
+        fromWire: afterInsert,
+        goalColumn: leftCol,
+        probeTargetWire: row0Left,
+        samples: samplesAfter,
+        rootWidth,
+        expectMinVisualRows: 2,
+      });
+      try {
+        expect(pressArrow(editor, "ArrowUp")).toBe(true);
+        expect(editor.getCursor()).toBe(row0Left);
+        expect(editor.getCursor()).not.toBe(row0Right);
+      } finally {
+        up.restore();
+      }
+    } finally {
+      root.remove();
+    }
+  });
+});
+
+describe("editor max-height caret visibility", () => {
+  it("scrolls the note root when the caret sits below the visible scrollport", () => {
+    const wire = "line";
+    const doc = wireToDoc(wire);
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+    Object.defineProperty(root, "clientHeight", { configurable: true, value: 100 });
+    Object.defineProperty(root, "scrollHeight", { configurable: true, value: 400 });
+    let scrollTop = 0;
+    Object.defineProperty(root, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    root.getBoundingClientRect = () =>
+      ({
+        top: 0,
+        bottom: 100,
+        left: 0,
+        right: 200,
+        height: 100,
+        width: 200,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as DOMRect;
+
+    const focus = wireOffsetToDocPos(doc, wire.length);
+    const restore = stubHandoffNoteAnchorRectAtWire(root, doc, wire.length, {
+      top: 250,
+      left: 12,
+      height: 18,
+    });
+    try {
+      expect(ensureHandoffNoteCaretVisible(root, doc, focus)).toBe(true);
+      expect(scrollTop).toBeGreaterThan(0);
     } finally {
       restore();
-      fx.root.remove();
+      root.remove();
     }
   });
 });

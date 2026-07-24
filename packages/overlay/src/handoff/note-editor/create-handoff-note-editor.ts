@@ -15,6 +15,8 @@
   expandSelectionFocusToDocEndIfNeeded,
   insertMentionAtSelection,
   isArrow,
+  isAtomicNode,
+  isCaretOnAmbiguousContentRowEndChar,
   normalizeHandoffNoteDoc,
   normalizeDocPos,
   normalizeSelection,
@@ -25,7 +27,6 @@
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
   type HandoffNoteSelection,
-  listEmbeddedBlankBandProbeWires,
 } from "@caliper/core";
 import {
   parseHandoffNoteDomToDoc,
@@ -33,7 +34,6 @@ import {
   updateMentionPresentation,
   type RenderOutcome,
 } from "./handoff-note-dom.js";
-import { resolveSelectedMentionArrowExit } from "./handoff-note-mention-selection.js";
 import {
   createHandoffNoteHistory,
   isRedoKeyboardEvent,
@@ -41,24 +41,23 @@ import {
   type HandoffNoteHistorySnapshot,
 } from "./handoff-note-history.js";
 import {
-  buildCaretStateSnapshot,
-  escapeWireForLog,
-  logCaretBoundaryTrace,
-  logEditStateTrace,
-  logHorArrow,
-  handoffNoteCaretGeomSnapshot,
-  handoffNoteSelectionSnapshotCompact,
-  logSelectionChangeFirstTouch,
-} from "../handoff-note-debug.js";
-import {
-  describeSyncRepairBranch,
   readDocSelection,
   repairDocSelectionIfNeeded,
   resolveDomVerticalArrowMove,
+  resolveSelectedMentionArrowExit,
   setDocSelection,
+  logDocSelectionLayoutMapping,
   type HandoffNoteClickIngress,
 } from "./handoff-note-selection.js";
 import {
+  logDelete,
+  logVerArrow,
+  logHorArrow,
+  snapshotDocPosForLog,
+  describeWireRemoval,
+} from "../handoff-note-debug.js";
+import {
+  ensureHandoffNoteCaretVisible,
   getDocAnchorRect,
   resolvePaintContext,
   resolvePaintContextAtWire,
@@ -85,6 +84,8 @@ export type HandoffNoteEditorOptions = {
   isMentionPopoverOpen?: () => boolean;
   onWireChange: (wire: string) => void;
   onResize?: () => void;
+  /** Fires when the editor scrollport moves (user scroll or caret ensure-visible). */
+  onScroll?: () => void;
 };
 
 export type HandoffNoteEditor = HandoffNoteEditorHost & {
@@ -132,8 +133,68 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
   let lastRenderOutcome: RenderOutcome = { domReplaced: true, docChanged: true };
   let selectedMentionNodeIndex: number | null = null;
   let verticalGoalColumn: number | null = null;
+  /** Coalesce post-mutate sticky remasures (typing bursts / paste) into one paint-backed refresh. */
+  let verticalGoalRefreshQueued = false;
+  let verticalGoalRefreshGeneration = 0;
   let pendingClickIngress: HandoffNoteClickIngress | null = null;
   const history = createHandoffNoteHistory();
+
+  /** Sticky goal = painted caret X (honor focusAffinity — `after` is after-glyph, not char start). */
+  const refreshVerticalGoalFromFocus = (_reason: string) => {
+    if (!root) {
+      verticalGoalColumn = null;
+      return;
+    }
+    const rect = getDocAnchorRect(root, doc, selection.focus, {
+      focusAffinity: selection.focusAffinity,
+    });
+    const next = rect && (rect.height > 0 || rect.width > 0) ? rect.left : null;
+    verticalGoalColumn = next;
+  };
+
+  const flushVerticalGoalRefresh = () => {
+    if (!verticalGoalRefreshQueued) {
+      return;
+    }
+    verticalGoalRefreshGeneration += 1;
+    verticalGoalRefreshQueued = false;
+    refreshVerticalGoalFromFocus("flush");
+  };
+
+  const scheduleVerticalGoalRefresh = (reason: string) => {
+    const generation = (verticalGoalRefreshGeneration += 1);
+    verticalGoalRefreshQueued = true;
+    queueMicrotask(() => {
+      if (generation !== verticalGoalRefreshGeneration) {
+        return;
+      }
+      verticalGoalRefreshQueued = false;
+      refreshVerticalGoalFromFocus(reason);
+    });
+  };
+
+  const notifyScrollIfChanged = (beforeScrollTop: number) => {
+    if (!root || root.scrollTop === beforeScrollTop) {
+      return;
+    }
+    options.onScroll?.();
+  };
+
+  const ensureFocusCaretVisible = () => {
+    if (!root) {
+      return { scrolled: false, scrollTopBefore: 0, scrollTopAfter: 0 };
+    }
+    const before = root.scrollTop;
+    const scrolled = ensureHandoffNoteCaretVisible(root, doc, selection.focus);
+    if (scrolled) {
+      notifyScrollIfChanged(before);
+    }
+    return { scrolled, scrollTopBefore: before, scrollTopAfter: root.scrollTop };
+  };
+
+  const onRootScroll = () => {
+    options.onScroll?.();
+  };
 
   const presentationOptions = () => ({
     colorByAgentId: options.getColorByAgentId(),
@@ -165,30 +226,27 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     const clickIngressPending = source === "selectionchange" ? pendingClickIngress : null;
     const useAuthorityRead =
       source === "sync" || (source === "selectionchange" && !clickIngressPending);
+    const memoryWire = docPosToWireOffset(doc, priorFocus);
     const live = readDocSelection(root, doc, useAuthorityRead ? { from: priorFocus } : undefined);
+    const liveWire = docPosToWireOffset(doc, live.focus);
     if (
       live.anchor.nodeIndex !== live.focus.nodeIndex ||
       live.anchor.nodeOffset !== live.focus.nodeOffset
     ) {
       selection = normalizeSelection(doc, live, { from: priorFocus });
+      if (clickIngressPending) {
+        logDocSelectionLayoutMapping(root, doc, selection.focus, `click.${source}.range`, {
+          memoryWire,
+          liveWire,
+          affinity: selection.focusAffinity ?? null,
+        });
+      }
       return;
     }
     const repairMode = source === "selectionchange" ? "strand-only" : "full";
     const clickIngress = source === "selectionchange" ? pendingClickIngress : null;
-    const hadClickIngress = clickIngress !== null;
     if (clickIngress) {
       pendingClickIngress = null;
-      verticalGoalColumn = null;
-    }
-    const priorWire = docPosToWireOffset(doc, priorFocus);
-    const liveWireBeforeRepair = docPosToWireOffset(doc, live.focus);
-    if (source === "selectionchange") {
-      logSelectionChangeFirstTouch(root, doc, {
-        priorWire,
-        liveWire: liveWireBeforeRepair,
-        liveFocus: live.focus,
-        clickIngress,
-      });
     }
     suppressDomSelectionSync = true;
     let focus: HandoffNoteDocPos;
@@ -203,69 +261,13 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       });
     }
     selection = collapsedSelectionReconcilingAffinity(doc, focus, live, priorSelection);
-    const liveWire = liveWireBeforeRepair;
-    const resolvedWire = docPosToWireOffset(doc, focus);
-    const wireMoved = priorWire !== liveWire || liveWire !== resolvedWire;
-    if (source === "selectionchange" && wireMoved) {
-      logEditStateTrace("selectionchange", {
-        priorWire,
-        liveWire,
-        resolvedWire,
-        repairMode,
-        hadClickIngress,
-        adopted: liveWire !== resolvedWire ? "repaired" : "accepted",
-        jitterRisk:
-          hadClickIngress && liveWire !== resolvedWire
-            ? "click-repair-painted"
-            : !hadClickIngress && priorWire !== liveWire && liveWire === resolvedWire
-              ? "follow-up-accepted-live"
-              : null,
-        ...buildCaretStateSnapshot({
-          doc,
-          authorityFocus: priorFocus,
-          activeFocus: live.focus,
-          root,
-        }),
-      });
-    } else if (source === "sync") {
-      const { probeAliasEligible, repairBranch } = describeSyncRepairBranch(
-        doc,
-        priorFocus,
-        live.focus,
-        focus
-      );
-      const noopSync =
-        priorWire === liveWire &&
-        liveWire === resolvedWire &&
-        repairBranch === "acceptedLive" &&
-        !probeAliasEligible;
-      if (!noopSync) {
-        logEditStateTrace("reconcile>>sync", {
-          priorWire,
-          liveWire,
-          resolvedWire,
-          repairMode,
-          probeAliasEligible,
-          repairBranch,
-          ...buildCaretStateSnapshot({
-            doc,
-            authorityFocus: priorFocus,
-            activeFocus: focus,
-            root,
-          }),
-        });
-      }
-    } else if (liveWire !== resolvedWire) {
-      logEditStateTrace(`reconcile>>${source}`, {
-        priorWire,
-        liveWire,
-        resolvedWire,
-        ...buildCaretStateSnapshot({
-          doc,
-          authorityFocus: priorFocus,
-          activeFocus: live.focus,
-          root,
-        }),
+    if (clickIngress) {
+      refreshVerticalGoalFromFocus("click");
+      logDocSelectionLayoutMapping(root, doc, selection.focus, "click", {
+        memoryWire,
+        liveWireBeforeRepair: liveWire,
+        repairedWire: docPosToWireOffset(doc, focus),
+        affinity: selection.focusAffinity ?? null,
       });
     }
   };
@@ -296,7 +298,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     selection: cloneSelection(selection),
   });
 
-  const syncWireOut = (source: string) => {
+  const syncWireOut = () => {
     const wire = docToWire(doc);
     if (wire === lastEmittedWire) {
       return;
@@ -305,161 +307,73 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     options.onWireChange(wire);
   };
 
-  const horFocusSnap = (pos: HandoffNoteDocPos) => {
-    const node = doc.nodes[pos.nodeIndex];
-    return {
-      nodeIndex: pos.nodeIndex,
-      nodeOffset: pos.nodeOffset,
-      nodeType: node?.type ?? "missing",
-      wire: docPosToWireOffset(doc, pos),
-    };
-  };
-
   const writeSelection = (
     nextSelection: HandoffNoteSelection,
-    source: string,
-    afterRender: RenderOutcome = lastRenderOutcome,
-    arrowKey?: string
+    afterRender: RenderOutcome = lastRenderOutcome
   ) => {
     const priorFocus = selection.focus;
     selection = normalizeSelection(doc, nextSelection);
-    const isHorArrow =
-      arrowKey === "ArrowLeft" || arrowKey === "ArrowRight" || source === "mentionArrowExit";
-    const logHorWriteFinal = (keptAuthority: boolean, branch: string) => {
-      if (!isHorArrow || !root) {
-        return;
-      }
-      const liveNow = readDocSelection(root, doc);
-      const geom = handoffNoteCaretGeomSnapshot(root);
-      const anchor = getDocAnchorRect(root, doc, selection.focus);
-      logHorArrow("writeFinal", {
-        source,
-        key: arrowKey ?? null,
-        keptAuthority,
-        branch,
-        authority: horFocusSnap(selection.focus),
-        live: horFocusSnap(liveNow.focus),
-        authorityLiveEqual: docPosEqual(selection.focus, liveNow.focus),
-        dom: handoffNoteSelectionSnapshotCompact(root),
-        geom,
-        anchorRect: anchor
-          ? {
-              top: anchor.top,
-              left: anchor.left,
-              width: anchor.width,
-              height: anchor.height,
-            }
-          : null,
-      });
-      logHorArrow("geom", {
-        key: arrowKey ?? null,
-        branch,
-        wire: docPosToWireOffset(doc, selection.focus),
-        focusType: doc.nodes[selection.focus.nodeIndex]?.type ?? "missing",
-        focusOffset: selection.focus.nodeOffset,
-        geom,
-        anchorRect: anchor
-          ? {
-              top: anchor.top,
-              left: anchor.left,
-              width: anchor.width,
-              height: anchor.height,
-            }
-          : null,
-      });
-    };
     if (!root) {
       return;
     }
     const requestedWire = docPosToWireOffset(doc, selection.focus);
+
     suppressDomSelectionSync = true;
     try {
-      setDocSelection(root, doc, selection, {
-        source,
-      });
+      setDocSelection(root, doc, selection);
     } finally {
       suppressDomSelectionSync = false;
     }
 
+    ensureFocusCaretVisible();
+
     const live = readDocSelection(root, doc, { from: selection.focus });
     const liveWire = docPosToWireOffset(doc, live.focus);
+
     if (liveWire !== requestedWire) {
-      const branch = liveWire < requestedWire ? "liveBehindRequested" : "liveAheadOfRequested";
-      logCaretBoundaryTrace(`writeSelection>>keepAuthority>>${source}`, {
-        branch,
-        priorWire: docPosToWireOffset(doc, priorFocus),
+      logDocSelectionLayoutMapping(root, doc, selection.focus, "writeSelection.mismatch", {
+        requestedWire,
         liveWire,
-        resolvedWire: requestedWire,
+        affinity: selection.focusAffinity ?? null,
+        priorFocusWire: docPosToWireOffset(doc, priorFocus),
       });
-      logHorWriteFinal(true, branch);
       return;
     }
     if (
       liveWire === requestedWire &&
       !docPosEqual(selection.focus, live.focus) &&
-      doc.nodes[selection.focus.nodeIndex]?.type === "mention" &&
+      isAtomicNode(doc.nodes[selection.focus.nodeIndex]) &&
       doc.nodes[live.focus.nodeIndex]?.type === "text"
     ) {
-      logCaretBoundaryTrace(`writeSelection>>keepAuthority>>${source}`, {
-        branch: "mentionOverTextSameWire",
-        liveWire,
-        resolvedWire: requestedWire,
-        requested: {
-          nodeIndex: selection.focus.nodeIndex,
-          nodeOffset: selection.focus.nodeOffset,
-          nodeType: doc.nodes[selection.focus.nodeIndex]?.type ?? "missing",
-        },
-        live: {
-          nodeIndex: live.focus.nodeIndex,
-          nodeOffset: live.focus.nodeOffset,
-          nodeType: doc.nodes[live.focus.nodeIndex]?.type ?? "missing",
-        },
-      });
-      logHorWriteFinal(true, "mentionOverTextSameWire");
       return;
     }
     if (
       liveWire === requestedWire &&
       !docPosEqual(selection.focus, live.focus) &&
       doc.nodes[selection.focus.nodeIndex]?.type === "text" &&
-      doc.nodes[live.focus.nodeIndex]?.type === "mention"
+      isAtomicNode(doc.nodes[live.focus.nodeIndex])
     ) {
-      logCaretBoundaryTrace(`writeSelection>>keepAuthority>>${source}`, {
-        branch: "textOverMentionSameWire",
-        liveWire,
-        resolvedWire: requestedWire,
-        requested: {
-          nodeIndex: selection.focus.nodeIndex,
-          nodeOffset: selection.focus.nodeOffset,
-          nodeType: doc.nodes[selection.focus.nodeIndex]?.type ?? "missing",
-        },
-        live: {
-          nodeIndex: live.focus.nodeIndex,
-          nodeOffset: live.focus.nodeOffset,
-          nodeType: doc.nodes[live.focus.nodeIndex]?.type ?? "missing",
-        },
-      });
-      logHorWriteFinal(true, "textOverMentionSameWire");
+      return;
+    }
+    if (
+      liveWire === requestedWire &&
+      docPosEqual(selection.focus, live.focus) &&
+      isCaretOnAmbiguousContentRowEndChar(doc, selection.focus) &&
+      selection.focusAffinity !== live.focusAffinity
+    ) {
+      // Intentional write already decided omit / before / after on the ambiguous
+      // last char. DOM recovery feeds click/selectionchange ingress only — do not
+      // upgrade omit→after (or otherwise override) after paint.
       return;
     }
     if (!afterRender.domReplaced) {
-      logHorWriteFinal(false, "noDomReplace");
       return;
     }
-    if (!docPosEqual(selection.focus, live.focus)) {
-      logCaretBoundaryTrace(`writeSelection>>acceptDom>>${source}`, {
-        branch: "livePosMismatch",
-        liveWire,
-        resolvedWire: requestedWire,
-      });
-    }
     selection = normalizeSelection(doc, live, { from: priorFocus });
-    logHorWriteFinal(false, "acceptLive");
   };
 
   const renderDoc = (
     nextSelection: HandoffNoteSelection,
-    source: string,
     renderOptions?: { trustDoc?: boolean; previousDoc?: HandoffNoteDoc }
   ) => {
     if (!root) {
@@ -473,7 +387,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     if (lastRenderOutcome.docChanged) {
       invalidateHandoffNoteLayoutCache(root);
     }
-    writeSelection(nextSelection, `render.${source}`, lastRenderOutcome);
+    writeSelection(nextSelection, lastRenderOutcome);
   };
 
   const syncSelectionFromDom = (): HandoffNoteSelection => {
@@ -488,14 +402,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     history.recordBefore(captureSnapshot());
   };
 
-  const mutate = (
-    nextDoc: HandoffNoteDoc,
-    nextSelection: HandoffNoteSelection,
-    source: string,
-    record = true
-  ) => {
+  const mutate = (nextDoc: HandoffNoteDoc, nextSelection: HandoffNoteSelection, record = true) => {
     selectedMentionNodeIndex = null;
-    verticalGoalColumn = null;
     const prevDoc = doc;
     const normalized = normalizeHandoffNoteDoc(nextDoc);
     const resolvedSelection = normalizeSelection(normalized, nextSelection);
@@ -504,38 +412,23 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     }
     doc = normalized;
     selection = resolvedSelection;
-    renderDoc(resolvedSelection, source, { trustDoc: true, previousDoc: prevDoc });
-    syncWireOut(source);
+    renderDoc(resolvedSelection, { trustDoc: true, previousDoc: prevDoc });
+    syncWireOut();
     resize();
-    if (source.startsWith("beforeInput.") || source.startsWith("keydown.")) {
-      const wireBefore = docToWire(prevDoc);
-      const wireAfter = docToWire(doc);
-      logEditStateTrace("mutate>>after", {
-        source,
-        wireBefore: escapeWireForLog(wireBefore),
-        wireAfter: escapeWireForLog(wireAfter),
-        wireLenBefore: wireBefore.length,
-        wireLenAfter: wireAfter.length,
-        probesBefore: listEmbeddedBlankBandProbeWires(prevDoc),
-        probesAfter: listEmbeddedBlankBandProbeWires(doc),
-        ...buildCaretStateSnapshot({
-          doc,
-          authorityFocus: resolvedSelection.focus,
-          root,
-          includeWire: true,
-        }),
-      });
-    }
+    scheduleVerticalGoalRefresh("mutate");
   };
 
-  const mutateSelection = (focus: HandoffNoteDocPos, source: string, key?: string) => {
+  const mutateSelection = (focusOrSelection: HandoffNoteDocPos | HandoffNoteSelection) => {
     selectedMentionNodeIndex = null;
-    const nextSelection = collapsedSelection(focus);
+    const nextSelection =
+      "anchor" in focusOrSelection && "focus" in focusOrSelection
+        ? focusOrSelection
+        : collapsedSelection(focusOrSelection);
     if (!root) {
       selection = normalizeSelection(doc, nextSelection);
       return;
     }
-    writeSelection(nextSelection, source, lastRenderOutcome, key);
+    writeSelection(nextSelection, lastRenderOutcome);
     refreshMentionPresentation();
   };
 
@@ -544,10 +437,11 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       const prevDoc = doc;
       doc = normalizeHandoffNoteDoc(snapshot.doc);
       selection = normalizeSelection(doc, snapshot.selection);
-      renderDoc(selection, "restoreSnapshot", { trustDoc: true, previousDoc: prevDoc });
-      syncWireOut("restoreSnapshot");
+      renderDoc(selection, { trustDoc: true, previousDoc: prevDoc });
+      syncWireOut();
       options.onResize?.();
       resize();
+      scheduleVerticalGoalRefresh("restore");
     });
   };
 
@@ -562,6 +456,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     const cap = maxHeight > 0 ? maxHeight : contentHeight;
     root.style.height = `${Math.min(contentHeight, cap)}px`;
     root.style.overflowY = maxHeight > 0 && contentHeight > maxHeight ? "auto" : "hidden";
+    ensureFocusCaretVisible();
     options.onResize?.();
   };
 
@@ -588,12 +483,14 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     setRoot(next) {
       if (root) {
         root.removeEventListener("mousedown", onRootMouseDown);
+        root.removeEventListener("scroll", onRootScroll);
         root.ownerDocument.removeEventListener("selectionchange", onDocumentSelectionChange);
       }
       root = next;
       pendingClickIngress = null;
       if (root) {
         root.addEventListener("mousedown", onRootMouseDown);
+        root.addEventListener("scroll", onRootScroll, { passive: true });
         root.ownerDocument.addEventListener("selectionchange", onDocumentSelectionChange);
       }
     },
@@ -626,7 +523,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         lastEmittedWire = wire;
         selection = normalizeSelection(doc, nextSelection, { from: selection.focus });
         if (root) {
-          writeSelection(selection, "importWire.selectionOnly");
+          writeSelection(selection);
+          scheduleVerticalGoalRefresh("setDocFromWire.selection");
         }
         return;
       }
@@ -635,10 +533,11 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       // Wire import: focusPos is authority — do not snap via prior-doc `from`.
       selection = normalizeSelection(doc, nextSelection);
       invalidateHandoffNoteLayoutCache(root);
-      renderDoc(selection, "importWire.changed");
+      renderDoc(selection);
       resize();
-      syncWireOut("importWire.changed");
+      syncWireOut();
       lastEmittedWire = wire;
+      scheduleVerticalGoalRefresh("setDocFromWire");
     },
 
     refreshPresentation() {
@@ -666,7 +565,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     getSelectedMentionNodeIndex: () => selectedMentionNodeIndex,
 
     applyDoc(next, nextSelection) {
-      mutate(normalizeHandoffNoteDoc(next), nextSelection, "applyDoc", true);
+      mutate(normalizeHandoffNoteDoc(next), nextSelection, true);
     },
 
     insertDocText(text) {
@@ -675,7 +574,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       }
       const active = root ? syncSelectionFromDom() : selection;
       const result = applyDocInsertText(doc, active, text);
-      mutate(result.doc, result.selection, "insertDocText", true);
+      mutate(result.doc, result.selection, true);
     },
 
     getSelectionWire() {
@@ -704,7 +603,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         normalizeDocPos(doc, active.focus)
       );
       const result = spliceDocSelection(doc, anchor, focus, "");
-      mutate(result.doc, result.selection, "deleteSelection", true);
+      mutate(result.doc, result.selection, true);
     },
 
     getWire: () => docToWire(doc),
@@ -713,7 +612,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
 
     insertMentionAtomAt(agentId, replaceStart, replaceEnd) {
       const result = insertMentionAtSelection(doc, agentId, replaceStart, replaceEnd);
-      mutate(result.doc, result.selection, "insertMentionAtomAt", true);
+      mutate(result.doc, result.selection, true);
     },
 
     focus() {
@@ -747,7 +646,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       }
       const parsed = normalizeHandoffNoteDoc(parseHandoffNoteDomToDoc(root));
       const live = readDocSelection(root, parsed);
-      mutate(parsed, live, "compositionEnd", true);
+      mutate(parsed, live, true);
     },
 
     handleBeforeInput(event) {
@@ -785,8 +684,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       ) {
         const direction = event.inputType === "deleteContentBackward" ? "backspace" : "delete";
         const authorityFocusBeforeSync = { ...selection.focus };
-        const authorityWire = docPosToWireOffset(doc, authorityFocusBeforeSync);
-        const activeWire = docPosToWireOffset(doc, active.focus);
         const collapsed =
           docPosToWireOffset(doc, active.anchor) === docPosToWireOffset(doc, active.focus) &&
           docPosEqual(active.anchor, active.focus);
@@ -804,33 +701,25 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
               }).focusPos,
               focus: deleteFocus,
             };
-        logEditStateTrace(`delete>>beforeInput>>${direction}>>before`, {
-          ingress: "beforeInput",
-          inputType: event.inputType,
-          authorityWire,
-          activeWire,
-          ...buildCaretStateSnapshot({
-            doc,
-            authorityFocus: authorityFocusBeforeSync,
-            activeFocus: active.focus,
-            root,
-            direction,
-          }),
-        });
+        const beforeWire = docToWire(doc);
         const deleted = applyDocDelete(doc, deleteSelection, direction);
-        logEditStateTrace(`delete>>beforeInput>>${direction}>>result`, {
-          ingress: "beforeInput",
-          noop: !deleted,
-          resolvedWire: deleted
-            ? docPosToWireOffset(deleted.doc, deleted.selection.focus)
-            : activeWire,
-          probesAfter: deleted ? listEmbeddedBlankBandProbeWires(deleted.doc) : undefined,
+        const afterWire = deleted ? docToWire(deleted.doc) : beforeWire;
+        logDelete("beforeInput", {
+          direction,
+          fromWire: docPosToWireOffset(doc, deleteFocus),
+          fromDoc: snapshotDocPosForLog(doc, deleteFocus),
+          fromAffinity: deleteSelection.focusAffinity ?? null,
+          toWire: deleted ? docPosToWireOffset(deleted.doc, deleted.selection.focus) : null,
+          toDoc: deleted ? snapshotDocPosForLog(deleted.doc, deleted.selection.focus) : null,
+          toAffinity: deleted?.selection.focusAffinity ?? null,
+          ...describeWireRemoval(beforeWire, afterWire),
+          handled: Boolean(deleted),
         });
         if (!deleted) {
           return;
         }
         event.preventDefault();
-        mutate(deleted.doc, deleted.selection, `beforeInput.${direction}`, true);
+        mutate(deleted.doc, deleted.selection, true);
         return;
       }
 
@@ -839,30 +728,16 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         if (!replacement) {
           return;
         }
-        const authorityWire = docPosToWireOffset(doc, selection.focus);
-        const activeWire = docPosToWireOffset(doc, active.focus);
-        logEditStateTrace("insert>>before", {
-          ingress: "beforeInput",
-          text: replacement,
-          authorityWire,
-          activeWire,
-          authorityDrift: authorityWire !== activeWire,
-          ...buildCaretStateSnapshot({
-            doc,
-            authorityFocus: selection.focus,
-            activeFocus: active.focus,
-          }),
-        });
         event.preventDefault();
         const result = applyDocInsertText(doc, active, replacement);
-        mutate(result.doc, result.selection, "beforeInput.insertText", true);
+        mutate(result.doc, result.selection, true);
         return;
       }
 
       if (event.inputType === "insertLineBreak") {
         event.preventDefault();
         const result = applyDocLineBreak(doc, active);
-        mutate(result.doc, result.selection, "beforeInput.insertLineBreak", true);
+        mutate(result.doc, result.selection, true);
       }
     },
 
@@ -889,22 +764,12 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       }
 
       const authorityFocusBeforeSync = { ...selection.focus };
-      const authorityBefore = docPosToWireOffset(doc, authorityFocusBeforeSync);
       const active = syncSelectionFromDom();
       const collapsed =
         active.anchor.nodeIndex === active.focus.nodeIndex &&
         active.anchor.nodeOffset === active.focus.nodeOffset;
 
       if (selectedMentionNodeIndex !== null && options.isMentionPopoverOpen?.() && isArrow(event)) {
-        if (isArrow.horc(event)) {
-          logHorArrow("keydown", {
-            key: event.key,
-            bail: "selectedMentionPopoverOpen",
-            selectedMentionNodeIndex,
-            focus: horFocusSnap(active.focus),
-            authorityBefore: horFocusSnap(authorityFocusBeforeSync),
-          });
-        }
         return false;
       }
 
@@ -914,14 +779,6 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         isArrow(event)
       ) {
         if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
-          if (isArrow.horc(event)) {
-            logHorArrow("keydown", {
-              key: event.key,
-              bail: "selectedMentionModifier",
-              selectedMentionNodeIndex,
-              focus: horFocusSnap(active.focus),
-            });
-          }
           return false;
         }
         const direction = isArrow.direction(event);
@@ -929,70 +786,47 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           return false;
         }
         const exit = resolveSelectedMentionArrowExit(doc, selectedMentionNodeIndex, direction);
-        if (isArrow.horc(event)) {
-          logHorArrow("keydown", {
-            key: event.key,
-            path: "selectedMentionExit",
-            direction,
-            exitNull: exit === null,
-            selectedMentionNodeIndex,
-            focus: horFocusSnap(active.focus),
-            exit: exit ? horFocusSnap(exit) : null,
-          });
-        }
         if (exit === null) {
           return false;
         }
         event.preventDefault();
-        mutateSelection(exit, "mentionArrowExit", event.key);
+        mutateSelection(exit);
         return true;
       }
 
       if (isArrow.horc(event)) {
         const direction = isArrow.horcDirection(event);
-        logHorArrow("keydown", {
-          key: event.key,
-          direction,
-          collapsed,
-          modifier: Boolean(event.shiftKey || event.metaKey || event.ctrlKey || event.altKey),
-          focus: horFocusSnap(active.focus),
-          authorityBefore: horFocusSnap(authorityFocusBeforeSync),
-          authorityWireBefore: authorityBefore,
-          dom: handoffNoteSelectionSnapshotCompact(root),
-        });
         if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
-          logHorArrow("bail", { key: event.key, reason: "modifier" });
           return false;
         }
         if (!collapsed) {
-          logHorArrow("bail", { key: event.key, reason: "notCollapsed" });
           return false;
         }
         if (direction === null) {
-          logHorArrow("bail", { key: event.key, reason: "nullDirection" });
           return false;
         }
-        verticalGoalColumn = null;
         const move = resolvePaintHorizontalArrowMove(doc, active.focus, direction, {
           root: root ?? undefined,
+          focusAffinity: active.focusAffinity,
         });
-        logHorArrow("apply", {
-          key: event.key,
+        const fromWire = docPosToWireOffset(doc, active.focus);
+        const toWire = docPosToWireOffset(doc, move.selection.focus);
+        logHorArrow("land", {
           direction,
+          fromWire,
+          fromDoc: snapshotDocPosForLog(doc, active.focus),
+          toWire,
+          toDoc: snapshotDocPosForLog(doc, move.selection.focus),
+          fromAffinity: active.focusAffinity ?? null,
+          toAffinity: move.selection.focusAffinity ?? null,
           handled: move.handled,
-          from: horFocusSnap(active.focus),
-          to: move.handled ? horFocusSnap(move.pos) : null,
         });
         if (!move.handled) {
-          logHorArrow("bail", {
-            key: event.key,
-            reason: "stepUnhandled",
-            from: horFocusSnap(active.focus),
-          });
           return false;
         }
         event.preventDefault();
-        mutateSelection(move.pos, "arrowKey", event.key);
+        mutateSelection(move.selection);
+        refreshVerticalGoalFromFocus("horizontal");
         return true;
       }
 
@@ -1007,8 +841,24 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         if (direction === null) {
           return false;
         }
+        flushVerticalGoalRefresh();
+        const fromWire = docPosToWireOffset(doc, active.focus);
+        const fromAffinity = active.focusAffinity ?? null;
         const move = resolveDomVerticalArrowMove(root, doc, active.focus, direction, {
           stickyGoalColumn: verticalGoalColumn,
+          focusAffinity: active.focusAffinity,
+        });
+        const toWire = docPosToWireOffset(doc, move.pos);
+        logVerArrow("land", {
+          direction,
+          fromWire,
+          fromDoc: snapshotDocPosForLog(doc, active.focus),
+          toWire,
+          toDoc: snapshotDocPosForLog(doc, move.pos),
+          fromAffinity,
+          toAffinity: move.selection.focusAffinity ?? null,
+          branch: move.branch ?? null,
+          handled: move.handled,
         });
         if (!move.handled) {
           return false;
@@ -1017,7 +867,7 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           verticalGoalColumn = move.goalColumn;
         }
         event.preventDefault();
-        mutateSelection(move.pos, "arrowKey", event.key);
+        mutateSelection(move.selection);
         return true;
       }
 
@@ -1026,40 +876,30 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           return false;
         }
         const direction = event.key === "Backspace" ? "backspace" : "delete";
-        const activeWire = docPosToWireOffset(doc, active.focus);
         const deleteFocus = resolvePaintContext(doc, active.focus, {
           from: authorityFocusBeforeSync,
           root: root ?? undefined,
         }).focusPos;
         const deleteSelection = collapsedSelectionCarryingAffinity(doc, deleteFocus, active);
-        logEditStateTrace(`delete>>keydown>>${direction}>>before`, {
-          ingress: "keydown",
-          priorWire: authorityBefore,
-          activeWire,
-          ...buildCaretStateSnapshot({
-            doc,
-            authorityFocus: authorityFocusBeforeSync,
-            activeFocus: active.focus,
-            root,
-            direction,
-          }),
-        });
+        const beforeWire = docToWire(doc);
         const deleted = applyDocDelete(doc, deleteSelection, direction);
-        logEditStateTrace(`delete>>keydown>>${direction}>>result`, {
-          ingress: "keydown",
-          priorWire: authorityBefore,
-          activeWire,
-          resolvedWire: deleted
-            ? docPosToWireOffset(deleted.doc, deleted.selection.focus)
-            : activeWire,
-          noop: !deleted,
-          probesAfter: deleted ? listEmbeddedBlankBandProbeWires(deleted.doc) : undefined,
+        const afterWire = deleted ? docToWire(deleted.doc) : beforeWire;
+        logDelete("keydown", {
+          direction,
+          fromWire: docPosToWireOffset(doc, deleteFocus),
+          fromDoc: snapshotDocPosForLog(doc, deleteFocus),
+          fromAffinity: deleteSelection.focusAffinity ?? null,
+          toWire: deleted ? docPosToWireOffset(deleted.doc, deleted.selection.focus) : null,
+          toDoc: deleted ? snapshotDocPosForLog(deleted.doc, deleted.selection.focus) : null,
+          toAffinity: deleted?.selection.focusAffinity ?? null,
+          ...describeWireRemoval(beforeWire, afterWire),
+          handled: Boolean(deleted),
         });
         if (!deleted) {
           return false;
         }
         event.preventDefault();
-        mutate(deleted.doc, deleted.selection, `keydown.${event.key}`, true);
+        mutate(deleted.doc, deleted.selection, true);
         return true;
       }
 

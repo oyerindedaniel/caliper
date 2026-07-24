@@ -26,7 +26,7 @@ import {
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
 import { docToWire, describeHandoffNoteCursorContext, wireToDoc } from "./handoff-note-doc.js";
-import { listEmbeddedBlankBandProbeWires } from "./handoff-note-embedded-newlines.js";
+import { listBlankVisualLineStartWires } from "./handoff-note-embedded-newlines.js";
 import { resolveWireLineColumn } from "./handoff-note-wire-lines.js";
 
 describe("HandoffNoteDocPos", () => {
@@ -181,7 +181,7 @@ describe("resolveDocVerticalArrowMove", () => {
     const header = "header";
     const wire = `${header}${"\n".repeat(emptyVisualRows + 1)} tail`;
     const doc = wireToDoc(wire);
-    const blanks = listEmbeddedBlankBandProbeWires(doc);
+    const blanks = listBlankVisualLineStartWires(doc);
     return { wire, blanks, tailStart: wire.indexOf("tail") };
   }
 
@@ -281,12 +281,11 @@ describe("resolveDocVerticalArrowMove", () => {
     const pillRowSecondPill = pillRowStart + `@${pillRowAgent} `.length;
     const pillRowEndingNewline = pillRowWire.indexOf(pillRowSuffix) + pillRowSuffix.length;
     const pillRowDoc = wireToDoc(pillRowWire);
-    const pillRowProbes = listEmbeddedBlankBandProbeWires(pillRowDoc);
+    const pillRowProbes = listBlankVisualLineStartWires(pillRowDoc);
     const blanksBelowPillRow = pillRowProbes.filter((wire) => wire >= pillRowEndingNewline);
     const firstBlankBelowPillRow = blanksBelowPillRow[0]!;
     const secondBlankBelowPillRow = blanksBelowPillRow[1]!;
     const blanksAbovePillRow = pillRowProbes.filter((wire) => wire < pillRowStart);
-    const emptyLineAbovePillRow = blanksAbovePillRow[blanksAbovePillRow.length - 1]!;
 
     it("pill row line start enters blank below not same-row pill", () => {
       assertVertical(pillRowDoc, pillRowStart, 1, firstBlankBelowPillRow, pillRowSecondPill);
@@ -307,14 +306,11 @@ describe("resolveDocVerticalArrowMove", () => {
       );
     });
 
-    it("newline immediately above pill row crosses to prior blank probe", () => {
-      assertVertical(
-        pillRowDoc,
-        pillRowStart - 1,
-        -1,
-        emptyLineAbovePillRow,
-        pillRowEndingNewline - 1
-      );
+    it("newline immediately above pill row crosses to prior blank line-start", () => {
+      const blankImmediatelyAbove = blanksAbovePillRow[blanksAbovePillRow.length - 1]!;
+      const priorBlank = blanksAbovePillRow[blanksAbovePillRow.length - 2]!;
+      expect(blankImmediatelyAbove).toBe(pillRowStart - 1);
+      assertVertical(pillRowDoc, blankImmediatelyAbove, -1, priorBlank, pillRowEndingNewline - 1);
     });
 
     it("blank below pill row steps monotonically without skipping distant block", () => {
@@ -327,7 +323,7 @@ describe("resolveDocVerticalArrowMove", () => {
     const firstPillOnRow = multiPillWire.lastIndexOf(`\n@${multiPillAgent} `) + 1;
     const secondPillOnRow = multiPillWire.lastIndexOf(` @${multiPillAgent} `) + 1;
     const multiPillDoc = wireToDoc(multiPillWire);
-    const multiPillProbes = listEmbeddedBlankBandProbeWires(multiPillDoc);
+    const multiPillProbes = listBlankVisualLineStartWires(multiPillDoc);
     const blankAboveRow = multiPillProbes.filter((wire) => wire < firstPillOnRow).at(-1)!;
 
     it("later pill on same row crosses to blank above row", () => {
@@ -343,7 +339,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `prefix @${agent} mid @${agent} tail\n\n\n`;
       const doc = wireToDoc(wire);
       const secondPill = wire.indexOf(`@${agent}`, wire.indexOf(`@${agent}`) + 1);
-      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const firstBlank = listBlankVisualLineStartWires(doc)[0]!;
       assertVertical(doc, wire.indexOf(`@${agent}`), 1, firstBlank, secondPill);
     });
   });
@@ -532,7 +528,7 @@ describe("resolveDocVerticalArrowMove", () => {
   describe("vertical — wire-line blank run stepping", () => {
     const gapWire = "header\n\n\n tail";
     const gapDoc = wireToDoc(gapWire);
-    const gapBlanks = listEmbeddedBlankBandProbeWires(gapDoc);
+    const gapBlanks = listBlankVisualLineStartWires(gapDoc);
 
     it("line start and first blank round-trip on header/tail gap", () => {
       const doc = wireToDoc(gapWire);
@@ -549,7 +545,7 @@ describe("resolveDocVerticalArrowMove", () => {
     it("content mid-column enters blank at line start", () => {
       const wire = "header\n\ntail";
       const doc = wireToDoc(wire);
-      const blankLine = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const blankLine = listBlankVisualLineStartWires(doc)[0]!;
       assertVertical(doc, 4, 1, blankLine);
       assertVertical(doc, blankLine, -1, 0, "header".length);
     });
@@ -560,7 +556,7 @@ describe("resolveDocVerticalArrowMove", () => {
     const agentB = "caliper-bbbbbbb";
     const wire = `row @${agentA} mid @${agentB} \n\ntail @${agentA} `;
     const suffixDoc = wireToDoc(wire);
-    const blankLineStart = listEmbeddedBlankBandProbeWires(suffixDoc)[0]!;
+    const blankLineStart = listBlankVisualLineStartWires(suffixDoc)[0]!;
     const prefixMentionAt = wire.indexOf("@");
     const lowerMentionEnd = wire.length - 1;
 
@@ -708,7 +704,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `${row}\n\n\nfollow`;
       const doc = wireToDoc(wire);
       const pillRowStart = 0;
-      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const firstBlank = listBlankVisualLineStartWires(doc)[0]!;
       assertVertical(doc, pillRowStart, 1, firstBlank);
       assertVertical(doc, firstBlank, -1, pillRowStart);
     });
@@ -718,7 +714,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `${row}\n\n\nfollow`;
       const doc = wireToDoc(wire);
       const rowTail = row.length - 1;
-      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const firstBlank = listBlankVisualLineStartWires(doc)[0]!;
       const secondPill = wire.indexOf(`@${agentA}`, wire.indexOf(`@${agentA}`) + 1);
       assertVertical(doc, rowTail, 1, firstBlank, secondPill);
     });
@@ -728,7 +724,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const wire = `${row}\n\n\nfollow`;
       const doc = wireToDoc(wire);
       const pillRowStart = 0;
-      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const firstBlank = listBlankVisualLineStartWires(doc)[0]!;
       const secondPill = wire.indexOf(`@${agentA}`, wire.indexOf(`@${agentA}`) + 1);
       assertVertical(doc, pillRowStart, 1, firstBlank, secondPill);
       assertVertical(doc, firstBlank, -1, pillRowStart);
@@ -740,7 +736,7 @@ describe("resolveDocVerticalArrowMove", () => {
       const doc = wireToDoc(wire);
       const firstPill = wire.indexOf(`@${agentA}`);
       const secondPill = wire.indexOf(`@${agentA}`, firstPill + 1);
-      const firstBlank = listEmbeddedBlankBandProbeWires(doc)[0]!;
+      const firstBlank = listBlankVisualLineStartWires(doc)[0]!;
       assertVertical(doc, firstPill, 1, firstBlank, secondPill);
     });
   });
@@ -808,6 +804,52 @@ describe("resolveDocVerticalArrowMove", () => {
         startWire: 2,
         endWire: 3,
       });
+    });
+
+    it("normalizeSelection keeps collapsed trailing-blank document-end as empty-line stop", () => {
+      const doc = wireToDoc("\n\n\n\n");
+      const pastEnd = wireOffsetToDocPos(doc, docToWire(doc).length);
+      const normalized = normalizeSelection(doc, collapsedSelection(pastEnd));
+      expect(docPosToWireOffset(doc, normalized.focus)).toBe(4);
+      expect(docPosEqual(normalized.anchor, normalized.focus)).toBe(true);
+    });
+
+    it("normalizeSelection maps collapsed CRE past-end to last char + after", () => {
+      const doc = wireToDoc("hello");
+      const pastEnd = { nodeIndex: 0, nodeOffset: 5 };
+      const normalized = normalizeSelection(doc, collapsedSelection(pastEnd));
+      expect(normalized.focus).toEqual({ nodeIndex: 0, nodeOffset: 4 });
+      expect(normalized.anchor).toEqual(normalized.focus);
+      expect(normalized.focusAffinity).toBe("after");
+    });
+
+    it("normalizeSelection keeps past-end on non-collapsed range ends", () => {
+      const doc = wireToDoc("hello");
+      const pastEnd = { nodeIndex: 0, nodeOffset: 5 };
+      const range = {
+        anchor: { nodeIndex: 0, nodeOffset: 0 },
+        focus: pastEnd,
+      };
+      const normalized = normalizeSelection(doc, range);
+      expect(normalized.focus).toEqual(pastEnd);
+      expect(normalized.focusAffinity).toBeUndefined();
+    });
+
+    it("normalizeSelection keeps pre-mention text past-end (atom-adjacent tail)", () => {
+      const doc = wireToDoc("pre @caliper-aaaaaaa ");
+      const pre = doc.nodes[0];
+      if (pre?.type !== "text") throw new Error("expected text");
+      const pastEnd = { nodeIndex: 0, nodeOffset: pre.text.length };
+      const normalized = normalizeSelection(doc, collapsedSelection(pastEnd));
+      expect(normalized.focus).toEqual(pastEnd);
+      expect(normalized.focusAffinity).toBeUndefined();
+    });
+
+    it("wireOffsetToCollapsedSelection at EOF lands last char + after", () => {
+      const doc = wireToDoc("hello");
+      const sel = wireOffsetToCollapsedSelection(doc, 5);
+      expect(sel.focus).toEqual({ nodeIndex: 0, nodeOffset: 4 });
+      expect(sel.focusAffinity).toBe("after");
     });
   });
 });
