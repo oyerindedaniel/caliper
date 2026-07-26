@@ -16,6 +16,8 @@ import {
   renderHandoffNoteDoc,
   HANDOFF_WIRE_BREAK_ATTR,
   HANDOFF_LINE_PAD_ATTR,
+  isHandoffBlankAnchorElement,
+  isHandoffWireBreakElement,
 } from "./handoff-note-dom.js";
 import {
   buildHandoffNoteLayoutMap,
@@ -36,7 +38,9 @@ import {
   type HandoffNoteLayoutRow,
 } from "./handoff-note-layout-map.js";
 import {
+  measureBlankStopSeatCoord,
   measureWireBreakCoord,
+  resolveDomPointAtDocPos,
   resolvePaintContext,
   resolvePaintContextAtWire,
 } from "./handoff-note-dom-points.js";
@@ -358,7 +362,7 @@ describe("handoff-note-layout-map", () => {
     it("EOF trailing blank band ascends monotonically above content floor", () => {
       const wire = "header\n\n\n";
       const doc = wireToDoc(wire);
-      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const stops = listBlankVisualLineStartWires(doc);
       const headerTop = 80;
       const lineHeight = 16;
 
@@ -369,7 +373,8 @@ describe("handoff-note-layout-map", () => {
       );
 
       const blankRows = layout.rows.filter((row) => row.kind === "blank");
-      expect(blankRows).toHaveLength(probes.length);
+      // Blank rows follow navigable stops (every empty line slot).
+      expect(blankRows).toHaveLength(stops.length);
       for (const row of blankRows) {
         expect(row.top).toBeGreaterThan(headerTop);
       }
@@ -379,6 +384,7 @@ describe("handoff-note-layout-map", () => {
     /**
      * Leading-`\n` blank band: empty line slots include document-end.
      * Epoch samples every empty line-start stop (acquire / stub authority).
+     * Empty open + 7 newlines → 8 stops `[0..7]`.
      */
     it("pure trailing blank band includes document-end blank slot (not content invent)", () => {
       const wire = "\n\n\n\n\n\n\n";
@@ -397,7 +403,7 @@ describe("handoff-note-layout-map", () => {
       const blankRows = layout.rows.filter((row) => row.kind === "blank");
       const eofSample = layout.samples.find((sample) => sample.wire === wire.length);
 
-      expect(stops).toHaveLength(8);
+      expect(stops).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
       expect(layout.visualRowCount).toBe(stops.length);
       expect(blankRows).toHaveLength(stops.length);
       expect(contentRows).toHaveLength(0);
@@ -426,8 +432,7 @@ describe("handoff-note-layout-map", () => {
     });
 
     /**
-     * EOF empty line-start and the prior empty line-start may share a break-probe dock.
-     * Navigable row identity stays on each stop sample — dock must not steal the earlier stop.
+     * Consecutive empty line-starts stay on distinct rows (including pad-preceding + pad).
      */
     it("shared break-probe dock does not collapse two blank stops onto one row", () => {
       const wire = "header \n\n\n";
@@ -451,13 +456,14 @@ describe("handoff-note-layout-map", () => {
         layout.rows.findIndex(
           (row) => row.kind === "blank" && row.samples.some((sample) => sample.wire === stopWire)
         );
+      const row8 = rowForStop(8);
       const row9 = rowForStop(9);
       const row10 = rowForStop(10);
+      expect(row8).toBeGreaterThanOrEqual(0);
       expect(row9).toBeGreaterThanOrEqual(0);
       expect(row10).toBeGreaterThanOrEqual(0);
-      expect(row9).not.toBe(row10);
-      expect(layout.rows[row9]!.breakProbeWire).toBe(9);
-      expect(layout.rows[row10]!.breakProbeWire).toBe(9);
+      expect(new Set([row8, row9, row10]).size).toBe(3);
+      expect(layoutRowAtWireFocus(doc, layout, 8)).toBe(row8);
       expect(layoutRowAtWireFocus(doc, layout, 9)).toBe(row9);
       expect(layoutRowAtWireFocus(doc, layout, 10)).toBe(row10);
     });
@@ -479,9 +485,9 @@ describe("handoff-note-layout-map", () => {
     });
 
     /**
-     * Last trailing probe is delete-probe (blank-anchor paint). Layout acquire must still
-     * measure that probe from its wire-break `<br>` — paint ZWSP is one band lower and
-     * produced the live 2lh blank skip after invent was removed.
+     * Pad-preceding probe measure uses its wire-break BR (not a BA band).
+     * Blank-stop acquire uses paint seats. Do not stub lastProbe via stop→opener
+     * paint resolve — that poisons the prior stop’s opener BR.
      */
     it("delete-probe trailing blank measures wire-break Y not blank-anchor band", () => {
       const lineHeight = 18;
@@ -521,20 +527,32 @@ describe("handoff-note-layout-map", () => {
               br.getBoundingClientRect = prior;
             });
           }
+          const lastBrY = baseTop + (wireBreaks.length - 1) * lineHeight;
+          // Stub pad from paint authority: if pad-preceding stop already seats on last BR,
+          // pad is the next row (+1lh). If that stop seats on an earlier opener BR, pad
+          // shares the final wire-break band (browser trailing empty).
+          const padPrecedingStop = wire.endsWith("\n") ? wire.length - 1 : -1;
+          const precedingSeatY =
+            padPrecedingStop >= 0
+              ? measureBlankStopSeatCoord(surface, doc, padPrecedingStop)?.top
+              : null;
+          const padY =
+            precedingSeatY != null && Math.abs(precedingSeatY - lastBrY) < 1
+              ? lastBrY + lineHeight
+              : lastBrY;
           const linePad = surface.querySelector(
             `br[${HANDOFF_LINE_PAD_ATTR}]`
           ) as HTMLBRElement | null;
           if (linePad) {
-            const padMidY = baseTop + wireBreaks.length * lineHeight;
             const padRect = {
-              top: padMidY - lineHeight / 2,
+              top: padY - lineHeight / 2,
               left: blankLeft,
               right: blankLeft + 4,
-              bottom: padMidY + lineHeight / 2,
+              bottom: padY + lineHeight / 2,
               width: 4,
               height: lineHeight,
               x: blankLeft,
-              y: padMidY - lineHeight / 2,
+              y: padY - lineHeight / 2,
               toJSON: () => ({}),
             } as DOMRect;
             const priorPad = linePad.getBoundingClientRect.bind(linePad);
@@ -543,32 +561,28 @@ describe("handoff-note-layout-map", () => {
               linePad.getBoundingClientRect = priorPad;
             });
           }
-          restores.push(
-            stubHandoffNoteAnchorRectAtWire(surface, doc, lastProbe, {
-              top: baseTop + wireBreaks.length * lineHeight,
-              left: blankLeft,
-              height: lineHeight,
-            })
-          );
-          // Paint stub also hits the preceding BR (measure authority). Re-assert BR lattice Y.
+          // Poison only a BA sibling after the pad-preceding BR (if any), not via stop remap.
           const lastBr = wireBreaks[wireBreaks.length - 1]!;
-          const lastBrY = baseTop + (wireBreaks.length - 1) * lineHeight;
-          const lastBrRect = {
-            top: lastBrY - lineHeight / 2,
-            left: blankLeft,
-            right: blankLeft + 4,
-            bottom: lastBrY + lineHeight / 2,
-            width: 4,
-            height: lineHeight,
-            x: blankLeft,
-            y: lastBrY - lineHeight / 2,
-            toJSON: () => ({}),
-          } as DOMRect;
-          const priorLastBr = lastBr.getBoundingClientRect.bind(lastBr);
-          lastBr.getBoundingClientRect = () => lastBrRect;
-          restores.push(() => {
-            lastBr.getBoundingClientRect = priorLastBr;
-          });
+          const baSibling = lastBr.nextSibling;
+          if (baSibling && isHandoffBlankAnchorElement(baSibling)) {
+            const poisonY = padY + lineHeight;
+            const priorBa = (baSibling as HTMLElement).getBoundingClientRect.bind(baSibling);
+            (baSibling as HTMLElement).getBoundingClientRect = () =>
+              ({
+                top: poisonY - lineHeight / 2,
+                left: blankLeft,
+                right: blankLeft + 4,
+                bottom: poisonY + lineHeight / 2,
+                width: 4,
+                height: lineHeight,
+                x: blankLeft,
+                y: poisonY - lineHeight / 2,
+                toJSON: () => ({}),
+              }) as DOMRect;
+            restores.push(() => {
+              (baSibling as HTMLElement).getBoundingClientRect = priorBa;
+            });
+          }
 
           expect(
             isEmbeddedBlankBandCollapseProbeWire(doc, lastProbe, wireOffsetToDocPos(doc, lastProbe))
@@ -580,13 +594,110 @@ describe("handoff-note-layout-map", () => {
           const stops = listBlankVisualLineStartWires(doc);
           const blankTops = layout.rows.filter((row) => row.kind === "blank").map((row) => row.top);
           expect(blankTops).toHaveLength(stops.length);
+          const seatTops = stops.map(
+            (stopWire) => measureBlankStopSeatCoord(surface, doc, stopWire)?.top
+          );
+          expect(blankTops).toEqual(seatTops);
           for (let i = 1; i < blankTops.length; i++) {
+            expect(blankTops[i]!).toBeGreaterThan(blankTops[i - 1]!);
             expect((blankTops[i]! - blankTops[i - 1]!) / lineHeight).toBeLessThan(1.4);
           }
         } finally {
           while (restores.length) restores.pop()?.();
           surface.remove();
         }
+      }
+    });
+
+    it("blank-stop acquire uses opener paint-seat Y not the stop wire BR", () => {
+      const wire = "shhs\n\n\nsgs";
+      const doc = wireToDoc(wire);
+      const [upperStop, lowerStop] = listBlankVisualLineStartWires(doc);
+      expect(upperStop).toBe(5);
+      expect(lowerStop).toBe(6);
+
+      const surface = document.createElement("div");
+      surface.style.width = "480px";
+      document.body.appendChild(surface);
+      Object.defineProperty(surface, "clientWidth", { configurable: true, value: 480 });
+      renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
+
+      const seatY = 140;
+      const wrongOwnBreakY = 999;
+      const restores: Array<() => void> = [];
+      try {
+        restores.push(
+          stubHandoffNoteAnchorRectAtWire(surface, doc, 0, { top: 100, left: 0, height: 18 })
+        );
+        restores.push(
+          stubHandoffNoteAnchorRectAtWire(surface, doc, wire.indexOf("sgs"), {
+            top: 280,
+            left: 0,
+            height: 18,
+          })
+        );
+
+        const seatPoint = resolveDomPointAtDocPos(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, upperStop!)
+        );
+        expect(isHandoffBlankAnchorElement(seatPoint?.node.parentNode)).toBe(true);
+        restores.push(
+          stubHandoffNoteAnchorRectAtWire(surface, doc, upperStop!, {
+            top: seatY,
+            left: 0,
+            height: 18,
+          })
+        );
+        restores.push(
+          stubHandoffNoteAnchorRectAtWire(surface, doc, lowerStop!, {
+            top: seatY + 36,
+            left: 0,
+            height: 18,
+          })
+        );
+
+        // After lower-stop stub (which stamps this BR as lower seat), poison the stop's
+        // own BR so acquire must ignore it in favor of the opener BA seat.
+        const ownBreakPoint = resolveDomPointAtDocPos(
+          surface,
+          doc,
+          wireOffsetToDocPos(doc, upperStop!),
+          { blankStopOpenerDocked: true, preferWireBreakOverBlankAnchor: true }
+        );
+        expect(
+          ownBreakPoint?.node instanceof HTMLBRElement &&
+            isHandoffWireBreakElement(ownBreakPoint.node)
+        ).toBe(true);
+        const ownBr = ownBreakPoint!.node as HTMLBRElement;
+        const priorOwn = ownBr.getBoundingClientRect.bind(ownBr);
+        ownBr.getBoundingClientRect = () =>
+          ({
+            top: wrongOwnBreakY - 9,
+            left: 0,
+            right: 4,
+            bottom: wrongOwnBreakY + 9,
+            width: 4,
+            height: 18,
+            x: 0,
+            y: wrongOwnBreakY - 9,
+            toJSON: () => ({}),
+          }) as DOMRect;
+        restores.push(() => {
+          ownBr.getBoundingClientRect = priorOwn;
+        });
+
+        invalidateHandoffNoteLayoutCache(surface);
+        const layout = buildHandoffNoteLayoutMap(surface, doc);
+        const upperRow = layout.rows.find(
+          (row) => row.kind === "blank" && row.samples.some((s) => s.wire === upperStop)
+        );
+        expect(upperRow?.top).toBe(seatY);
+        expect(upperRow?.top).not.toBe(wrongOwnBreakY);
+      } finally {
+        while (restores.length) restores.pop()?.();
+        surface.remove();
       }
     });
 
@@ -975,18 +1086,21 @@ describe("handoff-note-layout-map", () => {
       surface.remove();
     });
 
+    /**
+     * `header\n\n` → two blank stops (empty after header + trailing pad).
+     */
     it("keeps stacked blank rows as separate visual rows in dom acquire", () => {
       const wire = "header\n\n";
       const doc = wireToDoc(wire);
-      const probes = listEmbeddedBlankBandProbeWires(doc);
-      expect(probes).toHaveLength(2);
+      const stops = listBlankVisualLineStartWires(doc);
+      expect(stops).toEqual([7, 8]);
       const surface = mountSurface();
       renderHandoffNoteDoc(surface, doc, { colorByAgentId: new Map() });
       invalidateHandoffNoteLayoutCache();
 
       const layout = buildHandoffNoteLayoutMap(surface, doc);
       const blankRows = layout.rows.filter((row) => row.kind === "blank");
-      expect(blankRows).toHaveLength(2);
+      expect(blankRows).toHaveLength(stops.length);
       expectStrictlyIncreasing(blankRows.map((row) => row.top));
       surface.remove();
     });

@@ -644,8 +644,8 @@ function stubHandoffNoteAnchorRectAtDomPoint(
   };
 
   // getDocAnchorRect prefers live BR getBoundingClientRect before range paint.
-  // Blank-probe layout measure (`measureWireBreakCoord`) also prefers the wire-break BR
-  // when caret paint docks on the blank-anchor — stub that BR too.
+  // Probe dock measure (`measureWireBreakCoord`) walks BA → preceding BR.
+  // Blank-stop acquire uses caret paint seat (opener BA / leading BR) via getDocAnchorRect.
   const restores: Array<() => void> = [];
   const breakEls: HTMLBRElement[] = [];
   if (point.node instanceof HTMLBRElement) {

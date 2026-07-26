@@ -127,13 +127,16 @@ function withBlankBandCollapseFocus(
 
 /**
  * Delete at empty content-row end:
- * - `move` — collapse / clear (including sole leftover blank → empty doc)
- * - `noop` — last blank under substantive content above (band edge)
+ * - `move` — collapse / clear (including sole leftover blank → empty doc, and
+ *   trailing blank under content → land nearest blank above else content visual start)
  * - `miss` — not this dock (e.g. line-start `\n` before content; Delete falls through)
+ *
+ * Band-edge “done” is not expressed here: trailing blank under content is a `move`.
+ * Empty-doc / nothing-left no-ops live at delete-intent after this resolver misses or
+ * after the progressive chain has nothing left to trash.
  */
 export type EmptyContentRowEndDeleteResolution =
   | { status: "move"; move: EmbeddedBlankBandCollapseMove }
-  | { status: "noop" }
   | { status: "miss" };
 
 export type EmbeddedBlankBandGroup = {
@@ -736,36 +739,155 @@ function substantiveRowStartBelowProbe(wire: string, afterProbeWire: number): nu
 }
 
 /**
- * After removing a band-edge blank, land **downward**:
- * next remaining blank (probe or empty line-start) still above content, else content start.
- * Never band-head when that blank sits above the caret, and never skip a leftover blank
- * below by walking all `\n` onto content in one stroke.
+ * After removing one blank-band `\n` at `deletedCharWire`, map a prior-wire offset
+ * into the next wire.
+ */
+function mapWireAfterDeletedChar(wire: number, deletedCharWire: number): number {
+  return wire > deletedCharWire ? wire - 1 : wire;
+}
+
+/**
+ * Delete land — no jump: next visual row below the collapsed blank row.
+ * If that row is an empty stop still before the next substantive content row, land it;
+ * else land that content’s visual start. When nothing remains below (down exhausted),
+ * progressive trash lands the **adjacent visual row above** (blank stop or content
+ * visual start) — never blank-wire-nearest that skips content.
+ */
+function deleteLandBelowCollapsedBlank(
+  priorDoc: HandoffNoteDoc,
+  priorWire: string,
+  nextWire: string,
+  nextStops: number[],
+  priorStops: number[],
+  collapsedStopWire: number,
+  deletedCharWire: number
+): number {
+  let firstContentBelow: number | null = null;
+  for (const start of wireLineStartOffsets(priorWire)) {
+    if (start <= collapsedStopWire) {
+      continue;
+    }
+    if (isSubstantiveSegment(lineSegmentAtLineStart(priorWire, start))) {
+      firstContentBelow = start;
+      break;
+    }
+  }
+  const priorBlankBelow = priorStops.find(
+    (stop) => stop > collapsedStopWire && (firstContentBelow === null || stop < firstContentBelow)
+  );
+  if (priorBlankBelow !== undefined) {
+    const mapped = mapWireAfterDeletedChar(priorBlankBelow, deletedCharWire);
+    if (nextStops.includes(mapped)) {
+      return mapped;
+    }
+  }
+  if (firstContentBelow !== null) {
+    return mapWireAfterDeletedChar(firstContentBelow, deletedCharWire);
+  }
+  const above = progressiveDeleteLandAbove(priorDoc, nextStops, collapsedStopWire, deletedCharWire);
+  if (above !== null) {
+    return above;
+  }
+  const mappedCollapsed = mapWireAfterDeletedChar(collapsedStopWire, deletedCharWire);
+  return substantiveRowStartBelowProbe(nextWire, mappedCollapsed);
+}
+
+type VisualRowSeat = { wire: number; kind: "blank" | "content" };
+
+/** Visual rows in paint order — blank stops + substantive content line starts. */
+function listVisualRowSeats(doc: HandoffNoteDoc): VisualRowSeat[] {
+  const blankStops = new Set(listBlankVisualLineStartWires(doc));
+  return listVisualRowAnchorWires(doc).map((wire) => ({
+    wire,
+    kind: blankStops.has(wire) ? "blank" : "content",
+  }));
+}
+
+/** Index of the visual row at `atWire`, or the nearest row at/above that wire. */
+function visualRowIndexAtWire(rows: VisualRowSeat[], atWire: number): number {
+  const exact = rows.findIndex((row) => row.wire === atWire);
+  if (exact >= 0) {
+    return exact;
+  }
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i]!.wire <= atWire) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Progressive land after down exhaust / Backspace up: **adjacent visual row** only.
+ * Never use blank-wire-nearest alone — that skips content between blank bands
+ * (e.g. leading blanks above `dna` while collapsing a trailing blank under `dna`).
+ */
+function progressiveDeleteLandAbove(
+  priorDoc: HandoffNoteDoc,
+  nextStops: number[],
+  collapsedStopWire: number,
+  deletedCharWire: number
+): number | null {
+  const rows = listVisualRowSeats(priorDoc);
+  const idx = visualRowIndexAtWire(rows, collapsedStopWire);
+  if (idx > 0) {
+    const above = rows[idx - 1]!;
+    if (above.kind === "blank") {
+      const mapped = mapWireAfterDeletedChar(above.wire, deletedCharWire);
+      if (nextStops.includes(mapped)) {
+        return mapped;
+      }
+    } else {
+      return mapWireAfterDeletedChar(above.wire, deletedCharWire);
+    }
+  }
+  // No visual row above — sole leftover blank / empty: clear toward doc start.
+  return null;
+}
+
+/** Blank row removed when Delete splices this probe (coincident stop, else opened stop). */
+function collapsedBlankStopForDeletedProbe(
+  priorDoc: HandoffNoteDoc,
+  deletedProbeWire: number
+): number {
+  const priorStops = listBlankVisualLineStartWires(priorDoc);
+  if (priorStops.includes(deletedProbeWire)) {
+    return deletedProbeWire;
+  }
+  return blankVisualLineStartOpenedByProbe(priorDoc, deletedProbeWire) ?? deletedProbeWire;
+}
+
+/**
+ * After removing a band-edge blank, land **downward** from the collapsed blank row:
+ * next blank that was visually below it, else content start below. When down is
+ * exhausted, progressive trash lands blank-above then content-above (Delete-ahead, no jump).
  */
 function embeddedBlankBandDeleteEndLanding(
   nextDoc: HandoffNoteDoc,
-  priorWire: string,
-  nextWire: string,
+  priorDoc: HandoffNoteDoc,
   deletedProbeWire: number,
   group: EmbeddedBlankBandGroup
 ): number {
+  const priorWire = docToWire(priorDoc);
+  const nextWire = docToWire(nextDoc);
+  const priorStops = listBlankVisualLineStartWires(priorDoc);
+  const nextStops = listBlankVisualLineStartWires(nextDoc);
+  const collapsedStop = collapsedBlankStopForDeletedProbe(priorDoc, deletedProbeWire);
   if (embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)) {
-    const contentStart = substantiveRowStartBelowProbe(nextWire, deletedProbeWire);
-    const blankBelow: number[] = [];
-    for (const probe of listEmbeddedBlankBandProbeWires(nextDoc)) {
-      if (probe >= deletedProbeWire && probe < contentStart) {
-        blankBelow.push(probe);
-      }
-    }
-    for (const stop of listBlankVisualLineStartWires(nextDoc)) {
-      if (stop >= deletedProbeWire && stop < contentStart) {
-        blankBelow.push(stop);
-      }
-    }
-    blankBelow.sort((a, b) => a - b);
-    if (blankBelow.length > 0) {
-      return blankBelow[0]!;
-    }
-    return contentStart;
+    return deleteLandBelowCollapsedBlank(
+      priorDoc,
+      priorWire,
+      nextWire,
+      nextStops,
+      priorStops,
+      collapsedStop,
+      deletedProbeWire
+    );
+  }
+
+  const above = progressiveDeleteLandAbove(priorDoc, nextStops, collapsedStop, deletedProbeWire);
+  if (above !== null) {
+    return above;
   }
 
   if (nextWire[deletedProbeWire] === "\n") {
@@ -781,7 +903,6 @@ function collapseBlankBandEmptyRowEndLanding(
   context: EmbeddedBlankBandProbeContext
 ): number {
   const priorWire = docToWire(priorDoc);
-  const nextWire = docToWire(nextDoc);
   const { indexInGroup, group } = context;
 
   if (indexInGroup < group.probes.length - 1) {
@@ -789,7 +910,7 @@ function collapseBlankBandEmptyRowEndLanding(
   }
 
   if (embeddedBlankBandHasSubstantiveRowBelowGroup(priorWire, group)) {
-    return embeddedBlankBandDeleteEndLanding(nextDoc, priorWire, nextWire, deletedProbeWire, group);
+    return embeddedBlankBandDeleteEndLanding(nextDoc, priorDoc, deletedProbeWire, group);
   }
 
   return collapseBlankBandDeleteLanding(nextDoc, deletedProbeWire, context);
@@ -823,25 +944,79 @@ function collapseBlankBandAdjacentProbeLanding(
   return null;
 }
 
+/**
+ * Blank visual row removed on Backspace from this probe/focus wire.
+ * Pad-preceding last probe owns the EOF empty stop — not the coincident mid stop —
+ * so adjacent-visual-row land sees the remaining higher empty line.
+ */
+function collapsedBlankRowStopForBackspace(
+  priorDoc: HandoffNoteDoc,
+  deletedProbeWire: number
+): number {
+  const priorStops = listBlankVisualLineStartWires(priorDoc);
+  // Probe-coincident stop: the caret stop is the blank row (do not use opened+1).
+  if (priorStops.includes(deletedProbeWire)) {
+    return deletedProbeWire;
+  }
+  const opened = blankVisualLineStartOpenedByProbe(priorDoc, deletedProbeWire);
+  if (opened !== null) {
+    return opened;
+  }
+  const wire = docToWire(priorDoc);
+  const probes = listEmbeddedBlankBandProbeWires(priorDoc);
+  if (
+    wire.endsWith("\n") &&
+    probes.length > 0 &&
+    deletedProbeWire === probes[probes.length - 1]! &&
+    priorStops.length > 0
+  ) {
+    return priorStops[priorStops.length - 1]!;
+  }
+  return deletedProbeWire;
+}
+
 function collapseBlankBandBackspaceLanding(
   nextDoc: HandoffNoteDoc,
   deletedProbeWire: number,
   context: EmbeddedBlankBandProbeContext,
-  priorDoc: HandoffNoteDoc
+  priorDoc: HandoffNoteDoc,
+  /** Caret blank-row stop when entry was stop→opener (EOF pad); else omitted. */
+  collapsedStopHint?: number
 ): { caretWire: number; affinityIntent: HandoffNoteCaretLandingIntent } {
   const nextWire = docToWire(nextDoc);
   const priorWire = docToWire(priorDoc);
   const { group } = context;
+  const nextStops = listBlankVisualLineStartWires(nextDoc);
+  const collapsedStop =
+    collapsedStopHint ?? collapsedBlankRowStopForBackspace(priorDoc, deletedProbeWire);
 
-  // Content above the band (trailing-only or sandwiched) — use band-head, not the deleted
-  // probe: mid-band probes have an empty segment immediately above, so probe-local
-  // substantiveRowAbove is false and would wrongly take the leading/adjacent path.
+  // Adjacent visual row above only — never blank-wire-nearest (skips content).
+  const rows = listVisualRowSeats(priorDoc);
+  const idx = visualRowIndexAtWire(rows, collapsedStop);
+  if (idx > 0) {
+    const above = rows[idx - 1]!;
+    if (above.kind === "blank") {
+      const mapped = mapWireAfterDeletedChar(above.wire, deletedProbeWire);
+      if (nextStops.includes(mapped)) {
+        return { caretWire: mapped, affinityIntent: "deletion-point" };
+      }
+    } else {
+      const caretWire = embeddedBlankBandContentRowEndBeforeProbe(priorDoc, group.probes[0]!);
+      if (embeddedBlankBandHasSubstantiveContentAboveBand(priorWire, group.probes)) {
+        return { caretWire, affinityIntent: "content-row-end" };
+      }
+      return {
+        caretWire: mapWireAfterDeletedChar(above.wire, deletedProbeWire),
+        affinityIntent: "deletion-point",
+      };
+    }
+  }
+
   if (embeddedBlankBandHasSubstantiveContentAboveBand(priorWire, group.probes)) {
     const caretWire = embeddedBlankBandContentRowEndBeforeProbe(priorDoc, group.probes[0]!);
     return { caretWire, affinityIntent: "content-row-end" };
   }
 
-  // Leading: no content above the band — continue toward remaining blanks / content below.
   const adjacent = collapseBlankBandAdjacentProbeLanding(deletedProbeWire, context, "backspace");
   if (adjacent !== null) {
     return { caretWire: adjacent, affinityIntent: "deletion-point" };
@@ -877,7 +1052,7 @@ function isSubstantiveLineStart(wire: string, start: number): boolean {
   return isSubstantiveSegment(lineSegmentAtLineStart(wire, start));
 }
 
-/** Visual row anchors: line starts plus one probe wire per empty visual row. */
+/** Visual row anchors: content line starts plus blank navigable stops (empty line-starts). */
 export function listVisualRowAnchorWires(doc: HandoffNoteDoc): number[] {
   const wire = docToWire(doc);
   const probeList = listEmbeddedBlankBandProbeWires(doc);
@@ -913,7 +1088,18 @@ export function isInlineSuffixBlankProbeWire(doc: HandoffNoteDoc, probeWire: num
   return isSubstantiveSegment(nextSegment);
 }
 
-/** Wire offsets where the caret rests on an embedded `\n` blank band. */
+/**
+ * Blank identity (scale — do not collapse these):
+ * - **Stop** = empty line-start wire = navigable blank **caret**. Selection, click,
+ *   Up/Down land, and insert memory store this number for an empty visual row.
+ * - **Probe** = blank-band `\n` dock key only (emit bare BR vs blank-anchor, delete
+ *   splice target, layout dock metadata). Never a second caret for the same empty row.
+ * - **Coincident** stop≡probe: one wire, two roles; caret is still that stop.
+ * - **Unique seat:** every navigable stop that is not pad-owned needs its own DOM
+ *   paint seat. Two mid-doc stops must not share one bare BR. EOF pad-preceding
+ *   probe may stay bare because the trailing stop’s seat is the line-pad BR.
+ */
+/** Wire offsets of blank-band probe docks (delete/paint), not blank caret identity. */
 export function listEmbeddedBlankBandProbeWires(doc: HandoffNoteDoc): number[] {
   const wire = docToWire(doc);
   const parts = wire.split("\n");
@@ -933,9 +1119,11 @@ export function listEmbeddedBlankBandProbeWires(doc: HandoffNoteDoc): number[] {
 
 /**
  * Navigable blank stop wires = empty line-start offsets (line-array authority).
- * Empty open → `[0]`. Every empty segment (including trailing empty after a final `\n`
- * at `wire.length`) is one stop. Probe wires stay delete/paint docks and may differ
- * from these line-starts — do not use probes as a second caret identity for the same row.
+ * Empty open → `[0]`. Every empty line slot is one stop, including document end when
+ * the wire ends in `\n` (`wire.length`). Default empty + n Shift+Enter → n+1 stops
+ * (e.g. `"\n\n\n"` → `[0,1,2,3]`). The final wire `\n` may also be a probe dock
+ * (delete/paint); that does **not** remove its empty line-start as a caret stop.
+ * Visual row count and navigable blank stops stay 1:1 — do not skip pad-preceding.
  */
 function blankVisualLineStartWiresFromWire(wire: string, lineStarts?: number[]): number[] {
   if (wire.length === 0) {
@@ -944,9 +1132,10 @@ function blankVisualLineStartWiresFromWire(wire: string, lineStarts?: number[]):
   const starts = lineStarts ?? wireLineStartOffsets(wire);
   const stops: number[] = [];
   for (const lineStart of starts) {
-    if (isBlankBandSegment(lineSegmentAtLineStart(wire, lineStart))) {
-      stops.push(lineStart);
+    if (!isBlankBandSegment(lineSegmentAtLineStart(wire, lineStart))) {
+      continue;
     }
+    stops.push(lineStart);
   }
   return stops;
 }
@@ -989,13 +1178,38 @@ export function embeddedBlankBandSubstantiveContentAbutsProbe(
 }
 
 /**
- * Break-wire dock kind: bare `<br>` vs blank-anchor ZWSP.
- * Emit and paint must agree (one probe → one dock).
+ * Whether this probe opens a navigable stop inside a content-bounded blank band
+ * (substantive content above and/or below the band). Those openers emit BA so each
+ * stop has a unique paint seat; leading empty (no opener) still paints its own BR.
+ */
+function embeddedBlankBandProbeOpensContentBoundedStop(
+  doc: HandoffNoteDoc,
+  breakWire: number
+): boolean {
+  if (blankVisualLineStartOpenedByProbe(doc, breakWire) === null) {
+    return false;
+  }
+  const wire = docToWire(doc);
+  const probes = listEmbeddedBlankBandProbeWires(doc);
+  const context = embeddedBlankBandProbeContext(doc, breakWire);
+  return (
+    embeddedBlankBandHasSubstantiveContentAboveBand(wire, probes) ||
+    (context !== null && embeddedBlankBandHasSubstantiveRowBelowGroup(wire, context.group))
+  );
+}
+
+/**
+ * Probe dock kind: bare `<br>` vs blank-anchor ZWSP (emit authority for that probe).
+ * Caret paint for blank **stops** is separate (stop → opener BA or leading BR).
  *
- * Bare BR when: final probe before EOF line-pad; emptied empty CRE (empty row above);
- * sole-char content abutting empty CRE; or not empty-CRE (default bare).
- * Blank-anchor when: delete-probe owns the blank row; multi-char substantive abut;
- * or trailing whitespace above (not emptied) — except pad-preceding, which stays bare.
+ * Order (first match wins):
+ * 1. Pad-preceding probe → bare (coincident empty stop paints that BR; pad is next stop)
+ * 2. Sole-char abutting empty CRE → bare (line-box geom)
+ * 3. Opener that opens a content-bounded stop → BA (unique seat)
+ * 4. Collapse probe → BA
+ * 5. Not empty-CRE → bare
+ * 6. Multi-char abutting empty CRE → BA
+ * 7. Else blank-only emptied → bare when row above is empty
  */
 export function embeddedBlankBandProbePaintsBareWireBreak(
   doc: HandoffNoteDoc,
@@ -1006,25 +1220,34 @@ export function embeddedBlankBandProbePaintsBareWireBreak(
     return false;
   }
   const wire = docToWire(doc);
-  // Pad owns the trailing empty-line band — last wire `\n` before pad is always bare.
   if (wire.endsWith("\n") && breakWire === wire.length - 1) {
     return true;
+  }
+  const atEmptyCre = embeddedBlankBandAtEmptyContentRowEnd(doc, breakWire, focusDocPos);
+  if (
+    atEmptyCre &&
+    embeddedBlankBandSubstantiveContentAbutsProbe(doc, breakWire) &&
+    embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(wire, breakWire)
+  ) {
+    return true;
+  }
+  if (embeddedBlankBandProbeOpensContentBoundedStop(doc, breakWire)) {
+    return false;
   }
   if (isEmbeddedBlankBandCollapseProbeWire(doc, breakWire, focusDocPos)) {
     return false;
   }
-  if (!embeddedBlankBandAtEmptyContentRowEnd(doc, breakWire, focusDocPos)) {
+  if (!atEmptyCre) {
     return true;
   }
   if (embeddedBlankBandSubstantiveContentAbutsProbe(doc, breakWire)) {
-    return embeddedBlankBandRowAboveProbeIsSoleSubstantiveChar(wire, breakWire);
+    return false;
   }
   return embeddedBlankBandRowAboveProbeIsEmpty(doc, breakWire);
 }
 
 /**
  * Whether render emits a blank-anchor after this probe break.
- * Uses probe-wire focus so emit matches paint for that probe (one dock).
  */
 export function embeddedBlankBandProbeEmitsBlankAnchor(
   doc: HandoffNoteDoc,
@@ -1167,60 +1390,58 @@ function blankVisualLineStartToOpenProbeWire(
   return null;
 }
 
-function wireHasSubstantiveContentBefore(
-  wire: string,
-  beforeWire: number,
-  lineStarts: number[]
-): boolean {
-  for (const start of lineStarts) {
-    if (start >= beforeWire) {
-      break;
-    }
-    if (isSubstantiveSegment(lineSegmentAtLineStart(wire, start))) {
-      return true;
-    }
+/**
+ * Paint/read seat opener for a navigable blank stop: the probe dock whose BA (when
+ * emitted) is that stop’s unique seat. Unlike collapse opener, this **includes**
+ * probe-coincident stops (stop≡probe still docks the preceding probe’s seat when
+ * stop-1 is a probe — so stacked mid-doc stops do not share one BA).
+ * EOF pad-owned stop (`wire.length` after final `\n`) has no probe seat — pad owns it.
+ */
+export function blankBandOpenerProbeForStop(doc: HandoffNoteDoc, stopWire: number): number | null {
+  const wire = docToWire(doc);
+  const knownStops = listBlankVisualLineStartWires(doc);
+  if (!knownStops.includes(stopWire)) {
+    return null;
   }
-  return false;
+  if (stopWire === wire.length && wire.endsWith("\n")) {
+    return null;
+  }
+  const knownProbes = listEmbeddedBlankBandProbeWires(doc);
+  if (stopWire > 0 && knownProbes.includes(stopWire - 1)) {
+    return stopWire - 1;
+  }
+  return null;
 }
 
 /**
- * Delete land after stop→opener collapse — owned by prior stop identity, not the opener
- * probe's lander. Map the prior stop into the next wire, then take the next blank at/after
- * that floor still above content; if that blank is a leftover **leading** band head (no
- * substantive content above), continue to content start. Backspace does not use this.
- *
- * Caller supplies one next-wire snapshot (`nextWire` / `lineStarts` / `nextStops`) so land
- * and stop remount do not rebuild those lists on the same keystroke.
+ * Inverse of {@link blankBandOpenerProbeForStop}: navigable stop whose unique seat is
+ * the BA after this probe (when emitted). Not caret identity for the probe wire.
  */
-function blankStopDeleteLanding(
-  nextWire: string,
-  nextStops: number[],
-  lineStarts: number[],
-  priorStopWire: number,
-  openProbeWire: number
-): number {
-  const mappedStop = priorStopWire > openProbeWire ? priorStopWire - 1 : priorStopWire;
-  const contentStart = substantiveRowStartBelowProbe(nextWire, mappedStop);
-  const blanksAtOrBelow = nextStops.filter((stop) => stop >= mappedStop && stop < contentStart);
-  if (blanksAtOrBelow.length === 0) {
-    return contentStart;
+export function blankVisualLineStartOpenedByProbe(
+  doc: HandoffNoteDoc,
+  probeWire: number
+): number | null {
+  if (!isEmbeddedBlankBandProbeWire(doc, probeWire)) {
+    return null;
   }
-  const candidate = blanksAtOrBelow[0]!;
-  // Leading leftover only: mid-doc remaining empty under content stays.
-  if (
-    candidate === nextStops[0] &&
-    !wireHasSubstantiveContentBefore(nextWire, candidate, lineStarts)
-  ) {
-    return substantiveRowStartBelowProbe(nextWire, candidate);
+  const wire = docToWire(doc);
+  // Pad-preceding probe does not open the pad stop — pad owns that seat (no BA).
+  if (wire.endsWith("\n") && probeWire === wire.length - 1) {
+    return null;
   }
-  return candidate;
+  const opened = probeWire + 1;
+  const knownStops = listBlankVisualLineStartWires(doc);
+  if (knownStops.includes(opened)) {
+    return opened;
+  }
+  return null;
 }
 
 /**
  * After blank-row collapse from a stop caret, prefer remaining empty line-start identity.
  * When the collapsed stop was the last blank stop (often EOF), do not keep a band-head
  * land while a higher empty line-start remains — that skips a blank row (live jump).
- * Delete land is owned by {@link blankStopDeleteLanding} before this remount runs.
+ * Delete land is owned by {@link deleteLandBelowCollapsedBlank} before this remount runs.
  */
 function blankStopLandCaretWire(
   landWire: number,
@@ -1316,11 +1537,19 @@ export function resolveBlankVisualLineStartCollapse(
   };
 
   if (direction === "backspace") {
-    const emptyRow = resolveBackspaceFromEmptyContentRowEnd(doc, openProbe, probeFocus);
+    const emptyRow = resolveBackspaceFromEmptyContentRowEnd(doc, openProbe, probeFocus, stopWire);
     if (emptyRow) {
       return landWithNextLattice(emptyRow);
     }
-    const probeCollapse = resolveEmbeddedBlankBandCollapse(doc, openProbe, "backspace", probeFocus);
+    const probeCollapse = resolveEmbeddedBlankBandCollapse(
+      doc,
+      openProbe,
+      "backspace",
+      probeFocus,
+      {
+        collapsedStopHint: stopWire,
+      }
+    );
     return probeCollapse ? landWithNextLattice(probeCollapse) : null;
   }
 
@@ -1332,7 +1561,15 @@ export function resolveBlankVisualLineStartCollapse(
     return withBlankStopLand(
       {
         ...move,
-        caretWire: blankStopDeleteLanding(nextWire, nextStops, lineStarts, stopWire, openProbe),
+        caretWire: deleteLandBelowCollapsedBlank(
+          doc,
+          docToWire(doc),
+          nextWire,
+          nextStops,
+          priorStops,
+          stopWire,
+          openProbe
+        ),
       },
       stopWire,
       priorStops,
@@ -1441,7 +1678,7 @@ export function resolveEmbeddedBlankBandCollapse(
   focusWire: number,
   direction: HandoffNoteEdit,
   focus: HandoffNoteDocPos,
-  options?: { atomicEndCollapse?: boolean }
+  options?: { atomicEndCollapse?: boolean; collapsedStopHint?: number }
 ): EmbeddedBlankBandCollapseMove | null {
   if (!options?.atomicEndCollapse && !isEmbeddedBlankBandCollapseProbeWire(doc, focusWire, focus)) {
     return null;
@@ -1468,7 +1705,13 @@ export function resolveEmbeddedBlankBandCollapse(
 
   if (direction === "backspace") {
     const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
-    const landing = collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc);
+    const landing = collapseBlankBandBackspaceLanding(
+      nextDoc,
+      focusWire,
+      context,
+      doc,
+      options?.collapsedStopHint
+    );
     return withBlankBandCollapseFocus(
       {
         doc: nextDoc,
@@ -1480,15 +1723,8 @@ export function resolveEmbeddedBlankBandCollapse(
     );
   }
 
-  // Final wire `\n`: trailing-under-content is band-edge (nothing below) — miss so intent
-  // no-ops. Leading-only may still collapse that blank.
-  if (
-    focusWire + 1 >= wire.length &&
-    embeddedBlankBandHasSubstantiveContentAboveBand(wire, context.group.probes)
-  ) {
-    return null;
-  }
-
+  // Final wire `\n` under content: progressive trash collapses and lands content
+  // visual start above — do not miss/no-op while upper content remains.
   const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
   const prior = { doc, focus };
   if (indexInGroup < context.group.probes.length - 1) {
@@ -1503,18 +1739,11 @@ export function resolveEmbeddedBlankBandCollapse(
     );
   }
 
-  const nextWire = docToWire(nextDoc);
   if (embeddedBlankBandHasSubstantiveRowBelowGroup(wire, context.group)) {
     return withBlankBandCollapseFocus(
       {
         doc: nextDoc,
-        caretWire: embeddedBlankBandDeleteEndLanding(
-          nextDoc,
-          wire,
-          nextWire,
-          focusWire,
-          context.group
-        ),
+        caretWire: embeddedBlankBandDeleteEndLanding(nextDoc, doc, focusWire, context.group),
         branch: "delete-collapse-blank-at-edge",
         affinityIntent: "deletion-point",
       },
@@ -1525,7 +1754,7 @@ export function resolveEmbeddedBlankBandCollapse(
   return withBlankBandCollapseFocus(
     {
       doc: nextDoc,
-      caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+      caretWire: embeddedBlankBandDeleteEndLanding(nextDoc, doc, focusWire, context.group),
       branch: "delete-collapse-blank-at-edge",
       affinityIntent: "deletion-point",
     },
@@ -1614,7 +1843,8 @@ export function resolveRowChipBeforeEmbeddedBlankProbe(
 /**
  * Delete from empty content-row end on a blank-band probe.
  * Sole leftover blank with no content above clears to empty; last blank under
- * content above is band-edge noop; non-probe line-start `\n` is a miss.
+ * content above collapses and lands upward with no jump (nearest blank above,
+ * else content visual start); non-probe line-start `\n` is a miss.
  */
 export function resolveDeleteFromEmptyContentRowEnd(
   doc: HandoffNoteDoc,
@@ -1636,16 +1866,17 @@ export function resolveDeleteFromEmptyContentRowEnd(
     return { status: "miss" };
   }
   if (focusWire + 1 >= wire.length) {
-    if (embeddedBlankBandHasSubstantiveRowAbove(wire, focusWire)) {
-      return { status: "noop" };
-    }
     const prior = focus ? { doc, focus } : undefined;
+    const nextDoc = spliceDocWireRange(doc, focusWire, focusWire + 1, "");
+    const nextStops = listBlankVisualLineStartWires(nextDoc);
+    const collapsedStop = collapsedBlankStopForDeletedProbe(doc, focusWire);
+    const land = progressiveDeleteLandAbove(doc, nextStops, collapsedStop, focusWire) ?? 0;
     return {
       status: "move",
       move: withBlankBandCollapseFocus(
         {
-          doc: spliceDocWireRange(doc, focusWire, focusWire + 1, ""),
-          caretWire: 0,
+          doc: nextDoc,
+          caretWire: land,
           branch: "delete-collapse-blank-at-edge",
           affinityIntent: "deletion-point",
         },
@@ -1694,12 +1925,15 @@ export function resolveDeleteFromEmptyContentRowEnd(
  * Landing — same producer as blank-band Backspace ({@link collapseBlankBandBackspaceLanding}):
  * content above (trailing-only or sandwiched) remounts content-row-end with `after`; leading
  * blanks with no content above keep downward / lower-start landing. Delete empty-row-end
- * stays downward-only.
+ * lands downward when content/blank remains below; when down is exhausted, progressive
+ * trash lands nearest blank above else content visual start (Delete-ahead) — never
+ * skip a remaining blank onto content, and never band-edge no-op while upper seats remain.
  */
 export function resolveBackspaceFromEmptyContentRowEnd(
   doc: HandoffNoteDoc,
   focusWire: number,
-  focus?: HandoffNoteDocPos
+  focus?: HandoffNoteDocPos,
+  collapsedStopHint?: number
 ): EmbeddedBlankBandCollapseMove | null {
   if (!embeddedBlankBandAtEmptyContentRowEnd(doc, focusWire, focus)) {
     return null;
@@ -1721,10 +1955,14 @@ export function resolveBackspaceFromEmptyContentRowEnd(
   const substantiveAbove = embeddedBlankBandHasSubstantiveRowAbove(wire, focusWire);
   const prior = focus ? { doc, focus } : undefined;
 
-  // One Backspace lander for content-above and leading mid-band / non-head probes.
-  // Sole leading blank (index 0, band exhausted upward) keeps empty-row-end downward land.
   if (substantiveAbove || indexInGroup < group.probes.length - 1 || indexInGroup > 0) {
-    const landing = collapseBlankBandBackspaceLanding(nextDoc, focusWire, context, doc);
+    const landing = collapseBlankBandBackspaceLanding(
+      nextDoc,
+      focusWire,
+      context,
+      doc,
+      collapsedStopHint
+    );
     return withBlankBandCollapseFocus(
       {
         doc: nextDoc,

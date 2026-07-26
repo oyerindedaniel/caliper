@@ -17,6 +17,7 @@ import {
 } from "./handoff-note-delete-intent.js";
 import {
   isEmbeddedBlankBandCollapseProbeWire,
+  listBlankVisualLineStartWires,
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
 } from "./handoff-note-embedded-newlines.js";
@@ -561,18 +562,17 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(docToWire(chipped.doc)).toBe("wh\n\ndb");
     });
 
-    it("sandwiched collapse from last probe also remounts CRE after on upper", () => {
+    it("sandwiched collapse from last blank stop lands remaining blank not CRE (no jump)", () => {
       const doc = wireToDoc("whe\n\n\ndb");
       const once = applyDocDelete(
         doc,
-        collapsedSelection(wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc).at(-1)!)),
+        collapsedSelection(wireOffsetToDocPos(doc, listBlankVisualLineStartWires(doc).at(-1)!)),
         "backspace"
       )!;
       expect(docToWire(once.doc)).toBe("whe\n\ndb");
-      expect(docToWire(once.doc)[docPosToWireOffset(once.doc, once.selection.focus)]).toBe("e");
-      expect(once.selection.focusAffinity).toBe("after");
-      const chipped = applyDocDelete(once.doc, once.selection, "backspace")!;
-      expect(docToWire(chipped.doc)).toBe("wh\n\ndb");
+      expect(listBlankVisualLineStartWires(once.doc)).toEqual([4]);
+      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(4);
+      expect(once.selection.focusAffinity).toBeUndefined();
     });
 
     it("leading sole-char row a\\nb lands visual start without after", () => {
@@ -586,7 +586,7 @@ describe("handoff note delete intent — contract authority before handler chain
       }
       expect(docToWire(doc)[docPosToWireOffset(doc, selection.focus)]).toBe("a");
       expect(isCaretOnAmbiguousContentRowEndChar(doc, selection.focus)).toBe(true);
-      expect(selection.focusAffinity).not.toBe("after");
+      expect(selection.focusAffinity).toBe("before");
     });
 
     it("trailing blank collapse at EOF keeps after; next Backspace nips last char", () => {
@@ -652,7 +652,7 @@ describe("handoff note delete intent — contract authority before handler chain
         if (docToWire(doc)[docPosToWireOffset(doc, selection.focus)] === "d") break;
       }
       expect(docToWire(doc)[docPosToWireOffset(doc, selection.focus)]).toBe("d");
-      expect(selection.focusAffinity).not.toBe("after");
+      expect(selection.focusAffinity).toBeUndefined();
     });
   });
 
@@ -795,10 +795,7 @@ describe("handoff note delete intent — contract authority before handler chain
       if (intent?.kind === "result") {
         const after = docToWire(intent.result.doc);
         const land = docPosToWireOffset(intent.result.doc, intent.result.selection.focus);
-        const lowerAt = after.indexOf("lower");
-        expect(land).toBe(lowerAt - 1);
-        expect(after[land]).toBe("\n");
-        expect(land).not.toBe(0);
+        expect(land).toBe(after.indexOf("lower"));
       }
     });
   });

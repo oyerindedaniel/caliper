@@ -415,9 +415,6 @@ function resolveDeleteForwardFromAtomicAbuttingProbe(
       result: blankBandMoveToResult(emptyRowEnd.move),
     };
   }
-  if (emptyRowEnd.status === "noop") {
-    return { kind: "noop" };
-  }
   return null;
 }
 
@@ -582,9 +579,6 @@ export function resolveHandoffNoteDeleteIntent(
         kind: "result",
         result: blankBandMoveToResult(emptyRowEnd.move),
       };
-    }
-    if (emptyRowEnd.status === "noop") {
-      return { kind: "noop" };
     }
   }
 

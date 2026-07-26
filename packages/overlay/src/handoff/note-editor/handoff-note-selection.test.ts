@@ -2,11 +2,13 @@
 import {
   applyDocDelete,
   applyDocInsertText,
+  blankVisualLineStartOpenedByProbe,
   collapsedSelection,
   describeHandoffNoteCursorContext,
   docPosToWireOffset,
   docToWire,
   listEmbeddedBlankBandProbeWires,
+  listBlankVisualLineStartWires,
   normalizeDocPos,
   resolveHandoffNoteArrowMove,
   wireOffsetToDocPos,
@@ -186,10 +188,12 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(root, doc)).toBe(leftOfMention);
   });
 
-  it("restores mention interior authority when DOM reads blank probe after blank-band step", () => {
+  it("restores mention interior authority when DOM reads blank stop after blank-band step", () => {
     const suffixWire = `header @caliper-aaaaaaa tail\n\n\n`;
     const suffixDoc = wireToDoc(suffixWire);
     const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
+    const blankStop = blankVisualLineStartOpenedByProbe(suffixDoc, probes[0]!);
+    expect(blankStop).not.toBeNull();
     const mentionIdx = suffixDoc.nodes.findIndex((node) => node.type === "mention");
     const mentionLastInterior = {
       nodeIndex: mentionIdx,
@@ -201,7 +205,7 @@ describe("handoff-note-selection", () => {
     setDocSelection(bandRoot, bandDoc, collapsedSelection(mentionLastInterior));
 
     setSelectionAtWire(bandRoot, bandDoc, probes[0]!, probes[0]!);
-    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(probes[0]!);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(blankStop);
 
     const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, mentionLastInterior, {
       mode: "full",
@@ -245,21 +249,23 @@ describe("handoff-note-selection", () => {
     expect(readDocSelection(root, doc).focusAffinity).toBe("after");
   });
 
-  it("accepts valid DOM text without probe snap when prior was on row interior", () => {
+  it("accepts blank stop from BA seat without snap to content row end when prior was on row interior", () => {
     const suffixWire = `header @caliper-aaaaaaa row\n\n\nlower `;
     const suffixDoc = wireToDoc(suffixWire);
     const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
     const headerEnd = probes[0]! - 1;
     const [firstProbe] = probes;
+    const blankStop = blankVisualLineStartOpenedByProbe(suffixDoc, firstProbe!);
+    expect(blankStop).not.toBeNull();
     const { root: bandRoot, doc: bandDoc } = mountEditor(suffixWire);
 
     setSelectionAtWire(bandRoot, bandDoc, firstProbe!, firstProbe!);
     const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, wireOffsetToDocPos(bandDoc, 0), {
       mode: "strand-only",
     });
-    expect(docPosToWireOffset(bandDoc, repaired)).toBe(firstProbe);
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(blankStop);
     expect(docPosToWireOffset(bandDoc, repaired)).not.toBe(headerEnd);
-    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(firstProbe);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(blankStop);
   });
 
   it("accepts content text-node tail as content row end on strand-only ingress", () => {
@@ -279,12 +285,14 @@ describe("handoff-note-selection", () => {
     expect(readDomWireCursor(bandRoot, bandDoc)).toBe(headerEnd);
   });
 
-  it("keeps blank probe when prior authority was already at content row end", () => {
+  it("keeps blank stop when prior authority was already at content row end", () => {
     const suffixWire = `header @caliper-aaaaaaa row\n\n\nlower `;
     const suffixDoc = wireToDoc(suffixWire);
     const probes = listEmbeddedBlankBandProbeWires(suffixDoc);
     const headerEnd = probes[0]! - 1;
     const [firstProbe] = probes;
+    const blankStop = blankVisualLineStartOpenedByProbe(suffixDoc, firstProbe!);
+    expect(blankStop).not.toBeNull();
     const { root: bandRoot, doc: bandDoc } = mountEditor(suffixWire);
 
     setSelectionAtWire(bandRoot, bandDoc, firstProbe!, firstProbe!);
@@ -294,8 +302,8 @@ describe("handoff-note-selection", () => {
       wireOffsetToDocPos(bandDoc, headerEnd),
       { mode: "strand-only" }
     );
-    expect(docPosToWireOffset(bandDoc, repaired)).toBe(firstProbe);
-    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(firstProbe);
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(blankStop);
+    expect(readDomWireCursor(bandRoot, bandDoc)).toBe(blankStop);
   });
 
   it("full repair restores mention node end over text-node probe alias at same wire", () => {
@@ -323,7 +331,7 @@ describe("handoff-note-selection", () => {
     expect(docPosToWireOffset(bandDoc, repaired)).toBe(probeWire);
   });
 
-  it("strand-only repair restores mention node end over text-node probe alias at same wire", () => {
+  it("strand-only keeps blank stop when BA seat is selected after mention-end authority", () => {
     const agent = "caliper-aaaaaaa";
     const wire = `header @${agent} \n\n\n`;
     const doc = wireToDoc(wire);
@@ -336,18 +344,21 @@ describe("handoff-note-selection", () => {
     )!;
     const authority = chipped.selection.focus;
     const probeWire = listEmbeddedBlankBandProbeWires(chipped.doc)[0]!;
+    const blankStop = blankVisualLineStartOpenedByProbe(chipped.doc, probeWire);
+    expect(blankStop).not.toBeNull();
     expect(chipped.doc.nodes[authority.nodeIndex]?.type).toBe("mention");
     expect(docPosToWireOffset(chipped.doc, authority)).toBe(probeWire);
     const { root: bandRoot, doc: bandDoc } = mountEditor(docToWire(chipped.doc));
 
     setDocSelection(bandRoot, bandDoc, collapsedSelection(authority));
+    // Painting the probe dock seats the opened blank stop (BA), not the coincident mention end.
     setSelectionAtWire(bandRoot, bandDoc, probeWire, probeWire);
 
     const repaired = repairDocSelectionIfNeeded(bandRoot, bandDoc, authority, {
       mode: "strand-only",
     });
-    expect(bandDoc.nodes[repaired.nodeIndex]?.type).toBe("mention");
-    expect(docPosToWireOffset(bandDoc, repaired)).toBe(probeWire);
+    expect(docPosToWireOffset(bandDoc, repaired)).toBe(blankStop);
+    expect(bandDoc.nodes[repaired.nodeIndex]?.type).toBe("text");
   });
 
   it("sets and reads wire cursor at text and mention boundaries", () => {
@@ -1753,7 +1764,43 @@ describe("soft-wrap vertical navigation on a single wire line", () => {
     });
   });
 
-  describe("click ingress â€” soft-wrap row restore", () => {
+  describe("click ingress — soft-wrap row restore", () => {
+    it("mid-doc stacked empties: viewport click with live on upper stop prefers lower stop at lower Y", () => {
+      const fixture = "shhs\n\n\nsgs";
+      const doc = wireToDoc(fixture);
+      const root = document.createElement("div");
+      root.contentEditable = "true";
+      Object.defineProperty(root, "clientWidth", { configurable: true, value: 480 });
+      document.body.appendChild(root);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      seedMonotonicMeasuredLayout(root, fixture, { baseTop: 100, stride: 36 });
+
+      const [upper, lower] = listBlankVisualLineStartWires(doc);
+      const layout = buildHandoffNoteLayoutMap(root, doc);
+      const lowerRow = layout.rows.findIndex(
+        (row) => row.kind === "blank" && row.samples.some((s) => s.wire === lower)
+      );
+      const click = { clientX: 8, clientY: layout.rows[lowerRow]!.top + 2 };
+      const restore = stubCaretProbeAtDocPos(
+        root,
+        doc,
+        click.clientX,
+        click.clientY,
+        wireOffsetToDocPos(doc, lower!)
+      );
+      const resolved = resolveClickIngressSelection(
+        root,
+        doc,
+        wireOffsetToDocPos(doc, upper!),
+        wireOffsetToDocPos(doc, fixture.lastIndexOf("s")),
+        click
+      );
+      restore();
+      expect(docPosToWireOffset(doc, resolved.focus)).toBe(lower);
+      root.remove();
+      invalidateHandoffNoteLayoutCache();
+    });
+
     it("post-mention spacer wire aliases mention-boundary end at same offset", () => {
       const fx = mountMultiMentionSoftWrapFixture();
       expect(describeHandoffNoteCursorContext(fx.doc, fx.secondPostStart)).toEqual(

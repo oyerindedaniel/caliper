@@ -181,8 +181,8 @@ describe("createMentionController mention session", () => {
     expect(controller.isOpen()).toBe(false);
   });
 
-  it("after collapsing trailing blanks under @ session is already active; typing extends query", () => {
-    // One blank collapse remounts CRE after `@` — further BS would chip `@`.
+  it("after progressive blank collapse under @ session is already active; typing extends query", () => {
+    // Progressive Backspace through blanks (no jump) until CRE/`after` on `@`.
     const controller = createMentionController({
       getItems: () => [REGISTRY_ITEM],
       onNoteChange: () => {},
@@ -195,7 +195,14 @@ describe("createMentionController mention session", () => {
     for (let i = 0; i < 3; i++) {
       state = applyDocLineBreak(state.doc, state.selection);
     }
-    state = applyDocDelete(state.doc, state.selection, "backspace")!;
+    for (let i = 0; i < 8; i++) {
+      const wire = docToWire(state.doc);
+      const land = docPosToWireOffset(state.doc, state.selection.focus);
+      if (wire[land] === "@" && state.selection.focusAffinity === "after") {
+        break;
+      }
+      state = applyDocDelete(state.doc, state.selection, "backspace")!;
+    }
 
     const editorFromState = () => ({
       getWire: () => docToWire(state.doc),

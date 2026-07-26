@@ -14,6 +14,8 @@ import {
   embeddedBlankBandAtEmptyContentRowEnd,
   embeddedBlankBandContentRowEndBeforeProbe,
   embeddedBlankBandSubstantiveContentAbutsProbe,
+  blankBandOpenerProbeForStop,
+  blankVisualLineStartOpenedByProbe,
   embeddedBlankBandProbeEmitsBlankAnchor,
   embeddedBlankBandProbePaintsBareWireBreak,
   handoffNoteCaretAtEmptyContentRowEndDock,
@@ -33,14 +35,18 @@ import {
 } from "./handoff-note-embedded-newlines.js";
 
 describe("embedded blank band probes", () => {
-  it("blank visual line starts: empty line-start lattice (not probe alias)", () => {
+  it("blank visual line starts: every empty line slot is a stop (visual = nav)", () => {
     expect(listBlankVisualLineStartWires(wireToDoc(""))).toEqual([0]);
+    // Empty open + 1 Shift+Enter → 2 rows.
     expect(listBlankVisualLineStartWires(wireToDoc("\n"))).toEqual([0, 1]);
+    // Empty open + 3 Shift+Enter → 4 rows.
+    expect(listBlankVisualLineStartWires(wireToDoc("\n\n\n"))).toEqual([0, 1, 2, 3]);
     expect(listBlankVisualLineStartWires(wireToDoc("\n\n\n\n"))).toEqual([0, 1, 2, 3, 4]);
-    // Content then two empty lines: stops at empty line-starts 7 and 8 (not content `\n` at 6).
+    // header + 2 Shift+Enter → header + 2 empties.
     expect(listBlankVisualLineStartWires(wireToDoc("header\n\n"))).toEqual([7, 8]);
     expect(listBlankVisualLineStartWires(wireToDoc("\nheader\n"))).toEqual([0, 8]);
     expect(listBlankVisualLineStartWires(wireToDoc("header\n\ntail"))).toEqual([7]);
+    expect(listBlankVisualLineStartWires(wireToDoc("header\n\n\n"))).toEqual([7, 8, 9]);
   });
 
   it("lists visual row anchors including blank-only document-end stop", () => {
@@ -453,6 +459,47 @@ describe("embedded blank band probes", () => {
       expect(embeddedBlankBandProbeEmitsBlankAnchor(doc, probe)).toBe(true);
     });
 
+    it("mid-doc stacked empties: each opener probe emits BA; paint openers are distinct", () => {
+      const doc = wireToDoc("shhs\n\n\nsgs");
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const stops = listBlankVisualLineStartWires(doc);
+      expect(probes).toEqual([4, 5]);
+      expect(stops).toEqual([5, 6]);
+      expect(embeddedBlankBandProbeEmitsBlankAnchor(doc, 4)).toBe(true);
+      expect(embeddedBlankBandProbeEmitsBlankAnchor(doc, 5)).toBe(true);
+      expect(blankBandOpenerProbeForStop(doc, 5)).toBe(4);
+      expect(blankBandOpenerProbeForStop(doc, 6)).toBe(5);
+      expect(blankVisualLineStartOpenedByProbe(doc, 4)).toBe(5);
+      expect(blankVisualLineStartOpenedByProbe(doc, 5)).toBe(6);
+    });
+
+    it("post sole-char chip leading empties: every opener emits BA (band-head included)", () => {
+      // After chipping sole-char `h` above `\n\n\ntail` → `\n\n\ntail`.
+      const doc = wireToDoc("\n\n\ntail");
+      const stops = listBlankVisualLineStartWires(doc);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(stops).toEqual([0, 1, 2]);
+      expect(probes).toEqual([0, 1]);
+      expect(blankBandOpenerProbeForStop(doc, 0)).toBeNull();
+      expect(blankBandOpenerProbeForStop(doc, 1)).toBe(0);
+      expect(blankBandOpenerProbeForStop(doc, 2)).toBe(1);
+      for (const probe of probes) {
+        expect(blankVisualLineStartOpenedByProbe(doc, probe)).not.toBeNull();
+        expect(embeddedBlankBandProbeEmitsBlankAnchor(doc, probe)).toBe(true);
+      }
+    });
+
+    it("long content-bounded blank run: every opener that opens a stop emits BA", () => {
+      const doc = wireToDoc(`header${"\n".repeat(8)} tail`);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      expect(probes.length).toBeGreaterThan(2);
+      for (const probe of probes) {
+        if (blankVisualLineStartOpenedByProbe(doc, probe) !== null) {
+          expect(embeddedBlankBandProbeEmitsBlankAnchor(doc, probe)).toBe(true);
+        }
+      }
+    });
+
     it("emptied blank-only probes omit blank-anchor emit", () => {
       const doc = wireToDoc("\n\n\n\n");
       for (const probe of listEmbeddedBlankBandProbeWires(doc)) {
@@ -510,7 +557,7 @@ describe("embedded blank band probes", () => {
       ).toBe(true);
     });
 
-    it("cleared interior empty CRE with no abutting text prefers bare BR", () => {
+    it("cleared interior empty under content emits blank-anchor (ordinary blank seat)", () => {
       const wire = `header \n\n\nmiddle\n\n\nd\n\n\nlower`;
       const doc = wireToDoc(wire);
       const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
@@ -523,9 +570,10 @@ describe("embedded blank band probes", () => {
       expect(
         embeddedBlankBandAtEmptyContentRowEnd(chipped.doc, focusWire, chipped.selection.focus)
       ).toBe(true);
+      expect(embeddedBlankBandProbeEmitsBlankAnchor(chipped.doc, focusWire)).toBe(true);
       expect(
         embeddedBlankBandProbePaintsBareWireBreak(chipped.doc, focusWire, chipped.selection.focus)
-      ).toBe(true);
+      ).toBe(false);
     });
   });
 
@@ -544,12 +592,19 @@ describe("embedded blank band probes", () => {
       );
     });
 
-    it("last trailing blank under content is band-edge noop", () => {
+    it("last trailing blank under content collapses to content visual start (progressive)", () => {
       const doc = wireToDoc("TOP\n");
       const probe = listEmbeddedBlankBandProbeWires(doc)[0]!;
-      expect(
-        resolveDeleteFromEmptyContentRowEnd(doc, probe, wireOffsetToDocPos(doc, probe)).status
-      ).toBe("noop");
+      const resolved = resolveDeleteFromEmptyContentRowEnd(
+        doc,
+        probe,
+        wireOffsetToDocPos(doc, probe)
+      );
+      expect(resolved.status).toBe("move");
+      if (resolved.status === "move") {
+        expect(docToWire(resolved.move.doc)).toBe("TOP");
+        expect(resolved.move.caretWire).toBe(0);
+      }
     });
 
     it("sole leftover prefix blank clears (move)", () => {

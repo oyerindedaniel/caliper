@@ -21,6 +21,7 @@ import {
   getDocAnchorRect,
   isFiniteMeasuredLayoutCoord,
   isUsableMeasuredLayoutCoord,
+  measureBlankStopSeatCoord,
   measureTrailingLinePadCoord,
   measureWireBreakCoord,
   resolvePaintContext,
@@ -2933,11 +2934,11 @@ function measureBlankLineStartAcquireCoord(
     }
     return null;
   }
-  if (stopWire < wire.length && wire[stopWire] === "\n") {
-    const breakCoord = measureWireBreakCoord(root, doc, stopWire);
-    if (breakCoord && isUsableMeasuredLayoutCoord(breakCoord)) {
-      return breakCoord;
-    }
+  // Stop row Y = caret paint seat (opener BA → preceding BR, or leading bare BR).
+  // Not the stop wire's own BR when that pair belongs to the next stop.
+  const seatCoord = measureBlankStopSeatCoord(root, doc, stopWire);
+  if (seatCoord && isUsableMeasuredLayoutCoord(seatCoord)) {
+    return seatCoord;
   }
   return null;
 }

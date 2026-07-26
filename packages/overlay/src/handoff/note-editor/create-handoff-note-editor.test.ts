@@ -1,4 +1,5 @@
 ﻿import {
+  blankVisualLineStartOpenedByProbe,
   collapsedSelection,
   describeHandoffNoteCursorContext,
   docPosToWireOffset,
@@ -12,11 +13,16 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   describeCaretContext,
   ensureHandoffNoteCaretVisible,
+  resolveDomPointAtDocPos,
   resolvePaintHorizontalArrowMove,
 } from "./handoff-note-dom-points.js";
 import { createHandoffNoteEditor } from "./create-handoff-note-editor.js";
 import { handoffNoteSelectionSnapshot } from "../handoff-note-debug.js";
-import { readMentionNodeIndex, renderHandoffNoteDoc } from "./handoff-note-dom.js";
+import {
+  isHandoffBlankAnchorElement,
+  readMentionNodeIndex,
+  renderHandoffNoteDoc,
+} from "./handoff-note-dom.js";
 import {
   dispatchSelectionChange,
   mountMultiMentionSoftWrapFixture,
@@ -30,8 +36,14 @@ import {
   setSelectionAtWire,
   stubHandoffNoteAnchorRectAtWire,
   strandSelectionInMentionPill,
+  seedMonotonicMeasuredLayout,
+  stubCaretProbeAtDocPos,
 } from "./handoff-note-test-helpers.js";
-import { setMeasuredSamplesCache } from "./handoff-note-layout-map.js";
+import {
+  buildHandoffNoteLayoutMap,
+  invalidateHandoffNoteLayoutCache,
+  setMeasuredSamplesCache,
+} from "./handoff-note-layout-map.js";
 
 function mountEditorHost() {
   const root = document.createElement("div");
@@ -791,32 +803,113 @@ describe("createHandoffNoteEditor", () => {
       expect(host.editor.getCursor()).not.toBe(listEmbeddedBlankBandProbeWires(doc)[0]! - 1);
     });
 
-    it("accepts blank probe when click targets probe band", () => {
+    it("accepts blank stop when click targets blank-band BA seat", () => {
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
       const headerEnd = probes[0]! - 1;
       const [firstProbe] = probes;
+      const blankStop = blankVisualLineStartOpenedByProbe(doc, firstProbe!);
+      expect(blankStop).not.toBeNull();
 
       host.editor.setDocFromWire(suffixWire, headerEnd, { resetHistory: true });
       setSelectionAtWire(host.root, doc, firstProbe!, firstProbe!);
       dispatchSelectionChange(host.root);
 
-      expect(host.editor.getCursor()).toBe(firstProbe);
-      expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(firstProbe);
+      expect(host.editor.getCursor()).toBe(blankStop);
+      expect(readDomWireCursor(host.root, host.editor.getDoc())).toBe(blankStop);
     });
 
-    it("does not snap mis-hit probe to content row end when prior was on row interior", () => {
+    it("does not snap blank-band click to content row end when prior was on row interior", () => {
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
       const headerEnd = probes[0]! - 1;
       const [firstProbe] = probes;
+      const blankStop = blankVisualLineStartOpenedByProbe(doc, firstProbe!);
+      expect(blankStop).not.toBeNull();
 
       host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
       setSelectionAtWire(host.root, doc, firstProbe!, firstProbe!);
       dispatchSelectionChange(host.root);
 
-      expect(host.editor.getCursor()).toBe(firstProbe);
+      expect(host.editor.getCursor()).toBe(blankStop);
       expect(host.editor.getCursor()).not.toBe(headerEnd);
+    });
+
+    it("mid-doc stacked empties: click lower blank then insert fills that row", () => {
+      const fixture = "shhs\n\n\nsgs";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 480 });
+      host.editor.setDocFromWire(fixture, fixture.length, { resetHistory: true });
+      const doc = host.editor.getDoc();
+      seedMonotonicMeasuredLayout(host.root, fixture, { baseTop: 100, stride: 36 });
+
+      const [upper, lower] = listBlankVisualLineStartWires(doc);
+      const layout = buildHandoffNoteLayoutMap(host.root, doc);
+      const lowerRow = layout.rows.findIndex(
+        (row) => row.kind === "blank" && row.samples.some((s) => s.wire === lower)
+      );
+      const clickY = layout.rows[lowerRow]!.top + 2;
+
+      setSelectionAtWire(host.root, doc, upper!, upper!);
+      const restore = stubCaretProbeAtDocPos(
+        host.root,
+        doc,
+        8,
+        clickY,
+        wireOffsetToDocPos(doc, lower!)
+      );
+
+      host.root.dispatchEvent(
+        new MouseEvent("mousedown", {
+          clientX: 8,
+          clientY: clickY,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      setSelectionAtWire(host.root, doc, upper!, upper!);
+      dispatchSelectionChange(host.root);
+      restore();
+
+      expect(host.editor.getCursor()).toBe(lower);
+
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: "X",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      expect(host.editor.getWire()).toBe("shhs\n\nX\nsgs");
+      invalidateHandoffNoteLayoutCache();
+    });
+
+    it("mid-doc stacked empties: paint lower stop then insert fills that row", () => {
+      const fixture = "shhs\n\n\nsgs";
+      Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 480 });
+      host.editor.setDocFromWire(fixture, fixture.length, { resetHistory: true });
+      const doc = host.editor.getDoc();
+      seedMonotonicMeasuredLayout(host.root, fixture, { baseTop: 100, stride: 36 });
+
+      const lower = listBlankVisualLineStartWires(doc)[1]!;
+      setSelectionAtWire(host.root, doc, lower, lower);
+      dispatchSelectionChange(host.root);
+
+      const paint = resolveDomPointAtDocPos(host.root, doc, wireOffsetToDocPos(doc, lower));
+      expect(paint).not.toBeNull();
+      expect(isHandoffBlankAnchorElement(paint!.node.parentNode)).toBe(true);
+      expect(host.editor.getCursor()).toBe(lower);
+
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "insertText",
+          data: "X",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+      expect(host.editor.getWire()).toBe("shhs\n\nX\nsgs");
+      invalidateHandoffNoteLayoutCache();
     });
 
     it("selectionchange keeps continuation wire after row-0 soft-wrap click", () => {

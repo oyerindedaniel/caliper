@@ -183,6 +183,8 @@ export {
   embeddedBlankBandSubstantiveContentAbutsProbe,
   embeddedBlankBandProbePaintsBareWireBreak,
   embeddedBlankBandProbeEmitsBlankAnchor,
+  blankBandOpenerProbeForStop,
+  blankVisualLineStartOpenedByProbe,
   embeddedBlankBandSpacerBeforeProbeRowChip,
   embeddedTextLedLowerRowSpanAfterBlankBand,
   isEmbeddedBlankBandCollapseProbeWire,

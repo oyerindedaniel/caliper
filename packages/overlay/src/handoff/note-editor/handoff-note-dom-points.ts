@@ -1,4 +1,6 @@
 import {
+  blankBandOpenerProbeForStop,
+  blankVisualLineStartOpenedByProbe,
   collapsedSelection,
   describeHandoffNoteCursorContext,
   docPosAfterAmbiguousContentRowEndChar,
@@ -6,6 +8,7 @@ import {
   docPosToWireOffset,
   docToWire,
   docPosAtEmbeddedBlankBandProbeAliasLanding,
+  embeddedBlankBandProbeEmitsBlankAnchor,
   embeddedBlankBandSubstantiveContentAbutsProbe,
   isCaretOnAmbiguousContentRowEndChar,
   isEmbeddedBlankBandProbeWire,
@@ -209,22 +212,27 @@ export function docPosToRenderedDomChildIndex(doc: HandoffNoteDoc, nodeIndex: nu
 }
 
 /**
- * Caret on a wire-break — one probe → one dock.
- * Emit already chose dock kind; paint follows DOM (ba sibling ⇒ ba, else bare BR).
+ * Caret on a wire-break — dock by stop identity when painting a stop, else emit dock.
+ * `preferWireBreakOverBlankAnchor`: leading empty (no opener) — this BR, never the BA after
+ * it (that BA is the next stop’s seat). Otherwise follow emit: BA sibling when present.
  */
 function domPointAfterWireBreak(
   root: HTMLElement,
-  breakChildIdx: number
+  breakChildIdx: number,
+  options?: { preferWireBreakOverBlankAnchor?: boolean }
 ): { node: Node; offset: number } {
   const br = root.childNodes[breakChildIdx];
   if (!(br instanceof HTMLBRElement && isHandoffWireBreakElement(br))) {
     return { node: root, offset: breakChildIdx };
   }
-  const anchor = root.childNodes[breakChildIdx + 1];
-  if (isHandoffBlankAnchorElement(anchor)) {
-    const text = anchor.firstChild;
-    if (text?.nodeType === Node.TEXT_NODE) {
-      return { node: text, offset: 0 };
+  // Leading blank stop (no opener): seat is this BR. BA after it belongs to the next stop.
+  if (!options?.preferWireBreakOverBlankAnchor) {
+    const anchor = root.childNodes[breakChildIdx + 1];
+    if (isHandoffBlankAnchorElement(anchor)) {
+      const text = anchor.firstChild;
+      if (text?.nodeType === Node.TEXT_NODE) {
+        return { node: text, offset: 0 };
+      }
     }
   }
   // Row-start ZWSP is paint for atom-start (`paintOutsideAtomicStart`), not for the
@@ -275,9 +283,14 @@ function resolveTextDomPointAtOffset(
     wireBase: number;
     focusDocPos: HandoffNoteDocPos;
     focusAffinity?: HandoffNoteCaretAffinity;
+    /** Leading blank stop: paint BR, not BA that serves the next stop. */
+    preferWireBreakOverBlankAnchor?: boolean;
   }
 ): { node: Node; offset: number } {
   const clamped = Math.max(0, Math.min(nodeOffset, text.length));
+  const breakPaint = options.preferWireBreakOverBlankAnchor
+    ? { preferWireBreakOverBlankAnchor: true as const }
+    : undefined;
 
   if (!text.includes("\n")) {
     const domNode = root.childNodes[domStartChildIndex];
@@ -316,7 +329,7 @@ function resolveTextDomPointAtOffset(
         if (remaining === part.length && part) {
           childIdx++;
         }
-        return domPointAfterWireBreak(root, childIdx);
+        return domPointAfterWireBreak(root, childIdx, breakPaint);
       }
       if (part && remaining === part.length) {
         const domNode = root.childNodes[childIdx];
@@ -336,7 +349,7 @@ function resolveTextDomPointAtOffset(
 
     if (partIndex < parts.length - 1) {
       if (remaining === 0) {
-        return domPointAfterWireBreak(root, childIdx);
+        return domPointAfterWireBreak(root, childIdx, breakPaint);
       }
       remaining -= 1;
       childIdx = advancePastWireBreakDom(root, childIdx);
@@ -348,14 +361,14 @@ function resolveTextDomPointAtOffset(
     if (trailing) {
       return trailing;
     }
-    return domPointAfterWireBreak(root, root.childNodes.length - 1);
+    return domPointAfterWireBreak(root, root.childNodes.length - 1, breakPaint);
   }
 
   const domNode = root.childNodes[childIdx - 1] ?? root.childNodes[domStartChildIndex];
   if (domNode?.nodeType === Node.TEXT_NODE) {
     return { node: domNode, offset: domNode.textContent?.length ?? 0 };
   }
-  return domPointAfterWireBreak(root, childIdx);
+  return domPointAfterWireBreak(root, childIdx, breakPaint);
 }
 
 function docPosAtPrecedingWireBreak(
@@ -376,7 +389,11 @@ function docPosAtPrecedingWireBreak(
   return null;
 }
 
-/** Blank-anchor is always after its wire-break — orphan docks must not soft-land at EOF or BOF. */
+/**
+ * Blank-anchor is always after its wire-break — orphan docks must not soft-land at EOF or BOF.
+ * Read-back is the navigable blank **stop** that seat serves (opened by the preceding probe),
+ * not the probe wire as a second caret identity.
+ */
 function requireDocPosAtBlankAnchor(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -385,6 +402,11 @@ function requireDocPosAtBlankAnchor(
   const pos = docPosAtPrecedingWireBreak(root, doc, anchor);
   if (!pos) {
     throw new Error("handoff note: blank-anchor without preceding wire-break");
+  }
+  const probeWire = docPosToWireOffset(doc, pos);
+  const openedStop = blankVisualLineStartOpenedByProbe(doc, probeWire);
+  if (openedStop !== null) {
+    return wireOffsetToDocPos(doc, openedStop);
   }
   return pos;
 }
@@ -1216,20 +1238,18 @@ function tryIntraTextHorizontalStep(
 }
 
 /**
- * Non-probe `\n` only starts the next substantive line ??? storage, not a horizontal stop.
- * Blank-band probes stay visual stops (same classification as vertical).
+ * Storage `\n` that is not a blank navigable stop — including probe-only docks —
+ * is not a horizontal caret hop. Blank visual line-start stops stay visual.
  */
 function isNonVisualLineStartBreak(doc: HandoffNoteDoc, wire: number): boolean {
   const text = docToWire(doc);
   if (wire < 0 || wire >= text.length || text[wire] !== "\n") {
     return false;
   }
-  // Navigable blank stops and probe docks are visual hops; only storage `\n`
-  // that starts a substantive row (neither) snaps through.
   if (listBlankVisualLineStartWires(doc).includes(wire)) {
     return false;
   }
-  return !isEmbeddedBlankBandProbeWire(doc, wire);
+  return true;
 }
 
 /** Snap off non-visual line-start breaks in the travel direction. Keeps doc owner otherwise. */
@@ -1432,7 +1452,7 @@ export function resolvePaintHorizontalArrowMove(
           handled: false,
         };
       }
-      // Leave onto the next visual stop (blank probe or next content) ??? skip non-visual \n.
+      // Leave onto the next visual stop (blank stop or next content) — skip probe-only / storage \n.
       const visualPast = snapHorizontalVisualLand(doc, past, "right");
       const pastPaint = resolvePaintContext(doc, visualPast, {
         root: options?.root,
@@ -1473,9 +1493,38 @@ export function resolveDomPointAtDocPos(
   root: HTMLElement,
   doc: HandoffNoteDoc,
   pos: HandoffNoteDocPos,
-  options?: { from?: HandoffNoteDocPos; focusAffinity?: HandoffNoteCaretAffinity }
+  options?: {
+    from?: HandoffNoteDocPos;
+    focusAffinity?: HandoffNoteCaretAffinity;
+    /** True when already painting an opener probe seat — do not re-apply stop→opener. */
+    blankStopOpenerDocked?: boolean;
+    /** Leading blank stop: paint BR, not BA owned by the next stop. */
+    preferWireBreakOverBlankAnchor?: boolean;
+  }
 ): { node: Node; offset: number } | null {
   const normalized = normalizeDocPos(doc, pos, options?.from ? { from: options.from } : undefined);
+  // Blank stop → seat by stop identity (not raw break wire).
+  // Opener BA when that BA is this stop's seat; no opener → this break BR (never next stop's BA).
+  // One hop only: opener may itself be a coincident stop — do not chain.
+  if (!options?.blankStopOpenerDocked) {
+    const focusWire = docPosToWireOffset(doc, normalized);
+    if (listBlankVisualLineStartWires(doc).includes(focusWire)) {
+      const openerProbe = blankBandOpenerProbeForStop(doc, focusWire);
+      if (openerProbe !== null && embeddedBlankBandProbeEmitsBlankAnchor(doc, openerProbe)) {
+        return resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, openerProbe), {
+          ...options,
+          blankStopOpenerDocked: true,
+          preferWireBreakOverBlankAnchor: false,
+        });
+      }
+      // Leading empty (or opener bare): this stop's seat is the wire-break at focusWire.
+      return resolveDomPointAtDocPos(root, doc, normalized, {
+        ...options,
+        blankStopOpenerDocked: true,
+        preferWireBreakOverBlankAnchor: true,
+      });
+    }
+  }
   const { paintPos } = resolvePaintContext(doc, normalized, { root });
   const node = doc.nodes[paintPos.nodeIndex];
   if (!node) {
@@ -1517,6 +1566,7 @@ export function resolveDomPointAtDocPos(
       wireBase: docPosToWireOffset(doc, { nodeIndex: paintPos.nodeIndex, nodeOffset: 0 }),
       focusDocPos: paintPos,
       focusAffinity: options?.focusAffinity,
+      preferWireBreakOverBlankAnchor: options?.preferWireBreakOverBlankAnchor,
     });
   }
 
@@ -1729,7 +1779,8 @@ export function measureWireBreakCoord(
   wire: number
 ): DomMeasuredWireOffset | null {
   const { paintPos: pos } = resolvePaintContextAtWire(doc, wire, { root });
-  const domPoint = resolveDomPointAtDocPos(root, doc, pos);
+  // Dock measure for this break wire — do not remap blank-stop caret onto its opener BA.
+  const domPoint = resolveDomPointAtDocPos(root, doc, pos, { blankStopOpenerDocked: true });
   if (!domPoint) {
     return null;
   }
@@ -1747,6 +1798,47 @@ export function measureWireBreakCoord(
     return null;
   }
   return { wire, top: domRectAnchorMidY(rect), left: rect.left, right: rect.right };
+}
+
+/**
+ * Geometry for a blank navigable stop’s caret paint seat (opener BA → preceding BR,
+ * or leading bare BR). Distinct from {@link measureWireBreakCoord}, which measures a
+ * probe dock without stop→opener remap.
+ */
+export function measureBlankStopSeatCoord(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  stopWire: number
+): DomMeasuredWireOffset | null {
+  const focus = wireOffsetToDocPos(doc, stopWire);
+  const domPoint = resolveDomPointAtDocPos(root, doc, focus);
+  if (!domPoint) {
+    return null;
+  }
+
+  const element = wireBreakElementForProbeMeasure(root, domPoint);
+  if (element) {
+    const rect = element.getBoundingClientRect();
+    if (hasPositionedDomRect(rect)) {
+      return {
+        wire: stopWire,
+        top: domRectAnchorMidY(rect),
+        left: rect.left,
+        right: rect.right,
+      };
+    }
+  }
+
+  const rect = getDocAnchorRectAtDomPoint(root, domPoint);
+  if (!rect || !hasPositionedDomRect(rect)) {
+    return null;
+  }
+  return {
+    wire: stopWire,
+    top: domRectAnchorMidY(rect),
+    left: rect.left,
+    right: rect.right,
+  };
 }
 
 /**

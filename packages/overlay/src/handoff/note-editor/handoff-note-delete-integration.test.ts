@@ -151,7 +151,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       expect(host.editor.getWire()).toBe(`h\n\n${tail}`);
     });
 
-    it("delete at last probe when another blank remains lands remaining empty above content not band head", () => {
+    it("delete at last probe when another blank remains lands next blank below not band head", () => {
       const tail = "tail";
       const wire = `\n\n\n${tail}`;
       const probes = listEmbeddedBlankBandProbeWires(wireToDoc(wire));
@@ -161,6 +161,7 @@ describe("handoff note delete integration (keydown + ingress)", () => {
       const next = host.editor.getWire();
       expect(next).toBe(`\n\n${tail}`);
       const contentAt = next.indexOf(tail);
+      // Next visual row below collapsed probe is still empty before content.
       expectCaretParity(host.editor, host.root, contentAt - 1);
       expect(next[contentAt - 1]).toBe("\n");
       expect(host.editor.getCursor()).not.toBe(0);

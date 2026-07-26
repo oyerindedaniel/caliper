@@ -9,6 +9,7 @@
  * Contract: handoff-note-arrow-contract.md
  */
 import {
+  blankVisualLineStartOpenedByProbe,
   collapsedSelectionWithIntent,
   describeHandoffNoteCursorContext,
   docPosToWireOffset,
@@ -457,6 +458,18 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       assertPaintHorizontal(doc, lowerStart, "left", stops[1]!);
     });
 
+    it("matrix: CRE after enters first blank stop in one Right (skips probe-only dock)", () => {
+      const doc = wireToDoc(suffixWire);
+      const probes = listEmbeddedBlankBandProbeWires(doc);
+      const stops = blankNavStops(doc);
+      const cre = probes[0]! - 1;
+      expect(stops[0]).toBe(blankVisualLineStartOpenedByProbe(doc, probes[0]!)!);
+      // Probe-only opener is not a horizontal caret hop.
+      expect(stops).not.toContain(probes[0]!);
+      assertPaintHorizontal(doc, cre, "right", stops[0]!, { focusAffinity: "after" });
+      assertPaintHorizontal(doc, stops[0]!, "left", cre);
+    });
+
     it("matrix: lower mention steps right to end and left to pill start", () => {
       const doc = wireToDoc(suffixWire);
       const mentionEnd = lowerMention + `@${AGENT_A}`.length;
@@ -741,6 +754,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const content = "header ";
       const wire = `${content}\n\n\n`;
       const blanks = listBlankVisualLineStartWires(wireToDoc(wire));
+      expect(blanks).toEqual([8, 9, 10]);
       const lastBlank = blanks[blanks.length - 1]!;
       expect(lastBlank).toBe(wire.length);
       host.editor.setDocFromWire(wire, lastBlank, { resetHistory: true });
@@ -759,6 +773,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       const content = "header ";
       const wire = `${content}\n\n\n`;
       const blanks = listBlankVisualLineStartWires(wireToDoc(wire));
+      expect(blanks).toEqual([8, 9, 10]);
       const lastBlank = blanks[blanks.length - 1]!;
       expect(lastBlank).toBe(wire.length);
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
@@ -780,7 +795,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
     it("blank-only leading-newline band: document-end is last empty stop; Up steps one blank", () => {
       // Live skip: caret at wire.length aliased onto last probe row → Up landed probe-2.
-      // Line-slot authority: `"\n".repeat(n)` has n+1 blank stops including document end.
+      // Line-slot authority: empty open + n newlines → n+1 blank stops including document end.
       const cases = ["\n\n\n\n", "\n\n\n\n\n\n"] as const;
       for (const wire of cases) {
         const stops = listBlankVisualLineStartWires(wireToDoc(wire));
@@ -1711,7 +1726,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getCursor()).toBe(1);
     });
 
-    it("two EOF breaks backspace on lower blank without typing remounts CRE on prefix", () => {
+    it("two EOF breaks backspace on lower blank lands remaining blank not CRE (no jump)", () => {
       const prefix = "content";
       host.editor.setDocFromWire(prefix, prefix.length, { resetHistory: true });
 
@@ -1722,9 +1737,14 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`${prefix}\n`);
-      // Trailing-only under content: remount CRE/`after` on last prefix char.
-      expect(host.editor.getCursor()).toBe(prefix.length - 1);
-      expect(host.editor.getSelectionState().focusAffinity).toBe("after");
+      expect(blankNavStops(host.editor.getDoc())).toEqual([prefix.length + 1]);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        prefix.length + 1,
+        "lower blank BS lands remaining blank"
+      );
+      expect(host.editor.getSelectionState().focusAffinity).toBeUndefined();
     });
 
     it("two EOF breaks type arrow up backspace collapses blank not content above", () => {
@@ -2032,7 +2052,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       );
     });
 
-    it("backspace on lower blank after arrow down remounts CRE on header", () => {
+    it("backspace on lower blank after arrow down lands remaining blank not CRE (no jump)", () => {
       const doc = wireToDoc(wire);
       const stops = blankNavStops(doc);
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
@@ -2053,17 +2073,14 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(
         `header @${AGENT_COMPOSITE} \n\ntail @${AGENT_COMPOSITE} `
       );
-      const resultWire = host.editor.getWire();
-      expectCaretParity(
-        host.editor,
-        host.root,
-        resultWire.indexOf("\n") - 1,
-        "lower blank backspace remounts CRE on header",
-        { expect: "after" }
-      );
+      const remain = blankNavStops(host.editor.getDoc());
+      expect(remain.length).toBeGreaterThanOrEqual(1);
+      expect(blankNavStops(host.editor.getDoc())).toEqual([25]);
+      expectCaretParity(host.editor, host.root, 25, "lower blank BS lands remaining blank");
+      expect(host.editor.getSelectionState().focusAffinity).toBeUndefined();
     });
 
-    it("delete on lower blank after arrow down lands remaining empty above tail", () => {
+    it("delete on lower blank after arrow down lands tail visual start", () => {
       const doc = wireToDoc(wire);
       const stops = blankNavStops(doc);
       host.editor.setDocFromWire(wire, 0, { resetHistory: true });
@@ -2087,10 +2104,9 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expectCaretParity(
         host.editor,
         host.root,
-        tailAt - 1,
-        "lower blank delete lands remaining empty above tail"
+        tailAt,
+        "lower blank delete lands tail visual start"
       );
-      expect(resultWire[tailAt - 1]).toBe("\n");
     });
 
     it("keydown backspace at header row end nibbles trailing suffix text", () => {
@@ -2112,16 +2128,18 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} ro\n\n\nlower `);
     });
 
-    it("keydown backspace after probe click remounts CRE on header; leftover blank stays", () => {
+    it("keydown backspace after blank-band BA click remounts CRE on header; leftover blank stays", () => {
       const suffixWire = `header @${AGENT_COMPOSITE} row\n\n\nlower `;
       const doc = wireToDoc(suffixWire);
       const probes = listEmbeddedBlankBandProbeWires(doc);
       const [firstProbe] = probes;
+      const blankStop = blankVisualLineStartOpenedByProbe(doc, firstProbe!);
+      expect(blankStop).not.toBeNull();
 
       host.editor.setDocFromWire(suffixWire, 0, { resetHistory: true });
       setSelectionAtWire(host.root, host.editor.getDoc(), firstProbe!, firstProbe!);
       dispatchSelectionChange(host.root);
-      expect(host.editor.getCursor()).toBe(firstProbe);
+      expect(host.editor.getCursor()).toBe(blankStop);
 
       expect(pressBackspace()).toBe(true);
       expect(host.editor.getWire()).toBe(`header @${AGENT_COMPOSITE} row\n\nlower `);
@@ -4159,7 +4177,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     it("up and down visit each blank row separately", () => {
       const doc = wireToDoc(wire);
       const stops = blankNavStops(doc);
-      expect(stops).toHaveLength(2);
+      expect(stops).toEqual([7, 8]);
       const upperBlank = stops[0]!;
       const lowerBlank = stops[1]!;
 

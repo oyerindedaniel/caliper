@@ -2,6 +2,7 @@
 import {
   applyDocDelete,
   applyDocInsertText,
+  blankVisualLineStartOpenedByProbe,
   collapsedSelection,
   collapsedSelectionWithIntent,
   docPosToWireOffset,
@@ -50,6 +51,7 @@ import {
   mountThreeRowMentionSoftWrapFixture,
   applyThreeRowSpacerBrowserParityLayoutStubs,
   stubHandoffNoteMentionLayoutCoords,
+  seedMonotonicMeasuredLayout,
 } from "./handoff-note-test-helpers.js";
 import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
 import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
@@ -177,8 +179,12 @@ describe("handoff-note-dom", () => {
     ).toBe("#f00");
     const normalizedDoc = wireToDoc(parseHandoffNoteDom(root));
     expect(root.childNodes.length).toBe(renderedDomChildCount(normalizedDoc));
-    setSelectionAtWire(root, normalizedDoc, 12, 12);
-    expect(readDomWireCursor(root, normalizedDoc)).toBe(12);
+    // Blank caret identity is the empty line-start stop (not a probe wire). Round-trip a stop.
+    const blankStops = listBlankVisualLineStartWires(normalizedDoc);
+    expect(blankStops.length).toBeGreaterThan(0);
+    const stop = blankStops[Math.floor(blankStops.length / 2)]!;
+    setSelectionAtWire(root, normalizedDoc, stop, stop);
+    expect(readDomWireCursor(root, normalizedDoc)).toBe(stop);
   });
 
   it("renders mention pills as keyboard-focusable buttons", () => {
@@ -575,7 +581,7 @@ describe("handoff-note-dom", () => {
       expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(true);
     });
 
-    it("cleared content row end at interior probe paints bare wire-break not blank-anchor", () => {
+    it("cleared content row end at interior probe paints blank-anchor seat", () => {
       const wire = `header \n\n\nmiddle\n\n\nd\n\n\nlower`;
       const doc = wireToDoc(wire);
       const dPos = wire.indexOf("\nd\n", wire.indexOf("middle")) + 1;
@@ -595,15 +601,18 @@ describe("handoff-note-dom", () => {
 
       const point = resolveDomPointAtDocPos(root, chipped.doc, chipped.selection.focus);
       expect(point).not.toBeNull();
-      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
-        true
-      );
-      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(false);
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point?.node.parentNode)).toBe(true);
       const roundTrip = domPointToDocPos(root, chipped.doc, point!.node, point!.offset);
-      expect(docPosToWireOffset(chipped.doc, roundTrip)).toBe(focusWire);
+      // Coincident focus parks on that stop's seat; probe-only opens the next stop.
+      const expectedStop = listBlankVisualLineStartWires(chipped.doc).includes(focusWire)
+        ? focusWire
+        : blankVisualLineStartOpenedByProbe(chipped.doc, focusWire);
+      expect(expectedStop).not.toBeNull();
+      expect(docPosToWireOffset(chipped.doc, roundTrip)).toBe(expectedStop);
     });
 
-    it("Delete leftover pad between fused bands paints bare wire-break; intent stays off delete-probe", () => {
+    it("Delete leftover pad between fused bands paints blank-anchor seat; intent stays off delete-probe", () => {
       const wire = `upper @${AGENT} \n\n\n \n\n\nlower`;
       const doc = wireToDoc(wire);
       const padWire = wire.indexOf(" \n\n\nlower");
@@ -621,16 +630,17 @@ describe("handoff-note-dom", () => {
 
       renderHandoffNoteDoc(root, cleared.doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
       const point = resolveDomPointAtDocPos(root, cleared.doc, cleared.selection.focus)!;
-      expect(point.node instanceof HTMLBRElement && isHandoffWireBreakElement(point.node)).toBe(
-        true
+      expect(point.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(true);
+      const roundTripWire = docPosToWireOffset(
+        cleared.doc,
+        domPointToDocPos(root, cleared.doc, point.node, point.offset)
       );
-      expect(isHandoffBlankAnchorElement(point.node.parentNode)).toBe(false);
-      expect(
-        docPosToWireOffset(
-          cleared.doc,
-          domPointToDocPos(root, cleared.doc, point.node, point.offset)
-        )
-      ).toBe(focusWire);
+      const expectedStop = listBlankVisualLineStartWires(cleared.doc).includes(focusWire)
+        ? focusWire
+        : blankVisualLineStartOpenedByProbe(cleared.doc, focusWire);
+      expect(expectedStop).not.toBeNull();
+      expect(roundTripWire).toBe(expectedStop);
     });
 
     it("Delete sole leftover space before band paints bare wire-break off delete-probe", () => {
@@ -667,19 +677,64 @@ describe("handoff-note-dom", () => {
       }
     });
 
-    it("non-probe wire-break still resolves to br element", () => {
+    it("blank stop before content paints blank-anchor seat (not bare content line-start BR)", () => {
       const wire = suffixBlankBandWire();
       const doc = wireToDoc(wire);
       const lineStartBeforeTail = wire.indexOf("tail") - 1;
+      expect(listBlankVisualLineStartWires(doc)).toContain(lineStartBeforeTail);
+      expect(isEmbeddedBlankBandProbeWire(doc, lineStartBeforeTail)).toBe(false);
       renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map([[AGENT, "#06f"]]) });
       const point = resolveDomPointAtDocPos(
         root,
         doc,
         wireOffsetToDocPos(doc, lineStartBeforeTail)
       );
-      expect(point?.node instanceof HTMLBRElement && isHandoffWireBreakElement(point!.node)).toBe(
+      expect(point?.node.nodeType).toBe(Node.TEXT_NODE);
+      expect(isHandoffBlankAnchorElement(point!.node.parentNode)).toBe(true);
+    });
+
+    it("mid-doc stacked empties: upper and lower blank stops paint distinct blank-anchor seats", () => {
+      const fixture = "shhs\n\n\nsgs";
+      const doc = wireToDoc(fixture);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      seedMonotonicMeasuredLayout(root, fixture, { baseTop: 100, stride: 36 });
+
+      const [upper, lower] = listBlankVisualLineStartWires(doc);
+      const upperPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, upper!));
+      const lowerPoint = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, lower!));
+      expect(upperPoint).not.toBeNull();
+      expect(lowerPoint).not.toBeNull();
+      expect(isHandoffBlankAnchorElement(upperPoint!.node.parentNode)).toBe(true);
+      expect(isHandoffBlankAnchorElement(lowerPoint!.node.parentNode)).toBe(true);
+      expect(upperPoint!.node).not.toBe(lowerPoint!.node);
+    });
+
+    it("post sole-char chip leading empties: every blank stop paints its seat and reads back", () => {
+      const wire = "\n\n\ntail";
+      const doc = wireToDoc(wire);
+      renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+      seedMonotonicMeasuredLayout(root, wire, { baseTop: 100, stride: 36 });
+
+      const stops = listBlankVisualLineStartWires(doc);
+      expect(stops).toEqual([0, 1, 2]);
+      expect(listEmbeddedBlankBandProbeWires(doc)).toEqual([0, 1]);
+
+      for (const stopWire of stops) {
+        const focus = wireOffsetToDocPos(doc, stopWire);
+        const paint = resolveDomPointAtDocPos(root, doc, focus);
+        expect(paint, `stop ${stopWire} must paint`).not.toBeNull();
+        const roundTrip = domPointToDocPos(root, doc, paint!.node, paint!.offset);
+        expect(docPosToWireOffset(doc, roundTrip), `stop ${stopWire} read-back`).toBe(stopWire);
+      }
+
+      const paint0 = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 0));
+      expect(paint0?.node instanceof HTMLBRElement && isHandoffWireBreakElement(paint0.node)).toBe(
         true
       );
+      const paint1 = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 1));
+      expect(isHandoffBlankAnchorElement(paint1?.node.parentNode)).toBe(true);
+      const paint2 = resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, 2));
+      expect(isHandoffBlankAnchorElement(paint2?.node.parentNode)).toBe(true);
     });
 
     it("parse ignores blank-band anchor spans", () => {
