@@ -15,6 +15,7 @@ import {
   type HandoffNoteEdit,
 } from "./handoff-note-doc.js";
 import { resolveHandoffNoteDeleteIntent } from "./handoff-note-delete-intent.js";
+import type { HandoffNoteVisualRowSeat } from "./handoff-note-embedded-newlines.js";
 import { insertDocPosAfterEmbeddedBlankProbe } from "./handoff-note-embedded-newlines.js";
 import {
   collapsedSelection,
@@ -34,6 +35,20 @@ import {
 export type HandoffDocEditResult = {
   doc: HandoffNoteDoc;
   selection: HandoffNoteSelection;
+};
+
+export type HandoffNoteDeletePostLayoutRemount =
+  | {
+      kind: "content-seat";
+      priorContentSeatWire: number;
+    }
+  | {
+      kind: "blank-stop";
+      replacementBlankStopWire: number;
+    };
+
+export type HandoffDocDeleteResult = HandoffDocEditResult & {
+  postLayoutRemount?: HandoffNoteDeletePostLayoutRemount;
 };
 
 function selectionCollapsed(selection: HandoffNoteSelection): boolean {
@@ -98,11 +113,136 @@ export function spliceDocSelection(
   };
 }
 
+function postLayoutRemountRequest(
+  priorDoc: HandoffNoteDoc,
+  result: HandoffDocEditResult,
+  direction: HandoffNoteEdit,
+  visualRowSeats: readonly HandoffNoteVisualRowSeat[],
+  replacementBlankStopWire: number | undefined
+): HandoffNoteDeletePostLayoutRemount | undefined {
+  if (direction !== "delete" || docToWire(priorDoc) === docToWire(result.doc)) {
+    return undefined;
+  }
+  if (replacementBlankStopWire !== undefined) {
+    return { kind: "blank-stop", replacementBlankStopWire };
+  }
+  const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
+  const replacementUnit = docToWire(result.doc)[focusWire];
+  // A surviving horizontal spacer is its own next Delete unit. It is not a
+  // continuation-seat replacement merely because reflow moved it onto another row.
+  if (replacementUnit !== undefined && replacementUnit !== "\n" && /\s/u.test(replacementUnit)) {
+    return undefined;
+  }
+  return visualRowSeats.some((seat) => seat.kind === "content" && seat.wire === focusWire)
+    ? { kind: "content-seat", priorContentSeatWire: focusWire }
+    : undefined;
+}
+
+/**
+ * Resolve a Delete's progressive land after the mutation has been rendered and
+ * measured. Core owns the rule; the editor only supplies the replacement seat lattice.
+ */
+export function resolveHandoffNoteDeletePostLayoutRemount(
+  result: HandoffDocDeleteResult,
+  replacementSeats: readonly HandoffNoteVisualRowSeat[]
+): HandoffDocEditResult {
+  const request = result.postLayoutRemount;
+  if (request?.kind === "blank-stop") {
+    // Blank-collapse remount corrects only when the surviving blank sits on Delete's
+    // primary side (visually below the provisional land). Snapping to a blank above
+    // would climb against progressive trash after a correct down/ahead land.
+    const blankIndex = replacementSeats.findIndex(
+      (seat) => seat.kind === "blank" && seat.wire === request.replacementBlankStopWire
+    );
+    if (blankIndex < 0) {
+      return result;
+    }
+    const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
+    let provisionalIndex = replacementSeats.findIndex((seat) => seat.wire === focusWire);
+    if (provisionalIndex < 0) {
+      for (let i = replacementSeats.length - 1; i >= 0; i--) {
+        if (replacementSeats[i]!.wire <= focusWire) {
+          provisionalIndex = i;
+          break;
+        }
+      }
+    }
+    if (blankIndex <= provisionalIndex) {
+      return result;
+    }
+    return {
+      doc: result.doc,
+      selection: collapsedSelectionWithIntent(
+        result.doc,
+        normalizeDocPos(
+          result.doc,
+          wireOffsetToDocPos(result.doc, replacementSeats[blankIndex]!.wire)
+        ),
+        "deletion-point"
+      ),
+    };
+  }
+  if (
+    !request ||
+    replacementSeats.some(
+      (seat) => seat.kind === "content" && seat.wire === request.priorContentSeatWire
+    )
+  ) {
+    return result;
+  }
+  const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
+  const wire = docToWire(result.doc);
+  let nextContentSeat: HandoffNoteVisualRowSeat | undefined;
+  let previousContentSeat: HandoffNoteVisualRowSeat | undefined;
+  for (const seat of replacementSeats) {
+    if (seat.kind !== "content") {
+      continue;
+    }
+    const spanStart = Math.min(seat.wire, focusWire);
+    const spanEnd = Math.max(seat.wire, focusWire);
+    if (wire.slice(spanStart, spanEnd).includes("\n")) {
+      continue;
+    }
+    if (
+      seat.wire > focusWire &&
+      (nextContentSeat === undefined || seat.wire < nextContentSeat.wire)
+    ) {
+      nextContentSeat = seat;
+    }
+    if (
+      seat.wire < focusWire &&
+      (previousContentSeat === undefined || seat.wire > previousContentSeat.wire)
+    ) {
+      previousContentSeat = seat;
+    }
+  }
+  const replacementSeat = nextContentSeat ?? previousContentSeat;
+  if (!replacementSeat) {
+    return result;
+  }
+  return {
+    doc: result.doc,
+    selection: collapsedSelectionWithIntent(
+      result.doc,
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, replacementSeat.wire)),
+      "deletion-point"
+    ),
+  };
+}
+
+/**
+ * Delete authority. `visualRowSeats` is the visual-row lattice progressive
+ * land/collapse walks (see {@link resolveHandoffNoteDeleteIntent}). Callers must pass
+ * the current paint-epoch seat set (including soft-wrap continuation rows when measured).
+ * There is no fallback that derives seats from `doc` — omitting seats is a caller bug,
+ * not a silent wire-line substitute.
+ */
 export function applyDocDelete(
   doc: HandoffNoteDoc,
   selection: HandoffNoteSelection,
-  direction: HandoffNoteEdit
-): HandoffDocEditResult | null {
+  direction: HandoffNoteEdit,
+  options: { visualRowSeats: readonly HandoffNoteVisualRowSeat[] }
+): HandoffDocDeleteResult | null {
   if (!selectionCollapsed(selection)) {
     const anchor = normalizeDocPos(doc, selection.anchor);
     const focus = expandSelectionFocusToDocEndIfNeeded(
@@ -113,7 +253,7 @@ export function applyDocDelete(
     return spliceDocSelection(doc, anchor, focus, "");
   }
 
-  const intent = resolveHandoffNoteDeleteIntent(doc, selection, direction);
+  const intent = resolveHandoffNoteDeleteIntent(doc, selection, direction, options.visualRowSeats);
   if (!intent) {
     return null;
   }
@@ -122,7 +262,18 @@ export function applyDocDelete(
   }
 
   const { result } = intent;
-  return applyDeleteCaretPolicy({ doc: result.doc, selection: result.selection }, direction);
+  const finalized = applyDeleteCaretPolicy(
+    { doc: result.doc, selection: result.selection },
+    direction
+  );
+  const postLayoutRemount = postLayoutRemountRequest(
+    doc,
+    finalized,
+    direction,
+    options.visualRowSeats,
+    result.replacementBlankStopWire
+  );
+  return postLayoutRemount ? { ...finalized, postLayoutRemount } : finalized;
 }
 
 function applyMentionQueryMultilineInsert(

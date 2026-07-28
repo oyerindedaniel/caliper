@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { wireOffsetToDocPos, wireToDoc } from "@caliper/core";
+import { listBlankVisualLineStartWires, wireOffsetToDocPos, wireToDoc } from "@caliper/core";
 import {
   getDocAnchorRect,
   getDocAnchorRectAtDomPoint,
+  measureBlankStopSeatCoord,
   resolveDomPointAtDocPos,
 } from "./handoff-note-dom-points.js";
 import {
@@ -15,6 +16,80 @@ import {
 import { stubHandoffNoteAnchorRectAtWire } from "./handoff-note-test-helpers.js";
 
 describe("handoff-note-dom-points", () => {
+  it("measures a blank stop at its anchor instead of its preceding break", () => {
+    const doc = wireToDoc("wrap\n\n\nlower");
+    const [firstStop, secondStop] = listBlankVisualLineStartWires(doc);
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    renderHandoffNoteDoc(root, doc, { colorByAgentId: new Map() });
+
+    const points = [
+      { wire: firstStop!, top: 200 },
+      { wire: secondStop!, top: 218 },
+    ].map(({ wire, top }) => ({
+      wire,
+      top,
+      point: resolveDomPointAtDocPos(root, doc, wireOffsetToDocPos(doc, wire))!,
+    }));
+    const priorCreateRange = document.createRange.bind(document);
+    const restores = [...root.querySelectorAll(`br[${HANDOFF_WIRE_BREAK_ATTR}]`)].map(
+      (br, index) => {
+        const prior = br.getBoundingClientRect.bind(br);
+        br.getBoundingClientRect = () =>
+          ({
+            top: 91 + index * 18,
+            bottom: 109 + index * 18,
+            left: 0,
+            right: 4,
+            width: 4,
+            height: 18,
+            x: 0,
+            y: 91 + index * 18,
+            toJSON: () => ({}),
+          }) as DOMRect;
+        return () => {
+          br.getBoundingClientRect = prior;
+        };
+      }
+    );
+    document.createRange = () => {
+      const range = priorCreateRange();
+      const priorSetStart = range.setStart.bind(range);
+      range.setStart = (node: Node, offset: number) => {
+        priorSetStart(node, offset);
+        const entry = points.find(
+          (candidate) => candidate.point.node === node && candidate.point.offset === offset
+        );
+        if (entry) {
+          const rect = {
+            top: entry.top - 9,
+            bottom: entry.top + 9,
+            left: 0,
+            right: 4,
+            width: 4,
+            height: 18,
+            x: 0,
+            y: entry.top - 9,
+            toJSON: () => ({}),
+          } as DOMRect;
+          range.getClientRects = () => [rect] as unknown as DOMRectList;
+          range.getBoundingClientRect = () => rect;
+        }
+      };
+      return range;
+    };
+
+    try {
+      expect(points.map(({ wire }) => measureBlankStopSeatCoord(root, doc, wire)?.top)).toEqual(
+        points.map(({ top }) => top)
+      );
+    } finally {
+      document.createRange = priorCreateRange;
+      while (restores.length) restores.pop()?.();
+      root.remove();
+    }
+  });
+
   it("getDocAnchorRect prefers lowest soft-wrap client rect over previous-row end", () => {
     const agent = "caliper-aaaaaaaaa";
     const wire = `meh @${agent} w`;

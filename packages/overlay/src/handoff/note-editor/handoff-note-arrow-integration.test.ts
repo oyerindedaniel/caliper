@@ -31,6 +31,9 @@ import {
   resolvePaintHorizontalArrowMove,
 } from "./handoff-note-dom-points.js";
 import {
+  buildHandoffNoteLayoutMap,
+  layoutVisualRowSeats,
+  measureReplacementDeleteVisualRowSeats,
   setMeasuredSamplesCache,
   invalidateHandoffNoteLayoutCache,
 } from "./handoff-note-layout-map.js";
@@ -138,6 +141,85 @@ function expectCaretParity(
       affinity.expect
     );
   }
+}
+
+/** Geometry switches only after render, modeling a Delete whose replacement wraps differently. */
+function stubReplacementTextGeometry(
+  root: HTMLElement,
+  hasSingleReplacementRow: () => boolean
+): () => void {
+  const doc = root.ownerDocument;
+  const priorCreateRange = doc.createRange.bind(doc);
+  doc.createRange = () => {
+    const range = priorCreateRange();
+    const priorSetStart = range.setStart.bind(range);
+    range.setStart = (node: Node, offset: number) => {
+      priorSetStart(node, offset);
+      if (!root.contains(node) || node.nodeType !== Node.TEXT_NODE) {
+        return;
+      }
+      const top = hasSingleReplacementRow() || offset < 10 ? 91 : 109;
+      const left = offset < 10 ? offset * 40 : (offset - 10) * 12;
+      const rect = {
+        top,
+        left,
+        right: left + 1,
+        bottom: top + 18,
+        width: 1,
+        height: 18,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      } as DOMRect;
+      range.getClientRects = () => [rect] as unknown as DOMRectList;
+      range.getBoundingClientRect = () => rect;
+    };
+    return range;
+  };
+  return () => {
+    doc.createRange = priorCreateRange;
+  };
+}
+
+function stubShiftedSoftWrapGeometry(
+  root: HTMLElement,
+  afterDelete: string,
+  initialContinuationStart: number,
+  replacementContinuationStart: number
+): () => void {
+  const doc = root.ownerDocument;
+  const priorCreateRange = doc.createRange.bind(doc);
+  doc.createRange = () => {
+    const range = priorCreateRange();
+    const priorSetStart = range.setStart.bind(range);
+    range.setStart = (node: Node, offset: number) => {
+      priorSetStart(node, offset);
+      if (!root.contains(node) || node.nodeType !== Node.TEXT_NODE) {
+        return;
+      }
+      const continuationStart =
+        root.textContent === afterDelete ? replacementContinuationStart : initialContinuationStart;
+      const top = offset < continuationStart ? 91 : 109;
+      const left = offset < continuationStart ? offset * 12 : (offset - continuationStart) * 12;
+      const rect = {
+        top,
+        left,
+        right: left + 1,
+        bottom: top + 18,
+        width: 1,
+        height: 18,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      } as DOMRect;
+      range.getClientRects = () => [rect] as unknown as DOMRectList;
+      range.getBoundingClientRect = () => rect;
+    };
+    return range;
+  };
+  return () => {
+    doc.createRange = priorCreateRange;
+  };
 }
 
 /** Delete-probe / multi-char-abutting empty CRE break wires paint blank-band ZWSP, not bare BR. */
@@ -2009,15 +2091,15 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       );
     }
 
-    function pressBackspace(): boolean {
-      return host.editor.handleKeyDown(
-        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
-      );
-    }
-
     function pressDelete(): boolean {
       return host.editor.handleKeyDown(
         new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
+      );
+    }
+
+    function pressBackspace(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
       );
     }
 
@@ -2347,6 +2429,313 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
           );
         }
       }
+    });
+
+    it("keydown Backspace at document visual start remounts and clears sole content without manual caret moves", () => {
+      host.editor.setDocFromWire("alpha", 0, { resetHistory: true });
+      seedMonotonicMeasuredLayout(host.root, "alpha");
+
+      expect(pressBackspace()).toBe(true);
+      expect(host.editor.getWire()).toBe("alpha");
+      expect(host.editor.getCursor()).toBe(4);
+      expect(host.editor.getSelectionState().focusAffinity).toBe("after");
+      expectCaretParity(host.editor, host.root, 4, "visual-start Backspace remount");
+
+      for (const expectedWire of ["alph", "alp", "al", "a", ""]) {
+        expect(pressBackspace()).toBe(true);
+        expect(host.editor.getWire()).toBe(expectedWire);
+      }
+    });
+  });
+
+  describe("visual-row seats — soft-wrap continuation is a landable delete seat", () => {
+    // Progressive trash — handoff-note-arrow-contract.md
+    function deleteForward(): void {
+      host.editor.handleBeforeInput(
+        new InputEvent("beforeinput", {
+          inputType: "deleteContentForward",
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    }
+
+    function pressDelete(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Delete", bubbles: true, cancelable: true })
+      );
+    }
+
+    function pressBackspace(): boolean {
+      return host.editor.handleKeyDown(
+        new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true })
+      );
+    }
+
+    it("last continuation Delete retains its remaining spacer when it reflows into row 0", () => {
+      const wire = "AAAAAAAAAAB ";
+      const continuationStart = 10;
+      const afterDelete = "AAAAAAAAAA ";
+      const restoreGeometry = stubReplacementTextGeometry(
+        host.root,
+        () => host.root.textContent === afterDelete
+      );
+
+      try {
+        host.editor.setDocFromWire(wire, continuationStart, { resetHistory: true });
+        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+          { wire: 0, top: 100, left: 0 },
+          { wire: 9, top: 100, left: 360 },
+          { wire: continuationStart, top: 118, left: 0 },
+          { wire: continuationStart + 1, top: 118, left: 12 },
+        ]);
+
+        deleteForward();
+
+        expect(host.editor.getWire()).toBe(afterDelete);
+        const doc = host.editor.getDoc();
+        expect(
+          measureReplacementDeleteVisualRowSeats(host.root, doc, {
+            priorContentSeatWire: continuationStart,
+            focusWire: continuationStart,
+          })
+        ).toEqual(layoutVisualRowSeats(buildHandoffNoteLayoutMap(host.root, doc), doc));
+        expect(readHandoffNoteLayoutRowIndexForTests(host.root, doc, continuationStart)).toBe(0);
+        expectCaretParity(host.editor, host.root, continuationStart, "surviving spacer");
+      } finally {
+        restoreGeometry();
+      }
+    });
+
+    it.each(["keydown", "beforeinput"] as const)(
+      "Delete remounts a continuation whose replacement start shifted right (%s)",
+      (ingress) => {
+        const wire = "AAAAAAAAAABCD";
+        const continuationStart = 10;
+        const afterDelete = "AAAAAAAAAACD";
+        const replacementContinuationStart = 11;
+        const restoreGeometry = stubShiftedSoftWrapGeometry(
+          host.root,
+          afterDelete,
+          continuationStart,
+          replacementContinuationStart
+        );
+
+        try {
+          host.editor.setDocFromWire(wire, continuationStart, { resetHistory: true });
+          setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+            { wire: 0, top: 91, left: 0 },
+            { wire: 9, top: 91, left: 108 },
+            { wire: continuationStart, top: 109, left: 0 },
+            { wire: wire.length, top: 109, left: 36 },
+          ]);
+          setSelectionAtWire(host.root, host.editor.getDoc(), continuationStart, continuationStart);
+          dispatchSelectionChange(host.root);
+          expect(host.editor.getCursor()).toBe(continuationStart);
+
+          if (ingress === "keydown") {
+            expect(pressDelete()).toBe(true);
+          } else {
+            deleteForward();
+          }
+
+          expect(host.editor.getWire()).toBe(afterDelete);
+          expectCaretParity(
+            host.editor,
+            host.root,
+            replacementContinuationStart,
+            `shifted continuation ${ingress}`
+          );
+        } finally {
+          restoreGeometry();
+        }
+      }
+    );
+
+    it("Delete retains a replacement blank after soft-wrap collapse", () => {
+      const prefix = "A".repeat(69);
+      const wire = `${prefix}\n\n`;
+      const afterDelete = `${prefix}\n`;
+      const restoreGeometry = stubShiftedSoftWrapGeometry(host.root, afterDelete, 44, 44);
+
+      try {
+        host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+          { wire: 0, top: 91, left: 0 },
+          { wire: 43, top: 91, left: 516 },
+          { wire: 44, top: 127, left: 0 },
+          { wire: 68, top: 127, left: 288 },
+          { wire: 69, top: 109, left: 0 },
+          { wire: 70, top: 145, left: 0 },
+        ]);
+
+        expect(pressDelete()).toBe(true);
+        expect(host.editor.getWire()).toBe(afterDelete);
+        expectCaretParity(host.editor, host.root, afterDelete.length, "replacement blank");
+      } finally {
+        restoreGeometry();
+      }
+    });
+
+    it("last continuation Delete chip stays at the deletion point when that row remains", () => {
+      const wire = "AAAAAAAAAABC";
+      const continuationStart = 10;
+      const afterDelete = "AAAAAAAAAAC";
+      const restoreGeometry = stubReplacementTextGeometry(host.root, () => false);
+
+      try {
+        host.editor.setDocFromWire(wire, continuationStart, { resetHistory: true });
+        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+          { wire: 0, top: 100, left: 0 },
+          { wire: 9, top: 100, left: 360 },
+          { wire: continuationStart, top: 118, left: 0 },
+          { wire: continuationStart + 2, top: 118, left: 24 },
+        ]);
+
+        deleteForward();
+
+        expect(host.editor.getWire()).toBe(afterDelete);
+        expect(
+          readHandoffNoteLayoutRowIndexForTests(host.root, host.editor.getDoc(), continuationStart)
+        ).toBe(1);
+        expectCaretParity(host.editor, host.root, continuationStart, "continuation remains");
+      } finally {
+        restoreGeometry();
+      }
+    });
+
+    it("blank-collapse replacement hard-line seats match the full replacement epoch", () => {
+      const wire = "AAAAAAAAAAB \n";
+      const continuationStart = 10;
+      const afterDelete = "AAAAAAAAAAB ";
+      const restoreGeometry = stubReplacementTextGeometry(
+        host.root,
+        () => host.root.querySelector("br") === null
+      );
+
+      try {
+        host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+          { wire: 0, top: 100, left: 0 },
+          { wire: 9, top: 100, left: 360 },
+          { wire: continuationStart, top: 118, left: 0 },
+          { wire: continuationStart + 1, top: 118, left: 12 },
+          { wire: wire.length, top: 136, left: 0 },
+        ]);
+
+        deleteForward();
+
+        const doc = host.editor.getDoc();
+        const partial = measureReplacementDeleteVisualRowSeats(host.root, doc, {
+          priorContentSeatWire: continuationStart,
+          focusWire: continuationStart,
+        });
+        const full = layoutVisualRowSeats(buildHandoffNoteLayoutMap(host.root, doc), doc);
+        expect(partial).toEqual(full);
+      } finally {
+        restoreGeometry();
+      }
+    });
+
+    it("Delete blank collapse remounts when its target continuation reflows into row 0", () => {
+      const wire = "AAAAAAAAAAB \n";
+      const continuationStart = 10;
+      const afterDelete = "AAAAAAAAAAB ";
+      const restoreGeometry = stubReplacementTextGeometry(
+        host.root,
+        () => host.root.querySelector("br") === null
+      );
+
+      try {
+        host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+          { wire: 0, top: 100, left: 0 },
+          { wire: 9, top: 100, left: 360 },
+          { wire: continuationStart, top: 118, left: 0 },
+          { wire: continuationStart + 1, top: 118, left: 12 },
+          { wire: wire.length, top: 136, left: 0 },
+        ]);
+
+        deleteForward();
+
+        expect(host.editor.getWire()).toBe(afterDelete);
+        expect(
+          readHandoffNoteLayoutRowIndexForTests(host.root, host.editor.getDoc(), continuationStart)
+        ).toBe(0);
+        expectCaretParity(host.editor, host.root, 0, "blank collapse replacement land");
+      } finally {
+        restoreGeometry();
+      }
+    });
+
+    it("Backspace blank collapse retains content-row-end after the continuation reflows away", () => {
+      const wire = "AAAAAAAAAAB \n";
+      const continuationStart = 10;
+      const afterDelete = "AAAAAAAAAAB ";
+      const restoreGeometry = stubReplacementTextGeometry(
+        host.root,
+        () => host.root.querySelector("br") === null
+      );
+
+      try {
+        host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
+        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+          { wire: 0, top: 100, left: 0 },
+          { wire: 9, top: 100, left: 360 },
+          { wire: continuationStart, top: 118, left: 0 },
+          { wire: continuationStart + 1, top: 118, left: 12 },
+          { wire: wire.length, top: 136, left: 0 },
+        ]);
+
+        expect(pressBackspace()).toBe(true);
+
+        expect(host.editor.getWire()).toBe(afterDelete);
+        expect(
+          readHandoffNoteLayoutRowIndexForTests(host.root, host.editor.getDoc(), continuationStart)
+        ).toBe(0);
+        expectCaretParity(
+          host.editor,
+          host.root,
+          afterDelete.length - 1,
+          "backspace collapse content-row-end",
+          { expect: "after" }
+        );
+      } finally {
+        restoreGeometry();
+      }
+    });
+
+    it("Delete on a trailing blank below a soft-wrap row lands the continuation start, not row 0", () => {
+      const wire = `he @${AGENT_A} x @${AGENT_A} tail\n`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const trailingBlank = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+
+      host.editor.setDocFromWire(wire, trailingBlank, { resetHistory: true });
+      setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
+        { wire: 0, top: row0Top, left: 340 },
+        { wire: 3, top: row0Top, left: 359.58 },
+        {
+          wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+          top: row0Top,
+          left: 492.52,
+        },
+        { wire: tailStart - 1, top: row0Top, left: 609.68 },
+        { wire: tailStart, top: row1Top, left: 340 },
+        { wire: tailStart + 4, top: row1Top, left: 380 },
+      ]);
+
+      deleteForward();
+
+      expect(host.editor.getWire()).toBe(`he @${AGENT_A} x @${AGENT_A} tail`);
+      expectCaretParity(
+        host.editor,
+        host.root,
+        tailStart,
+        "delete on trailing blank lands soft-wrap continuation start, not wire 0"
+      );
     });
   });
 
@@ -3541,6 +3930,28 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     beforeEach(() => {
       host.root.style.width = "310px";
       Object.defineProperty(host.root, "clientWidth", { configurable: true, value: 310 });
+    });
+
+    it("orders the wrap continuation before both blank stops", () => {
+      const wire = softWrapBlankBandWire();
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("post");
+      const lowerStart = wire.indexOf("lower");
+      const [upperBlank, lowerBlank] = blankNavStops(doc);
+      setMeasuredSamplesCache(
+        host.root,
+        wire,
+        host.root.clientWidth,
+        softWrapBlankBandSamples(wire)
+      );
+
+      expect(layoutVisualRowSeats(buildHandoffNoteLayoutMap(host.root, doc), doc)).toEqual([
+        { wire: 0, kind: "content" },
+        { wire: tailStart, kind: "content" },
+        { wire: upperBlank, kind: "blank" },
+        { wire: lowerBlank, kind: "blank" },
+        { wire: lowerStart, kind: "content" },
+      ]);
     });
 
     it("up from upper blank stop lands wrap continuation row visual start (one row per press)", () => {

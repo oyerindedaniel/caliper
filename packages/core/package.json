@@ -7,6 +7,10 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./handoff-note-test": {
+      "import": "./src/handoff-model/note-doc/handoff-note-test-helpers.js",
+      "types": "./src/handoff-model/note-doc/handoff-note-test-helpers.ts"
     }
   },
   "scripts": {

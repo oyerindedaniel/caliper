@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDocDelete, applyDocInsertText } from "./handoff-note-doc-edits.js";
+import { applyDocInsertText } from "./handoff-note-doc-edits.js";
 import {
   collapsedSelection,
   collapsedSelectionWithIntent,
@@ -13,7 +13,6 @@ import {
   handoffNoteCaretOnAtomicNodeEnd,
   handoffNoteCaretOnAtomicNodeStart,
   handoffNoteIsAtomicEndProbeAlias,
-  resolveHandoffNoteDeleteIntent,
 } from "./handoff-note-delete-intent.js";
 import {
   isEmbeddedBlankBandCollapseProbeWire,
@@ -21,6 +20,10 @@ import {
   listEmbeddedBlankBandGroups,
   listEmbeddedBlankBandProbeWires,
 } from "./handoff-note-embedded-newlines.js";
+import {
+  applyDocDeleteWithWireLineSeats as applyDocDelete,
+  resolveHandoffNoteDeleteIntentWithWireLineSeats as resolveHandoffNoteDeleteIntent,
+} from "./handoff-note-test-helpers.js";
 
 describe("handoff note delete intent — contract authority before handler chain", () => {
   const agent = "caliper-abc123";
@@ -455,20 +458,25 @@ describe("handoff note delete intent — contract authority before handler chain
   });
 
   describe("leftover spacer before blank band — unit behind vs ahead", () => {
-    it("visual-start before: Backspace noops on sole leftover space", () => {
+    it("visual-start before: Backspace lands the lower blank before lower content", () => {
       const doc = wireToDoc(" \n\nmd");
       const focus = wireOffsetToDocPos(doc, 0);
-      const result = applyDocDelete(doc, collapsedSelection(focus, "before"), "backspace");
-      expect(result).toBeNull();
-      expect(docToWire(doc)).toBe(" \n\nmd");
+      const result = applyDocDelete(doc, collapsedSelection(focus, "before"), "backspace")!;
+      expect(docToWire(result.doc)).toBe(" \n\nmd");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(2);
+      expect(result.selection.focusAffinity).toBeUndefined();
     });
 
-    it("visual-start before: Backspace noops on sole substantive char (same as spacer)", () => {
+    it("visual-start before: Backspace lands the lower blank after substantive content", () => {
       const doc = wireToDoc("d\n\nmd");
-      expect(
-        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 0), "before"), "backspace")
-      ).toBeNull();
-      expect(docToWire(doc)).toBe("d\n\nmd");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0), "before"),
+        "backspace"
+      )!;
+      expect(docToWire(result.doc)).toBe("d\n\nmd");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(2);
+      expect(result.selection.focusAffinity).toBeUndefined();
     });
 
     it("visual-start before: Delete clears sole leftover space (unit ahead)", () => {
@@ -678,10 +686,23 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(docToWire(result!.doc)).toBe("hell");
     });
 
-    it("no-op at doc end when nothing remains ahead", () => {
+    it("at doc end with content behind remounts visual start — next Delete clears", () => {
       const doc = wireToDoc("d");
+      const remount = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 1)),
+        "delete"
+      )!;
+      expect(docToWire(remount.doc)).toBe("d");
+      expect(docPosToWireOffset(remount.doc, remount.selection.focus)).toBe(0);
+      const cleared = applyDocDelete(remount.doc, remount.selection, "delete")!;
+      expect(docToWire(cleared.doc)).toBe("");
+    });
+
+    it("no-op on empty doc when nothing remains in the progressive chain", () => {
+      const doc = wireToDoc("");
       expect(
-        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 1)), "delete")
+        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 0)), "delete")
       ).toBeNull();
     });
 
@@ -700,6 +721,49 @@ describe("handoff note delete intent — contract authority before handler chain
         "delete"
       )!;
       expect(docToWire(cleared.doc)).toBe("");
+    });
+  });
+
+  describe("backspace — visual-start progressive remount", () => {
+    it("at document visual start remounts a sole content row end, then clears without manual caret moves", () => {
+      let doc = wireToDoc(`alpha @${agent}`);
+      let selection = collapsedSelection(wireOffsetToDocPos(doc, 0));
+
+      const remount = applyDocDelete(doc, selection, "backspace")!;
+      expect(docToWire(remount.doc)).toBe(`alpha @${agent}`);
+      expect(docPosToWireOffset(remount.doc, remount.selection.focus)).toBe(
+        `alpha @${agent}`.length
+      );
+      doc = remount.doc;
+      selection = remount.selection;
+
+      for (let stroke = 0; docToWire(doc) !== "" && stroke < 16; stroke += 1) {
+        const next = applyDocDelete(doc, selection, "backspace");
+        expect(next, `stroke ${stroke} must remain in the progressive chain`).not.toBeNull();
+        doc = next!.doc;
+        selection = next!.selection;
+      }
+      expect(docToWire(doc)).toBe("");
+    });
+
+    it("at visual start chooses the blank row below before lower content", () => {
+      const wire = "up\n\nlower";
+      const doc = wireToDoc(wire);
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, 0)),
+        "backspace"
+      )!;
+      expect(docToWire(result.doc)).toBe(wire);
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(3);
+      expect(result.selection.focusAffinity).toBeUndefined();
+    });
+
+    it("empty document at BOF remains a no-op", () => {
+      const doc = wireToDoc("");
+      expect(
+        applyDocDelete(doc, collapsedSelection(wireOffsetToDocPos(doc, 0)), "backspace")
+      ).toBeNull();
     });
   });
 

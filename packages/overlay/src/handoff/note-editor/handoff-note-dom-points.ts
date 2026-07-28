@@ -1800,11 +1800,7 @@ export function measureWireBreakCoord(
   return { wire, top: domRectAnchorMidY(rect), left: rect.left, right: rect.right };
 }
 
-/**
- * Geometry for a blank navigable stop’s caret paint seat (opener BA → preceding BR,
- * or leading bare BR). Distinct from {@link measureWireBreakCoord}, which measures a
- * probe dock without stop→opener remap.
- */
+/** Geometry for a blank navigable stop's actual caret paint seat. */
 export function measureBlankStopSeatCoord(
   root: HTMLElement,
   doc: HandoffNoteDoc,
@@ -1815,30 +1811,16 @@ export function measureBlankStopSeatCoord(
   if (!domPoint) {
     return null;
   }
-
-  const element = wireBreakElementForProbeMeasure(root, domPoint);
-  if (element) {
-    const rect = element.getBoundingClientRect();
-    if (hasPositionedDomRect(rect)) {
-      return {
-        wire: stopWire,
-        top: domRectAnchorMidY(rect),
-        left: rect.left,
-        right: rect.right,
-      };
-    }
-  }
-
   const rect = getDocAnchorRectAtDomPoint(root, domPoint);
-  if (!rect || !hasPositionedDomRect(rect)) {
-    return null;
+  if (rect && hasPositionedDomRect(rect)) {
+    return {
+      wire: stopWire,
+      top: domRectAnchorMidY(rect),
+      left: rect.left,
+      right: rect.right,
+    };
   }
-  return {
-    wire: stopWire,
-    top: domRectAnchorMidY(rect),
-    left: rect.left,
-    right: rect.right,
-  };
+  return null;
 }
 
 /**
@@ -2639,23 +2621,21 @@ function appendPaintedSoftWrapSamplesForTextNode(
   doc: HandoffNoteDoc,
   nodeIndex: number,
   measured: DomMeasuredWireOffset[],
-  seen: Set<number>
+  seen: Set<number>,
+  localRange?: { start: number; end: number }
 ): void {
   const node = doc.nodes[nodeIndex];
   if (node?.type !== "text" || node.text.length === 0) {
     return;
   }
+  const start = localRange?.start ?? 0;
+  const end = localRange?.end ?? node.text.length;
+  if (start >= end) {
+    return;
+  }
 
   if (!node.text.includes("\n")) {
-    appendPaintedSoftWrapSamplesForTextSubrange(
-      root,
-      doc,
-      nodeIndex,
-      0,
-      node.text.length,
-      measured,
-      seen
-    );
+    appendPaintedSoftWrapSamplesForTextSubrange(root, doc, nodeIndex, start, end, measured, seen);
     return;
   }
 
@@ -2664,26 +2644,34 @@ function appendPaintedSoftWrapSamplesForTextNode(
     if (node.text[local] !== "\n") {
       continue;
     }
+    const clippedStart = Math.max(segmentStart, start);
+    const clippedEnd = Math.min(local, end);
+    if (clippedStart < clippedEnd) {
+      appendPaintedSoftWrapSamplesForTextSubrange(
+        root,
+        doc,
+        nodeIndex,
+        clippedStart,
+        clippedEnd,
+        measured,
+        seen
+      );
+    }
+    segmentStart = local + 1;
+  }
+  const clippedStart = Math.max(segmentStart, start);
+  const clippedEnd = Math.min(node.text.length, end);
+  if (clippedStart < clippedEnd) {
     appendPaintedSoftWrapSamplesForTextSubrange(
       root,
       doc,
       nodeIndex,
-      segmentStart,
-      local,
+      clippedStart,
+      clippedEnd,
       measured,
       seen
     );
-    segmentStart = local + 1;
   }
-  appendPaintedSoftWrapSamplesForTextSubrange(
-    root,
-    doc,
-    nodeIndex,
-    segmentStart,
-    node.text.length,
-    measured,
-    seen
-  );
 }
 
 function shouldSkipPrefixFragmentColumnProbe(
@@ -2754,11 +2742,16 @@ function probeSoftWrapSampleAtColumn(
 export function appendSoftWrapLineSamples(
   root: HTMLElement,
   doc: HandoffNoteDoc,
-  measured: DomMeasuredWireOffset[]
+  measured: DomMeasuredWireOffset[],
+  options?: { textNodeRanges?: ReadonlyMap<number, { start: number; end: number }> }
 ): void {
   const seen = new Set(measured.map((sample) => sample.wire));
 
   for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
-    appendPaintedSoftWrapSamplesForTextNode(root, doc, nodeIndex, measured, seen);
+    const localRange = options?.textNodeRanges?.get(nodeIndex);
+    if (options?.textNodeRanges && !localRange) {
+      continue;
+    }
+    appendPaintedSoftWrapSamplesForTextNode(root, doc, nodeIndex, measured, seen, localRange);
   }
 }

@@ -171,8 +171,11 @@ export {
   applyDocInsertText,
   applyDocLineBreak,
   insertMentionAtSelection,
+  resolveHandoffNoteDeletePostLayoutRemount,
   spliceDocSelection,
+  type HandoffDocDeleteResult,
   type HandoffDocEditResult,
+  type HandoffNoteDeletePostLayoutRemount,
 } from "./handoff-model/note-doc/handoff-note-doc-edits.js";
 export {
   docTextNodeHasEmbeddedNewline,
@@ -198,8 +201,13 @@ export {
   docPosAfterBlankBandCollapse,
   resolveBlankVisualLineStartCollapse,
   resolveEmbeddedBlankBandCollapse,
+  resolveDeleteFromEmptyContentRowEnd,
+  resolveBackspaceFromEmptyContentRowEnd,
   isTrailingNewlinePastEndWire,
   embeddedBlankBandRowAboveProbeIsEmpty,
+  type HandoffNoteVisualRowSeat,
+  type EmptyContentRowEndDeleteResolution,
+  type EmbeddedBlankBandCollapseMove,
 } from "./handoff-model/note-doc/handoff-note-embedded-newlines.js";
 export {
   HANDOFF_COLOR_COUNT,

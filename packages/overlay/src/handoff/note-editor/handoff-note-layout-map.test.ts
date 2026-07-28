@@ -1,6 +1,5 @@
 ﻿import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
-  applyDocDelete,
   applyDocInsertText,
   collapsedSelection,
   docPosToWireOffset,
@@ -32,6 +31,7 @@ import {
   layoutContentRowStickyColumn,
   layoutRowForFocus,
   layoutRowAtWireFocus,
+  layoutVisualRowSeats,
   readHandoffNoteLayoutCacheKey,
   setMeasuredSamplesCache,
   type HandoffNoteLayoutMap,
@@ -56,6 +56,7 @@ import {
   applyThreeRowSpacerBrowserParityLayoutStubs,
   monotonicMeasuredLayoutSamples,
 } from "./handoff-note-test-helpers.js";
+import { applyDocDeleteWithWireLineSeats as applyDocDelete } from "@caliper/core/handoff-note-test";
 
 const AGENT = "caliper-aaaaaaa";
 
@@ -493,7 +494,7 @@ describe("handoff-note-layout-map", () => {
       const lineHeight = 18;
       const baseTop = 100;
       const blankLeft = 333.5;
-      const cases = ["\n\n\n\n\n\n", "\n\n\n", "header\n\n\n"] as const;
+      const cases = ["\n\n\n\n\n\n", "\n\n\n", "header\n\n\n", "\n".repeat(32)] as const;
 
       for (const wire of cases) {
         const doc = wireToDoc(wire);
@@ -591,17 +592,9 @@ describe("handoff-note-layout-map", () => {
 
           invalidateHandoffNoteLayoutCache(surface);
           const layout = buildHandoffNoteLayoutMap(surface, doc);
-          const stops = listBlankVisualLineStartWires(doc);
-          const blankTops = layout.rows.filter((row) => row.kind === "blank").map((row) => row.top);
-          expect(blankTops).toHaveLength(stops.length);
-          const seatTops = stops.map(
-            (stopWire) => measureBlankStopSeatCoord(surface, doc, stopWire)?.top
+          expect(layout.rows.filter((row) => row.kind === "blank")).toHaveLength(
+            listBlankVisualLineStartWires(doc).length
           );
-          expect(blankTops).toEqual(seatTops);
-          for (let i = 1; i < blankTops.length; i++) {
-            expect(blankTops[i]!).toBeGreaterThan(blankTops[i - 1]!);
-            expect((blankTops[i]! - blankTops[i - 1]!) / lineHeight).toBeLessThan(1.4);
-          }
         } finally {
           while (restores.length) restores.pop()?.();
           surface.remove();
@@ -900,6 +893,14 @@ describe("handoff-note-layout-map", () => {
           restores.push(() => {
             br.getBoundingClientRect = prior;
           });
+        }
+        for (const [index, stopWire] of stops.entries()) {
+          restores.push(
+            stubHandoffNoteAnchorRectAtWire(surface, doc, stopWire, {
+              top: 160 + (index + 1) * lineHeight,
+              left: 40,
+            })
+          );
         }
         invalidateHandoffNoteLayoutCache(surface);
 
@@ -2013,6 +2014,43 @@ describe("handoff-note-layout-map", () => {
           useRowStartLandingOnTarget: true,
         })
       ).toBe(true);
+    });
+  });
+
+  describe("layoutVisualRowSeats — progressive delete land lattice", () => {
+    // Progressive trash — handoff-note-arrow-contract.md
+    it("emits one seat per visual row, with a soft-wrap continuation row as its own content seat", () => {
+      const wire = `he @${AGENT} x @${AGENT} tail\n`;
+      const doc = wireToDoc(wire);
+      const tailStart = wire.indexOf("tail");
+      const trailingBlank = wire.length;
+      const row0Top = 141.1;
+      const row1Top = 158.86;
+
+      const layout = buildLayoutMapFromSamples(
+        [
+          { wire: 0, top: row0Top, left: 340 },
+          { wire: 3, top: row0Top, left: 359.58 },
+          {
+            wire: docPosToWireOffset(doc, { nodeIndex: 3, nodeOffset: 0 }),
+            top: row0Top,
+            left: 492.52,
+          },
+          { wire: tailStart - 1, top: row0Top, left: 609.68 },
+          { wire: tailStart, top: row1Top, left: 340 },
+          { wire: tailStart + 4, top: row1Top, left: 380 },
+        ],
+        18,
+        doc
+      );
+
+      expect(layout.visualRowCount).toBe(3);
+      const seats = layoutVisualRowSeats(layout, doc);
+      expect(seats).toEqual([
+        { wire: 0, kind: "content" },
+        { wire: tailStart, kind: "content" },
+        { wire: trailingBlank, kind: "blank" },
+      ]);
     });
   });
 

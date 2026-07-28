@@ -1,4 +1,5 @@
 import {
+  blankVisualLineStartOpenedByProbe,
   docLength,
   docPosToWireOffset,
   docTextNodeHasEmbeddedNewline,
@@ -14,6 +15,7 @@ import {
   wireOffsetToDocPos,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
+  type HandoffNoteVisualRowSeat,
 } from "@caliper/core";
 import {
   atomicElement,
@@ -265,7 +267,15 @@ function snapshotLayoutRowsForLog(rows: HandoffNoteLayoutRow[]): Array<Record<st
   return rows.map((row, index) => ({
     index,
     kind: row.kind,
+    top: Number(row.top.toFixed(2)),
+    minLeft: Number(row.minLeft.toFixed(2)),
+    maxLeft: Number(row.maxLeft.toFixed(2)),
     wires: row.samples.map((sample) => sample.wire),
+    samples: row.samples.map((sample) => ({
+      wire: sample.wire,
+      top: Number(sample.top.toFixed(2)),
+      left: Number(sample.left.toFixed(2)),
+    })),
     ...(row.kind === "blank" ? { breakProbe: row.breakProbeWire ?? null } : {}),
   }));
 }
@@ -325,18 +335,24 @@ export function setMeasuredSamplesCache(
 }
 
 function sampleWireOffsets(doc: HandoffNoteDoc): number[] {
-  const samples = new Set<number>([0, docLength(doc)]);
+  const samples: number[] = [];
+  const append = (wire: number) => {
+    if (samples.at(-1) !== wire) {
+      samples.push(wire);
+    }
+  };
   let offset = 0;
   for (const node of doc.nodes) {
-    samples.add(offset);
+    append(offset);
     if (node.type === "text") {
       offset += node.text.length;
     } else {
       offset += 1 + node.agentId.length;
-      samples.add(offset);
+      append(offset);
     }
   }
-  return [...samples].sort((left, right) => left - right);
+  append(offset);
+  return samples;
 }
 
 function substantiveLineStartFromTrailingMention(
@@ -2886,30 +2902,44 @@ function appendBlankLineStartAcquireSamples(
   measured: MeasuredWireOffset[]
 ): void {
   const wire = docToWire(doc);
-  for (const stopWire of listBlankVisualLineStartWires(doc)) {
-    const existing = measured.find((sample) => sample.wire === stopWire);
-    if (existing && isUsableMeasuredLayoutCoord(existing)) {
-      continue;
+  const measuredIndexByWire = new Map<number, number>();
+  for (let index = 0; index < measured.length; index++) {
+    measuredIndexByWire.set(measured[index]!.wire, index);
+  }
+  const upsert = (sample: MeasuredWireOffset) => {
+    const index = measuredIndexByWire.get(sample.wire);
+    if (index === undefined) {
+      measuredIndexByWire.set(sample.wire, measured.length);
+      measured.push(sample);
+      return;
     }
+    measured[index] = sample;
+  };
+  const blankStops = listBlankVisualLineStartWires(doc);
+  const blankStopWires = new Set(blankStops);
+  const measuredBlankStops = new Set<number>();
+  for (const stopWire of blankStops) {
     const coord = measureBlankLineStartAcquireCoord(root, doc, wire, stopWire);
     if (coord && isUsableMeasuredLayoutCoord(coord)) {
-      pushAcquiredMeasuredSample(measured, {
+      // A generic sample at this wire measures its break transport. A blank stop's
+      // authoritative sample is its actual caret paint dock, so it must replace that sample.
+      upsert({
         wire: stopWire,
         top: coord.top,
         left: coord.left,
       });
+      measuredBlankStops.add(stopWire);
     }
   }
   // Break docks that are not themselves empty line-starts still belong in the epoch
   // (paint / delete-probe geometry) without becoming a second navigable stop identity.
   for (const probeWire of listEmbeddedBlankBandProbeWires(doc)) {
-    const existing = measured.find((sample) => sample.wire === probeWire);
-    if (existing && isUsableMeasuredLayoutCoord(existing)) {
+    if (blankStopWires.has(probeWire) && measuredBlankStops.has(probeWire)) {
       continue;
     }
     const coord = measureWireBreakCoord(root, doc, probeWire);
     if (coord && isUsableMeasuredLayoutCoord(coord)) {
-      pushAcquiredMeasuredSample(measured, {
+      upsert({
         wire: probeWire,
         top: coord.top,
         left: coord.left,
@@ -3048,6 +3078,116 @@ export function buildHandoffNoteLayoutMap(
   }
 
   return layout;
+}
+
+/**
+ * Fresh, uncached post-Delete seat lattice for the hard line containing the
+ * provisional focus. This is intentionally narrower than navigation's full map:
+ * remount only compares the prior content seat with seats at or before that focus.
+ */
+export function measureReplacementDeleteVisualRowSeats(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  anchor: { priorContentSeatWire: number; focusWire: number }
+): HandoffNoteVisualRowSeat[] {
+  const wire = docToWire(doc);
+  const anchorWire = Math.min(anchor.priorContentSeatWire, anchor.focusWire);
+  const lineStart = wire.lastIndexOf("\n", Math.max(0, anchorWire - 1)) + 1;
+  const nextBreak = wire.indexOf("\n", anchorWire);
+  const lineEnd = nextBreak === -1 ? wire.length : nextBreak;
+  if (lineStart >= lineEnd) {
+    return layoutVisualRowSeats(buildHandoffNoteLayoutMap(root, doc), doc);
+  }
+
+  const wireIndex = buildLayoutWireIndex(doc, wire);
+  const textNodeRanges = new Map<number, { start: number; end: number }>();
+  const measuredWires = new Set<number>();
+  const mentionNodeIndexes = new Set<number>();
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    const nodeStart = wireIndex.nodeStartWires[nodeIndex]!;
+    const nodeEnd = nodeWireEnd(doc, wireIndex, nodeIndex);
+    const start = Math.max(lineStart, nodeStart);
+    const end = Math.min(lineEnd, nodeEnd);
+    if (start >= end) {
+      continue;
+    }
+    measuredWires.add(start);
+    if (node.type === "text") {
+      textNodeRanges.set(nodeIndex, { start: start - nodeStart, end: end - nodeStart });
+    } else {
+      mentionNodeIndexes.add(nodeIndex);
+      measuredWires.add(end);
+    }
+  }
+
+  const measured: MeasuredWireOffset[] = [];
+  for (const sampleWire of [...measuredWires].sort((left, right) => left - right)) {
+    pushAcquiredMeasuredSample(measured, measureWireCoord(root, doc, sampleWire));
+  }
+  applyDomAcquireSamplePins(root, doc, measured, wireIndex);
+  appendSoftWrapLineSamples(root, doc, measured, { textNodeRanges });
+  alignEmbeddedNewlinePrefixAfterAtomicRows(root, doc, measured, wireIndex);
+  const lineMeasured = measured.filter(
+    (sample) => sample.wire >= lineStart && sample.wire <= lineEnd
+  );
+  if (lineMeasured.length === 0) {
+    return layoutVisualRowSeats(buildHandoffNoteLayoutMap(root, doc), doc);
+  }
+
+  const pillMidYs: number[] = [];
+  for (const nodeIndex of mentionNodeIndexes) {
+    const pill = atomicElement(root, doc, nodeIndex);
+    const midY = pill ? pillElementMidY(pill) : null;
+    if (midY !== null) {
+      pillMidYs.push(midY);
+    }
+  }
+  const lineHeight = parseFloat(getComputedStyle(root).lineHeight) || 16;
+  const rows = resolveVisualRowSeedTops(pillMidYs, lineMeasured, lineHeight);
+  return layoutVisualRowSeats(buildMapFromMeasured(lineMeasured, rows, lineHeight), doc);
+}
+
+/**
+ * Visual-row seat lattice for progressive Backspace/Delete land — live-editor authority
+ * for the required visual-row seats option. Same paint epoch as Up/Down navigation
+ * (`layout.rows`), so a soft-wrap continuation row is a landable seat here.
+ *
+ * One seat per layout row: wire = that row's minimum sample wire (visual start).
+ * For a blank row, prefer the navigable blank **stop** wire (from
+ * `listBlankVisualLineStartWires`) over the raw sample/probe wire when a stop sits on
+ * that row, so seat identity matches caret/collapse stop identity.
+ */
+export function layoutVisualRowSeats(
+  layout: HandoffNoteLayoutMap,
+  doc: HandoffNoteDoc
+): HandoffNoteVisualRowSeat[] {
+  const blankStops = new Set(listBlankVisualLineStartWires(doc));
+  return layout.rows.map((row) => {
+    const minSample = minWire(row.samples);
+    if (row.kind !== "blank") {
+      return { wire: minSample ?? row.breakProbeWire ?? 0, kind: "content" };
+    }
+    if (minSample !== null && blankStops.has(minSample)) {
+      return { wire: minSample, kind: "blank" };
+    }
+    const stopSample = row.samples
+      .map((sample) => sample.wire)
+      .find((wire) => blankStops.has(wire));
+    if (stopSample !== undefined) {
+      return { wire: stopSample, kind: "blank" };
+    }
+    if (row.breakProbeWire !== undefined) {
+      const opened = blankVisualLineStartOpenedByProbe(doc, row.breakProbeWire);
+      if (opened !== null) {
+        return { wire: opened, kind: "blank" };
+      }
+      if (blankStops.has(row.breakProbeWire)) {
+        return { wire: row.breakProbeWire, kind: "blank" };
+      }
+    }
+    return { wire: minSample ?? row.breakProbeWire ?? 0, kind: "blank" };
+  });
 }
 
 export function closestLayoutRowIndexForTop(layout: HandoffNoteLayoutMap, top: number): number {

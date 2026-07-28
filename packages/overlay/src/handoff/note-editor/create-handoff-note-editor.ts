@@ -20,12 +20,14 @@
   normalizeHandoffNoteDoc,
   normalizeDocPos,
   normalizeSelection,
+  resolveHandoffNoteDeletePostLayoutRemount,
   selectionsEqual,
   spliceDocSelection,
   wireOffsetToCollapsedSelection,
   wireToDoc,
   type HandoffNoteDoc,
   type HandoffNoteDocPos,
+  type HandoffNoteDeletePostLayoutRemount,
   type HandoffNoteSelection,
 } from "@caliper/core";
 import {
@@ -63,7 +65,12 @@ import {
   resolvePaintContextAtWire,
   resolvePaintHorizontalArrowMove,
 } from "./handoff-note-dom-points.js";
-import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
+import {
+  buildHandoffNoteLayoutMap,
+  invalidateHandoffNoteLayoutCache,
+  layoutVisualRowSeats,
+  measureReplacementDeleteVisualRowSeats,
+} from "./handoff-note-layout-map.js";
 
 export type HandoffNoteEditorHost = {
   getWire(): string;
@@ -374,7 +381,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
 
   const renderDoc = (
     nextSelection: HandoffNoteSelection,
-    renderOptions?: { trustDoc?: boolean; previousDoc?: HandoffNoteDoc }
+    renderOptions?: { trustDoc?: boolean; previousDoc?: HandoffNoteDoc },
+    resolveReplacementSelection?: (selection: HandoffNoteSelection) => HandoffNoteSelection
   ) => {
     if (!root) {
       selection = normalizeSelection(doc, nextSelection);
@@ -387,7 +395,10 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     if (lastRenderOutcome.docChanged) {
       invalidateHandoffNoteLayoutCache(root);
     }
-    writeSelection(nextSelection, lastRenderOutcome);
+    writeSelection(
+      resolveReplacementSelection?.(nextSelection) ?? nextSelection,
+      lastRenderOutcome
+    );
   };
 
   const syncSelectionFromDom = (): HandoffNoteSelection => {
@@ -402,7 +413,12 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     history.recordBefore(captureSnapshot());
   };
 
-  const mutate = (nextDoc: HandoffNoteDoc, nextSelection: HandoffNoteSelection, record = true) => {
+  const mutate = (
+    nextDoc: HandoffNoteDoc,
+    nextSelection: HandoffNoteSelection,
+    record = true,
+    postLayoutRemount?: HandoffNoteDeletePostLayoutRemount
+  ) => {
     selectedMentionNodeIndex = null;
     const prevDoc = doc;
     const normalized = normalizeHandoffNoteDoc(nextDoc);
@@ -412,10 +428,63 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
     }
     doc = normalized;
     selection = resolvedSelection;
-    renderDoc(resolvedSelection, { trustDoc: true, previousDoc: prevDoc });
+    const replacementRoot = root;
+    renderDoc(
+      resolvedSelection,
+      { trustDoc: true, previousDoc: prevDoc },
+      postLayoutRemount && replacementRoot
+        ? (provisionalSelection) =>
+            (() => {
+              const replacementSeats =
+                postLayoutRemount.kind === "blank-stop"
+                  ? layoutVisualRowSeats(buildHandoffNoteLayoutMap(replacementRoot, doc), doc)
+                  : measureReplacementDeleteVisualRowSeats(replacementRoot, doc, {
+                      priorContentSeatWire: postLayoutRemount.priorContentSeatWire,
+                      focusWire: docPosToWireOffset(doc, provisionalSelection.focus),
+                    });
+              const resolved = resolveHandoffNoteDeletePostLayoutRemount(
+                { doc, selection: provisionalSelection, postLayoutRemount },
+                replacementSeats
+              );
+              logDelete("replacementLand", {
+                direction: "delete",
+                request: postLayoutRemount,
+                provisionalWire: docPosToWireOffset(doc, provisionalSelection.focus),
+                provisionalDoc: snapshotDocPosForLog(doc, provisionalSelection.focus),
+                provisionalAffinity: provisionalSelection.focusAffinity ?? null,
+                replacementSeats,
+                finalWire: docPosToWireOffset(doc, resolved.selection.focus),
+                finalDoc: snapshotDocPosForLog(doc, resolved.selection.focus),
+                finalAffinity: resolved.selection.focusAffinity ?? null,
+                remounted:
+                  docPosToWireOffset(doc, resolved.selection.focus) !==
+                  docPosToWireOffset(doc, provisionalSelection.focus),
+              });
+              return resolved.selection;
+            })()
+        : undefined
+    );
     syncWireOut();
     resize();
     scheduleVerticalGoalRefresh("mutate");
+  };
+
+  const logDeleteFinalSelection = (
+    direction: "backspace" | "delete",
+    provisional: { doc: HandoffNoteDoc; selection: HandoffNoteSelection }
+  ) => {
+    logDelete("final", {
+      direction,
+      provisionalWire: docPosToWireOffset(provisional.doc, provisional.selection.focus),
+      provisionalDoc: snapshotDocPosForLog(provisional.doc, provisional.selection.focus),
+      provisionalAffinity: provisional.selection.focusAffinity ?? null,
+      finalWire: docPosToWireOffset(doc, selection.focus),
+      finalDoc: snapshotDocPosForLog(doc, selection.focus),
+      finalAffinity: selection.focusAffinity ?? null,
+      changed:
+        docPosToWireOffset(provisional.doc, provisional.selection.focus) !==
+        docPosToWireOffset(doc, selection.focus),
+    });
   };
 
   const mutateSelection = (focusOrSelection: HandoffNoteDocPos | HandoffNoteSelection) => {
@@ -702,7 +771,13 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
               focus: deleteFocus,
             };
         const beforeWire = docToWire(doc);
-        const deleted = applyDocDelete(doc, deleteSelection, direction);
+        // Live editor: seats always come from the current layout epoch (same paint
+        // pass Up/Down navigation uses) — never a silent wire-line fallback here.
+        const deleteLayout = buildHandoffNoteLayoutMap(root, doc);
+        const deleteSeats = layoutVisualRowSeats(deleteLayout, doc);
+        const deleted = applyDocDelete(doc, deleteSelection, direction, {
+          visualRowSeats: deleteSeats,
+        });
         const afterWire = deleted ? docToWire(deleted.doc) : beforeWire;
         logDelete("beforeInput", {
           direction,
@@ -712,6 +787,9 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           toWire: deleted ? docPosToWireOffset(deleted.doc, deleted.selection.focus) : null,
           toDoc: deleted ? snapshotDocPosForLog(deleted.doc, deleted.selection.focus) : null,
           toAffinity: deleted?.selection.focusAffinity ?? null,
+          wireBefore: beforeWire,
+          wireAfter: afterWire,
+          preMutationSeats: deleteSeats,
           ...describeWireRemoval(beforeWire, afterWire),
           handled: Boolean(deleted),
         });
@@ -719,7 +797,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           return;
         }
         event.preventDefault();
-        mutate(deleted.doc, deleted.selection, true);
+        mutate(deleted.doc, deleted.selection, true, deleted.postLayoutRemount);
+        logDeleteFinalSelection(direction, deleted);
         return;
       }
 
@@ -882,7 +961,13 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
         }).focusPos;
         const deleteSelection = collapsedSelectionCarryingAffinity(doc, deleteFocus, active);
         const beforeWire = docToWire(doc);
-        const deleted = applyDocDelete(doc, deleteSelection, direction);
+        // Live editor: seats always come from the current layout epoch (same paint
+        // pass Up/Down navigation uses) — never a silent wire-line fallback here.
+        const deleteLayout = buildHandoffNoteLayoutMap(root, doc);
+        const deleteSeats = layoutVisualRowSeats(deleteLayout, doc);
+        const deleted = applyDocDelete(doc, deleteSelection, direction, {
+          visualRowSeats: deleteSeats,
+        });
         const afterWire = deleted ? docToWire(deleted.doc) : beforeWire;
         logDelete("keydown", {
           direction,
@@ -892,6 +977,9 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           toWire: deleted ? docPosToWireOffset(deleted.doc, deleted.selection.focus) : null,
           toDoc: deleted ? snapshotDocPosForLog(deleted.doc, deleted.selection.focus) : null,
           toAffinity: deleted?.selection.focusAffinity ?? null,
+          wireBefore: beforeWire,
+          wireAfter: afterWire,
+          preMutationSeats: deleteSeats,
           ...describeWireRemoval(beforeWire, afterWire),
           handled: Boolean(deleted),
         });
@@ -899,7 +987,8 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
           return false;
         }
         event.preventDefault();
-        mutate(deleted.doc, deleted.selection, true);
+        mutate(deleted.doc, deleted.selection, true, deleted.postLayoutRemount);
+        logDeleteFinalSelection(direction, deleted);
         return true;
       }
 

@@ -1,6 +1,5 @@
 ﻿import { describe, expect, it, beforeEach } from "vitest";
 import {
-  applyDocDelete,
   applyDocInsertText,
   blankVisualLineStartOpenedByProbe,
   collapsedSelection,
@@ -74,6 +73,7 @@ import {
   monotonicMeasuredLayoutSamples,
   stubTextNodeLineRects,
 } from "./handoff-note-test-helpers.js";
+import { applyDocDeleteWithWireLineSeats as applyDocDelete } from "@caliper/core/handoff-note-test";
 import { domPointInMentionPill } from "../handoff-note-debug.js";
 
 const NOTE = "Hi @caliper-abc123 there";

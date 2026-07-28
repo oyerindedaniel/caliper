@@ -1,6 +1,5 @@
 import type { HandoffRegistryItem } from "@caliper/core";
 import {
-  applyDocDelete,
   applyDocInsertText,
   applyDocLineBreak,
   docPosToWireOffset,
@@ -15,6 +14,7 @@ import {
   resolveActiveMentionReplaceEnd,
 } from "./create-mention-controller.js";
 import type { HandoffNoteEditorHost } from "./note-editor/create-handoff-note-editor.js";
+import { applyDocDeleteWithWireLineSeats as applyDocDelete } from "@caliper/core/handoff-note-test";
 
 const REGISTRY_ITEM = {
   agentId: "caliper-abc123",

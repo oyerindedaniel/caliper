@@ -11,6 +11,7 @@ import {
   collapsedSelectionWithIntent,
   docPosToWireOffset,
   isAtomicNode,
+  isCaretOnAmbiguousContentRowEndChar,
   nodeTokenLength,
   normalizeDocPos,
   resolveDirectionalUnitFocus,
@@ -30,6 +31,7 @@ import {
   isEmbeddedBlankBandCollapseProbeWire,
   isEmbeddedBlankBandProbeWire,
   isTextOwnedSameRowWhitespaceAtWire,
+  progressiveDeleteLandWhenAheadExhausted,
   resolveBackspaceFromEmptyContentRowEnd,
   resolveDeleteFromEmptyContentRowEnd,
   resolveContentRowEditBeforeEmbeddedBlankBand,
@@ -40,12 +42,14 @@ import {
   resolveSubstantiveLineBreakJoin,
   resolveAtomicDeleteRowClearChip,
   type EmbeddedBlankBandCollapseMove,
+  type HandoffNoteVisualRowSeat,
 } from "./handoff-note-embedded-newlines.js";
 
 /** Delete outcome with finalized focus + affinity (snap is interior escape only). */
 export type HandoffNoteDeleteIntentResult = {
   doc: HandoffNoteDoc;
   selection: HandoffNoteSelection;
+  replacementBlankStopWire?: number;
 };
 
 export type HandoffNoteDeleteIntent =
@@ -350,6 +354,100 @@ function blankBandMoveToResult(move: EmbeddedBlankBandCollapseMove): HandoffNote
   return {
     doc: move.doc,
     selection: collapsedSelectionWithIntent(move.doc, focus, move.affinityIntent),
+    replacementBlankStopWire: move.replacementBlankStopWire,
+  };
+}
+
+/** Delete has nothing further ahead on this focus (EOF or CRE `after`). */
+function deleteAheadExhaustedAtFocus(
+  doc: HandoffNoteDoc,
+  selection: HandoffNoteSelection
+): boolean {
+  const focusWire = docPosToWireOffset(doc, selection.focus);
+  if (focusWire >= docLength(doc)) {
+    return true;
+  }
+  return (
+    selection.focusAffinity === "after" && isCaretOnAmbiguousContentRowEndChar(doc, selection.focus)
+  );
+}
+
+/**
+ * Same-stroke progressive remount when Delete exhausted ahead on the current visual seat
+ * but content remains behind on the **same hard line** (soft-wrap wrap-seam / EOF) —
+ * not a later noop climb, and not a climb across `\n` (blank/join owns that).
+ */
+function withProgressiveDeleteRemountIfAheadExhausted(
+  result: HandoffNoteDeleteIntentResult,
+  visualRowSeats: readonly HandoffNoteVisualRowSeat[]
+): HandoffNoteDeleteIntentResult {
+  if (!deleteAheadExhaustedAtFocus(result.doc, result.selection)) {
+    return result;
+  }
+  const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
+  const land = progressiveDeleteLandWhenAheadExhausted(visualRowSeats, focusWire);
+  if (land === null || land >= focusWire) {
+    return result;
+  }
+  const wire = docToWire(result.doc);
+  if (wire.slice(land, focusWire).includes("\n")) {
+    return result;
+  }
+  return {
+    doc: result.doc,
+    selection: collapsedSelectionWithIntent(
+      result.doc,
+      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, land)),
+      "deletion-point"
+    ),
+  };
+}
+
+/**
+ * Backspace at the document's visual start has exhausted its primary (up / behind)
+ * side. Continue the progressive chain at the adjacent row below; a single content
+ * row remounts its own end so the next stroke can clear it.
+ */
+function progressiveBackspaceResultAtDocumentStart(
+  doc: HandoffNoteDoc,
+  visualRowSeats: readonly HandoffNoteVisualRowSeat[]
+): HandoffNoteDeleteIntentResult | null {
+  if (docLength(doc) === 0) {
+    return null;
+  }
+  const currentIndex = visualRowSeats.findIndex((seat) => seat.wire === 0);
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  const targetIndex = currentIndex + 1 < visualRowSeats.length ? currentIndex + 1 : currentIndex;
+  const target = visualRowSeats[targetIndex]!;
+  if (target.kind === "blank") {
+    return {
+      doc,
+      selection: collapsedSelectionWithIntent(
+        doc,
+        normalizeDocPos(doc, wireOffsetToDocPos(doc, target.wire)),
+        "deletion-point"
+      ),
+    };
+  }
+
+  const next = visualRowSeats[targetIndex + 1];
+  const wire = docToWire(doc);
+  const boundary = next?.wire ?? wire.length;
+  const lineBreak = wire.indexOf("\n", target.wire);
+  const lastWire = lineBreak >= target.wire && lineBreak < boundary ? lineBreak - 1 : boundary - 1;
+  if (lastWire < target.wire) {
+    return null;
+  }
+
+  const lastPos = wireOffsetToDocPos(doc, lastWire);
+  const lastNode = doc.nodes[lastPos.nodeIndex];
+  const endPos = isAtomicNode(lastNode) ? wireOffsetToDocPos(doc, boundary) : lastPos;
+  return {
+    doc,
+    selection: collapsedSelectionWithIntent(doc, normalizeDocPos(doc, endPos), "content-row-end"),
   };
 }
 
@@ -387,7 +485,8 @@ function mentionRemoveIntentResult(
 
 function resolveDeleteForwardFromAtomicAbuttingProbe(
   doc: HandoffNoteDoc,
-  focus: HandoffNoteDocPos
+  focus: HandoffNoteDocPos,
+  visualRowSeats: readonly HandoffNoteVisualRowSeat[]
 ): HandoffNoteDeleteIntent | null {
   if (handoffNoteCaretOnAtomicNodeStart(doc, focus)) {
     return null;
@@ -399,7 +498,7 @@ function resolveDeleteForwardFromAtomicAbuttingProbe(
   if (probeWire === null) {
     return null;
   }
-  const move = resolveEmbeddedBlankBandCollapse(doc, probeWire, "delete", focus, {
+  const move = resolveEmbeddedBlankBandCollapse(doc, probeWire, "delete", focus, visualRowSeats, {
     atomicEndCollapse: true,
   });
   if (move) {
@@ -408,7 +507,7 @@ function resolveDeleteForwardFromAtomicAbuttingProbe(
       result: blankBandMoveToResult(move),
     };
   }
-  const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, probeWire, focus);
+  const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, probeWire, visualRowSeats, focus);
   if (emptyRowEnd.status === "move") {
     return {
       kind: "result",
@@ -482,7 +581,8 @@ function resolveBoundaryDeleteIntent(
 export function resolveHandoffNoteDeleteIntent(
   doc: HandoffNoteDoc,
   selection: HandoffNoteSelection,
-  direction: HandoffNoteEdit
+  direction: HandoffNoteEdit,
+  visualRowSeats: readonly HandoffNoteVisualRowSeat[]
 ): HandoffNoteDeleteIntent | null {
   const { focus, contentCharUnit } = resolveDirectionalUnitFocus(
     doc,
@@ -520,7 +620,7 @@ export function resolveHandoffNoteDeleteIntent(
   }
 
   if (direction === "delete") {
-    const forwardBlank = resolveDeleteForwardFromAtomicAbuttingProbe(doc, focus);
+    const forwardBlank = resolveDeleteForwardFromAtomicAbuttingProbe(doc, focus, visualRowSeats);
     if (forwardBlank) {
       return forwardBlank;
     }
@@ -546,7 +646,13 @@ export function resolveHandoffNoteDeleteIntent(
 
   // Atomic-end abutting probe is handled earlier by resolveDeleteForwardFromAtomicAbuttingProbe
   // (focus-tied).
-  const blankStopCollapse = resolveBlankVisualLineStartCollapse(doc, focusWire, direction, focus);
+  const blankStopCollapse = resolveBlankVisualLineStartCollapse(
+    doc,
+    focusWire,
+    direction,
+    focus,
+    visualRowSeats
+  );
   if (blankStopCollapse) {
     return {
       kind: "result",
@@ -554,7 +660,13 @@ export function resolveHandoffNoteDeleteIntent(
     };
   }
 
-  const blankBandCollapse = resolveEmbeddedBlankBandCollapse(doc, focusWire, direction, focus);
+  const blankBandCollapse = resolveEmbeddedBlankBandCollapse(
+    doc,
+    focusWire,
+    direction,
+    focus,
+    visualRowSeats
+  );
   if (blankBandCollapse) {
     return {
       kind: "result",
@@ -563,7 +675,12 @@ export function resolveHandoffNoteDeleteIntent(
   }
 
   if (direction === "backspace" && !handoffNoteIsAtomicEndProbeAlias(doc, focus)) {
-    const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(doc, focusWire, focus);
+    const emptyRowEnd = resolveBackspaceFromEmptyContentRowEnd(
+      doc,
+      focusWire,
+      visualRowSeats,
+      focus
+    );
     if (emptyRowEnd) {
       return {
         kind: "result",
@@ -573,7 +690,7 @@ export function resolveHandoffNoteDeleteIntent(
   }
 
   if (direction === "delete" && !handoffNoteIsAtomicEndProbeAlias(doc, focus)) {
-    const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, focus);
+    const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, focusWire, visualRowSeats, focus);
     if (emptyRowEnd.status === "move") {
       return {
         kind: "result",
@@ -622,6 +739,10 @@ export function resolveHandoffNoteDeleteIntent(
 
   if (direction === "backspace") {
     if (focusWire <= 0) {
+      const progressiveResult = progressiveBackspaceResultAtDocumentStart(doc, visualRowSeats);
+      if (progressiveResult) {
+        return { kind: "result", result: progressiveResult };
+      }
       return { kind: "noop" };
     }
     const deleteFocus = insertDocPosAfterEmbeddedBlankProbe(doc, focus);
@@ -644,6 +765,20 @@ export function resolveHandoffNoteDeleteIntent(
       return { kind: "noop" };
     }
     if (focusWire >= docLength(doc)) {
+      const land = progressiveDeleteLandWhenAheadExhausted(visualRowSeats, focusWire);
+      if (land !== null && !docToWire(doc).slice(land, focusWire).includes("\n")) {
+        return {
+          kind: "result",
+          result: {
+            doc,
+            selection: collapsedSelectionWithIntent(
+              doc,
+              wireOffsetToDocPos(doc, land),
+              "deletion-point"
+            ),
+          },
+        };
+      }
       return { kind: "noop" };
     }
     const spliced = spliceSelection(doc, focus, wireOffsetToDocPos(doc, focusWire + 1), "");
@@ -651,19 +786,22 @@ export function resolveHandoffNoteDeleteIntent(
     if (textAlias && isTextOwnedSameRowWhitespaceAtWire(doc, focusWire)) {
       return {
         kind: "result",
-        result: {
-          doc: spliced.doc,
-          selection: collapsedSelectionWithIntent(
-            spliced.doc,
-            normalizeDocPos(spliced.doc, textAlias),
-            "deletion-point"
-          ),
-        },
+        result: withProgressiveDeleteRemountIfAheadExhausted(
+          {
+            doc: spliced.doc,
+            selection: collapsedSelectionWithIntent(
+              spliced.doc,
+              normalizeDocPos(spliced.doc, textAlias),
+              "deletion-point"
+            ),
+          },
+          visualRowSeats
+        ),
       };
     }
     return {
       kind: "result",
-      result: spliced,
+      result: withProgressiveDeleteRemountIfAheadExhausted(spliced, visualRowSeats),
     };
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDocDelete, applyDocInsertText, applyDocLineBreak } from "./handoff-note-doc-edits.js";
+import { applyDocInsertText, applyDocLineBreak } from "./handoff-note-doc-edits.js";
 import {
   collapsedSelection,
   collapsedSelectionWithIntent,
@@ -33,6 +33,10 @@ import {
   resolveEmbeddedBlankBandLineStartCollapse,
   resolveSubstantiveLineBreakJoin,
 } from "./handoff-note-embedded-newlines.js";
+import {
+  applyDocDeleteWithWireLineSeats as applyDocDelete,
+  wireLineVisualRowSeats,
+} from "./handoff-note-test-helpers.js";
 
 describe("embedded blank band probes", () => {
   it("blank visual line starts: every empty line slot is a stop (visual = nav)", () => {
@@ -580,16 +584,26 @@ describe("embedded blank band probes", () => {
   describe("empty content-row-end Delete resolution", () => {
     it("blank-probe mid-band collapses (move)", () => {
       const doc = wireToDoc("\n\n\nlower");
-      expect(resolveDeleteFromEmptyContentRowEnd(doc, 0, wireOffsetToDocPos(doc, 0)).status).toBe(
-        "move"
-      );
+      expect(
+        resolveDeleteFromEmptyContentRowEnd(
+          doc,
+          0,
+          wireLineVisualRowSeats(doc),
+          wireOffsetToDocPos(doc, 0)
+        ).status
+      ).toBe("move");
     });
 
     it("line-start \\n before content is miss (not a blank probe)", () => {
       const doc = wireToDoc("\nlower");
-      expect(resolveDeleteFromEmptyContentRowEnd(doc, 0, wireOffsetToDocPos(doc, 0)).status).toBe(
-        "miss"
-      );
+      expect(
+        resolveDeleteFromEmptyContentRowEnd(
+          doc,
+          0,
+          wireLineVisualRowSeats(doc),
+          wireOffsetToDocPos(doc, 0)
+        ).status
+      ).toBe("miss");
     });
 
     it("last trailing blank under content collapses to content visual start (progressive)", () => {
@@ -598,6 +612,7 @@ describe("embedded blank band probes", () => {
       const resolved = resolveDeleteFromEmptyContentRowEnd(
         doc,
         probe,
+        wireLineVisualRowSeats(doc),
         wireOffsetToDocPos(doc, probe)
       );
       expect(resolved.status).toBe("move");
@@ -609,7 +624,12 @@ describe("embedded blank band probes", () => {
 
     it("sole leftover prefix blank clears (move)", () => {
       const doc = wireToDoc("\n");
-      const resolved = resolveDeleteFromEmptyContentRowEnd(doc, 0, wireOffsetToDocPos(doc, 0));
+      const resolved = resolveDeleteFromEmptyContentRowEnd(
+        doc,
+        0,
+        wireLineVisualRowSeats(doc),
+        wireOffsetToDocPos(doc, 0)
+      );
       expect(resolved.status).toBe("move");
       if (resolved.status === "move") {
         expect(docToWire(resolved.move.doc)).toBe("");

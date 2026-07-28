@@ -1,6 +1,5 @@
 ﻿import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
-  applyDocDelete,
   applyDocInsertText,
   blankVisualLineStartOpenedByProbe,
   collapsedSelection,
@@ -15,6 +14,7 @@ import {
   normalizeHandoffNoteDoc,
   wireOffsetToDocPos,
   wireToDoc,
+  type HandoffNoteDoc,
 } from "@caliper/core";
 import {
   docOffsetFromContentTextNodeDomPoint,
@@ -52,15 +52,14 @@ import {
   applyThreeRowSpacerBrowserParityLayoutStubs,
   stubHandoffNoteMentionLayoutCoords,
   seedMonotonicMeasuredLayout,
-} from "./handoff-note-test-helpers.js";
-import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
-import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
-import {
   readDomWireCursor,
   mountMultiMentionSoftWrapFixture,
   setSelectionAtWire,
   dispatchSelectionChange,
 } from "./handoff-note-test-helpers.js";
+import { applyDocDeleteWithWireLineSeats as applyDocDelete } from "@caliper/core/handoff-note-test";
+import { invalidateHandoffNoteLayoutCache } from "./handoff-note-layout-map.js";
+import { createHandoffNoteEditor, type HandoffNoteEditor } from "./create-handoff-note-editor.js";
 
 function createEditorRoot(): HTMLDivElement {
   const root = document.createElement("div");
