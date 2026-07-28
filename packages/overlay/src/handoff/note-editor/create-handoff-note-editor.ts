@@ -433,35 +433,38 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       resolvedSelection,
       { trustDoc: true, previousDoc: prevDoc },
       postLayoutRemount && replacementRoot
-        ? (provisionalSelection) =>
-            (() => {
-              const replacementSeats =
-                postLayoutRemount.kind === "blank-stop"
-                  ? layoutVisualRowSeats(buildHandoffNoteLayoutMap(replacementRoot, doc), doc)
-                  : measureReplacementDeleteVisualRowSeats(replacementRoot, doc, {
-                      priorContentSeatWire: postLayoutRemount.priorContentSeatWire,
-                      focusWire: docPosToWireOffset(doc, provisionalSelection.focus),
-                    });
-              const resolved = resolveHandoffNoteDeletePostLayoutRemount(
-                { doc, selection: provisionalSelection, postLayoutRemount },
-                replacementSeats
+        ? (provisionalSelection) => {
+            const focusWire = docPosToWireOffset(doc, provisionalSelection.focus);
+            let replacementSeats;
+            if (postLayoutRemount.kind === "blank-stop") {
+              replacementSeats = layoutVisualRowSeats(
+                buildHandoffNoteLayoutMap(replacementRoot, doc),
+                doc
               );
-              logDelete("replacementLand", {
-                direction: "delete",
-                request: postLayoutRemount,
-                provisionalWire: docPosToWireOffset(doc, provisionalSelection.focus),
-                provisionalDoc: snapshotDocPosForLog(doc, provisionalSelection.focus),
-                provisionalAffinity: provisionalSelection.focusAffinity ?? null,
-                replacementSeats,
-                finalWire: docPosToWireOffset(doc, resolved.selection.focus),
-                finalDoc: snapshotDocPosForLog(doc, resolved.selection.focus),
-                finalAffinity: resolved.selection.focusAffinity ?? null,
-                remounted:
-                  docPosToWireOffset(doc, resolved.selection.focus) !==
-                  docPosToWireOffset(doc, provisionalSelection.focus),
+            } else {
+              replacementSeats = measureReplacementDeleteVisualRowSeats(replacementRoot, doc, {
+                priorContentSeatWire: postLayoutRemount.priorContentSeatWire,
+                focusWire,
               });
-              return resolved.selection;
-            })()
+            }
+            const resolved = resolveHandoffNoteDeletePostLayoutRemount(
+              { doc, selection: provisionalSelection, postLayoutRemount },
+              replacementSeats
+            );
+            logDelete("replacementLand", {
+              direction: "delete",
+              request: postLayoutRemount,
+              provisionalWire: focusWire,
+              provisionalDoc: snapshotDocPosForLog(doc, provisionalSelection.focus),
+              provisionalAffinity: provisionalSelection.focusAffinity ?? null,
+              replacementSeats,
+              finalWire: docPosToWireOffset(doc, resolved.selection.focus),
+              finalDoc: snapshotDocPosForLog(doc, resolved.selection.focus),
+              finalAffinity: resolved.selection.focusAffinity ?? null,
+              remounted: docPosToWireOffset(doc, resolved.selection.focus) !== focusWire,
+            });
+            return resolved.selection;
+          }
         : undefined
     );
     syncWireOut();
