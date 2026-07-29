@@ -13,6 +13,7 @@ export const RULER_HIT_SIZE = 11;
 
 export const CALIPER_PREFIX = "caliper-";
 export const BRIDGE_TAB_ID_KEY = "caliper-bridge-tab-id";
+export const HANDOFF_SESSION_KEY = "caliper-handoff-session";
 
 export const OVERLAY_CONTAINER_ID = "caliper-overlay-root";
 export const MAX_SAFE_Z_INDEX = 2147483647;

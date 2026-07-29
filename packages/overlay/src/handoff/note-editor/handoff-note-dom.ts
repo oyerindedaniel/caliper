@@ -1,0 +1,712 @@
+import {
+  docToWire,
+  embeddedBlankBandProbeEmitsBlankAnchor,
+  formatHandoffAgentIdPill,
+  isAtomicNode,
+  listEmbeddedBlankBandProbeWires,
+  nodeTokenLength,
+  type HandoffNoteDoc,
+  type HandoffNoteNode,
+} from "@caliper/core";
+import { PREFIX } from "../../css/styles.js";
+import { handoffNoteDomSnapshot } from "../handoff-note-debug.js";
+
+export const HANDOFF_MENTION_ATTR = "data-handoff-mention";
+export const HANDOFF_AGENT_ID_ATTR = "data-agent-id";
+export const HANDOFF_MENTION_NODE_INDEX_ATTR = "data-handoff-mention-node-index";
+export const HANDOFF_WIRE_BREAK_ATTR = "data-handoff-wire-break";
+export const HANDOFF_LINE_PAD_ATTR = "data-handoff-line-pad";
+export const HANDOFF_BLANK_ANCHOR_ATTR = "data-handoff-blank-anchor";
+/** ZWSP caret dock after a wire-break when the next content is a row-start atom. Not wire. */
+export const HANDOFF_LINE_START_ANCHOR_ATTR = "data-handoff-line-start-anchor";
+export const HANDOFF_BLANK_ANCHOR_CHAR = "\u200b";
+
+export type HandoffNotePresentationOptions = {
+  colorByAgentId: Map<string, string>;
+  selectedMentionNodeIndex?: number | null;
+};
+
+export type RenderOutcome = {
+  domReplaced: boolean;
+  docChanged: boolean;
+};
+
+export type RenderHandoffNoteDocRenderOptions = {
+  trustDoc?: boolean;
+  previousDoc?: HandoffNoteDoc;
+};
+
+export function isHandoffMentionElement(node: Node): node is HTMLSpanElement {
+  return (
+    node instanceof HTMLSpanElement &&
+    node.hasAttribute(HANDOFF_MENTION_ATTR) &&
+    node.hasAttribute(HANDOFF_AGENT_ID_ATTR)
+  );
+}
+
+export function isHandoffWireBreakElement(node: Node): node is HTMLBRElement {
+  return node instanceof HTMLBRElement && node.hasAttribute(HANDOFF_WIRE_BREAK_ATTR);
+}
+
+export function isHandoffLinePadElement(node: Node): node is HTMLBRElement {
+  return node instanceof HTMLBRElement && node.hasAttribute(HANDOFF_LINE_PAD_ATTR);
+}
+
+export function isHandoffBlankAnchorElement(
+  node: Node | null | undefined
+): node is HTMLSpanElement {
+  return node instanceof HTMLSpanElement && node.hasAttribute(HANDOFF_BLANK_ANCHOR_ATTR);
+}
+
+export function isHandoffLineStartAnchorElement(
+  node: Node | null | undefined
+): node is HTMLSpanElement {
+  return node instanceof HTMLSpanElement && node.hasAttribute(HANDOFF_LINE_START_ANCHOR_ATTR);
+}
+
+/** Wire offset at the `\n` between split parts `breakPartIndex` and `breakPartIndex + 1`. */
+export function wireOffsetAtTextBreak(
+  text: string,
+  wireBase: number,
+  breakPartIndex: number
+): number {
+  const parts = text.split("\n");
+  let wire = wireBase;
+  for (let index = 0; index < breakPartIndex; index++) {
+    wire += parts[index]!.length + 1;
+  }
+  wire += parts[breakPartIndex]!.length;
+  return wire;
+}
+
+export type WireTextDomOptions = {
+  wireBase?: number;
+  blankProbeWires?: ReadonlySet<number>;
+  /** When set, trailing empty segment after the last `\n` gets a line-start caret dock before the following atom. */
+  lineStartBeforeAtomic?: boolean;
+  /**
+   * Probe break wires that emit a blank-anchor (one probe → one dock).
+   * Must match core dock kind: emit only when paint docks blank-anchor.
+   */
+  emitBlankAnchorWires?: ReadonlySet<number>;
+};
+
+/** Wire offset of the final `\n` when the document ends with a newline (EOF pad follows). */
+export function eofPadPrecedingBreakWire(doc: HandoffNoteDoc): number | undefined {
+  const wire = docToWire(doc);
+  if (!wire.endsWith("\n")) {
+    return undefined;
+  }
+  return wire.length - 1;
+}
+
+/** Probe wires that emit blank-anchor — shared emit authority with paint. */
+export function blankAnchorEmitWiresForDoc(doc: HandoffNoteDoc): Set<number> {
+  const emit = new Set<number>();
+  for (const breakWire of listEmbeddedBlankBandProbeWires(doc)) {
+    if (embeddedBlankBandProbeEmitsBlankAnchor(doc, breakWire)) {
+      emit.add(breakWire);
+    }
+  }
+  return emit;
+}
+
+/** Canonical wire-split DOM options — emit blank-anchor only for probes whose dock kind is ba. */
+export function wireTextDomOptionsForDoc(
+  doc: HandoffNoteDoc,
+  wireBase: number,
+  options?: {
+    blankProbeWires?: ReadonlySet<number>;
+    lineStartBeforeAtomic?: boolean;
+  }
+): WireTextDomOptions {
+  return {
+    wireBase,
+    blankProbeWires: options?.blankProbeWires,
+    lineStartBeforeAtomic: options?.lineStartBeforeAtomic,
+    emitBlankAnchorWires: blankAnchorEmitWiresForDoc(doc),
+  };
+}
+
+export function readMentionAgentId(element: HTMLSpanElement): string {
+  return element.getAttribute(HANDOFF_AGENT_ID_ATTR) ?? "";
+}
+
+export function readMentionNodeIndex(element: HTMLSpanElement): number | null {
+  const raw = element.getAttribute(HANDOFF_MENTION_NODE_INDEX_ATTR);
+  if (raw === null) {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/** Wire-length of a mention atom — must match docToWire token size. */
+export function mentionWireLength(agentId: string): number {
+  return 1 + agentId.length;
+}
+
+function isRenderedDocNode(node: HandoffNoteNode): boolean {
+  return node.type !== "text" || Boolean(node.text);
+}
+
+/** DOM children produced by splitting wire newlines inside one text node (plus blank-band anchors). */
+export function countWireTextDomChildren(text: string, options?: WireTextDomOptions): number {
+  if (!text.includes("\n")) {
+    return text ? 1 : 0;
+  }
+  return Array.from(iterWireTextDomSlots(text, 0, options)).length;
+}
+
+export type WireTextDomSlotKind = "text" | "break" | "blank-anchor" | "line-start-anchor";
+
+export type WireTextDomSlot = {
+  kind: WireTextDomSlotKind;
+  domIdx: number;
+  nodeOffset: number;
+  partIndex: number;
+  part: string;
+  breakWire?: number;
+};
+
+/** Each rendered DOM child inside one wire-split text node — canonical split/break/probe sequence. */
+export function* iterWireTextDomSlots(
+  text: string,
+  startDomIdx: number,
+  options?: WireTextDomOptions
+): Generator<WireTextDomSlot> {
+  if (!text.includes("\n")) {
+    return;
+  }
+  const wireBase = options?.wireBase ?? 0;
+  const probeWires = options?.blankProbeWires;
+  const parts = text.split("\n");
+  let domIdx = startDomIdx;
+  let nodeOffset = 0;
+  for (let partIndex = 0; partIndex < parts.length; partIndex++) {
+    const part = parts[partIndex]!;
+    if (part) {
+      yield { kind: "text", domIdx, nodeOffset, partIndex, part };
+      domIdx++;
+      nodeOffset += part.length;
+    }
+    if (partIndex < parts.length - 1) {
+      const breakWire = wireOffsetAtTextBreak(text, wireBase, partIndex);
+      yield { kind: "break", domIdx, nodeOffset, partIndex, part, breakWire };
+      domIdx++;
+      nodeOffset += 1;
+      if (probeWires?.has(breakWire)) {
+        // One probe → one dock: emit ba only when core dock kind is blank-anchor.
+        if (options?.emitBlankAnchorWires?.has(breakWire)) {
+          yield { kind: "blank-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
+          domIdx++;
+        }
+      } else if (
+        options?.lineStartBeforeAtomic &&
+        partIndex === parts.length - 2 &&
+        parts[parts.length - 1] === ""
+      ) {
+        // Content row starts with an atom: BR has no selection geom — ZWSP dock owns caret paint.
+        yield { kind: "line-start-anchor", domIdx, nodeOffset, partIndex, part, breakWire };
+        domIdx++;
+      }
+    }
+  }
+}
+
+/** Rendered DOM child count including wire breaks, blank-band anchors, and optional EOF line-pad. */
+export function renderedDomChildCount(doc: HandoffNoteDoc): number {
+  const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+  const emitBlankAnchorWires = blankAnchorEmitWiresForDoc(doc);
+  let count = 0;
+  let wireCursor = 0;
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    if (isAtomicNode(node)) {
+      count++;
+      wireCursor += nodeTokenLength(node);
+      continue;
+    }
+    if (node.type === "text") {
+      if (!node.text) {
+        continue;
+      }
+      const next = doc.nodes[nodeIndex + 1];
+      count += countWireTextDomChildren(node.text, {
+        wireBase: wireCursor,
+        blankProbeWires: probeWires,
+        lineStartBeforeAtomic: isAtomicNode(next),
+        emitBlankAnchorWires,
+      });
+      wireCursor += node.text.length;
+      continue;
+    }
+  }
+  if (docWireEndsWithNewline(doc)) {
+    count++;
+  }
+  return count;
+}
+
+export function docWireEndsWithNewline(doc: HandoffNoteDoc): boolean {
+  return docToWire(doc).endsWith("\n");
+}
+
+export function docGainedWireNewline(
+  prev: HandoffNoteDoc | undefined,
+  next: HandoffNoteDoc
+): boolean {
+  if (!prev) {
+    return false;
+  }
+  const count = (wire: string) => (wire.match(/\n/g) ?? []).length;
+  return count(docToWire(next)) > count(docToWire(prev));
+}
+
+function createWireBreakElement(): HTMLBRElement {
+  const br = document.createElement("br");
+  br.setAttribute(HANDOFF_WIRE_BREAK_ATTR, "true");
+  return br;
+}
+
+function createLinePadElement(): HTMLBRElement {
+  const br = document.createElement("br");
+  br.setAttribute(HANDOFF_LINE_PAD_ATTR, "true");
+  return br;
+}
+
+function createBlankAnchorElement(): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.setAttribute(HANDOFF_BLANK_ANCHOR_ATTR, "true");
+  span.appendChild(document.createTextNode(HANDOFF_BLANK_ANCHOR_CHAR));
+  return span;
+}
+
+function createLineStartAnchorElement(): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.setAttribute(HANDOFF_LINE_START_ANCHOR_ATTR, "true");
+  span.appendChild(document.createTextNode(HANDOFF_BLANK_ANCHOR_CHAR));
+  return span;
+}
+
+/** Map wire `\n` inside a text node to `<br>` siblings; blank probes get a caret anchor after the break. */
+export function appendWireTextToDom(
+  parent: HTMLElement,
+  text: string,
+  options?: WireTextDomOptions
+): void {
+  if (!text.includes("\n")) {
+    if (text) {
+      parent.appendChild(document.createTextNode(text));
+    }
+    return;
+  }
+  for (const slot of iterWireTextDomSlots(text, 0, options)) {
+    if (slot.kind === "text") {
+      parent.appendChild(document.createTextNode(slot.part));
+      continue;
+    }
+    if (slot.kind === "break") {
+      parent.appendChild(createWireBreakElement());
+      continue;
+    }
+    if (slot.kind === "line-start-anchor") {
+      parent.appendChild(createLineStartAnchorElement());
+      continue;
+    }
+    if (slot.kind === "blank-anchor") {
+      parent.appendChild(createBlankAnchorElement());
+      continue;
+    }
+  }
+}
+
+function appendDocLinePadIfNeeded(root: HTMLElement, doc: HandoffNoteDoc): void {
+  if (!docWireEndsWithNewline(doc)) {
+    return;
+  }
+  // Non-wire pad opens the trailing empty line. Last probe paints the bare wire-break
+  // (no blank-anchor before pad — those collocated in the browser).
+  root.appendChild(createLinePadElement());
+}
+
+function lastNonEmptyTextNodeIndex(doc: HandoffNoteDoc): number {
+  for (let index = doc.nodes.length - 1; index >= 0; index--) {
+    const node = doc.nodes[index]!;
+    if (node.type === "text" && node.text) {
+      return index;
+    }
+  }
+  return doc.nodes.length - 1;
+}
+
+/** childIndex → doc.nodes index (skips empty text nodes, matching render). */
+export function buildRenderedNodeIndexMap(doc: HandoffNoteDoc): number[] {
+  const map: number[] = [];
+  const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+  let wireCursor = 0;
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    if (!isRenderedDocNode(node)) {
+      continue;
+    }
+    if (isAtomicNode(node)) {
+      map.push(nodeIndex);
+      wireCursor += nodeTokenLength(node);
+      continue;
+    }
+    const text = node.text;
+    if (!text.includes("\n")) {
+      if (text) {
+        map.push(nodeIndex);
+      }
+      wireCursor += text.length;
+      continue;
+    }
+    const next = doc.nodes[nodeIndex + 1];
+    const slotCount = Array.from(
+      iterWireTextDomSlots(
+        text,
+        0,
+        wireTextDomOptionsForDoc(doc, wireCursor, {
+          blankProbeWires: probeWires,
+          lineStartBeforeAtomic: isAtomicNode(next),
+        })
+      )
+    ).length;
+    for (let i = 0; i < slotCount; i++) {
+      map.push(nodeIndex);
+    }
+    wireCursor += text.length;
+  }
+  if (docWireEndsWithNewline(doc)) {
+    map.push(lastNonEmptyTextNodeIndex(doc));
+  }
+  return map;
+}
+
+/** Same rendered child sequence (types + mention ids); text may differ. */
+export function sameRenderedDocStructure(prev: HandoffNoteDoc, next: HandoffNoteDoc): boolean {
+  const prevRendered = prev.nodes.filter(isRenderedDocNode);
+  const nextRendered = next.nodes.filter(isRenderedDocNode);
+  if (prevRendered.length !== nextRendered.length) {
+    return false;
+  }
+  for (let index = 0; index < prevRendered.length; index++) {
+    const left = prevRendered[index]!;
+    const right = nextRendered[index]!;
+    if (left.type !== right.type) {
+      return false;
+    }
+    if (left.type === "mention" && right.type === "mention" && left.agentId !== right.agentId) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function createMentionElement(
+  agentId: string,
+  color: string,
+  highlighted: boolean,
+  nodeIndex: number
+): HTMLSpanElement {
+  const pill = document.createElement("span");
+  pill.className = `${PREFIX}handoff-mention-pill${highlighted ? ` ${PREFIX}handoff-mention-pill-highlighted` : ""}`;
+  pill.setAttribute(HANDOFF_MENTION_ATTR, "true");
+  pill.setAttribute(HANDOFF_AGENT_ID_ATTR, agentId);
+  pill.setAttribute(HANDOFF_MENTION_NODE_INDEX_ATTR, String(nodeIndex));
+  pill.setAttribute("contenteditable", "false");
+  pill.tabIndex = 0;
+  pill.setAttribute("role", "button");
+  pill.setAttribute("aria-label", `Mention ${formatHandoffAgentIdPill(agentId, "full")}`);
+  pill.style.setProperty("--caliper-handoff-pill-color", color);
+  pill.textContent = formatHandoffAgentIdPill(agentId, "full");
+  return pill;
+}
+
+/** Tab stops inside the note editor — contenteditable root, then mention pills in document order. */
+export function getHandoffNoteEditorTabStops(editorRoot: HTMLElement): HTMLElement[] {
+  const pills = Array.from(
+    editorRoot.querySelectorAll<HTMLSpanElement>(`span[${HANDOFF_MENTION_ATTR}]`)
+  ).filter((pill) => pill.tabIndex >= 0);
+  return [editorRoot, ...pills];
+}
+
+function syncMentionPillAccessibility(pill: HTMLSpanElement, agentId: string): void {
+  pill.tabIndex = 0;
+  pill.setAttribute("role", "button");
+  pill.setAttribute("aria-label", `Mention ${formatHandoffAgentIdPill(agentId, "full")}`);
+}
+
+function hasStrayDomElements(root: HTMLElement): boolean {
+  return handoffNoteDomSnapshot(root).some((node) => node.kind === "element");
+}
+
+function fullRebuildDocDom(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions
+): void {
+  root.replaceChildren();
+  if (doc.nodes.length === 0 || docToWire(doc) === "") {
+    // Empty open: no wire children — root box is CSS min-height/padding, not a blank band.
+    return;
+  }
+
+  const probeWires = new Set(listEmbeddedBlankBandProbeWires(doc));
+  let wireCursor = 0;
+  for (let nodeIndex = 0; nodeIndex < doc.nodes.length; nodeIndex++) {
+    const node = doc.nodes[nodeIndex]!;
+    if (node.type === "text") {
+      if (node.text) {
+        const next = doc.nodes[nodeIndex + 1];
+        appendWireTextToDom(
+          root,
+          node.text,
+          wireTextDomOptionsForDoc(doc, wireCursor, {
+            blankProbeWires: probeWires,
+            lineStartBeforeAtomic: isAtomicNode(next),
+          })
+        );
+        wireCursor += node.text.length;
+      }
+      continue;
+    }
+    const color = options.colorByAgentId.get(node.agentId) ?? "";
+    const highlighted = options.selectedMentionNodeIndex === nodeIndex;
+    root.appendChild(createMentionElement(node.agentId, color, highlighted, nodeIndex));
+    wireCursor += mentionWireLength(node.agentId);
+  }
+
+  appendDocLinePadIfNeeded(root, doc);
+}
+
+/** In-place text patch when rendered structure is unchanged. Returns false on any mismatch. */
+export function tryPatchDocDom(
+  root: HTMLElement,
+  prevDoc: HandoffNoteDoc,
+  nextDoc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions
+): boolean {
+  if (!sameRenderedDocStructure(prevDoc, nextDoc)) {
+    return false;
+  }
+
+  if (docGainedWireNewline(prevDoc, nextDoc)) {
+    return false;
+  }
+
+  for (const node of nextDoc.nodes) {
+    if (node.type === "text" && node.text.includes("\n")) {
+      return false;
+    }
+  }
+
+  const indexMap = buildRenderedNodeIndexMap(nextDoc);
+  if (root.childNodes.length !== indexMap.length) {
+    return false;
+  }
+
+  for (let childIdx = 0; childIdx < indexMap.length; childIdx++) {
+    const nodeIndex = indexMap[childIdx]!;
+    const node = nextDoc.nodes[nodeIndex]!;
+    const dom = root.childNodes[childIdx]!;
+
+    if (node.type === "text") {
+      if (dom.nodeType !== Node.TEXT_NODE) {
+        return false;
+      }
+      if (dom.textContent !== node.text) {
+        dom.textContent = node.text;
+      }
+      continue;
+    }
+
+    if (!isHandoffMentionElement(dom)) {
+      return false;
+    }
+    if (readMentionAgentId(dom) !== node.agentId) {
+      return false;
+    }
+  }
+
+  updateMentionPresentation(root, options);
+  return true;
+}
+
+function rebuildDocDomWithPresentation(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions
+): void {
+  fullRebuildDocDom(root, doc, options);
+  updateMentionPresentation(root, options);
+}
+
+function patchOrRebuildDocDom(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions,
+  previousDoc: HandoffNoteDoc | undefined
+): RenderOutcome {
+  if (
+    previousDoc &&
+    !docGainedWireNewline(previousDoc, doc) &&
+    tryPatchDocDom(root, previousDoc, doc, options)
+  ) {
+    return { domReplaced: false, docChanged: true };
+  }
+  rebuildDocDomWithPresentation(root, doc, options);
+  return { domReplaced: true, docChanged: true };
+}
+
+export function renderHandoffNoteDoc(
+  root: HTMLElement,
+  doc: HandoffNoteDoc,
+  options: HandoffNotePresentationOptions,
+  renderOptions?: RenderHandoffNoteDocRenderOptions
+): RenderOutcome {
+  const trustDoc = renderOptions?.trustDoc ?? false;
+  const previousDoc = renderOptions?.previousDoc;
+
+  if (trustDoc) {
+    const expectedCount = renderedDomChildCount(doc);
+    const domReady =
+      root.childNodes.length === expectedCount &&
+      !hasStrayDomElements(root) &&
+      (expectedCount > 0 || root.childNodes.length === 0);
+
+    if (domReady && previousDoc) {
+      return patchOrRebuildDocDom(root, doc, options, previousDoc);
+    }
+
+    rebuildDocDomWithPresentation(root, doc, options);
+    return { domReplaced: true, docChanged: true };
+  }
+
+  const wireBefore = parseHandoffNoteDom(root);
+  const wireAfter = docToWire(doc);
+  const structureMismatch = handoffNoteDomSnapshot(root).length !== renderedDomChildCount(doc);
+  if (
+    wireBefore === wireAfter &&
+    root.childNodes.length > 0 &&
+    !structureMismatch &&
+    !hasStrayDomElements(root)
+  ) {
+    updateMentionPresentation(root, options);
+    return { domReplaced: false, docChanged: false };
+  }
+
+  return patchOrRebuildDocDom(root, doc, options, previousDoc);
+}
+
+/** Update pill colors and highlight state without rebuilding DOM or touching selection. */
+export function updateMentionPresentation(
+  root: HTMLElement,
+  options: HandoffNotePresentationOptions
+): void {
+  const selectedMentionNodeIndex = options.selectedMentionNodeIndex ?? null;
+  const pills = root.querySelectorAll<HTMLSpanElement>(`span[${HANDOFF_MENTION_ATTR}]`);
+  for (const pill of pills) {
+    const agentId = readMentionAgentId(pill);
+    const color = options.colorByAgentId.get(agentId) ?? "";
+    pill.style.setProperty("--caliper-handoff-pill-color", color);
+    syncMentionPillAccessibility(pill, agentId);
+    const nodeIndex = readMentionNodeIndex(pill);
+    const on = selectedMentionNodeIndex !== null && nodeIndex === selectedMentionNodeIndex;
+    pill.classList.toggle(`${PREFIX}handoff-mention-pill-highlighted`, on);
+  }
+}
+
+/**
+ * Serialize editor DOM to wire string.
+ * Walks only direct meaningful children; mention spans contribute `@agentId` wire tokens.
+ */
+export function parseHandoffNoteDom(root: HTMLElement): string {
+  let wire = "";
+  let prevWasMention = false;
+  for (const child of root.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      wire += child.textContent ?? "";
+      prevWasMention = false;
+      continue;
+    }
+    if (isHandoffWireBreakElement(child)) {
+      wire += "\n";
+      prevWasMention = false;
+      continue;
+    }
+    if (isHandoffLinePadElement(child)) {
+      continue;
+    }
+    if (isHandoffBlankAnchorElement(child)) {
+      continue;
+    }
+    if (isHandoffLineStartAnchorElement(child)) {
+      continue;
+    }
+    if (isHandoffMentionElement(child)) {
+      const agentId = readMentionAgentId(child);
+      if (agentId) {
+        if (prevWasMention) {
+          wire += " ";
+        }
+        wire += `@${agentId}`;
+        prevWasMention = true;
+      }
+      continue;
+    }
+    if (child instanceof HTMLElement) {
+      wire += child.textContent ?? "";
+      prevWasMention = false;
+    }
+  }
+  return wire;
+}
+
+/** Build the doc model from CE DOM — never round-trip through flat wire (that loses mention boundaries). */
+export function parseHandoffNoteDomToDoc(root: HTMLElement): HandoffNoteDoc {
+  const nodes: HandoffNoteNode[] = [];
+  let pendingText = "";
+
+  const flushText = () => {
+    if (pendingText) {
+      nodes.push({ type: "text", text: pendingText });
+      pendingText = "";
+    }
+  };
+
+  for (const child of root.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      pendingText += child.textContent ?? "";
+      continue;
+    }
+    if (isHandoffWireBreakElement(child)) {
+      pendingText += "\n";
+      continue;
+    }
+    if (isHandoffLinePadElement(child)) {
+      continue;
+    }
+    if (isHandoffBlankAnchorElement(child)) {
+      continue;
+    }
+    if (isHandoffLineStartAnchorElement(child)) {
+      continue;
+    }
+    if (isHandoffMentionElement(child)) {
+      flushText();
+      const agentId = readMentionAgentId(child);
+      if (agentId) {
+        nodes.push({ type: "mention", agentId });
+      }
+      continue;
+    }
+    if (child instanceof HTMLElement) {
+      pendingText += child.textContent ?? "";
+    }
+  }
+  flushText();
+  return { nodes };
+}

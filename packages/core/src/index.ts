@@ -57,6 +57,170 @@ export {
   type MeasurementSystemListener,
 } from "./measurement-model/utils/measurement-system.js";
 export {
+  createHandoffRegistry,
+  type HandoffRegistry,
+  type HandoffRegistryItem,
+  type HandoffRegistryListener,
+  type HandoffCommitListener,
+  type HandoffUIState,
+  type HandoffPresentation,
+  type HandoffElementResolver,
+} from "./handoff-model/utils/handoff-registry.js";
+export { readPersistedHandoff, persistHandoff } from "./handoff-model/utils/handoff-session.js";
+export {
+  resolveHandoffNote,
+  isHandoffPendingNoteEmpty,
+  isExactHandoffMentionQuery,
+  resolveActiveHandoffMentionQueryDoc,
+  exclusiveWireEndForContentCaret,
+  type ActiveHandoffDocMentionQuery,
+  handoffItemLabel,
+  filterHandoffItems,
+  handoffResolvedNoteToWire,
+  formatHandoffAgentIdPill,
+  type HandoffAgentIdPillVariant,
+} from "./handoff-model/utils/handoff-note.js";
+export {
+  wireToDoc,
+  parseHandoffNoteWire,
+  HANDOFF_AGENT_ID_PATTERN,
+  HANDOFF_MENTION_PATTERN,
+  docToWire,
+  docLength,
+  isEmptyDoc,
+  createTextDoc,
+  emptyHandoffNoteDoc,
+  resolveDocPosition,
+  offsetAtDocPosition,
+  spliceDocWireRange,
+  insertMentionAt,
+  separateAdjacentMentions,
+  normalizeHandoffNoteDoc,
+  canonicalizeHandoffNoteDocFromWire,
+  docsEqual,
+  resolveHandoffNoteMentionEdit,
+  resolveHandoffNoteArrowMove,
+  describeHandoffNoteCursorContext,
+  snapHandoffNoteCursorOutOfMentionInterior,
+  resolveHandoffWireCursor,
+  type HandoffNoteEdit,
+  type HandoffNoteArrowDirection,
+  type HandoffNoteNavDirection,
+  isArrow,
+  type HandoffNoteCursorContext,
+  type HandoffNoteDoc,
+  type HandoffNoteNode,
+  type HandoffNoteTextNode,
+  type HandoffNoteMentionNode,
+} from "./handoff-model/note-doc/handoff-note-doc.js";
+export {
+  collapsedSelection,
+  cloneDoc,
+  cloneSelection,
+  docEndPos,
+  docPosEqual,
+  docPosToRenderedChildIndex,
+  docPosToWireOffset,
+  expandSelectionFocusToDocEndIfNeeded,
+  docSelectionToWireRange,
+  docsStructurallyEqual,
+  mentionCountInDoc,
+  nodeTokenLength,
+  normalizeDocPos,
+  normalizeSelection,
+  renderedChildCount,
+  resolveDocVerticalArrowMove,
+  isAtomicNode,
+  isInterMentionAtomStart,
+  snapInterMentionAtomLanding,
+  docSelectionToWire,
+  selectionsEqual,
+  wireOffsetToCollapsedSelection,
+  wireOffsetToDocPos,
+  caretAffinityForAmbiguousBreak,
+  collapsedSelectionCarryingAffinity,
+  collapsedSelectionReconcilingAffinity,
+  collapsedSelectionWithIntent,
+  docPosAfterAmbiguousContentRowEndChar,
+  focusAffinityIfAmbiguousBreak,
+  isCaretOnAmbiguousContentRowEndChar,
+  isCaretOnContentCharBeforeNewline,
+  resolveDirectionalUnitFocus,
+  type DirectionalUnitFocus,
+  type DocPosBias,
+  type HandoffNoteCaretAffinity,
+  type HandoffNoteDocPos,
+  type HandoffNoteSelection,
+} from "./handoff-model/note-doc/handoff-note-doc-pos.js";
+export {
+  resolveWireLineColumn,
+  type HandoffNoteVerticalArrowDirection,
+  type WireLineColumn,
+} from "./handoff-model/note-doc/handoff-note-wire-lines.js";
+export {
+  resolveVerticalArrowWireMove,
+  resolveVerticalArrowCrossLineMove,
+  resolveVerticalArrowRowStartLanding,
+  resolveVerticalArrowMinWireLineStart,
+  resolveHorizontalBleedWireMove,
+  type VerticalNavLineSpan,
+  type VerticalNavWireMove,
+} from "./handoff-model/note-doc/handoff-note-vertical-nav.js";
+export {
+  applyDocDelete,
+  applyDocInsertText,
+  applyDocLineBreak,
+  insertMentionAtSelection,
+  resolveHandoffNoteDeletePostLayoutRemount,
+  spliceDocSelection,
+  type HandoffDocDeleteResult,
+  type HandoffDocEditResult,
+  type HandoffNoteDeletePostLayoutRemount,
+} from "./handoff-model/note-doc/handoff-note-doc-edits.js";
+export {
+  docTextNodeHasEmbeddedNewline,
+  docPosAtEmbeddedBlankBandProbeAliasLanding,
+  resolveRowChipLanding,
+  embeddedBlankBandAtEmptyContentRowEnd,
+  embeddedBlankBandContentRowEndBeforeProbe,
+  embeddedBlankBandSubstantiveContentAbutsProbe,
+  embeddedBlankBandProbePaintsBareWireBreak,
+  embeddedBlankBandProbeEmitsBlankAnchor,
+  blankBandOpenerProbeForStop,
+  blankVisualLineStartOpenedByProbe,
+  embeddedBlankBandSpacerBeforeProbeRowChip,
+  embeddedTextLedLowerRowSpanAfterBlankBand,
+  isEmbeddedBlankBandCollapseProbeWire,
+  isEmbeddedBlankBandProbeWire,
+  isInlineSuffixBlankProbeWire,
+  isWireOnEmbeddedTextLedLowerRowAfterBlankBand,
+  listEmbeddedBlankBandGroups,
+  listEmbeddedBlankBandProbeWires,
+  listBlankVisualLineStartWires,
+  listVisualRowAnchorWires,
+  docPosAfterBlankBandCollapse,
+  resolveBlankVisualLineStartCollapse,
+  resolveEmbeddedBlankBandCollapse,
+  resolveDeleteFromEmptyContentRowEnd,
+  resolveBackspaceFromEmptyContentRowEnd,
+  isTrailingNewlinePastEndWire,
+  embeddedBlankBandRowAboveProbeIsEmpty,
+  type HandoffNoteVisualRowSeat,
+  type EmptyContentRowEndDeleteResolution,
+  type EmbeddedBlankBandCollapseMove,
+} from "./handoff-model/note-doc/handoff-note-embedded-newlines.js";
+export {
+  HANDOFF_COLOR_COUNT,
+  HANDOFF_PALETTE,
+  assignColorIndex,
+} from "./handoff-model/utils/handoff-colors.js";
+export { sanitizeHandoffSelection } from "./handoff-model/utils/sanitize-handoff-selection.js";
+export {
+  resolveHandoffPanelPosition,
+  type HandoffPanelPosition,
+  type HandoffPanelPositionInput,
+} from "./geometry/utils/handoff-panel-position.js";
+export {
   createSelectionSystem,
   type SelectionSystem,
   type SelectionMetadata,
@@ -101,6 +265,7 @@ export type {
   ProjectionShortcuts,
   CaliperAgentState,
 } from "./shared/config/overlay-config.js";
+export type { CaliperHandoffState } from "@oyerinde/caliper-schema";
 export {
   applyTheme,
   mergeCommands,
@@ -116,6 +281,7 @@ export { getElementDirectText } from "./shared/utils/text-content.js";
 export { getOverlayRoot } from "./shared/utils/dom-utils.js";
 export { filterRuntimeClasses } from "./shared/utils/class-filter.js";
 export { buildSelectorInfo, caliperProps } from "./shared/utils/selector.js";
+export { resolveElementFromFingerprint } from "./shared/utils/fingerprint-resolve.js";
 export { waitPostRaf } from "./shared/utils/raf.js";
 export { logger, createLogger, formatElement, formatRect } from "./shared/utils/logger.js";
 export { getNormalizedModifiers, getLogicalKey, isKeyMatch } from "./shared/utils/keyboard.js";

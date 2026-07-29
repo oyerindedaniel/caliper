@@ -87,6 +87,7 @@ export const CALIPER_METHODS = {
   WALK_DOM: "CALIPER_WALK_DOM",
   WALK_AND_MEASURE: "CALIPER_WALK_AND_MEASURE",
   GET_CONTEXT: "CALIPER_GET_CONTEXT",
+  HANDOFF_RESTORE: "CALIPER_HANDOFF_RESTORE",
   REGISTER_TAB: "caliper/registerTab",
   TAB_UPDATE: "caliper/tabUpdate",
   STATE_UPDATE: "caliper/stateUpdate",
@@ -101,6 +102,7 @@ export const CaliperBaseMethodSchema = z.enum([
   CALIPER_METHODS.WALK_DOM,
   CALIPER_METHODS.WALK_AND_MEASURE,
   CALIPER_METHODS.GET_CONTEXT,
+  CALIPER_METHODS.HANDOFF_RESTORE,
 ]);
 
 export const CaliperBridgeNotificationMethodSchema = z.enum([
@@ -130,6 +132,24 @@ export const SourceHintsSchema = z.object({
   unstableClasses: z.array(z.string()),
   tagName: z.string(),
 });
+
+export const CaliperHandoffItemSchema = z.object({
+  agentId: z.string(),
+  fingerprint: CaliperSelectorInputSchema,
+  selection: SelectionMetadataSchema,
+  colorIndex: z.number().int().min(0).optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+});
+
+export const CaliperHandoffStateSchema = z.object({
+  items: z.array(CaliperHandoffItemSchema),
+  note: z.string(),
+  activeItemId: z.string().nullable().optional(),
+});
+
+export type CaliperHandoffItem = z.infer<typeof CaliperHandoffItemSchema>;
+export type CaliperHandoffState = z.infer<typeof CaliperHandoffStateSchema>;
 
 export const CaliperActionResultSchema = z.union([
   z.object({
@@ -216,6 +236,12 @@ export const CaliperActionResultSchema = z.union([
     context: ContextMetricsSchema,
     runtimeConnection: CaliperRuntimeConnectionSchema.optional(),
     auditContext: CaliperAuditContextSchema.optional(),
+    timestamp: z.number(),
+  }),
+  z.object({
+    success: z.literal(true),
+    method: z.literal(CALIPER_METHODS.HANDOFF_RESTORE),
+    restoredCount: z.number(),
     timestamp: z.number(),
   }),
   z.object({
@@ -343,15 +369,7 @@ export type SourceHints = z.infer<typeof SourceHintsSchema>;
 
 export const CaliperAgentStateSchema = z.object({
   viewport: ViewportSchema,
-  activeSelection: SelectionMetadataSchema.nullable(),
-  selectionFingerprint: CaliperSelectorInputSchema.nullable(),
-  lastMeasurement: MeasurementResultSchema.nullable(),
-  measurementFingerprint: z
-    .object({
-      primary: CaliperSelectorInputSchema,
-      secondary: CaliperSelectorInputSchema,
-    })
-    .nullable(),
+  handoff: CaliperHandoffStateSchema.nullable(),
   pageId: z.string().nullable().optional(),
   lastUpdated: z.number(),
 });
@@ -504,6 +522,8 @@ export const CaliperWalkAndMeasurePayloadSchema = WalkOptionsSchema.extend({
 
 export const CaliperGetContextPayloadSchema = CaliperEnginePageScopeSchema;
 
+export const CaliperHandoffRestorePayloadSchema = CaliperEnginePageScopeSchema;
+
 export type ViewportState = z.infer<typeof ViewportSchema>;
 export type ElementGeometry = z.infer<typeof ElementGeometrySchema>;
 export type CaliperActionResult = z.infer<typeof CaliperActionResultSchema>;
@@ -519,6 +539,7 @@ export type CaliperInspectPayload = z.infer<typeof CaliperInspectPayloadSchema>;
 export type CaliperWalkDomPayload = z.infer<typeof CaliperWalkDomPayloadSchema>;
 export type CaliperWalkAndMeasurePayload = z.infer<typeof CaliperWalkAndMeasurePayloadSchema>;
 export type CaliperGetContextPayload = z.infer<typeof CaliperGetContextPayloadSchema>;
+export type CaliperHandoffRestorePayload = z.infer<typeof CaliperHandoffRestorePayloadSchema>;
 
 export type CaliperBaseParamsByMethod = {
   [CALIPER_METHODS.SELECT]: CaliperSelectPayload;
@@ -529,6 +550,7 @@ export type CaliperBaseParamsByMethod = {
   [CALIPER_METHODS.WALK_DOM]: CaliperWalkDomPayload;
   [CALIPER_METHODS.WALK_AND_MEASURE]: CaliperWalkAndMeasurePayload;
   [CALIPER_METHODS.GET_CONTEXT]: CaliperGetContextPayload;
+  [CALIPER_METHODS.HANDOFF_RESTORE]: CaliperHandoffRestorePayload;
 };
 
 export type CaliperBaseRequest = {

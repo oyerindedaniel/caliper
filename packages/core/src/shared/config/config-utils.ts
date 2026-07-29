@@ -102,6 +102,10 @@ export function mergeCommands(userCommands?: CommandsConfig): DeepRequired<Comma
       userCommands?.selectionHoldDuration,
       DEFAULT_COMMANDS.selectionHoldDuration
     ),
+    handoff: {
+      open: userCommands?.handoff?.open ?? DEFAULT_COMMANDS.handoff.open,
+      restore: userCommands?.handoff?.restore ?? DEFAULT_COMMANDS.handoff.restore,
+    },
   };
 }
 

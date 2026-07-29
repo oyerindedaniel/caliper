@@ -1,0 +1,244 @@
+import {
+  HANDOFF_MENTION_PATTERN,
+  describeHandoffNoteCursorContext,
+  docToWire,
+  parseHandoffNoteWire,
+  type HandoffNoteDoc,
+} from "../note-doc/handoff-note-doc.js";
+import {
+  docPosToWireOffset,
+  normalizeDocPos,
+  type HandoffNoteDocPos,
+  type HandoffNoteSelection,
+  wireOffsetToDocPos,
+} from "../note-doc/handoff-note-doc-pos.js";
+
+export type HandoffAgentIdPillVariant = "compact" | "full";
+
+export function formatHandoffAgentIdPill(
+  agentId: string,
+  variant: HandoffAgentIdPillVariant = "compact"
+): string {
+  if (variant === "full") {
+    return agentId;
+  }
+  return agentId.replace(/^caliper-/, "");
+}
+
+export function resolveHandoffNote(note: string): string {
+  return note.replace(HANDOFF_MENTION_PATTERN, "$1");
+}
+
+/** Rebuild editor wire (`@caliper-…` pills) from a resolved commit note + item ids. */
+export function handoffResolvedNoteToWire(note: string, agentIds: readonly string[]): string {
+  if (agentIds.length === 0) {
+    return note;
+  }
+  let wire = note;
+  const unique = [...new Set(agentIds)].sort((left, right) => right.length - left.length);
+  for (const agentId of unique) {
+    if (!agentId) {
+      continue;
+    }
+    const escaped = agentId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    wire = wire.replace(new RegExp(escaped, "g"), `@${agentId}`);
+  }
+  return wire;
+}
+
+export function isHandoffPendingNoteEmpty(note: string): boolean {
+  return !resolveHandoffNote(note).trim();
+}
+
+export function handoffItemLabel(fingerprint: {
+  text?: string;
+  tag?: string;
+  marker?: string;
+  tagName?: string;
+  selector: string;
+}): string {
+  const text = fingerprint.text?.trim();
+  if (text) {
+    return text.length > 24 ? `${text.slice(0, 24)}…` : text;
+  }
+  const marker = fingerprint.marker?.trim();
+  if (marker) {
+    return marker.length > 24 ? `${marker.slice(0, 24)}…` : marker;
+  }
+  if (fingerprint.tagName) {
+    return fingerprint.tagName;
+  }
+  return fingerprint.selector.replace(/^caliper-/, "").slice(0, 12);
+}
+
+type ActiveHandoffMentionQuery = {
+  queryStart: number;
+  query: string;
+};
+
+export type ActiveHandoffDocMentionQuery = {
+  queryStart: HandoffNoteDocPos;
+  query: string;
+};
+
+/**
+ * A committed pill's `@` is never an active typed `@query` start — including when the
+ * caret sits on mention-start (cursor < end). Requiring `cursor >= end` missed that case
+ * and reopened the popover after deleting a pre-pill spacer onto the atom.
+ */
+function isQueryInsideCommittedMention(note: string, queryStart: number): boolean {
+  let offset = 0;
+  for (const node of parseHandoffNoteWire(note)) {
+    if (node.type === "text") {
+      offset += node.text.length;
+      continue;
+    }
+
+    const start = offset;
+    const end = offset + 1 + node.agentId.length;
+    if (queryStart === start) {
+      return true;
+    }
+    offset = end;
+  }
+  return false;
+}
+
+function pickBestMentionQueryCandidate(
+  note: string,
+  candidates: ActiveHandoffMentionQuery[]
+): ActiveHandoffMentionQuery | null {
+  let best: ActiveHandoffMentionQuery | null = null;
+  for (const candidate of candidates) {
+    if (isQueryInsideCommittedMention(note, candidate.queryStart)) {
+      continue;
+    }
+    if (!best || candidate.queryStart > best.queryStart) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/**
+ * Exclusive wire end for `@query` parse. Insert snap / Rule 4 content-row-end rest on the
+ * last character wire while the insertion point is after that character. `slice(0, caretWire)`
+ * would drop that character and miss `@` / filter text when a `\n` follows.
+ */
+export function exclusiveWireEndForContentCaret(note: string, caretWire: number): number {
+  const clamped = Math.max(0, Math.min(caretWire, note.length));
+  if (clamped < note.length && note[clamped] !== "\n") {
+    return clamped + 1;
+  }
+  return clamped;
+}
+
+/**
+ * Popover session parse: same-line `@query` or typed continuation after newlines.
+ * Blank lines alone after `@` are not an active session — Shift+Enter closes the popover.
+ * Caret wire uses content-row-end meaning (see exclusiveWireEndForContentCaret).
+ */
+function resolveActiveHandoffMentionQuery(
+  note: string,
+  cursor: number
+): ActiveHandoffMentionQuery | null {
+  const parseEnd = exclusiveWireEndForContentCaret(note, cursor);
+  const beforeCursor = note.slice(0, parseEnd);
+  const candidates: ActiveHandoffMentionQuery[] = [];
+
+  const sameLine = beforeCursor.match(/@([^\s@]*)$/);
+  if (sameLine?.index !== undefined) {
+    candidates.push({ queryStart: sameLine.index, query: sameLine[1] ?? "" });
+  }
+
+  const continued = beforeCursor.match(/@(\n+)([^\s@]+)$/);
+  if (continued?.index !== undefined) {
+    candidates.push({ queryStart: continued.index, query: continued[2] ?? "" });
+  }
+
+  return pickBestMentionQueryCandidate(note, candidates);
+}
+
+/** Insert redirect: fold filter chars across newlines onto the `@` line (blank or existing query). */
+export function resolveMentionQueryMultilineInsert(
+  note: string,
+  cursor: number
+): ActiveHandoffMentionQuery | null {
+  const parseEnd = exclusiveWireEndForContentCaret(note, cursor);
+  const beforeCursor = note.slice(0, parseEnd);
+  const withNewlines = beforeCursor.match(/@([^\s@]*)(\n+)([^\s@]*)$/);
+  if (withNewlines?.index === undefined) {
+    return null;
+  }
+
+  return pickBestMentionQueryCandidate(note, [
+    {
+      queryStart: withNewlines.index,
+      query: (withNewlines[1] ?? "") + (withNewlines[3] ?? ""),
+    },
+  ]);
+}
+
+/** Doc-native `@query` session parse; wire conversion stays inside core only. */
+export function resolveActiveHandoffMentionQueryDoc(
+  doc: HandoffNoteDoc,
+  selection: HandoffNoteSelection
+): ActiveHandoffDocMentionQuery | null {
+  const focus = normalizeDocPos(doc, selection.focus);
+  const focusWire = docPosToWireOffset(doc, focus);
+  const wire = docToWire(doc);
+  const caretContext = describeHandoffNoteCursorContext(doc, focusWire);
+  if (caretContext.kind === "mention-interior") {
+    return null;
+  }
+  // Committed atom boundaries are never typed `@query` sessions (start or end).
+  if (caretContext.kind === "mention-boundary") {
+    return null;
+  }
+  const active = resolveActiveHandoffMentionQuery(wire, focusWire);
+  if (!active) {
+    return null;
+  }
+  return {
+    queryStart: normalizeDocPos(doc, wireOffsetToDocPos(doc, active.queryStart)),
+    query: active.query,
+  };
+}
+
+export function normalizeHandoffFilterQuery(query: string): string {
+  return query.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+export function isExactHandoffMentionQuery(query: string, agentIds: Iterable<string>): boolean {
+  if (!query) {
+    return false;
+  }
+  const token = `@${query}`;
+  for (const agentId of agentIds) {
+    if (`@${agentId}` === token) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function filterHandoffItems<
+  T extends { agentId: string; fingerprint: Parameters<typeof handoffItemLabel>[0] },
+>(items: T[], query: string): T[] {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return items;
+  }
+  const compact = normalizeHandoffFilterQuery(trimmed);
+  const lowered = trimmed.toLowerCase();
+  return items.filter((item) => {
+    const label = handoffItemLabel(item.fingerprint);
+    const compactLabel = normalizeHandoffFilterQuery(label);
+    const agentId = item.agentId.toLowerCase();
+    return (
+      compactLabel.includes(compact) ||
+      agentId.includes(lowered) ||
+      agentId.replace(/\s+/g, "").includes(compact)
+    );
+  });
+}

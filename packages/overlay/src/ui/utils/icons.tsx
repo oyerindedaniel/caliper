@@ -17,6 +17,15 @@ const iconStyle = {
 };
 
 export const Icons = {
+  close: (): JSX.Element => (
+    <svg
+      viewBox="0 0 24 24"
+      style={{ ...iconStyle, width: "10px", height: "10px", "stroke-width": "2.5" }}
+    >
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  ),
   "+": (): JSX.Element => (
     <svg viewBox="0 0 24 24" style={iconStyle}>
       <line x1="12" y1="5" x2="12" y2="19" />

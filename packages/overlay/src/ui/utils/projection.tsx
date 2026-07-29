@@ -29,6 +29,7 @@ export function ProjectionOverlay(props: ProjectionOverlayProps) {
         projectionState={props.projectionState}
         metadata={props.metadata}
         viewport={props.viewport}
+        isFocused={props.isFocused}
         onLineClick={props.onLineClick}
       />
       <ProjectionInput
@@ -51,6 +52,7 @@ function ProjectionLines(props: {
     height: number;
     version: number;
   }>;
+  isFocused?: boolean;
   onLineClick?: (line: MeasurementLine, liveValue: number) => void;
 }) {
   const lineData = createMemo(() => {
@@ -124,7 +126,7 @@ function ProjectionLines(props: {
           x2={lineData()!.x2}
           y2={lineData()!.y2}
           class={`${PREFIX}projection-line`}
-          stroke-width={isHovered() ? 2 : 1}
+          stroke-width={props.isFocused || isHovered() ? 2 : 1}
         />
       </svg>
       <Show when={lineData()!.showLabel}>

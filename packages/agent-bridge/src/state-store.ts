@@ -1,6 +1,6 @@
 import type { CaliperAgentState } from "@oyerinde/caliper-schema";
-import { type CaliperCoreSystems, buildSelectorInfo } from "@caliper/core";
-import { getContextMetrics, sanitizeSelection, sanitizeMeasurement } from "./utils.js";
+import { persistHandoff, readPersistedHandoff, type HandoffRegistry } from "@caliper/core";
+import { getContextMetrics } from "./utils.js";
 
 const AGENT_LOCK_EVENT = "caliper:agent-lock-change";
 
@@ -16,6 +16,12 @@ export function createStateStore() {
     updateState: (statePatch: Partial<CaliperAgentState>) => {
       if (activeState) {
         activeState = { ...activeState, ...statePatch };
+      }
+    },
+    clearHandoff: () => {
+      persistHandoff(null);
+      if (activeState) {
+        activeState = { ...activeState, handoff: null, lastUpdated: Date.now() };
       }
     },
     clear: () => {
@@ -39,7 +45,7 @@ export function createStateStore() {
 
 export function initStateSync(
   stateStore: CaliperStateStore,
-  systems: CaliperCoreSystems,
+  handoffRegistry: HandoffRegistry,
   updateCallback: (state: CaliperAgentState) => void
 ) {
   const initialContext = getContextMetrics();
@@ -50,17 +56,19 @@ export function initStateSync(
       scrollX: initialContext.scrollX,
       scrollY: initialContext.scrollY,
     },
-    activeSelection: null,
-    selectionFingerprint: null,
-    lastMeasurement: null,
-    measurementFingerprint: null,
+    handoff: readPersistedHandoff(),
     lastUpdated: Date.now(),
   });
 
-  const unsubSelection = systems.selectionSystem.onUpdate((metadata) => {
+  const persistedHandoff = stateStore.getState()?.handoff;
+  if (persistedHandoff) {
+    updateCallback(stateStore.getState()!);
+  }
+
+  const unsubCommit = handoffRegistry.onCommit((handoff) => {
+    persistHandoff(handoff);
     stateStore.updateState({
-      activeSelection: sanitizeSelection(metadata),
-      selectionFingerprint: metadata.element ? buildSelectorInfo(metadata.element, metadata) : null,
+      handoff,
       lastUpdated: Date.now(),
     });
 
@@ -70,34 +78,8 @@ export function initStateSync(
     }
   });
 
-  const unsubMeasurement = systems.measurementSystem.onStateChange(() => {
-    const measurementResult = systems.measurementSystem.getCurrentResult();
-    const primaryElement = systems.selectionSystem.getSelected();
-    const secondaryElement = systems.measurementSystem.getSecondaryElement();
-
-    let measurementFingerprint = null;
-    if (primaryElement && secondaryElement) {
-      measurementFingerprint = {
-        primary: buildSelectorInfo(primaryElement),
-        secondary: buildSelectorInfo(secondaryElement),
-      };
-    }
-
-    stateStore.updateState({
-      lastMeasurement: sanitizeMeasurement(measurementResult),
-      measurementFingerprint,
-      lastUpdated: Date.now(),
-    });
-
-    const activeState = stateStore.getState();
-    if (activeState) {
-      updateCallback(activeState);
-    }
-  });
-
   return () => {
-    unsubSelection();
-    unsubMeasurement();
+    unsubCommit();
   };
 }
 

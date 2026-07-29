@@ -43,6 +43,13 @@ export interface ProjectionShortcuts {
   right?: string;
 }
 
+export interface HandoffCommandsConfig {
+  /** Toggle handoff note input open/submit (default: Enter) */
+  open?: string;
+  /** Restore handoff highlights from persisted state (optional, e.g. "h") */
+  restore?: string;
+}
+
 export interface CommandsConfig {
   /** Key to activate measuring mode (default: Alt) */
   activate?: string;
@@ -52,6 +59,8 @@ export interface CommandsConfig {
   select?: string;
   /** Key to clear current selection (default: Escape) */
   clear?: string;
+  /** Handoff note input commands */
+  handoff?: HandoffCommandsConfig;
   /** Custom keys to trigger calculator for specific sides (default: t, r, b, l) */
   calculator?: CalculatorShortcuts;
   /** Custom keys to trigger projection for specific directions (default: w, a, s, d) */
@@ -118,6 +127,10 @@ export const DEFAULT_COMMANDS: DeepRequired<CommandsConfig> = {
   },
   ruler: "r",
   selectionHoldDuration: 250,
+  handoff: {
+    open: "Enter",
+    restore: "",
+  },
 };
 
 export const DEFAULT_THEME: DeepRequired<ThemeConfig> = {

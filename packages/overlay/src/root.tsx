@@ -1,4 +1,4 @@
-import { onMount, onCleanup, createSignal, createEffect, untrack, createMemo } from "solid-js";
+import { onMount, onCleanup, createSignal, createEffect, untrack, createMemo, on } from "solid-js";
 import {
   createMeasurementSystem,
   createSelectionSystem,
@@ -27,8 +27,14 @@ import {
   buildSelectorInfo,
   generateId,
   getMaxProjectionDistance,
+  createHandoffRegistry,
+  type HandoffRegistry,
+  type HandoffUIState,
+  resolveElementFromFingerprint,
+  persistHandoff,
 } from "@caliper/core";
 import { Overlay } from "./ui/utils/render-overlay.jsx";
+import { createHandoffKeyboardController } from "./handoff/handoff-keyboard.js";
 import { PREFIX } from "./css/styles.js";
 
 interface RootConfig {
@@ -37,6 +43,7 @@ interface RootConfig {
   onSystemsReady?: (systems: {
     measurementSystem: MeasurementSystem;
     selectionSystem: SelectionSystem;
+    handoffRegistry: HandoffRegistry;
   }) => void;
 }
 
@@ -92,8 +99,15 @@ export function Root(config: RootConfig) {
   const [isFrozen, setIsFrozen] = createSignal(false);
   const [isCopied, setIsCopied] = createSignal(false);
   const [isAgentActive, setIsAgentActive] = createSignal(false);
+  const [handoffState, setHandoffState] = createSignal<HandoffUIState | null>(null);
+  const [handoffRegistryRef, setHandoffRegistryRef] = createSignal<HandoffRegistry | null>(null);
+  const [mentionOpen, setMentionOpen] = createSignal(false);
+  const [handoffSubmitShakeTick, setHandoffSubmitShakeTick] = createSignal(0);
 
   let copyTimeoutId: number | null = null;
+
+  let handoffRegistry: HandoffRegistry | null = null;
+  let handleHandoffKeyboard: ((e: KeyboardEvent) => boolean) | null = null;
 
   const ignoredElements = new WeakSet<Element>();
 
@@ -140,7 +154,8 @@ export function Root(config: RootConfig) {
       !!selectionMetadata().element ||
       !!result() ||
       rulerState().lines.length > 0 ||
-      projectionState().direction !== null
+      projectionState().direction !== null ||
+      (handoffState()?.items.length ?? 0) > 0
     );
   });
 
@@ -166,6 +181,14 @@ export function Root(config: RootConfig) {
   onMount(() => {
     selectionSystem = createSelectionSystem();
     system = createMeasurementSystem();
+    handoffRegistry = createHandoffRegistry(resolveElementFromFingerprint);
+    setHandoffRegistryRef(handoffRegistry);
+    handleHandoffKeyboard = createHandoffKeyboardController({
+      registry: handoffRegistry,
+      commands,
+      isMentionOpen: () => mentionOpen(),
+      onRejectEmptySubmit: () => setHandoffSubmitShakeTick((tick) => tick + 1),
+    });
     projectionSystem = system.getProjection();
     rulerSystem = system.getRuler();
 
@@ -173,8 +196,13 @@ export function Root(config: RootConfig) {
       config.onSystemsReady({
         measurementSystem: system,
         selectionSystem,
+        handoffRegistry,
       });
     }
+
+    const unsubscribeHandoff = handoffRegistry.onUpdate((state) => {
+      setHandoffState(state);
+    });
 
     const unsubscribeProjection = projectionSystem.onUpdate((state) => {
       setProjectionState(state);
@@ -232,7 +260,30 @@ export function Root(config: RootConfig) {
       }
     };
 
+    const performHandoffToggle = (x: number, y: number) => {
+      if (isAgentActive() || !handoffRegistry) return;
+
+      const element = getTopElementAtPoint(x, y);
+      if (!element) return;
+
+      handoffRegistry.toggle(element);
+    };
+
+    const isSelectModifierActive = (e: MouseEvent | PointerEvent | KeyboardEvent): boolean => {
+      const mods = getNormalizedModifiers(e);
+      const key = commands.select;
+
+      if (key in mods) {
+        return mods[key as keyof typeof mods] === true;
+      }
+
+      return isSelectKeyDown();
+    };
+
+    /** Ctrl/Cmd without Shift — measurement select via hold. */
     const isCommandActive = (e: MouseEvent | PointerEvent | KeyboardEvent): boolean => {
+      if (e.shiftKey) return false;
+
       const mods = getNormalizedModifiers(e);
       const key = commands.select;
 
@@ -245,14 +296,63 @@ export function Root(config: RootConfig) {
       return isSelectKeyDown() && !mods.Control && !mods.Meta && !mods.Alt && !mods.Shift;
     };
 
+    /** Shift + Ctrl/Cmd + click — toggle handoff items (multi-select). */
+    const isHandoffPickActive = (e: MouseEvent | PointerEvent | KeyboardEvent): boolean => {
+      if (!e.shiftKey || !isSelectModifierActive(e)) return false;
+
+      const mods = getNormalizedModifiers(e);
+      const key = commands.select;
+
+      if (key in mods) {
+        return Object.entries(mods).every(([name, value]) => {
+          if (name === key || name === "Shift") return value === true;
+          return value === false;
+        });
+      }
+
+      return isSelectKeyDown() && e.shiftKey;
+    };
+
     const isActivateActive = (e: KeyboardEvent): boolean => {
       return isKeyMatch(commands.activate, e);
     };
+
+    let lastMouseEvent: MouseEvent | null = null;
+    let mouseMoveRafId: number | null = null;
+    let lastHoveredElement: Element | null = null;
+
+    const selectionDelegate = createSuppressionDelegate((el: Element) => {
+      if (selectionSystem?.getSelected() !== el) {
+        system?.abort();
+        resetCopyFeedback();
+      }
+      lastHoveredElement = el;
+      selectionSystem?.select(el);
+    });
+
+    const measureDelegate = createSuppressionDelegate(
+      (el: Element, cursor: { x: number; y: number }, hover: Element | null) => {
+        if (hover) {
+          lastHoveredElement = hover;
+        }
+        system?.measure(el, cursor);
+      }
+    );
 
     const handlePointerDown = (e: PointerEvent) => {
       if (isAgentActive()) return;
 
       lastPointerPos = { x: e.clientX, y: e.clientY };
+
+      if (isHandoffPickActive(e)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        selectionDelegate.cancel();
+        measureDelegate.cancel();
+        if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
+        selectionTimeoutId = null;
+        return;
+      }
 
       if (isCommandActive(e)) {
         e.preventDefault();
@@ -262,17 +362,19 @@ export function Root(config: RootConfig) {
           performSelection(lastPointerPos.x, lastPointerPos.y);
           selectionTimeoutId = null;
         }, commands.selectionHoldDuration);
-      } else {
-        if (selectionTimeoutId) window.clearTimeout(selectionTimeoutId);
+      } else if (selectionTimeoutId) {
+        window.clearTimeout(selectionTimeoutId);
+        selectionTimeoutId = null;
       }
     };
 
     const handleClick = (e: MouseEvent) => {
       if (isAgentActive()) return;
 
-      if (isCommandActive(e)) {
+      if (isHandoffPickActive(e)) {
         e.preventDefault();
         e.stopImmediatePropagation();
+        performHandoffToggle(e.clientX, e.clientY);
       }
     };
 
@@ -329,7 +431,6 @@ export function Root(config: RootConfig) {
             );
           }
         } else {
-          // Right-Click: Copy agent ID(s)
           const ensureAgentId = (el: Element): string => {
             let id = el.getAttribute("data-caliper-agent-id");
             if (!id) {
@@ -374,28 +475,6 @@ export function Root(config: RootConfig) {
       }
     };
 
-    let lastMouseEvent: MouseEvent | null = null;
-    let mouseMoveRafId: number | null = null;
-    let lastHoveredElement: Element | null = null;
-
-    const selectionDelegate = createSuppressionDelegate((el: Element) => {
-      if (selectionSystem?.getSelected() !== el) {
-        system?.abort();
-        resetCopyFeedback();
-      }
-      lastHoveredElement = el;
-      selectionSystem?.select(el);
-    });
-
-    const measureDelegate = createSuppressionDelegate(
-      (el: Element, cursor: { x: number; y: number }, hover: Element | null) => {
-        if (hover) {
-          lastHoveredElement = hover;
-        }
-        system?.measure(el, cursor);
-      }
-    );
-
     const processMouseMove = () => {
       if (!lastMouseEvent || !selectionSystem) {
         mouseMoveRafId = null;
@@ -430,7 +509,9 @@ export function Root(config: RootConfig) {
             measureDelegate.execute(!!isAncestor, selectedElement, cursorPoint, hoveredElement);
           }
         } else if (state !== "FROZEN") {
-          if (hoveredElement && !lastHoveredDetached) {
+          const suppressHoverSelection =
+            isSelectKeyDown() || (handoffRegistry?.getItems().length ?? 0) > 0;
+          if (hoveredElement && !lastHoveredDetached && !suppressHoverSelection) {
             selectionDelegate.execute(!!isAncestor, hoveredElement);
           }
         }
@@ -447,6 +528,11 @@ export function Root(config: RootConfig) {
       }
     };
 
+    const handleHandoffKeyboardEvent = (e: KeyboardEvent): boolean => {
+      if (!handleHandoffKeyboard) return false;
+      return handleHandoffKeyboard(e);
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isAgentActive() && !isKeyMatch(commands.clear, e)) return;
 
@@ -455,6 +541,19 @@ export function Root(config: RootConfig) {
 
         e.preventDefault();
         e.stopImmediatePropagation();
+
+        if (e.shiftKey && (handoffRegistry?.getItems().length ?? 0) > 0) {
+          handoffRegistry?.resetPendingNote();
+          handoffRegistry?.clear();
+          persistHandoff(null);
+          return;
+        }
+
+        if (handoffRegistry?.isInputOpen()) {
+          handoffRegistry.resetPendingNote();
+          handoffRegistry.setInputOpen(false);
+          return;
+        }
 
         setIsActivatePressed(false);
         resetCalculatorUI();
@@ -471,6 +570,10 @@ export function Root(config: RootConfig) {
           selectionSystem.clear();
         }
 
+        return;
+      }
+
+      if (handleHandoffKeyboardEvent(e)) {
         return;
       }
 
@@ -759,6 +862,8 @@ export function Root(config: RootConfig) {
         measureDelegate.cancel();
         selectionSystem.clear();
       }
+
+      handoffRegistry?.clear();
     };
 
     const originalPushState = history.pushState.bind(history);
@@ -800,10 +905,16 @@ export function Root(config: RootConfig) {
       selectionDelegate.cancel();
       measureDelegate.cancel();
 
+      if (selectionTimeoutId) {
+        window.clearTimeout(selectionTimeoutId);
+        selectionTimeoutId = null;
+      }
+
       unsubscribe();
       unsubscribeUpdate();
       unsubscribeProjection();
       unsubscribeRuler();
+      unsubscribeHandoff();
 
       if (system) {
         system.cleanup();
@@ -819,8 +930,10 @@ export function Root(config: RootConfig) {
     });
   });
 
-  createEffect(() => {
-    if (isActive()) {
+  createEffect(
+    on(isActive, (active) => {
+      if (!active) return;
+
       window.addEventListener("scroll", scheduleUpdate, { passive: true, capture: true });
       syncViewport();
 
@@ -832,7 +945,17 @@ export function Root(config: RootConfig) {
           viewportRafId = null;
         }
       });
-    }
+    })
+  );
+
+  createEffect(() => {
+    viewport().version;
+    untrack(() => {
+      const registry = handoffRegistryRef();
+      if (registry && registry.getPresentation() === "visible" && registry.getItems().length > 0) {
+        registry.refreshGeometry();
+      }
+    });
   });
 
   const updateResizeObservations = (
@@ -1067,6 +1190,10 @@ export function Root(config: RootConfig) {
       isFrozen={isFrozen}
       animation={animation}
       viewport={viewport}
+      handoffRegistry={handoffRegistryRef() ?? undefined}
+      handoffState={handoffState}
+      onMentionOpenChange={setMentionOpen}
+      submitShakeTick={handoffSubmitShakeTick}
       calculatorState={calculatorState}
       projectionState={projectionState}
       rulerState={rulerState}

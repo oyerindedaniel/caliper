@@ -513,8 +513,7 @@ function RulerLineItem(props: {
       width: isV ? "1px" : "100%",
       height: isV ? "100%" : "1px",
       transform: `translate3d(${isV ? pos : 0}px, ${isV ? 0 : pos}px, 0) ${isActive ? (isV ? "scaleX(1.5)" : "scaleY(1.5)") : "scale(1)"}`,
-      opacity: props.isSelected ? "1" : props.isHovered ? "0.8" : "0.6",
-      filter: props.isSelected ? "drop-shadow(0 0 1.5px var(--caliper-primary))" : "none",
+      opacity: props.isSelected ? "1" : props.isHovered ? "0.85" : "0.6",
       "transform-origin": "center",
     };
   });
@@ -558,7 +557,6 @@ function RulerLineItem(props: {
             left: "0",
             top: "0",
             transform: `translate3d(${props.line.type === "vertical" ? props.pixelPosition + 10 : 20}px, ${props.line.type === "vertical" ? 20 : props.pixelPosition + 10}px, 0)`,
-            opacity: props.isSelected && !props.isHovered && !props.isDragging ? "0.7" : "1",
           }}
           onClick={(e) => {
             e.stopPropagation();
