@@ -11,7 +11,6 @@ import {
   collapsedSelectionWithIntent,
   docPosToWireOffset,
   isAtomicNode,
-  isCaretOnAmbiguousContentRowEndChar,
   nodeTokenLength,
   normalizeDocPos,
   resolveDirectionalUnitFocus,
@@ -31,7 +30,6 @@ import {
   isEmbeddedBlankBandCollapseProbeWire,
   isEmbeddedBlankBandProbeWire,
   isTextOwnedSameRowWhitespaceAtWire,
-  progressiveDeleteLandWhenAheadExhausted,
   resolveBackspaceFromEmptyContentRowEnd,
   resolveDeleteFromEmptyContentRowEnd,
   resolveContentRowEditBeforeEmbeddedBlankBand,
@@ -349,7 +347,35 @@ function applyInterAtomicGapDelete(
  * Collapse producers already set {@link EmbeddedBlankBandCollapseMove.focus}
  * (prior-owned alias vs probe infrastructure). Intent only normalizes + affinity.
  */
-function blankBandMoveToResult(move: EmbeddedBlankBandCollapseMove): HandoffNoteDeleteIntentResult {
+function blankBandMoveToResult(
+  move: EmbeddedBlankBandCollapseMove,
+  direction?: HandoffNoteEdit,
+  visualRowSeats?: readonly HandoffNoteVisualRowSeat[]
+): HandoffNoteDeleteIntentResult {
+  if (direction && visualRowSeats && move.deletedBlankWire !== undefined) {
+    const deletedWire = move.deletedBlankWire;
+    const exhausted =
+      direction === "delete" ? deletedWire >= docLength(move.doc) : deletedWire === 0;
+    if (exhausted) {
+      const seats = visualRowSeats.map((seat) => ({
+        ...seat,
+        wire: seat.wire > deletedWire ? seat.wire - 1 : seat.wire,
+      }));
+      if (direction === "backspace") {
+        const pivot = backspacePivotResultAtDocumentStart(move.doc, seats);
+        if (pivot) return pivot;
+      } else if (seats[0]) {
+        return {
+          doc: move.doc,
+          selection: collapsedSelectionWithIntent(
+            move.doc,
+            normalizeDocPos(move.doc, wireOffsetToDocPos(move.doc, seats[0].wire)),
+            "deletion-point"
+          ),
+        };
+      }
+    }
+  }
   const focus = normalizeDocPos(move.doc, move.focus);
   return {
     doc: move.doc,
@@ -358,93 +384,42 @@ function blankBandMoveToResult(move: EmbeddedBlankBandCollapseMove): HandoffNote
   };
 }
 
-/** Delete has nothing further ahead on this focus (EOF or CRE `after`). */
-function deleteAheadExhaustedAtFocus(
-  doc: HandoffNoteDoc,
-  selection: HandoffNoteSelection
-): boolean {
-  const focusWire = docPosToWireOffset(doc, selection.focus);
-  if (focusWire >= docLength(doc)) {
-    return true;
-  }
-  return (
-    selection.focusAffinity === "after" && isCaretOnAmbiguousContentRowEndChar(doc, selection.focus)
-  );
-}
-
 /**
- * Same-stroke progressive remount when Delete exhausted ahead on the current visual seat
- * but content remains behind on the **same hard line** (soft-wrap wrap-seam / EOF) —
- * not a later noop climb, and not a climb across `\n` (blank/join owns that).
+ * Backspace at document start pivots once to the final visual seat. That preserves
+ * backward deletion while making the remaining pass traverse the whole document.
  */
-function withProgressiveDeleteRemountIfAheadExhausted(
-  result: HandoffNoteDeleteIntentResult,
-  visualRowSeats: readonly HandoffNoteVisualRowSeat[]
-): HandoffNoteDeleteIntentResult {
-  if (!deleteAheadExhaustedAtFocus(result.doc, result.selection)) {
-    return result;
-  }
-  const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
-  const land = progressiveDeleteLandWhenAheadExhausted(visualRowSeats, focusWire);
-  if (land === null || land >= focusWire) {
-    return result;
-  }
-  const wire = docToWire(result.doc);
-  if (wire.slice(land, focusWire).includes("\n")) {
-    return result;
-  }
-  return {
-    doc: result.doc,
-    selection: collapsedSelectionWithIntent(
-      result.doc,
-      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, land)),
-      "deletion-point"
-    ),
-  };
-}
-
-/**
- * Backspace at the document's visual start has exhausted its primary (up / behind)
- * side. Continue the progressive chain at the adjacent row below; a single content
- * row remounts its own end so the next stroke can clear it.
- */
-function progressiveBackspaceResultAtDocumentStart(
+function backspacePivotResultAtDocumentStart(
   doc: HandoffNoteDoc,
   visualRowSeats: readonly HandoffNoteVisualRowSeat[]
 ): HandoffNoteDeleteIntentResult | null {
   if (docLength(doc) === 0) {
     return null;
   }
-  const currentIndex = visualRowSeats.findIndex((seat) => seat.wire === 0);
-  if (currentIndex < 0) {
+  const finalSeat = visualRowSeats[visualRowSeats.length - 1];
+  if (!finalSeat) {
     return null;
   }
 
-  const targetIndex = currentIndex + 1 < visualRowSeats.length ? currentIndex + 1 : currentIndex;
-  const target = visualRowSeats[targetIndex]!;
-  if (target.kind === "blank") {
+  if (finalSeat.kind === "blank") {
     return {
       doc,
       selection: collapsedSelectionWithIntent(
         doc,
-        normalizeDocPos(doc, wireOffsetToDocPos(doc, target.wire)),
+        normalizeDocPos(doc, wireOffsetToDocPos(doc, finalSeat.wire)),
         "deletion-point"
       ),
     };
   }
 
-  const next = visualRowSeats[targetIndex + 1];
   const wire = docToWire(doc);
-  const boundary = next?.wire ?? wire.length;
-  const lineBreak = wire.indexOf("\n", target.wire);
-  const lastWire = lineBreak >= target.wire && lineBreak < boundary ? lineBreak - 1 : boundary - 1;
-  if (lastWire < target.wire) {
+  const lastWire = wire.length - 1;
+  if (lastWire < finalSeat.wire) {
     return null;
   }
 
   const lastPos = wireOffsetToDocPos(doc, lastWire);
   const lastNode = doc.nodes[lastPos.nodeIndex];
-  const endPos = isAtomicNode(lastNode) ? wireOffsetToDocPos(doc, boundary) : lastPos;
+  const endPos = isAtomicNode(lastNode) ? wireOffsetToDocPos(doc, wire.length) : lastPos;
   return {
     doc,
     selection: collapsedSelectionWithIntent(doc, normalizeDocPos(doc, endPos), "content-row-end"),
@@ -504,14 +479,14 @@ function resolveDeleteForwardFromAtomicAbuttingProbe(
   if (move) {
     return {
       kind: "result",
-      result: blankBandMoveToResult(move),
+      result: blankBandMoveToResult(move, "delete", visualRowSeats),
     };
   }
   const emptyRowEnd = resolveDeleteFromEmptyContentRowEnd(doc, probeWire, visualRowSeats, focus);
   if (emptyRowEnd.status === "move") {
     return {
       kind: "result",
-      result: blankBandMoveToResult(emptyRowEnd.move),
+      result: blankBandMoveToResult(emptyRowEnd.move, "delete", visualRowSeats),
     };
   }
   return null;
@@ -656,7 +631,7 @@ export function resolveHandoffNoteDeleteIntent(
   if (blankStopCollapse) {
     return {
       kind: "result",
-      result: blankBandMoveToResult(blankStopCollapse),
+      result: blankBandMoveToResult(blankStopCollapse, direction, visualRowSeats),
     };
   }
 
@@ -670,7 +645,7 @@ export function resolveHandoffNoteDeleteIntent(
   if (blankBandCollapse) {
     return {
       kind: "result",
-      result: blankBandMoveToResult(blankBandCollapse),
+      result: blankBandMoveToResult(blankBandCollapse, direction, visualRowSeats),
     };
   }
 
@@ -684,7 +659,7 @@ export function resolveHandoffNoteDeleteIntent(
     if (emptyRowEnd) {
       return {
         kind: "result",
-        result: blankBandMoveToResult(emptyRowEnd),
+        result: blankBandMoveToResult(emptyRowEnd, direction, visualRowSeats),
       };
     }
   }
@@ -694,7 +669,7 @@ export function resolveHandoffNoteDeleteIntent(
     if (emptyRowEnd.status === "move") {
       return {
         kind: "result",
-        result: blankBandMoveToResult(emptyRowEnd.move),
+        result: blankBandMoveToResult(emptyRowEnd.move, direction, visualRowSeats),
       };
     }
   }
@@ -739,9 +714,9 @@ export function resolveHandoffNoteDeleteIntent(
 
   if (direction === "backspace") {
     if (focusWire <= 0) {
-      const progressiveResult = progressiveBackspaceResultAtDocumentStart(doc, visualRowSeats);
-      if (progressiveResult) {
-        return { kind: "result", result: progressiveResult };
+      const pivot = backspacePivotResultAtDocumentStart(doc, visualRowSeats);
+      if (pivot) {
+        return { kind: "result", result: pivot };
       }
       return { kind: "noop" };
     }
@@ -765,15 +740,18 @@ export function resolveHandoffNoteDeleteIntent(
       return { kind: "noop" };
     }
     if (focusWire >= docLength(doc)) {
-      const land = progressiveDeleteLandWhenAheadExhausted(visualRowSeats, focusWire);
-      if (land !== null && !docToWire(doc).slice(land, focusWire).includes("\n")) {
+      if (docLength(doc) === 0) {
+        return { kind: "noop" };
+      }
+      const firstSeat = visualRowSeats[0];
+      if (firstSeat) {
         return {
           kind: "result",
           result: {
             doc,
             selection: collapsedSelectionWithIntent(
               doc,
-              wireOffsetToDocPos(doc, land),
+              normalizeDocPos(doc, wireOffsetToDocPos(doc, firstSeat.wire)),
               "deletion-point"
             ),
           },
@@ -786,22 +764,19 @@ export function resolveHandoffNoteDeleteIntent(
     if (textAlias && isTextOwnedSameRowWhitespaceAtWire(doc, focusWire)) {
       return {
         kind: "result",
-        result: withProgressiveDeleteRemountIfAheadExhausted(
-          {
-            doc: spliced.doc,
-            selection: collapsedSelectionWithIntent(
-              spliced.doc,
-              normalizeDocPos(spliced.doc, textAlias),
-              "deletion-point"
-            ),
-          },
-          visualRowSeats
-        ),
+        result: {
+          doc: spliced.doc,
+          selection: collapsedSelectionWithIntent(
+            spliced.doc,
+            normalizeDocPos(spliced.doc, textAlias),
+            "deletion-point"
+          ),
+        },
       };
     }
     return {
       kind: "result",
-      result: withProgressiveDeleteRemountIfAheadExhausted(spliced, visualRowSeats),
+      result: spliced,
     };
   }
 

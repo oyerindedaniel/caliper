@@ -4,7 +4,6 @@ import {
   collapsedSelection,
   collapsedSelectionWithIntent,
   docPosToWireOffset,
-  isCaretOnAmbiguousContentRowEndChar,
   resolveDirectionalUnitFocus,
   wireOffsetToDocPos,
 } from "./handoff-note-doc-pos.js";
@@ -458,16 +457,16 @@ describe("handoff note delete intent — contract authority before handler chain
   });
 
   describe("leftover spacer before blank band — unit behind vs ahead", () => {
-    it("visual-start before: Backspace lands the lower blank before lower content", () => {
+    it("visual-start before: Backspace pivots to the final content-row end", () => {
       const doc = wireToDoc(" \n\nmd");
       const focus = wireOffsetToDocPos(doc, 0);
       const result = applyDocDelete(doc, collapsedSelection(focus, "before"), "backspace")!;
       expect(docToWire(result.doc)).toBe(" \n\nmd");
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(2);
-      expect(result.selection.focusAffinity).toBeUndefined();
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(4);
+      expect(result.selection.focusAffinity).toBe("after");
     });
 
-    it("visual-start before: Backspace lands the lower blank after substantive content", () => {
+    it("visual-start before: Backspace skips intermediate blanks at its one pivot", () => {
       const doc = wireToDoc("d\n\nmd");
       const result = applyDocDelete(
         doc,
@@ -475,8 +474,8 @@ describe("handoff note delete intent — contract authority before handler chain
         "backspace"
       )!;
       expect(docToWire(result.doc)).toBe("d\n\nmd");
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(2);
-      expect(result.selection.focusAffinity).toBeUndefined();
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(4);
+      expect(result.selection.focusAffinity).toBe("after");
     });
 
     it("visual-start before: Delete clears sole leftover space (unit ahead)", () => {
@@ -583,18 +582,16 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(once.selection.focusAffinity).toBeUndefined();
     });
 
-    it("leading sole-char row a\\nb lands visual start without after", () => {
+    it("Backspace pivots from exhausted leading blanks before it chips lower content", () => {
       let doc = wireToDoc("\n\na\nb");
       let selection = collapsedSelection(wireOffsetToDocPos(doc, 0));
-      for (const expectedWire of ["\na\nb", "a\nb"]) {
+      for (const expectedWire of ["\na\nb", "\na\n"]) {
         const next = applyDocDelete(doc, selection, "backspace")!;
         expect(docToWire(next.doc)).toBe(expectedWire);
         doc = next.doc;
         selection = next.selection;
       }
-      expect(docToWire(doc)[docPosToWireOffset(doc, selection.focus)]).toBe("a");
-      expect(isCaretOnAmbiguousContentRowEndChar(doc, selection.focus)).toBe(true);
-      expect(selection.focusAffinity).toBe("before");
+      expect(docPosToWireOffset(doc, selection.focus)).toBe(3);
     });
 
     it("trailing blank collapse at EOF keeps after; next Backspace nips last char", () => {
@@ -724,7 +721,7 @@ describe("handoff note delete intent — contract authority before handler chain
     });
   });
 
-  describe("backspace — visual-start progressive remount", () => {
+  describe("backspace — visual-start one-pivot traversal", () => {
     it("at document visual start remounts a sole content row end, then clears without manual caret moves", () => {
       let doc = wireToDoc(`alpha @${agent}`);
       let selection = collapsedSelection(wireOffsetToDocPos(doc, 0));
@@ -746,7 +743,33 @@ describe("handoff note delete intent — contract authority before handler chain
       expect(docToWire(doc)).toBe("");
     });
 
-    it("at visual start chooses the blank row below before lower content", () => {
+    it("pivots once between global visual endpoints, then clears a multi-row note", () => {
+      for (const direction of ["delete", "backspace"] as const) {
+        let doc = wireToDoc("top\n\nbottom");
+        let selection = collapsedSelection(
+          wireOffsetToDocPos(doc, direction === "delete" ? docToWire(doc).length : 0)
+        );
+
+        const pivot = applyDocDelete(doc, selection, direction)!;
+        expect(docToWire(pivot.doc)).toBe("top\n\nbottom");
+        expect(docPosToWireOffset(pivot.doc, pivot.selection.focus)).toBe(
+          direction === "delete" ? 0 : 10
+        );
+        expect(pivot.selection.focusAffinity).toBe(direction === "backspace" ? "after" : undefined);
+        doc = pivot.doc;
+        selection = pivot.selection;
+
+        for (let stroke = 0; docToWire(doc) !== "" && stroke < 16; stroke += 1) {
+          const next = applyDocDelete(doc, selection, direction);
+          expect(next, `${direction} stroke ${stroke}`).not.toBeNull();
+          doc = next!.doc;
+          selection = next!.selection;
+        }
+        expect(docToWire(doc)).toBe("");
+      }
+    });
+
+    it("at visual start pivots to the final content-row end", () => {
       const wire = "up\n\nlower";
       const doc = wireToDoc(wire);
       const result = applyDocDelete(
@@ -755,8 +778,30 @@ describe("handoff note delete intent — contract authority before handler chain
         "backspace"
       )!;
       expect(docToWire(result.doc)).toBe(wire);
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(3);
-      expect(result.selection.focusAffinity).toBeUndefined();
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(8);
+      expect(result.selection.focusAffinity).toBe("after");
+    });
+
+    it("Backspace pivots from an exhausted leading blank to the final blank seat", () => {
+      const doc = wireToDoc("\n\ntop\n\n");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc)[0]!)),
+        "backspace"
+      )!;
+      expect(docToWire(result.doc)).toBe("\ntop\n\n");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(6);
+    });
+
+    it("Delete pivots from an exhausted trailing blank to the first blank seat", () => {
+      const doc = wireToDoc("\n\ntop\n\n");
+      const result = applyDocDelete(
+        doc,
+        collapsedSelection(wireOffsetToDocPos(doc, listEmbeddedBlankBandProbeWires(doc).at(-1)!)),
+        "delete"
+      )!;
+      expect(docToWire(result.doc)).toBe("\n\ntop\n");
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
     });
 
     it("empty document at BOF remains a no-op", () => {

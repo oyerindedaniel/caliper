@@ -137,9 +137,9 @@ Editor-owned. **One intent authority:** meaning from **doc position + direction 
 - Chip removes trailing row text before a blank band normally. Deleting the last character does **not** promote into blank **delete-probe** intent on that same stroke.
 - Emptied chips that fuse into the leading blank under content land that **band-head** stop; mid-fusion empties keep semantic content-row-end. Fuse from **post-delete topology**, not a deleted-char whitespace sniff.
 - Partial chip leaving sole-char text: caret on that **char** with content-row-end (`after`), not probe paint. Sole remaining substantive char never aliases CRE onto the probe wire.
-- Probe backspace under a sole-char row collapses the blank and remounts CRE/`after` on the char so the next Backspace chips it.
-- When substantive content abuts a probe, land on mention-end / content-row-end alias — not blank zwsp infrastructure (spacer chips and glued postfix).
-- After blank **collapse** from a navigable empty line-start, land on the remaining empty line-start stop (or CRE). Probe-dock collapse still lands on the remaining probe; if prior focus already owned the atom/CRE alias at that wire, keep that alias. Collapse producers set selection focus once from that prior-ownership rule; delete intent does not re-derive it.
+- A blank collapse advances to the **next remaining unit in that key’s direction**: Backspace goes up/behind; Delete goes down/ahead. That directional advance may land on an adjacent blank stop or a content-row end/start. It is not a cross-side pivot.
+- Atom and content-row aliases matter when selecting an actual content unit, including Backspace landing at the upper row end before it chips the character behind.
+- Blank visual line-start and probe-dock entries both collapse one blank unit. Delete intent alone owns the global EOF/BOF pivot.
 
 ### Row-chip when
 
@@ -149,38 +149,40 @@ Editor-owned. **One intent authority:** meaning from **doc position + direction 
 
 ### Progressive trash (one principle — both keys)
 
-**One system.** Either Delete alone or Backspace alone empties the note without manual caret moves. Keys never flip: Delete chips **ahead**, Backspace chips **behind**. After each stroke, land on the **adjacent visual row** in that key’s active direction — blank stop or content seat as that row is.
+**One system.** Either Delete alone or Backspace alone empties the note without manual caret moves. Keys never flip: Delete chips **ahead**, Backspace chips **behind**. After each stroke, selection advances to the next remaining unit in that same direction. Only after its global direction is exhausted does the key pivot once to traverse the remaining side.
 
 **Collapsed-row identity:** the blank row removed is the caret’s blank **visual row** (including EOF pad stop). Opener-probe mid-stop coincidence is not a substitute identity when the caret owned the pad stop.
 
-**Visual-row seat lattice:** "adjacent visual row" above/below is read from the same layout epoch Up/Down uses — not a wire-line-only substitute. A soft-wrap continuation row is a landable seat exactly like a hard-break row. The live editor always supplies the measured seat set; there is no silent fallback. Headless tests supply an explicit wire-line-only lattice (hard breaks only) as a fixture — not a second land rule. When a Delete mutation changes wrapping, its pre-mutation seat identifies the progressive path, but its final land is resolved against the replacement layout epoch before the caret is painted; a vanished continuation seat therefore remounts its replacement row's visual start on that stroke. Blank-collapse remount likewise consults the replacement lattice: it may move the caret onto a surviving blank only when that blank still sits on Delete's primary side (visually below the provisional land); it must not climb to a remaining blank above a correct down/ahead land.
+**Visual-row seat lattice:** measured seats identify directional blank-collapse neighbors and the one global EOF/BOF pivot. A soft-wrap continuation is a landable seat like a hard-break row. The live editor supplies measured seats; headless tests supply wire-line seats.
 
-**Order — primary side first, then continue:**
+**Order — primary side, one pivot, then continue:**
 
 1. Stay on the primary side until that side has nothing left. Delete primary = **down / ahead**. Backspace primary = **up / behind**.
-2. Only then does land open the other side for the **same** key — still one adjacent visual row per stroke.
+2. Directional advance may cross adjacent visual rows only in the active direction; it must never jump over an available unit on that side.
+3. Delete at EOF pivots to the first visual seat. Backspace at BOF pivots to the final visual seat (a blank stop, or the final content-row end with `after`).
+4. After that pivot, continue in the same key direction until empty; do not make a second cross-side pivot.
 
-**Land when the active side is exhausted** (after collapsing a blank, **or** when a Delete/Backspace chip leaves nothing further ahead/behind on the **current visual content seat**):
+**Land at the one pivot** (only when a Delete/Backspace stroke leaves no unit in its global direction):
 
-- **Delete:** next blank below before the next substantive content row, else that content’s **visual start**. When down / ahead on the current visual seat is exhausted: if that seat still has text behind the caret, remount its **visual start** on **that same stroke**; else adjacent visual row above (blank stop, else content **visual start**) — then Delete-ahead from that seat. Never land content-row-end above on Delete. Soft-wrap continuation seats stay separate and use this climb — do not leave the caret at the wrap seam / first-row end while that higher or same-line seat still has text to clear ahead from its start.
-- **Backspace:** adjacent visual row above (blank stop, else under content **content-row-end with `after`**). When up / behind on the current visual seat is exhausted: adjacent visual row below with the same behind-land rule (blank or CRE/`after`) until clear — same lattice, including soft-wrap seats. If no lower row exists, remount that sole content seat's CRE/`after` so the next Backspace clears it.
+- **Delete:** EOF pivots to the first visual seat, which may be a blank stop or content visual start.
+- **Backspace:** BOF pivots to the final visual seat: a blank stop when the final row is blank, otherwise the final content-row end with `after`.
 
 **On a blank row:** that key nips that blank only (one blank-row `\n` per stroke).
 
-**When nothing remains** for that key’s progressive chain, the stroke is a no-op (empty doc; Backspace at BOF; Delete with nothing ahead **and** no progressive seat left to remount or climb). A sole trailing blank under content (`TOP\n`) is not done: collapse it and land per the order above, then continue. Sole leftover prefix blank clears to empty on Delete (same end state as Backspace). Downward content gone is not done while leading blanks or upper rows remain.
+**When nothing remains** for that key’s progressive chain, the stroke is a no-op (empty doc, or a missing measured pivot seat). A sole trailing blank under content (`TOP\n`) is not done: collapse it and continue. Sole leftover prefix blank clears to empty on Delete (same end state as Backspace).
 
-**Anything that does not obey this order is wrong** — including blank-wire-nearest land that skips content, remounting CRE while a blank remains above on Backspace, jumping to the other side mid primary run, or any band-edge / special-case land paragraph that invents a second system.
+**Anything that does not obey this order is wrong** — including a jump over an available primary-side unit, a cross-side remount before the global boundary, a second pivot, or any band-edge / special-case land paragraph that invents a second system.
 
 **Other blank / break paths (same land order — not a second system):**
 
 - Blank visual line-start stops that are not probe docks use the same stop→opener collapse entry as Backspace for Delete entry (probe-coincident stops stay on the probe / empty-CRE path). Delete land after collapse stays Delete land (visual start / blank below) — never Backspace’s CRE land.
-- **Line-start collapse (Backspace):** `\n` before lower substantive content when every segment above is empty — land at first substantive visual start.
+- **Line-start collapse (Backspace):** `\n` before lower substantive content when every segment above is empty — keep the backward deletion point.
 - **Substantive line-break join:** single `\n` with populated rows on both sides merges on backspace at lower visual start or delete on the break; caret at join.
 - Leading blank under content (band head) is empty content row end for click/chip.
 
 ### Directional nibbling (in-row)
 
-- **In-row text:** backspace behind; delete ahead; caret stays at the deletion point **unless** progressive land above applies on that stroke (current visual seat’s ahead/behind exhausted — see Progressive trash). A surviving horizontal spacer at the deletion point is the next Delete unit even when reflow removes its former visual-row seat; replacement-layout remount must not skip it to an adjacent atom or row start. Sole/last content char before `\n` (including leftover commit space) keeps `before` so the next insert/paint stay at visual start — not content-row-end text-tail. At visual start of a populated row, backspace does not nip that row’s text; at content row end, delete does not nip further on that row without moving.
+- **In-row text:** backspace behind; delete ahead; caret stays at the deletion point until the one global pivot. A surviving horizontal spacer at the deletion point is the next Delete unit even when reflow removes its former visual-row seat. Sole/last content char before `\n` (including leftover commit space) keeps `before` so the next insert/paint stay at visual start — not content-row-end text-tail. At visual start of a populated row, backspace does not nip that row’s text; at content row end, delete does not nip further on that row without moving.
 - **Inter-atomic gap:** whitespace-only text between two atoms (no newline, no substantive chars). Substantive text between atoms is ordinary text.
 
 ---

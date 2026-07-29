@@ -33,7 +33,6 @@ import {
 import {
   buildHandoffNoteLayoutMap,
   layoutVisualRowSeats,
-  measureReplacementDeleteVisualRowSeats,
   setMeasuredSamplesCache,
   invalidateHandoffNoteLayoutCache,
 } from "./handoff-note-layout-map.js";
@@ -2493,14 +2492,9 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         deleteForward();
 
         expect(host.editor.getWire()).toBe(afterDelete);
-        const doc = host.editor.getDoc();
         expect(
-          measureReplacementDeleteVisualRowSeats(host.root, doc, {
-            priorContentSeatWire: continuationStart,
-            focusWire: continuationStart,
-          })
-        ).toEqual(layoutVisualRowSeats(buildHandoffNoteLayoutMap(host.root, doc), doc));
-        expect(readHandoffNoteLayoutRowIndexForTests(host.root, doc, continuationStart)).toBe(0);
+          readHandoffNoteLayoutRowIndexForTests(host.root, host.editor.getDoc(), continuationStart)
+        ).toBe(0);
         expectCaretParity(host.editor, host.root, continuationStart, "surviving spacer");
       } finally {
         restoreGeometry();
@@ -2508,17 +2502,16 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
     });
 
     it.each(["keydown", "beforeinput"] as const)(
-      "Delete remounts a continuation whose replacement start shifted right (%s)",
+      "Delete stays at its deletion point when a continuation shifts right (%s)",
       (ingress) => {
         const wire = "AAAAAAAAAABCD";
         const continuationStart = 10;
         const afterDelete = "AAAAAAAAAACD";
-        const replacementContinuationStart = 11;
         const restoreGeometry = stubShiftedSoftWrapGeometry(
           host.root,
           afterDelete,
           continuationStart,
-          replacementContinuationStart
+          11
         );
 
         try {
@@ -2543,8 +2536,8 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
           expectCaretParity(
             host.editor,
             host.root,
-            replacementContinuationStart,
-            `shifted continuation ${ingress}`
+            continuationStart,
+            `shifted continuation ${ingress} stays at deletion point`
           );
         } finally {
           restoreGeometry();
@@ -2604,40 +2597,7 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
       }
     });
 
-    it("blank-collapse replacement hard-line seats match the full replacement epoch", () => {
-      const wire = "AAAAAAAAAAB \n";
-      const continuationStart = 10;
-      const afterDelete = "AAAAAAAAAAB ";
-      const restoreGeometry = stubReplacementTextGeometry(
-        host.root,
-        () => host.root.querySelector("br") === null
-      );
-
-      try {
-        host.editor.setDocFromWire(wire, wire.length, { resetHistory: true });
-        setMeasuredSamplesCache(host.root, wire, host.root.clientWidth, [
-          { wire: 0, top: 100, left: 0 },
-          { wire: 9, top: 100, left: 360 },
-          { wire: continuationStart, top: 118, left: 0 },
-          { wire: continuationStart + 1, top: 118, left: 12 },
-          { wire: wire.length, top: 136, left: 0 },
-        ]);
-
-        deleteForward();
-
-        const doc = host.editor.getDoc();
-        const partial = measureReplacementDeleteVisualRowSeats(host.root, doc, {
-          priorContentSeatWire: continuationStart,
-          focusWire: continuationStart,
-        });
-        const full = layoutVisualRowSeats(buildHandoffNoteLayoutMap(host.root, doc), doc);
-        expect(partial).toEqual(full);
-      } finally {
-        restoreGeometry();
-      }
-    });
-
-    it("Delete blank collapse remounts when its target continuation reflows into row 0", () => {
+    it("Delete blank collapse stays at its deletion point when the continuation reflows into row 0", () => {
       const wire = "AAAAAAAAAAB \n";
       const continuationStart = 10;
       const afterDelete = "AAAAAAAAAAB ";
@@ -2662,7 +2622,12 @@ describe("handoff note arrow integration (handleKeyDown pipeline)", () => {
         expect(
           readHandoffNoteLayoutRowIndexForTests(host.root, host.editor.getDoc(), continuationStart)
         ).toBe(0);
-        expectCaretParity(host.editor, host.root, 0, "blank collapse replacement land");
+        expectCaretParity(
+          host.editor,
+          host.root,
+          continuationStart,
+          "blank collapse deletion point"
+        );
       } finally {
         restoreGeometry();
       }

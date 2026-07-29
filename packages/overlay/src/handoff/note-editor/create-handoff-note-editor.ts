@@ -69,7 +69,6 @@ import {
   buildHandoffNoteLayoutMap,
   invalidateHandoffNoteLayoutCache,
   layoutVisualRowSeats,
-  measureReplacementDeleteVisualRowSeats,
 } from "./handoff-note-layout-map.js";
 
 export type HandoffNoteEditorHost = {
@@ -435,18 +434,10 @@ export function createHandoffNoteEditor(options: HandoffNoteEditorOptions): Hand
       postLayoutRemount && replacementRoot
         ? (provisionalSelection) => {
             const focusWire = docPosToWireOffset(doc, provisionalSelection.focus);
-            let replacementSeats;
-            if (postLayoutRemount.kind === "blank-stop") {
-              replacementSeats = layoutVisualRowSeats(
-                buildHandoffNoteLayoutMap(replacementRoot, doc),
-                doc
-              );
-            } else {
-              replacementSeats = measureReplacementDeleteVisualRowSeats(replacementRoot, doc, {
-                priorContentSeatWire: postLayoutRemount.priorContentSeatWire,
-                focusWire,
-              });
-            }
+            const replacementSeats = layoutVisualRowSeats(
+              buildHandoffNoteLayoutMap(replacementRoot, doc),
+              doc
+            );
             const resolved = resolveHandoffNoteDeletePostLayoutRemount(
               { doc, selection: provisionalSelection, postLayoutRemount },
               replacementSeats

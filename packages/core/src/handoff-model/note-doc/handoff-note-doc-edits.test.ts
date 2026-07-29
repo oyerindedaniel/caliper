@@ -780,19 +780,19 @@ describe("embedded blank-band delete contract", () => {
       expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(0);
     });
 
-    it("backspace mirror — chip-then-collapse ladder lands on band head each nip", () => {
+    it("backspace pivots once from exhausted leading blanks, then chips lower content", () => {
       const tail = "tail";
       let state = applyDocDelete(
         wireToDoc(`h\n\n\n${tail}`),
         collapsedSelection(wireOffsetToDocPos(wireToDoc(`h\n\n\n${tail}`), 0)),
         "delete"
       )!;
-      const shapes = [`\n\n${tail}`, `\n${tail}`, tail] as const;
-      for (const expectedWire of shapes) {
-        state = applyDocDelete(state.doc, state.selection, "backspace")!;
-        expect(docToWire(state.doc)).toBe(expectedWire);
-        expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(0);
-      }
+      state = applyDocDelete(state.doc, state.selection, "backspace")!;
+      expect(docToWire(state.doc)).toBe(`\n\n${tail}`);
+      expect(docPosToWireOffset(state.doc, state.selection.focus)).toBe(tail.length + 1);
+
+      state = applyDocDelete(state.doc, state.selection, "backspace")!;
+      expect(docToWire(state.doc)).toBe(`\n\ntai`);
     });
 
     it("delete at last leading probe before content lands next blank below (still before content)", () => {
@@ -1254,7 +1254,7 @@ describe("embedded blank-band delete contract", () => {
       expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(remainingBlank);
     });
 
-    it("backspace on first probe with empty row above collapses one blank toward lower content", () => {
+    it("backspace on first leading probe pivots to final content-row end", () => {
       const doc = wireToDoc(`\n\n\ntail`);
       const [leadingBlank] = listEmbeddedBlankBandProbeWires(doc);
 
@@ -1266,26 +1266,24 @@ describe("embedded blank-band delete contract", () => {
 
       expect(result).not.toBeNull();
       expect(docToWire(result!.doc)).toBe(`\n\ntail`);
-      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(
-        listEmbeddedBlankBandProbeWires(result!.doc)[0]
-      );
+      expect(docPosToWireOffset(result!.doc, result!.selection.focus)).toBe(5);
+      expect(result!.selection.focusAffinity).toBe("after");
     });
 
-    it("repeated backspace through leading blank band lands at lower row visual start", () => {
+    it("repeated backspace from exhausted leading blanks pivots once then chips lower content", () => {
       let doc = wireToDoc(`\n\n\nlower`);
       let state = collapsedSelection(wireOffsetToDocPos(doc, 0));
 
-      for (const expectedWire of [`\n\nlower`, `\nlower`, `lower`]) {
-        const collapsed = applyDocDelete(doc, state, "backspace");
-        expect(collapsed).not.toBeNull();
-        expect(docToWire(collapsed!.doc)).toBe(expectedWire);
-        doc = collapsed!.doc;
-        state = collapsed!.selection;
-      }
-      expect(docPosToWireOffset(doc, state.focus)).toBe(0);
+      const pivot = applyDocDelete(doc, state, "backspace")!;
+      expect(docToWire(pivot.doc)).toBe(`\n\nlower`);
+      expect(docPosToWireOffset(pivot.doc, pivot.selection.focus)).toBe(6);
+      expect(pivot.selection.focusAffinity).toBe("after");
+
+      const chipped = applyDocDelete(pivot.doc, pivot.selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe(`\n\nlowe`);
     });
 
-    it("backspace on blank stop above content with leading blanks lands on remaining stop", () => {
+    it("backspace from an exhausted leading blank pivots to the final content seat", () => {
       const wire = `\n\nlower @${agent} `;
       const doc = wireToDoc(wire);
       const stops = listBlankVisualLineStartWires(doc);
@@ -1301,14 +1299,11 @@ describe("embedded blank-band delete contract", () => {
         "backspace"
       )!;
       expect(docToWire(result.doc)).toBe(`\nlower @${agent} `);
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(
-        listBlankVisualLineStartWires(result.doc)[0]
-      );
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(23);
+      expect(result.selection.focusAffinity).toBe("after");
     });
 
-    it("delete at last leading probe (final wire char) collapses one blank", () => {
-      // Probe path must own this — not blank-stop remapping to stop-1.
-      // Nothing below: progressive Delete lands nearest remaining blank above (no jump to band head).
+    it("delete at last leading probe pivots once to the first remaining blank seat", () => {
       const doc = wireToDoc("\n\n\n");
       const lastProbe = listEmbeddedBlankBandProbeWires(doc).at(-1)!;
       expect(lastProbe).toBe(2);
@@ -1319,10 +1314,7 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
       expect(docToWire(result.doc)).toBe("\n\n");
-      const land = docPosToWireOffset(result.doc, result.selection.focus);
-      const stops = listBlankVisualLineStartWires(result.doc);
-      expect(stops).toContain(land);
-      expect(land).toBe(1);
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
     });
 
     it("backspace at last leading probe collapses one blank without band-head skip", () => {
@@ -1355,8 +1347,8 @@ describe("embedded blank-band delete contract", () => {
       expect(listBlankVisualLineStartWires(result.doc).at(-1)).toBe(1);
     });
 
-    it("delete at EOF blank stop under leading blanks collapses one blank (not band-head jump)", () => {
-      // Leading-only: Delete may clear blanks; land remaining higher stop — not wire 0 skip.
+    it("delete from an exhausted trailing blank pivots to the first remaining seat", () => {
+      // This final forward blank chip reaches EOF, so Delete starts its single reverse pass.
       const doc = wireToDoc("\n\n");
       const eofStop = listBlankVisualLineStartWires(doc).at(-1)!;
       const result = applyDocDelete(
@@ -1365,7 +1357,7 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
       expect(docToWire(result.doc)).toBe("\n");
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(1);
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
     });
 
     it("backspace at last leading blank stop before content lands remaining higher stop", () => {
@@ -1483,22 +1475,19 @@ describe("embedded blank-band delete contract", () => {
       expect(docToWire(result.doc)).toBe(`upper @${agent} xx\n\nlower @${agent} `);
     });
 
-    it("after deleting sole header character repeated backspace collapses blank band to lower start", () => {
+    it("after clearing sole header, Backspace pivots once then chips lower content", () => {
       let doc = wireToDoc(`h\n\n\nlower`);
       let state = collapsedSelection(wireOffsetToDocPos(doc, 0), "after");
       const cleared = applyDocDelete(doc, state, "backspace")!;
       expect(docToWire(cleared.doc)).toBe(`\n\n\nlower`);
-      doc = cleared.doc;
-      state = cleared.selection;
 
-      for (const expectedWire of [`\n\nlower`, `\nlower`, `lower`]) {
-        const collapsed = applyDocDelete(doc, state, "backspace");
-        expect(collapsed).not.toBeNull();
-        expect(docToWire(collapsed!.doc)).toBe(expectedWire);
-        doc = collapsed!.doc;
-        state = collapsed!.selection;
-      }
-      expect(docPosToWireOffset(doc, state.focus)).toBe(0);
+      const pivot = applyDocDelete(cleared.doc, cleared.selection, "backspace")!;
+      expect(docToWire(pivot.doc)).toBe(`\n\nlower`);
+      expect(docPosToWireOffset(pivot.doc, pivot.selection.focus)).toBe(6);
+      expect(pivot.selection.focusAffinity).toBe("after");
+
+      const chipped = applyDocDelete(pivot.doc, pivot.selection, "backspace")!;
+      expect(docToWire(chipped.doc)).toBe(`\n\nlowe`);
     });
 
     it("backspace on sandwiched single probe between filled rows lands at upper row end", () => {
@@ -1578,7 +1567,7 @@ describe("embedded blank-band delete contract", () => {
       );
     });
 
-    it("delete at trailing empty-line stop lands remaining blank above not content (no jump)", () => {
+    it("delete at exhausted trailing stop pivots once to first seat", () => {
       const wire = `header @${agent} \n\n`;
       const doc = wireToDoc(wire);
       const trailingStop = listBlankVisualLineStartWires(doc).at(-1)!;
@@ -1591,7 +1580,7 @@ describe("embedded blank-band delete contract", () => {
       const after = docToWire(result.doc);
       expect(after).toBe(`header @${agent} \n`);
       expect(listBlankVisualLineStartWires(result.doc)).toEqual([25]);
-      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(25);
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
       expect(result.selection.focusAffinity).toBeUndefined();
     });
 
@@ -1624,7 +1613,7 @@ describe("embedded blank-band delete contract", () => {
       expect(docToWire(third.doc)).toBe("OP");
     });
 
-    it("delete after clearing lower blank+content lands remaining blank not upper content", () => {
+    it("delete after clearing lower blank+content pivots to the first upper seat", () => {
       let doc = wireToDoc("upper\n\n\nlower");
       const lowerBlank = listBlankVisualLineStartWires(doc).at(-1)!;
       const trashBlank = applyDocDelete(
@@ -1652,11 +1641,11 @@ describe("embedded blank-band delete contract", () => {
       )!;
       expect(docToWire(afterClear.doc)).toBe("upper\n");
       expect(listBlankVisualLineStartWires(afterClear.doc)).toEqual([6]);
-      expect(docPosToWireOffset(afterClear.doc, afterClear.selection.focus)).toBe(6);
+      expect(docPosToWireOffset(afterClear.doc, afterClear.selection.focus)).toBe(0);
       expect(afterClear.selection.focusAffinity).toBeUndefined();
     });
 
-    it("delete last of trailing double blank under content lands remaining blank not |TOP", () => {
+    it("delete last of trailing double blank pivots once to first seat", () => {
       const doc = wireToDoc("TOP\n\n");
       const last = listBlankVisualLineStartWires(doc).at(-1)!;
       const once = applyDocDelete(
@@ -1666,10 +1655,10 @@ describe("embedded blank-band delete contract", () => {
       )!;
       expect(docToWire(once.doc)).toBe("TOP\n");
       expect(listBlankVisualLineStartWires(once.doc)).toEqual([4]);
-      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(4);
+      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(0);
     });
 
-    it("delete trashing emptied trailing content row lands visual start of content above", () => {
+    it("delete at exhausted trailing content pivots once to first seat", () => {
       const wire = "lead\nupper\nlower\n";
       const doc = wireToDoc(wire);
       const eofStop = listBlankVisualLineStartWires(doc).at(-1)!;
@@ -1679,12 +1668,10 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
       expect(docToWire(once.doc)).toBe("lead\nupper\nlower");
-      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(
-        docToWire(once.doc).indexOf("lower")
-      );
+      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(0);
     });
 
-    it("delete from pad-preceding last probe under mid lands mid visual start not lead (no skip)", () => {
+    it("delete from exhausted pad probe pivots once to first seat", () => {
       // Pad-preceding probe must use EOF blank-stop identity — probe wire alone sits on
       // mid’s line and adjacent-above would wrongly land lead (wire 0).
       const wire = "lead\nmid\n";
@@ -1698,10 +1685,10 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
       expect(docToWire(once.doc)).toBe("lead\nmid");
-      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(5);
+      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(0);
     });
 
-    it("delete from pad-preceding last probe under C of A\\nB\\nC\\n lands C not B (no skip)", () => {
+    it("delete from exhausted pad probe pivots once across rows", () => {
       const wire = "A\nB\nC\n";
       const doc = wireToDoc(wire);
       const lastProbe = listEmbeddedBlankBandProbeWires(doc).at(-1)!;
@@ -1711,7 +1698,7 @@ describe("embedded blank-band delete contract", () => {
         "delete"
       )!;
       expect(docToWire(once.doc)).toBe("A\nB\nC");
-      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(wire.indexOf("C"));
+      expect(docPosToWireOffset(once.doc, once.selection.focus)).toBe(0);
     });
 
     it("backspace from pad-preceding last probe under mid remounts CRE on mid (no skip to lead)", () => {
@@ -3900,27 +3887,7 @@ describe("mention query insert folds blank continuation lines onto @", () => {
 
 /** Progressive trash — handoff-note-arrow-contract.md */
 describe("visual-row seats — soft-wrap continuation is a landable seat", () => {
-  describe("replacement-epoch Delete remount", () => {
-    it("remounts only when the prior content seat vanished on the same hard line", () => {
-      const doc = wireToDoc("AAAAAAAAAAC");
-      const result = {
-        doc,
-        selection: collapsedSelection(wireOffsetToDocPos(doc, 10)),
-        postLayoutRemount: { kind: "content-seat" as const, priorContentSeatWire: 10 },
-      };
-
-      const remounted = resolveHandoffNoteDeletePostLayoutRemount(result, [
-        { wire: 0, kind: "content" },
-      ]);
-      expect(docPosToWireOffset(doc, remounted.selection.focus)).toBe(0);
-
-      const retained = resolveHandoffNoteDeletePostLayoutRemount(result, [
-        { wire: 0, kind: "content" },
-        { wire: 10, kind: "content" },
-      ]);
-      expect(docPosToWireOffset(doc, retained.selection.focus)).toBe(10);
-    });
-
+  describe("replacement-epoch Delete blank remount", () => {
     it("retains a spacer exposed by the final text Delete before a mention", () => {
       const before = wireToDoc("AAAAAAAAAAn @caliper-aaaaaaa");
       const provisional = applyDocDeleteWithSeats(
@@ -3964,23 +3931,7 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
       expect(docPosToWireOffset(resolved.doc, resolved.selection.focus)).toBe(10);
     });
 
-    it("remounts the replacement continuation when deleting shifts its start forward", () => {
-      const doc = wireToDoc("AAAAAAAAAACD");
-      const result = {
-        doc,
-        selection: collapsedSelection(wireOffsetToDocPos(doc, 10)),
-        postLayoutRemount: { kind: "content-seat" as const, priorContentSeatWire: 10 },
-      };
-
-      const remounted = resolveHandoffNoteDeletePostLayoutRemount(result, [
-        { wire: 0, kind: "content" },
-        { wire: 11, kind: "content" },
-      ]);
-
-      expect(docPosToWireOffset(doc, remounted.selection.focus)).toBe(11);
-    });
-
-    it("uses the replacement blank seat when soft-wrap layout interleaves its prior row", () => {
+    it("pivots to the first visual seat when trailing soft-wrap blank is exhausted", () => {
       const agent = "caliper-l5kknwf72";
       const prefix = `dhd @${agent} d @${agent} jdjd @${agent} `;
       const wire = `${prefix}\n\n`;
@@ -3999,16 +3950,8 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
         }
       )!;
 
-      expect(result.postLayoutRemount).toEqual({
-        kind: "blank-stop",
-        replacementBlankStopWire: prefix.length + 1,
-      });
-      const resolved = resolveHandoffNoteDeletePostLayoutRemount(result, [
-        { wire: 0, kind: "content" },
-        { wire: prefix.indexOf("jdjd"), kind: "content" },
-        { wire: prefix.length + 1, kind: "blank" },
-      ]);
-      expect(docPosToWireOffset(result.doc, resolved.selection.focus)).toBe(prefix.length + 1);
+      expect(result.postLayoutRemount).toBeUndefined();
+      expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
     });
 
     it("keeps Delete's down land on content when the remaining blank sits above", () => {
@@ -4041,22 +3984,9 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
       ]);
       expect(docPosToWireOffset(result.doc, resolved.selection.focus)).toBe(26);
     });
-
-    it("never remounts across a hard break", () => {
-      const doc = wireToDoc("lead\nm");
-      const result = {
-        doc,
-        selection: collapsedSelection(wireOffsetToDocPos(doc, 5)),
-        postLayoutRemount: { kind: "content-seat" as const, priorContentSeatWire: 5 },
-      };
-      const resolved = resolveHandoffNoteDeletePostLayoutRemount(result, [
-        { wire: 0, kind: "content" },
-      ]);
-      expect(docPosToWireOffset(doc, resolved.selection.focus)).toBe(5);
-    });
   });
 
-  it("Delete on trailing blank under a soft-wrap row lands the continuation visual start, not wire 0", () => {
+  it("Delete on exhausted trailing blank under a soft-wrap row pivots to the first seat", () => {
     const wire = "AAAAAAAAAABBBBBBBBBB\n";
     const doc = wireToDoc(wire);
     const probe = listEmbeddedBlankBandProbeWires(doc).at(-1)!;
@@ -4072,8 +4002,7 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
       { visualRowSeats: seats }
     )!;
     const land = docPosToWireOffset(result.doc, result.selection.focus);
-    expect(land).toBe(10);
-    expect(land).not.toBe(0);
+    expect(land).toBe(0);
   });
 
   it("Backspace on trailing blank under a soft-wrap row lands CRE on the last content char (after)", () => {
@@ -4095,7 +4024,7 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
     expect(result.selection.focusAffinity).toBe("after");
   });
 
-  it("hard-break control `lead\\nmid\\n` still lands mid start with wireLineVisualRowSeats", () => {
+  it("hard-break control `lead\\nmid\\n` pivots to the first seat at trailing EOF", () => {
     const wire = "lead\nmid\n";
     const doc = wireToDoc(wire);
     const probe = listEmbeddedBlankBandProbeWires(doc).at(-1)!;
@@ -4105,10 +4034,10 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
       "delete",
       { visualRowSeats: wireLineVisualRowSeats(doc) }
     )!;
-    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(5);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
   });
 
-  it("last Delete chip of soft-wrap continuation remounts first seat visual start on that stroke", () => {
+  it("last Delete chip of soft-wrap continuation stays at deletion point until the one pivot", () => {
     const wire = "AAAAAAAAAAB";
     const doc = wireToDoc(wire);
     const result = applyDocDeleteWithSeats(
@@ -4123,7 +4052,11 @@ describe("visual-row seats — soft-wrap continuation is a landable seat", () =>
       }
     )!;
     expect(docToWire(result.doc)).toBe("AAAAAAAAAA");
-    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(0);
+    expect(docPosToWireOffset(result.doc, result.selection.focus)).toBe(10);
+    const pivot = applyDocDeleteWithSeats(result.doc, result.selection, "delete", {
+      visualRowSeats: [{ wire: 0, kind: "content" }],
+    })!;
+    expect(docPosToWireOffset(pivot.doc, pivot.selection.focus)).toBe(0);
   });
 
   it("mid soft-wrap continuation chip stays at deletion point (no premature climb)", () => {

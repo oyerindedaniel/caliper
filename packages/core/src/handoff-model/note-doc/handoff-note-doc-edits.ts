@@ -37,15 +37,10 @@ export type HandoffDocEditResult = {
   selection: HandoffNoteSelection;
 };
 
-export type HandoffNoteDeletePostLayoutRemount =
-  | {
-      kind: "content-seat";
-      priorContentSeatWire: number;
-    }
-  | {
-      kind: "blank-stop";
-      replacementBlankStopWire: number;
-    };
+export type HandoffNoteDeletePostLayoutRemount = {
+  kind: "blank-stop";
+  replacementBlankStopWire: number;
+};
 
 export type HandoffDocDeleteResult = HandoffDocEditResult & {
   postLayoutRemount?: HandoffNoteDeletePostLayoutRemount;
@@ -117,7 +112,6 @@ function postLayoutRemountRequest(
   priorDoc: HandoffNoteDoc,
   result: HandoffDocEditResult,
   direction: HandoffNoteEdit,
-  visualRowSeats: readonly HandoffNoteVisualRowSeat[],
   replacementBlankStopWire: number | undefined
 ): HandoffNoteDeletePostLayoutRemount | undefined {
   if (direction !== "delete" || docToWire(priorDoc) === docToWire(result.doc)) {
@@ -126,16 +120,7 @@ function postLayoutRemountRequest(
   if (replacementBlankStopWire !== undefined) {
     return { kind: "blank-stop", replacementBlankStopWire };
   }
-  const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
-  const replacementUnit = docToWire(result.doc)[focusWire];
-  // A surviving horizontal spacer is its own next Delete unit. It is not a
-  // continuation-seat replacement merely because reflow moved it onto another row.
-  if (replacementUnit !== undefined && replacementUnit !== "\n" && /\s/u.test(replacementUnit)) {
-    return undefined;
-  }
-  return visualRowSeats.some((seat) => seat.kind === "content" && seat.wire === focusWire)
-    ? { kind: "content-seat", priorContentSeatWire: focusWire }
-    : undefined;
+  return undefined;
 }
 
 /**
@@ -182,52 +167,7 @@ export function resolveHandoffNoteDeletePostLayoutRemount(
       ),
     };
   }
-  if (
-    !request ||
-    replacementSeats.some(
-      (seat) => seat.kind === "content" && seat.wire === request.priorContentSeatWire
-    )
-  ) {
-    return result;
-  }
-  const focusWire = docPosToWireOffset(result.doc, result.selection.focus);
-  const wire = docToWire(result.doc);
-  let nextContentSeat: HandoffNoteVisualRowSeat | undefined;
-  let previousContentSeat: HandoffNoteVisualRowSeat | undefined;
-  for (const seat of replacementSeats) {
-    if (seat.kind !== "content") {
-      continue;
-    }
-    const spanStart = Math.min(seat.wire, focusWire);
-    const spanEnd = Math.max(seat.wire, focusWire);
-    if (wire.slice(spanStart, spanEnd).includes("\n")) {
-      continue;
-    }
-    if (
-      seat.wire > focusWire &&
-      (nextContentSeat === undefined || seat.wire < nextContentSeat.wire)
-    ) {
-      nextContentSeat = seat;
-    }
-    if (
-      seat.wire < focusWire &&
-      (previousContentSeat === undefined || seat.wire > previousContentSeat.wire)
-    ) {
-      previousContentSeat = seat;
-    }
-  }
-  const replacementSeat = nextContentSeat ?? previousContentSeat;
-  if (!replacementSeat) {
-    return result;
-  }
-  return {
-    doc: result.doc,
-    selection: collapsedSelectionWithIntent(
-      result.doc,
-      normalizeDocPos(result.doc, wireOffsetToDocPos(result.doc, replacementSeat.wire)),
-      "deletion-point"
-    ),
-  };
+  return result;
 }
 
 /**
@@ -270,7 +210,6 @@ export function applyDocDelete(
     doc,
     finalized,
     direction,
-    options.visualRowSeats,
     result.replacementBlankStopWire
   );
   return postLayoutRemount ? { ...finalized, postLayoutRemount } : finalized;

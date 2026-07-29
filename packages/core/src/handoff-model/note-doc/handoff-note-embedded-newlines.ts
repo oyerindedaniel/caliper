@@ -41,6 +41,7 @@ export type EmbeddedBlankBandCollapseMove = {
   doc: HandoffNoteDoc;
   caretWire: number;
   branch: EmbeddedBlankBandCollapseBranch;
+  deletedBlankWire?: number;
   replacementBlankStopWire?: number;
   /**
    * Affinity on ambiguous content-char docks only (`collapsedSelectionWithIntent`).
@@ -847,36 +848,6 @@ function progressiveDeleteLandAbove(
 }
 
 /**
- * Progressive Delete when ahead on the current visual seat is exhausted: remount that
- * seat’s visual start if text remains behind on it; else climb to the adjacent seat
- * above at its visual start. Same land order as blank down-exhaust — soft-wrap
- * continuation seats participate on the exhaust stroke (not a later EOF noop).
- */
-export function progressiveDeleteLandWhenAheadExhausted(
-  visualRowSeats: readonly HandoffNoteVisualRowSeat[],
-  focusWire: number
-): number | null {
-  if (focusWire <= 0 || visualRowSeats.length === 0) {
-    return null;
-  }
-  const idx = visualRowIndexAtWire(visualRowSeats, focusWire);
-  if (idx < 0) {
-    return null;
-  }
-  const current = visualRowSeats[idx]!;
-  if (current.kind === "content" && current.wire < focusWire) {
-    return current.wire;
-  }
-  if (idx > 0) {
-    const above = visualRowSeats[idx - 1]!;
-    if (above.wire < focusWire) {
-      return above.wire;
-    }
-  }
-  return null;
-}
-
-/**
  * Blank visual row removed when collapsing from this probe/focus wire (Delete or Backspace).
  * Pad-preceding last probe owns the EOF empty stop — not the coincident mid-stop and not
  * the probe wire itself (`blankVisualLineStartOpenedByProbe` is null there by paint contract).
@@ -1522,6 +1493,7 @@ function withBlankStopLand(
       doc: move.doc,
       caretWire,
       branch: move.branch,
+      deletedBlankWire: move.deletedBlankWire,
       replacementBlankStopWire: move.replacementBlankStopWire,
       affinityIntent: move.affinityIntent,
     },
@@ -1766,6 +1738,7 @@ export function resolveEmbeddedBlankBandCollapse(
       {
         doc: nextDoc,
         caretWire: landing.caretWire,
+        deletedBlankWire: focusWire,
         branch: "backspace-collapse-blank",
         affinityIntent: landing.affinityIntent,
       },
@@ -1782,6 +1755,7 @@ export function resolveEmbeddedBlankBandCollapse(
       {
         doc: nextDoc,
         caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+        deletedBlankWire: focusWire,
         branch: "delete-collapse-blank-mid-band",
         affinityIntent: "deletion-point",
       },
@@ -1800,6 +1774,7 @@ export function resolveEmbeddedBlankBandCollapse(
           context.group,
           visualRowSeats
         ),
+        deletedBlankWire: focusWire,
         branch: "delete-collapse-blank-at-edge",
         affinityIntent: "deletion-point",
       },
@@ -1817,6 +1792,7 @@ export function resolveEmbeddedBlankBandCollapse(
         context.group,
         visualRowSeats
       ),
+      deletedBlankWire: focusWire,
       branch: "delete-collapse-blank-at-edge",
       affinityIntent: "deletion-point",
     },
@@ -1941,6 +1917,7 @@ export function resolveDeleteFromEmptyContentRowEnd(
         {
           doc: nextDoc,
           caretWire: land,
+          deletedBlankWire: focusWire,
           branch: "delete-collapse-blank-at-edge",
           affinityIntent: "deletion-point",
         },
@@ -1960,6 +1937,7 @@ export function resolveDeleteFromEmptyContentRowEnd(
         {
           doc: nextDoc,
           caretWire: collapseBlankBandDeleteLanding(nextDoc, focusWire, context),
+          deletedBlankWire: focusWire,
           branch: "delete-collapse-blank-mid-band",
           affinityIntent: "deletion-point",
         },
@@ -1980,6 +1958,7 @@ export function resolveDeleteFromEmptyContentRowEnd(
           context,
           visualRowSeats
         ),
+        deletedBlankWire: focusWire,
         branch: "delete-collapse-blank-at-edge",
         affinityIntent: "deletion-point",
       },
@@ -2039,6 +2018,7 @@ export function resolveBackspaceFromEmptyContentRowEnd(
       {
         doc: nextDoc,
         caretWire: landing.caretWire,
+        deletedBlankWire: focusWire,
         branch: "backspace-collapse-blank",
         affinityIntent: landing.affinityIntent,
       },
@@ -2056,6 +2036,7 @@ export function resolveBackspaceFromEmptyContentRowEnd(
         context,
         visualRowSeats
       ),
+      deletedBlankWire: focusWire,
       branch: "backspace-collapse-blank",
       affinityIntent: "deletion-point",
     },
